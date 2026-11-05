@@ -785,7 +785,9 @@ export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot): string {
     const json = JSON.stringify(snapshot);
     const encoded = typeof btoa === 'function'
       ? btoa(encodeURIComponent(json))
-      : Buffer.from(encodeURIComponent(json)).toString('base64');
+      : typeof globalThis !== 'undefined' && 'Buffer' in globalThis
+      ? (globalThis as { Buffer: { from: (s: string) => { toString: (enc: string) => string } } }).Buffer.from(encodeURIComponent(json)).toString('base64')
+      : '';
     const baseUrl = typeof window !== 'undefined' ? window.location.href : 'https://bouquet-studio.local/';
     const url = new URL(baseUrl);
     url.hash = `bouquet=${encoded}`;
@@ -801,7 +803,13 @@ export function decodeBouquetFromHash(): BouquetSnapshot | null {
     const hash = window.location.hash;
     if (!hash.startsWith('#bouquet=')) return null;
     const raw = hash.replace('#bouquet=', '');
-    const json = decodeURIComponent(typeof atob === 'function' ? atob(raw) : Buffer.from(raw, 'base64').toString());
+    const json = decodeURIComponent(
+      typeof atob === 'function'
+        ? atob(raw)
+        : typeof globalThis !== 'undefined' && 'Buffer' in globalThis
+        ? (globalThis as { Buffer: { from: (s: string, enc: string) => { toString: () => string } } }).Buffer.from(raw, 'base64').toString()
+        : ''
+    );
     return JSON.parse(json) as BouquetSnapshot;
   } catch {
     return null;
