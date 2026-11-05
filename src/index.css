@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  :root.dark,
+  html.dark,
+  .dark {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  /* Custom Minimalist Scrollbar — Light Mode */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 162, 158, 0.45) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(168, 162, 158, 0.4);
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.15s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(120, 113, 108, 0.65);
+  }
+
+  /* Custom Minimalist Scrollbar — Dark Mode */
+  .dark *,
+  :root.dark * {
+    scrollbar-color: rgba(120, 113, 108, 0.5) transparent;
+  }
+
+  .dark ::-webkit-scrollbar-thumb,
+  :root.dark ::-webkit-scrollbar-thumb {
+    background-color: rgba(120, 113, 108, 0.5);
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover,
+  :root.dark ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(168, 162, 158, 0.75);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+}
