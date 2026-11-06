@@ -1308,7 +1308,7 @@ class RomanticMusicBox {
   }
 
   public start(): void {
-    if (this.isPlaying) return;
+    if (typeof window === 'undefined') return;
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
@@ -1316,9 +1316,10 @@ class RomanticMusicBox {
       this.ctx = new AudioCtx();
     }
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
 
+    if (this.isPlaying) return;
     this.isPlaying = true;
     this.playChimeNote();
     this.timerId = window.setInterval(() => {
@@ -1326,6 +1327,23 @@ class RomanticMusicBox {
         this.playChimeNote();
       }
     }, 680);
+  }
+
+  public resumeIfBlocked(): void {
+    if (!this.isPlaying) return;
+    if (typeof window === 'undefined') return;
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!this.ctx) {
+      this.ctx = new AudioCtx();
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().then(() => {
+        if (this.isPlaying) {
+          this.playChimeNote();
+        }
+      }).catch(() => {});
+    }
   }
 
   public stop(): void {
@@ -1337,7 +1355,7 @@ class RomanticMusicBox {
   }
 
   private playChimeNote(): void {
-    if (!this.ctx || !this.isPlaying) return;
+    if (!this.ctx || !this.isPlaying || this.ctx.state === 'suspended') return;
     try {
       const now = this.ctx.currentTime;
       const freq = this.melodyNotes[this.noteIndex % this.melodyNotes.length];
@@ -2395,23 +2413,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               transform={`translate(${item.x}, ${item.y}) rotate(${item.rotation}) scale(${
                 item.flipX ? -item.scale : item.scale
               }, ${item.scale})`}
-              onPointerDown={(e) => handleItemPointerDown(e, item)}
+              onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
               className={
                 isPreviewMode
-                  ? 'cursor-default'
+                  ? 'pointer-events-none cursor-default'
                   : item.locked
                   ? 'cursor-pointer'
                   : 'cursor-grab active:cursor-grabbing'
               }
               style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : 'url(#softShadow)' }}
             >
-              {/* Invisible generous hit target for easy touch tapping */}
-              <circle cx="0" cy="-10" r="48" fill="transparent" />
-              <FlowerRenderer
-                type={item.type}
-                petalColor={item.petalColor}
-                centerColor={item.centerColor}
-              />
+              <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
+                {/* Invisible generous hit target for easy touch tapping */}
+                <circle cx="0" cy="-10" r="48" fill="transparent" />
+                <FlowerRenderer
+                  type={item.type}
+                  petalColor={item.petalColor}
+                  centerColor={item.centerColor}
+                />
+              </g>
             </g>
           );
         })}
@@ -3009,9 +3029,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 {isPreviewMode && (
                   <g data-export-ignore="true" transform="translate(36, -44)">
                     <rect
-                      x="-42"
+                      x="-36"
                       y="-11"
-                      width="84"
+                      width="72"
                       height="20"
                       rx="10"
                       fill={cardPalette.seal}
@@ -3025,7 +3045,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       fontWeight="600"
                       style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
                     >
-                      Tap to open 💌
+                      Tap to open
                     </text>
                   </g>
                 )}
@@ -4537,6 +4557,7 @@ export default function App() {
   const [isInspectorSidebarOpen, setIsInspectorSidebarOpen] = useState(true);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isGiftView, setIsGiftView] = useState(false);
+  const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState(false);
   const [bloomedCount, setBloomedCount] = useState<number | undefined>(undefined);
   const [showGiftCardReveal, setShowGiftCardReveal] = useState(true);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
@@ -4552,10 +4573,11 @@ export default function App() {
       return false;
     }
   });
-  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const bloomIntervalRef = useRef<number | null>(null);
   const hasHydratedRef = useRef(false);
 
   // Sync exact visible viewport height so mobile browser bottom bars (e.g. Edge Mobile, Safari, Chrome)
@@ -4662,8 +4684,22 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  // Autoplay soft music-box melody on load & unlock AudioContext on first user interaction if browser suspended it
   useEffect(() => {
+    musicBox.start();
+    setIsMusicPlaying(true);
+
+    const unlockAudio = () => {
+      musicBox.resumeIfBlocked();
+    };
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+
     return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
       musicBox.stop();
     };
   }, []);
@@ -4680,31 +4716,86 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const startGiftBloomAnimation = useCallback((totalItems: number, fromEditorPreview = true) => {
-    setMobilePopover(null);
-    setIsPreviewMode(fromEditorPreview);
-    setIsGiftView(true);
+  const runStemBloomSequence = useCallback((totalItems: number) => {
+    if (bloomIntervalRef.current !== null) {
+      clearInterval(bloomIntervalRef.current);
+      bloomIntervalRef.current = null;
+    }
     setShowGiftCardReveal(false);
     setBloomedCount(0);
     let current = 0;
-    const interval = setInterval(() => {
+    bloomIntervalRef.current = window.setInterval(() => {
       current += 1;
       setBloomedCount(current);
       if (current >= totalItems) {
-        clearInterval(interval);
+        if (bloomIntervalRef.current !== null) {
+          clearInterval(bloomIntervalRef.current);
+          bloomIntervalRef.current = null;
+        }
         setTimeout(() => {
           setShowGiftCardReveal(true);
-        }, 400);
+        }, 420);
       }
-    }, 120);
+    }, 130);
   }, []);
 
+  const startGiftBloomAnimation = useCallback((totalItems: number, fromEditorPreview = true) => {
+    selectItem(null);
+    setMobilePopover(null);
+    setIsPreviewMode(fromEditorPreview);
+    setIsGiftView(true);
+    setIsGiftEntranceOpen(true);
+    setShowGiftCardReveal(false);
+    setBloomedCount(0);
+    // Ensure music autoplays when entering shared gift view or preview bloom
+    musicBox.start();
+    musicBox.resumeIfBlocked();
+    setIsMusicPlaying(true);
+    // Also start blooming gently in the background or when unwrapped
+    runStemBloomSequence(totalItems);
+  }, [selectItem, runStemBloomSequence]);
+
+  const handleUnwrapGiftEntrance = useCallback(() => {
+    musicBox.start();
+    musicBox.resumeIfBlocked();
+    setIsMusicPlaying(true);
+    setIsGiftEntranceOpen(false);
+    runStemBloomSequence(items.length);
+  }, [items.length, runStemBloomSequence]);
+
   const handleExitGiftViewToEditor = useCallback(() => {
+    if (bloomIntervalRef.current !== null) {
+      clearInterval(bloomIntervalRef.current);
+      bloomIntervalRef.current = null;
+    }
+    setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
   }, []);
+
+  // When a recipient clicks "Create Yours" on a shared bouquet, start a fresh studio bouquet
+  // so they can never edit or overwrite the sender's shared arrangement!
+  const handleCreateOwnFromShared = useCallback(() => {
+    if (bloomIntervalRef.current !== null) {
+      clearInterval(bloomIntervalRef.current);
+      bloomIntervalRef.current = null;
+    }
+    try {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    } catch {
+      // Ignore history error
+    }
+    loadSnapshot(STARTER_TEMPLATES[0].snapshot);
+    selectItem(null);
+    setIsGiftEntranceOpen(false);
+    setIsGiftView(false);
+    setIsPreviewMode(false);
+    setBloomedCount(undefined);
+    setShowGiftCardReveal(true);
+    triggerToast('Started a fresh bouquet for you to arrange');
+  }, [loadSnapshot, selectItem, triggerToast]);
 
   // Autosave to localStorage
   useEffect(() => {
@@ -4716,10 +4807,12 @@ export default function App() {
         if (giftMode) {
           setIsGiftView(true);
           setIsPreviewMode(false);
+          setIsGiftEntranceOpen(true);
         }
         const shared = decodeBouquetFromHash(hash);
         if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
           loadSnapshot(shared);
+          selectItem(null);
           if (giftMode) {
             startGiftBloomAnimation(shared.items.length, false);
           } else {
@@ -4745,6 +4838,11 @@ export default function App() {
       return;
     }
 
+    // Do not overwrite user's local studio autosave while viewing a shared recipient gift link
+    if (isGiftView && !isPreviewMode) {
+      return;
+    }
+
     setAutosaveStatus('saving');
     const timer = setTimeout(() => {
       try {
@@ -4762,11 +4860,12 @@ export default function App() {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [items, wrapStyle, wrapColor, ribbonColor, card, loadSnapshot, triggerToast, startGiftBloomAnimation]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, card, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
 
-  // Global Keyboard Shortcuts
+  // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isGiftView || isPreviewMode) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -4802,7 +4901,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, deleteSelected, duplicateSelected, triggerToast]);
+  }, [isGiftView, isPreviewMode, undo, redo, deleteSelected, duplicateSelected, triggerToast]);
 
   const handleExportPng = async () => {
     const targetSvg =
@@ -4824,7 +4923,7 @@ export default function App() {
     }
   };
 
-  const getShareUrl = (asGift = false) => {
+  const getShareUrl = (asGift = true) => {
     const snap: BouquetSnapshot = {
       items,
       wrapStyle,
@@ -4835,13 +4934,12 @@ export default function App() {
     return encodeBouquetToShareUrl(snap, asGift);
   };
 
-  const handleShareLink = (asGift = false) => {
+  const handleShareLink = (asGift = true) => {
     const shareUrl = getShareUrl(asGift);
-    window.history.replaceState(null, '', shareUrl);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(shareUrl).catch(() => {});
     }
-    triggerToast(asGift ? 'Recipient gift link copied' : 'Bouquet link copied');
+    triggerToast('Recipient gift link copied');
   };
 
   const handleMobileFloatingTool = (mode: 'color' | 'layers' | 'card') => {
@@ -4916,6 +5014,28 @@ export default function App() {
         }
         .card-zoom-modal {
           animation: cardModalZoomIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes stemSpringBloom {
+          0% { opacity: 0; transform: scale(0.25) translateY(28px); }
+          70% { opacity: 1; transform: scale(1.08) translateY(-3px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .stem-bloom-pop {
+          animation: stemSpringBloom 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes giftStageEntrance {
+          0% { opacity: 0; transform: scale(0.88) translateY(22px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .gift-stage-entrance {
+          animation: giftStageEntrance 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes floatKeepsakeEnvelope {
+          0%, 100% { transform: translateY(0px) rotate(-1deg); }
+          50% { transform: translateY(-8px) rotate(1deg); }
+        }
+        .float-keepsake-envelope {
+          animation: floatKeepsakeEnvelope 3.6s ease-in-out infinite;
         }
       `}</style>
 
@@ -5302,22 +5422,86 @@ export default function App() {
           {/* Gentle Falling Petals Animation in Read-Only Gift View */}
           {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
 
-          {/* Floating "Back to Editing" Button when Previewing Bloom from Editor */}
-          {isPreviewMode && (
-            <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-30">
-              <button
-                type="button"
-                onClick={handleExitGiftViewToEditor}
-                aria-label="Back to editing"
-                className={`px-3.5 py-2 rounded-full border shadow-md backdrop-blur-md text-xs font-medium flex items-center gap-1.5 transition active:scale-95 ${
+          {/* ===================================================================
+              GIFT ENTRANCE OVERLAY
+              Minimal editorial keepsake card with clear hierarchy and zero clutter.
+              =================================================================== */}
+          {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Bouquet Gift Entrance"
+              onClick={handleUnwrapGiftEntrance}
+              className={`absolute inset-0 z-40 flex items-center justify-center p-4 backdrop-blur-md transition-opacity duration-300 cursor-pointer ${
+                isDarkMode ? 'bg-[#141211]/85' : 'bg-[#FAFAF8]/85'
+              }`}
+            >
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUnwrapGiftEntrance();
+                }}
+                className={`card-zoom-modal w-full max-w-[320px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
                   isDarkMode
-                    ? 'bg-[#1E1C1A]/90 border-stone-700 text-stone-100 hover:bg-[#292524]'
-                    : 'bg-white/90 border-stone-200/90 text-[#1C1917] hover:bg-stone-50'
+                    ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+                    : 'bg-white border-stone-200/90 text-[#1C1917]'
                 }`}
               >
-                <ChevronLeft className="w-4 h-4 text-[#B4846C]" />
-                <span>Back to editing</span>
-              </button>
+                {/* Minimal Wax-Sealed Envelope Icon */}
+                <div className="float-keepsake-envelope mx-auto mb-5 w-20 h-16 flex items-center justify-center">
+                  <svg viewBox="0 0 120 92" className="w-full h-full">
+                    <rect
+                      x="10"
+                      y="14"
+                      width="100"
+                      height="66"
+                      rx="8"
+                      fill={isDarkMode ? '#292524' : '#FAF8F5'}
+                      stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
+                      strokeWidth="1.5"
+                    />
+                    <path
+                      d="M12,78 L60,46 L108,78"
+                      fill="none"
+                      stroke={isDarkMode ? '#44403C' : '#E5DFD7'}
+                      strokeWidth="1.2"
+                    />
+                    <path
+                      d="M11,16 L60,52 L109,16"
+                      fill={isDarkMode ? '#24211E' : '#F3EFEA'}
+                      stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                    <circle cx="60" cy="50" r="10" fill="#B4846C" />
+                    <circle cx="60" cy="50" r="6.5" fill="none" stroke="#FFFDF9" strokeWidth="0.8" opacity="0.7" />
+                  </svg>
+                </div>
+
+                <h2
+                  className="text-2xl sm:text-[28px] font-medium tracking-tight leading-snug"
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                >
+                  For {card.to || 'You'}
+                </h2>
+
+                {card.from && (
+                  <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                    From {card.from}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUnwrapGiftEntrance();
+                  }}
+                  className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98"
+                >
+                  Open Bouquet
+                </button>
+              </div>
             </div>
           )}
 
@@ -5339,7 +5523,11 @@ export default function App() {
           )}
 
           {/* Interactive SVG Bouquet Stage (Always 100% height, zero layout shift) */}
-          <div className="flex-1 w-full h-full min-h-0 flex items-center justify-center relative touch-none">
+          <div
+            className={`flex-1 w-full h-full min-h-0 flex items-center justify-center relative touch-none ${
+              (isGiftView || isPreviewMode) && !isGiftEntranceOpen ? 'gift-stage-entrance' : ''
+            }`}
+          >
             <BouquetStage
               svgRef={svgRef}
               isPreviewMode={isPreviewMode || isGiftView}
@@ -5686,7 +5874,7 @@ export default function App() {
               Focuses purely on the visual bouquet, the clickable wiggling card tag,
               and a simple 'Save as PNG' / 'Create Yours' (or 'Back to editing') CTA bar.
               =================================================================== */}
-          {(isPreviewMode || isGiftView) && (
+          {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
             <div
               className="w-full px-4 z-20 absolute bottom-4 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2"
               style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
@@ -5697,7 +5885,7 @@ export default function App() {
                     ? 'bg-[#1E1C1A]/90 border-stone-800 text-stone-100'
                     : 'bg-white/90 border-stone-200/90 text-[#1C1917]'
                 } ${
-                  showGiftCardReveal
+                  showGiftCardReveal || isPreviewMode
                     ? 'opacity-100 translate-y-0'
                     : 'opacity-0 translate-y-3 pointer-events-none'
                 }`}
@@ -5732,7 +5920,7 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={handleExitGiftViewToEditor}
+                  onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
                   className="px-4 py-2 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shadow-xs active:scale-95"
                 >
                   {isPreviewMode ? (
@@ -7026,11 +7214,11 @@ export default function App() {
                     Recipient animated gift link
                   </span>
                   <span className="text-[10px] text-stone-500 dark:text-stone-400 font-medium">
-                    Recommended
+                    View-Only Gift
                   </span>
                 </div>
                 <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Opens with a bloom animation for the recipient
+                  Opens in View-Only mode with a sweet entrance, autoplay music, and bloom animation (recipient cannot edit your flowers)
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <button
@@ -7048,7 +7236,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       setIsShareModalOpen(false);
-                      startGiftBloomAnimation(items.length);
+                      startGiftBloomAnimation(items.length, true);
                     }}
                     className="py-2.5 px-3 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#1E1C1A] text-stone-800 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 text-xs font-medium flex items-center justify-center gap-1.5 transition shrink-0"
                   >
@@ -7056,33 +7244,6 @@ export default function App() {
                     <span>Preview bloom</span>
                   </button>
                 </div>
-              </div>
-
-              <div
-                className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
-                  isDarkMode ? 'bg-[#292524] border-stone-700' : 'bg-white border-stone-200'
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="text-xs font-medium">Editable studio link</div>
-                  <div className="text-[10px] text-stone-500 dark:text-stone-400 truncate">
-                    Allows editing and customizing stems
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleShareLink(false);
-                    setIsShareModalOpen(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition shrink-0 ${
-                    isDarkMode
-                      ? 'bg-[#1E1C1A] hover:bg-stone-800 text-stone-200 border-stone-700'
-                      : 'bg-white hover:bg-stone-50 text-stone-800 border-stone-200'
-                  }`}
-                >
-                  Copy edit link
-                </button>
               </div>
 
               <div
