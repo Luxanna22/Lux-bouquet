@@ -881,9 +881,31 @@ function fromBase64Url(b64url: string): string {
   return decodeURIComponent(percentEncoded);
 }
 
+function itemsMatchPreset(a: BouquetItem[], b: BouquetItem[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.type !== y.type ||
+      Math.round(x.x) !== Math.round(y.x) ||
+      Math.round(x.y) !== Math.round(y.y) ||
+      Math.round(x.scale * 100) !== Math.round(y.scale * 100) ||
+      Math.round(x.rotation) !== Math.round(y.rotation) ||
+      Boolean(x.flipX) !== Boolean(y.flipX) ||
+      Boolean(x.hidden) !== Boolean(y.hidden) ||
+      x.petalColor.toLowerCase() !== y.petalColor.toLowerCase() ||
+      x.centerColor.toLowerCase() !== y.centerColor.toLowerCase()
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = false): string {
   try {
-    // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex>
+    // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex> (trimmed trailing ~)
     const wIdx = Math.max(0, SHARE_WRAP_STYLES.indexOf(snapshot.wrapStyle)).toString(36);
     const defaultWrapHex =
       WRAPPER_CATALOG.find((w) => w.id === snapshot.wrapStyle)?.defaultHex.toLowerCase() || '';
@@ -895,9 +917,9 @@ export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = fals
       snapshot.ribbonColor.toLowerCase() === '#e11d48'
         ? ''
         : snapshot.ribbonColor.replace('#', '').toLowerCase();
-    const headerPart = `${wIdx}~${wHex}~${rHex}`;
+    const headerPart = `${wIdx}~${wHex}~${rHex}`.replace(/~+$/, '');
 
-    // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>
+    // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64> (trimmed trailing ~!)
     const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
     const cVis = snapshot.card.visibleOnStage ? 1 : 0;
     const cMeta = (cTheme * 2 + cVis).toString(36);
@@ -906,40 +928,56 @@ export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = fals
       snapshot.card.from === DEFAULT_SHARE_CARD_FROM ? '!' : toBase64Url(snapshot.card.from);
     const cMsg =
       snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
-    const cardPart = `${cMeta}~${cTo}~${cFrom}~${cMsg}`;
+    const cardPart = `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
 
-    // 3. Compact Items Section: 8 chars per stem + optional ~flags~petal~center only if non-default
-    const clampNum = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-    const itemsPart = snapshot.items
-      .map((item) => {
-        const tIdx = Math.max(0, SHARE_FLOWER_TYPES.indexOf(item.type)).toString(36);
-        const xStr = Math.round(clampNum(item.x, 0, 600))
-          .toString(36)
-          .padStart(2, '0');
-        const yStr = Math.round(clampNum(item.y, 0, 680))
-          .toString(36)
-          .padStart(2, '0');
-        const sInt = clampNum(Math.round((clampNum(item.scale, 0.4, 2.2) - 0.4) * 19), 0, 35);
-        const sStr = sInt.toString(36);
-        const rInt = clampNum(Math.round((clampNum(item.rotation, -180, 180) + 180) / 2), 0, 180);
-        const rStr = rInt.toString(36).padStart(2, '0');
+    // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
+    //    or 8 chars per stem with flipX packed directly into the 1-char type code (0..23 in base36)
+    let itemsPart = '';
+    if (itemsMatchPreset(snapshot.items, INITIAL_ITEMS)) {
+      itemsPart = '@0';
+    } else {
+      const matchedTplIdx = STARTER_TEMPLATES.findIndex((tpl) =>
+        itemsMatchPreset(snapshot.items, tpl.snapshot.items)
+      );
+      if (matchedTplIdx !== -1) {
+        itemsPart = `@${matchedTplIdx + 1}`;
+      }
+    }
 
-        const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
-        const isDefPetal =
-          meta && item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
-        const isDefCenter =
-          meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
-        const flags = (item.flipX ? 1 : 0) | (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
+    if (!itemsPart) {
+      const clampNum = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+      itemsPart = snapshot.items
+        .map((item) => {
+          const rawTypeIdx = Math.max(0, SHARE_FLOWER_TYPES.indexOf(item.type));
+          const packedTypeAndFlip = (rawTypeIdx + (item.flipX ? 12 : 0)).toString(36);
+          const xStr = Math.round(clampNum(item.x, 0, 600))
+            .toString(36)
+            .padStart(2, '0');
+          const yStr = Math.round(clampNum(item.y, 0, 680))
+            .toString(36)
+            .padStart(2, '0');
+          const sInt = clampNum(Math.round((clampNum(item.scale, 0.4, 2.2) - 0.4) * 19), 0, 35);
+          const sStr = sInt.toString(36);
+          const rInt = clampNum(Math.round((clampNum(item.rotation, -180, 180) + 180) / 2), 0, 180);
+          const rStr = rInt.toString(36).padStart(2, '0');
 
-        const base = `${tIdx}${xStr}${yStr}${sStr}${rStr}`;
-        if (isDefPetal && isDefCenter && flags === 0) {
-          return base;
-        }
-        const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
-        const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
-        return `${base}~${flags.toString(36)}~${pHex}~${cHex}`;
-      })
-      .join('.');
+          const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+          const isDefPetal =
+            meta && item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
+          const isDefCenter =
+            meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
+          const extraFlags = (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
+
+          const base = `${packedTypeAndFlip}${xStr}${yStr}${sStr}${rStr}`;
+          if (isDefPetal && isDefCenter && extraFlags === 0) {
+            return base;
+          }
+          const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
+          const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
+          return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}`.replace(/~+$/, '');
+        })
+        .join('.');
+    }
 
     const compactPayload = `${headerPart}.${cardPart}.${itemsPart}`;
     const baseUrl =
@@ -998,38 +1036,52 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const cMeta = parseInt(cMetaStr, 36) || 0;
       const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'cream';
       const visibleOnStage = cMeta % 2 === 1;
-      const to = cToB64 === '!' ? DEFAULT_SHARE_CARD_TO : fromBase64Url(cToB64);
-      const from = cFromB64 === '!' ? DEFAULT_SHARE_CARD_FROM : fromBase64Url(cFromB64);
-      const message = cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
+      const to = !cToB64 || cToB64 === '!' ? DEFAULT_SHARE_CARD_TO : fromBase64Url(cToB64);
+      const from = !cFromB64 || cFromB64 === '!' ? DEFAULT_SHARE_CARD_FROM : fromBase64Url(cFromB64);
+      const message =
+        !cMsgB64 || cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
 
-      const items: BouquetItem[] = stemParts
-        .filter((sp) => sp.length >= 8)
-        .map((sp, idx) => {
-          const [base, flagsStr = '0', pHex = '', cHex = ''] = sp.split('~');
-          const type = SHARE_FLOWER_TYPES[parseInt(base[0], 36)] || 'rose';
-          const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
-          const x = parseInt(base.slice(1, 3), 36);
-          const y = parseInt(base.slice(3, 5), 36);
-          const sInt = parseInt(base.slice(5, 6), 36);
-          const scale = Number((0.4 + (sInt / 19)).toFixed(2));
-          const rInt = parseInt(base.slice(6, 8), 36);
-          const rotation = rInt * 2 - 180;
-          const flags = parseInt(flagsStr, 36) || 0;
+      let items: BouquetItem[] = [];
+      if (stemParts.length === 1 && stemParts[0].startsWith('@')) {
+        const presetIdx = parseInt(stemParts[0].slice(1), 10);
+        if (presetIdx === 0) {
+          items = INITIAL_ITEMS.map((it) => ({ ...it }));
+        } else if (presetIdx >= 1 && presetIdx <= STARTER_TEMPLATES.length) {
+          items = STARTER_TEMPLATES[presetIdx - 1].snapshot.items.map((it) => ({ ...it }));
+        }
+      } else {
+        items = stemParts
+          .filter((sp) => sp.length >= 8)
+          .map((sp, idx) => {
+            const [base, flagsStr = '0', pHex = '', cHex = ''] = sp.split('~');
+            const rawCode = parseInt(base[0], 36) || 0;
+            const packedFlip = rawCode >= 12;
+            const typeIdx = packedFlip ? rawCode - 12 : rawCode;
+            const type = SHARE_FLOWER_TYPES[typeIdx] || 'rose';
+            const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
+            const x = parseInt(base.slice(1, 3), 36);
+            const y = parseInt(base.slice(3, 5), 36);
+            const sInt = parseInt(base.slice(5, 6), 36);
+            const scale = Number((0.4 + sInt / 19).toFixed(2));
+            const rInt = parseInt(base.slice(6, 8), 36);
+            const rotation = rInt * 2 - 180;
+            const flags = parseInt(flagsStr, 36) || 0;
 
-          return {
-            id: `s-${idx}-${type}`,
-            type,
-            x: Number.isFinite(x) ? x : 300,
-            y: Number.isFinite(y) ? y : 280,
-            scale: Number.isFinite(scale) ? scale : meta.defaultScale,
-            rotation: Number.isFinite(rotation) ? rotation : 0,
-            flipX: Boolean(flags & 1),
-            locked: Boolean(flags & 2),
-            hidden: Boolean(flags & 4),
-            petalColor: pHex ? `#${pHex}` : meta.defaultPetalColor,
-            centerColor: cHex ? `#${cHex}` : meta.defaultCenterColor
-          };
-        });
+            return {
+              id: `s-${idx}-${type}`,
+              type,
+              x: Number.isFinite(x) ? x : 300,
+              y: Number.isFinite(y) ? y : 280,
+              scale: Number.isFinite(scale) ? scale : meta.defaultScale,
+              rotation: Number.isFinite(rotation) ? rotation : 0,
+              flipX: packedFlip || Boolean(flags & 1),
+              locked: Boolean(flags & 2),
+              hidden: Boolean(flags & 4),
+              petalColor: pHex ? `#${pHex}` : meta.defaultPetalColor,
+              centerColor: cHex ? `#${cHex}` : meta.defaultCenterColor
+            };
+          });
+      }
 
       return {
         items,
@@ -1139,6 +1191,23 @@ export function wrapCardText(text: string, maxLineLength = 22): string[] {
   }
   if (current) lines.push(current);
   return lines.slice(0, 4);
+}
+
+function dataUrlToPngFile(dataUrl: string, filename = 'bouquet.png'): File | null {
+  try {
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) return null;
+    const byteString = atob(parts[1]);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: 'image/png' });
+    return new File([blob], filename, { type: 'image/png' });
+  } catch {
+    return null;
+  }
 }
 
 export async function exportSvgElementToPng(
@@ -4631,7 +4700,11 @@ export default function App() {
   const [letterTypedChars, setLetterTypedChars] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shortShareUrl, setShortShareUrl] = useState<string | null>(null);
+  const [isShorteningUrl, setIsShorteningUrl] = useState(false);
   const [savedPngDataUrl, setSavedPngDataUrl] = useState<string | null>(null);
+  const [savedPngHostedUrl, setSavedPngHostedUrl] = useState<string | null>(null);
+  const [savedPngFile, setSavedPngFile] = useState<File | null>(null);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving'>('saved');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -4994,26 +5067,29 @@ export default function App() {
       const exportedUrl = await exportSvgElementToPng(targetSvg, 'bouquet.png');
 
       if (isInAppWebView || isMobileDevice) {
-        // Always show the Save Image preview sheet on mobile / in-app browsers (Messenger, Instagram, etc.)
-        // so the user can either tap Share/Save or press-and-hold the PNG to save to Photos.
         if (exportedUrl.startsWith('data:image/')) {
+          const prebuiltFile = dataUrlToPngFile(exportedUrl, 'bouquet.png');
+          setSavedPngFile(prebuiltFile);
           setSavedPngDataUrl(exportedUrl);
-        }
-        // If native file sharing is supported outside strict in-app WebViews, also offer native share sheet
-        if (!isInAppWebView && navigator.share && navigator.canShare && exportedUrl.startsWith('data:image/png')) {
-          try {
-            const res = await fetch(exportedUrl);
-            const blob = await res.blob();
-            const file = new File([blob], 'bouquet.png', { type: 'image/png' });
-            if (navigator.canShare({ files: [file] })) {
-              await navigator.share({
-                files: [file],
-                title: 'Bouquet'
-              });
-            }
-          } catch {
-            // User dismissed share sheet or WebView blocked share; modal remains open for easy saving
-          }
+          setSavedPngHostedUrl(null);
+
+          // Register a real HTTP/HTTPS PNG URL on the server so in-app WebViews
+          // (Messenger, Instagram, LINE, Android DownloadManager, iOS WKWebView)
+          // recognize the <img> for native long-press "Save Image" and attachment download.
+          fetch('/api/bouquet-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: exportedUrl })
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data && typeof data.url === 'string') {
+                setSavedPngHostedUrl(data.url);
+              }
+            })
+            .catch(() => {
+              // Keep dataUrl fallback if offline
+            });
         }
       } else {
         triggerToast('Saved image');
@@ -5024,23 +5100,60 @@ export default function App() {
     }
   };
 
-  const getShareUrl = (asGift = true) => {
-    const snap: BouquetSnapshot = {
-      items,
-      wrapStyle,
-      wrapColor,
-      ribbonColor,
-      card
-    };
-    return encodeBouquetToShareUrl(snap, asGift);
-  };
+  const getShareUrl = useCallback(
+    (asGift = true) => {
+      const snap: BouquetSnapshot = {
+        items,
+        wrapStyle,
+        wrapColor,
+        ribbonColor,
+        card
+      };
+      return encodeBouquetToShareUrl(snap, asGift);
+    },
+    [items, wrapStyle, wrapColor, ribbonColor, card]
+  );
 
-  const handleShareLink = (asGift = true) => {
-    const shareUrl = getShareUrl(asGift);
+  // Automatically generate a 20-char short link (e.g. https://is.gd/xxxxxx) when the Share modal opens
+  useEffect(() => {
+    if (!isShareModalOpen) return;
+    let cancelled = false;
+    const fullUrl = getShareUrl(true);
+    setShortShareUrl(fullUrl);
+    setIsShorteningUrl(true);
+
+    fetch('/api/shorten', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: fullUrl })
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data.shortUrl === 'string' && data.shortUrl) {
+          setShortShareUrl(data.shortUrl);
+        }
+      })
+      .catch(() => {
+        // Keep compact #g= URL fallback
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsShorteningUrl(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isShareModalOpen, getShareUrl]);
+
+  const handleShareLink = async (asGift = true) => {
+    const fallbackUrl = getShareUrl(asGift);
+    const linkToCopy = asGift && shortShareUrl ? shortShareUrl : fallbackUrl;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(shareUrl).catch(() => {});
+      navigator.clipboard.writeText(linkToCopy).catch(() => {});
     }
-    triggerToast('Recipient gift link copied');
+    triggerToast('Link copied');
   };
 
   const handleMobileFloatingTool = (mode: 'color' | 'layers' | 'card') => {
@@ -7293,7 +7406,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SHARE / SEND MODAL DIALOG */}
+      {/* SHARE / SEND MODAL DIALOG (Simplified Short Link UI) */}
       {isShareModalOpen && (
         <div
           role="dialog"
@@ -7303,7 +7416,7 @@ export default function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-4 sm:p-6 shadow-xl border border-stone-200 dark:border-stone-700 relative ${
+            className={`w-full max-w-sm rounded-2xl p-5 shadow-xl border border-stone-200 dark:border-stone-800 relative ${
               isDarkMode
                 ? 'bg-[#1E1C1A] text-stone-100'
                 : 'bg-white text-[#1C1917]'
@@ -7312,94 +7425,85 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsShareModalOpen(false)}
-              className="absolute top-3.5 right-3.5 p-2 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
+              className="absolute top-3.5 right-3.5 p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
               aria-label="Close dialog"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-[#1C1917] flex items-center justify-center text-white shrink-0">
-                <Gift className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold">Share your bouquet</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Send this arrangement with music and animated bloom
-                </p>
-              </div>
+            <h3
+              className="text-xl font-medium tracking-tight"
+              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+            >
+              Share Bouquet
+            </h3>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 mb-4">
+              Send a short view-only gift link
+            </p>
+
+            {/* Shortened URL Input Bar + Copy Button */}
+            <div
+              className={`flex items-center gap-1.5 p-1.5 rounded-xl border ${
+                isDarkMode
+                  ? 'bg-[#141211] border-stone-800'
+                  : 'bg-stone-50 border-stone-200/90'
+              }`}
+            >
+              <input
+                type="text"
+                readOnly
+                aria-label="Short gift link"
+                value={isShorteningUrl ? 'Shortening link...' : shortShareUrl || getShareUrl(true)}
+                onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                className="flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs font-mono text-stone-700 dark:text-stone-300 focus:outline-none truncate"
+              />
+              <button
+                type="button"
+                disabled={isShorteningUrl}
+                onClick={() => {
+                  handleShareLink(true);
+                  setIsShareModalOpen(false);
+                }}
+                className="px-3.5 py-2 rounded-lg bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center gap-1.5 transition shrink-0 disabled:opacity-50"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Link</span>
+              </button>
             </div>
 
-            <div className="space-y-3">
-              <div
-                className={`p-4 rounded-xl border space-y-2.5 ${
-                  isDarkMode ? 'bg-[#292524] border-stone-700' : 'bg-[#F5F3EF] border-stone-200'
+            {/* Secondary Actions: Preview Bloom & Save PNG */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsShareModalOpen(false);
+                  startGiftBloomAnimation(items.length, true);
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                  isDarkMode
+                    ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold">
-                    Recipient animated gift link
-                  </span>
-                  <span className="text-[10px] text-stone-500 dark:text-stone-400 font-medium">
-                    View-Only Gift
-                  </span>
-                </div>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  Opens in View-Only mode with a sweet entrance, autoplay music, and bloom animation (recipient cannot edit your flowers)
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleShareLink(true);
-                      setIsShareModalOpen(false);
-                    }}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center justify-center gap-1.5 transition shadow-sm"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy recipient gift link</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsShareModalOpen(false);
-                      startGiftBloomAnimation(items.length, true);
-                    }}
-                    className="py-2.5 px-3 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#1E1C1A] text-stone-800 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 text-xs font-medium flex items-center justify-center gap-1.5 transition shrink-0"
-                  >
-                    <Play className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                    <span>Preview bloom</span>
-                  </button>
-                </div>
-              </div>
+                <Play className="w-3.5 h-3.5 text-[#B4846C]" />
+                <span>Preview bloom</span>
+              </button>
 
-              <div
-                className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
-                  isDarkMode ? 'bg-[#292524] border-stone-700' : 'bg-white border-stone-200'
+              <button
+                type="button"
+                onClick={() => {
+                  handleExportPng();
+                  setIsShareModalOpen(false);
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                  isDarkMode
+                    ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
                 }`}
               >
-                <div className="min-w-0">
-                  <div className="text-xs font-medium">Keepsake PNG image</div>
-                  <div className="text-[10px] text-stone-500 dark:text-stone-400 truncate">
-                    Save transparent high-res PNG image
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleExportPng();
-                    setIsShareModalOpen(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition shrink-0 ${
-                    isDarkMode
-                      ? 'bg-[#1E1C1A] hover:bg-stone-800 text-stone-200 border-stone-700'
-                      : 'bg-white hover:bg-stone-50 text-stone-800 border-stone-200'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5 inline mr-1 text-stone-500 dark:text-stone-400" />
-                  Save PNG
-                </button>
-              </div>
+                <Download className="w-3.5 h-3.5 text-[#B4846C]" />
+                <span>Save PNG</span>
+              </button>
             </div>
           </div>
         </div>
@@ -7411,7 +7515,10 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           aria-label="Save Bouquet Image"
-          onClick={() => setSavedPngDataUrl(null)}
+          onClick={() => {
+            setSavedPngDataUrl(null);
+            setSavedPngHostedUrl(null);
+          }}
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
         >
           <div
@@ -7424,7 +7531,10 @@ export default function App() {
           >
             <button
               type="button"
-              onClick={() => setSavedPngDataUrl(null)}
+              onClick={() => {
+                setSavedPngDataUrl(null);
+                setSavedPngHostedUrl(null);
+              }}
               aria-label="Close save image dialog"
               className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
             >
@@ -7438,53 +7548,75 @@ export default function App() {
               Save Bouquet Image
             </h3>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 mb-3">
-              Press and hold the image to save to Photos
+              Tap Download below, or press and hold the image
             </p>
 
             <div className="rounded-xl overflow-hidden border border-stone-200/80 dark:border-stone-800 bg-[#FAFAF8] dark:bg-[#141211] flex items-center justify-center p-2">
               <img
-                src={savedPngDataUrl}
+                src={savedPngHostedUrl || savedPngDataUrl}
                 alt="Bouquet Keepsake PNG"
-                className="max-h-[52vh] w-auto object-contain rounded-lg select-auto"
+                className="max-h-[48vh] w-auto object-contain rounded-lg"
+                style={{
+                  WebkitTouchCallout: 'default',
+                  WebkitUserSelect: 'auto',
+                  userSelect: 'auto',
+                  pointerEvents: 'auto'
+                }}
               />
             </div>
 
-            <div className="mt-4 flex items-center gap-2">
-              <a
-                href={savedPngDataUrl}
-                download="bouquet.png"
-                onClick={async (e) => {
-                  if (navigator.share && navigator.canShare) {
-                    try {
-                      e.preventDefault();
-                      const res = await fetch(savedPngDataUrl);
-                      const blob = await res.blob();
-                      const file = new File([blob], 'bouquet.png', { type: 'image/png' });
-                      if (navigator.canShare({ files: [file] })) {
-                        await navigator.share({ files: [file], title: 'Bouquet' });
-                        return;
+            <div className="mt-4 flex flex-col gap-2">
+              {/* Native HTTP Content-Disposition attachment download (Works in Messenger, Instagram, Android DownloadManager & iOS WebViews) */}
+              <form
+                method="POST"
+                action="/api/bouquet-image?download=1"
+                className="w-full"
+              >
+                <input type="hidden" name="image" value={savedPngDataUrl} />
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-98"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Image</span>
+                </button>
+              </form>
+
+              {/* Synchronous Native OS Share / Save to Photos Sheet (Zero await before navigator.share) */}
+              {savedPngFile &&
+                typeof navigator !== 'undefined' &&
+                typeof navigator.share === 'function' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.canShare && navigator.canShare({ files: [savedPngFile] })) {
+                        navigator
+                          .share({
+                            files: [savedPngFile],
+                            title: 'Bouquet'
+                          })
+                          .catch(() => {});
+                      } else {
+                        navigator
+                          .share({
+                            title: 'Bouquet',
+                            url: savedPngHostedUrl
+                              ? `${window.location.origin}${savedPngHostedUrl}`
+                              : window.location.href
+                          })
+                          .catch(() => {});
                       }
-                    } catch {
-                      // Fall back to direct anchor download
-                    }
-                  }
-                }}
-                className="flex-1 py-2.5 px-4 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Share / Save Image</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setSavedPngDataUrl(null)}
-                className={`py-2.5 px-4 rounded-full border text-xs font-medium transition ${
-                  isDarkMode
-                    ? 'border-stone-700 hover:bg-stone-800 text-stone-300'
-                    : 'border-stone-200 hover:bg-stone-50 text-stone-700'
-                }`}
-              >
-                Done
-              </button>
+                    }}
+                    className={`w-full py-2 px-4 rounded-full border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                      isDarkMode
+                        ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                        : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
+                    }`}
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-[#B4846C]" />
+                    <span>Share / Save to Photos</span>
+                  </button>
+                )}
             </div>
           </div>
         </div>
