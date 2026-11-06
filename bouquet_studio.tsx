@@ -1147,9 +1147,13 @@ export async function exportSvgElementToPng(
 ): Promise<string> {
   const clone = svgElement.cloneNode(true) as SVGSVGElement;
 
-  // Strip interactive selection gizmos before exporting
+  // Strip interactive selection gizmos and CSS bloom animation classes before exporting
   const gizmos = clone.querySelectorAll('[data-export-ignore="true"]');
   gizmos.forEach((el) => el.remove());
+  const animatedNodes = clone.querySelectorAll('.stem-bloom-pop, .bouquet-card-wiggle, .bouquet-cord-bloom');
+  animatedNodes.forEach((el) => {
+    el.classList.remove('stem-bloom-pop', 'bouquet-card-wiggle', 'bouquet-cord-bloom');
+  });
 
   // Replace any foreignObject in the clone with SVG text to prevent canvas tainting
   const foreignObjects = clone.querySelectorAll('foreignObject');
@@ -1190,15 +1194,22 @@ export async function exportSvgElementToPng(
   // Base64 data URL avoids cross-origin tainting from Blob URLs
   const base64Svg = 'data:image/svg+xml;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(svgString)));
 
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const isInAppWebView = /FBAN|FBAV|Messenger|Instagram|Line\/|MicroMessenger|TikTok|Snapchat|Wv|WebView/i.test(ua);
+  const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
+
   const triggerDownload = (url: string, downloadName: string) => {
     const link = document.createElement('a');
     link.download = downloadName;
     link.href = url;
+    link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
-      document.body.removeChild(link);
-    }, 400);
+      if (link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
+    }, 1500);
   };
 
   return new Promise((resolve, reject) => {
@@ -1217,22 +1228,29 @@ export async function exportSvgElementToPng(
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        if (canvas.toBlob) {
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const blobUrl = URL.createObjectURL(blob);
-              triggerDownload(blobUrl, filename);
-              setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-              resolve(blobUrl);
-            } else {
-              const dataUrl = canvas.toDataURL('image/png');
-              triggerDownload(dataUrl, filename);
-              resolve(dataUrl);
-            }
-          }, 'image/png');
+        const dataUrl = canvas.toDataURL('image/png');
+
+        // On desktop browsers, trigger standard file download immediately.
+        // On mobile / in-app browsers (Messenger, Instagram, LINE, etc.), return dataUrl
+        // so the caller can invoke native Web Share or open the Save Image modal.
+        if (!isInAppWebView && !isMobileDevice) {
+          if (canvas.toBlob) {
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const blobUrl = URL.createObjectURL(blob);
+                triggerDownload(blobUrl, filename);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+                resolve(dataUrl);
+              } else {
+                triggerDownload(dataUrl, filename);
+                resolve(dataUrl);
+              }
+            }, 'image/png');
+          } else {
+            triggerDownload(dataUrl, filename);
+            resolve(dataUrl);
+          }
         } else {
-          const dataUrl = canvas.toDataURL('image/png');
-          triggerDownload(dataUrl, filename);
           resolve(dataUrl);
         }
       } catch (err) {
@@ -1241,7 +1259,7 @@ export async function exportSvgElementToPng(
           const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
           const svgUrl = URL.createObjectURL(svgBlob);
           triggerDownload(svgUrl, filename.replace(/\.png$/i, '.svg'));
-          setTimeout(() => URL.revokeObjectURL(svgUrl), 1000);
+          setTimeout(() => URL.revokeObjectURL(svgUrl), 10000);
           resolve(svgUrl);
         } catch (svgErr) {
           reject(svgErr);
@@ -1255,9 +1273,9 @@ export async function exportSvgElementToPng(
         const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
         const svgUrl = URL.createObjectURL(svgBlob);
         triggerDownload(svgUrl, filename.replace(/\.png$/i, '.svg'));
-        setTimeout(() => URL.revokeObjectURL(svgUrl), 1000);
+        setTimeout(() => URL.revokeObjectURL(svgUrl), 10000);
         resolve(svgUrl);
-      } catch (svgErr) {
+      } catch {
         reject(err);
       }
     };
@@ -1468,20 +1486,66 @@ function takeSnapshot(state: BouquetStoreState): BouquetSnapshot {
   };
 }
 
+function getInitialStoreState() {
+  if (typeof window !== 'undefined') {
+    try {
+      const hash = window.location.hash;
+      const shared = decodeBouquetFromHash(hash);
+      if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
+        return {
+          items: shared.items,
+          wrapStyle: shared.wrapStyle || ('kraft' as WrapStyle),
+          lastNonPlainWrapStyle:
+            shared.wrapStyle && shared.wrapStyle !== 'plain'
+              ? shared.wrapStyle
+              : ('kraft' as Exclude<WrapStyle, 'plain'>),
+          wrapColor: shared.wrapColor || '#d6b38e',
+          ribbonColor: shared.ribbonColor || '#e11d48',
+          card: {
+            to: shared.card?.to ?? 'My Dearest',
+            from: shared.card?.from ?? 'Yours Always',
+            message:
+              shared.card?.message ??
+              'Every petal in this bouquet holds a reason why you make my world brighter.',
+            visibleOnStage: shared.card?.visibleOnStage ?? true,
+            theme: shared.card?.theme ?? 'cream'
+          },
+          selectedId: isGiftShareHash(hash)
+            ? null
+            : shared.items[shared.items.length - 1]?.id || null
+        };
+      }
+    } catch {
+      // Fall back to default
+    }
+  }
+  return {
+    items: INITIAL_ITEMS,
+    wrapStyle: 'kraft' as WrapStyle,
+    lastNonPlainWrapStyle: 'kraft' as Exclude<WrapStyle, 'plain'>,
+    wrapColor: '#d6b38e',
+    ribbonColor: '#e11d48',
+    card: {
+      to: 'My Dearest',
+      from: 'Yours Always',
+      message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
+      visibleOnStage: true,
+      theme: 'cream' as const
+    },
+    selectedId: 'f-14' as string | null
+  };
+}
+
+const INITIAL_STORE_STATE = getInitialStoreState();
+
 export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
-  items: INITIAL_ITEMS,
-  wrapStyle: 'kraft',
-  lastNonPlainWrapStyle: 'kraft',
-  wrapColor: '#d6b38e',
-  ribbonColor: '#e11d48',
-  card: {
-    to: 'My Dearest',
-    from: 'Yours Always',
-    message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
-    visibleOnStage: true,
-    theme: 'cream'
-  },
-  selectedId: 'f-14',
+  items: INITIAL_STORE_STATE.items,
+  wrapStyle: INITIAL_STORE_STATE.wrapStyle,
+  lastNonPlainWrapStyle: INITIAL_STORE_STATE.lastNonPlainWrapStyle,
+  wrapColor: INITIAL_STORE_STATE.wrapColor,
+  ribbonColor: INITIAL_STORE_STATE.ribbonColor,
+  card: INITIAL_STORE_STATE.card,
+  selectedId: INITIAL_STORE_STATE.selectedId,
   past: [],
   future: [],
 
@@ -4555,15 +4619,19 @@ export default function App() {
   const [drawerState, setDrawerState] = useState<'collapsed' | 'peek' | 'expanded'>('peek');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInspectorSidebarOpen, setIsInspectorSidebarOpen] = useState(true);
+  const initialGiftMode = typeof window !== 'undefined' && isGiftShareHash(window.location.hash);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [isGiftView, setIsGiftView] = useState(false);
-  const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState(false);
-  const [bloomedCount, setBloomedCount] = useState<number | undefined>(undefined);
-  const [showGiftCardReveal, setShowGiftCardReveal] = useState(true);
+  const [isGiftView, setIsGiftView] = useState<boolean>(initialGiftMode);
+  const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState<boolean>(initialGiftMode);
+  const [bloomedCount, setBloomedCount] = useState<number | undefined>(
+    initialGiftMode ? 0 : undefined
+  );
+  const [showGiftCardReveal, setShowGiftCardReveal] = useState<boolean>(!initialGiftMode);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
   const [letterTypedChars, setLetterTypedChars] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [savedPngDataUrl, setSavedPngDataUrl] = useState<string | null>(null);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving'>('saved');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -4741,7 +4809,11 @@ export default function App() {
     }, 130);
   }, []);
 
-  const startGiftBloomAnimation = useCallback((totalItems: number, fromEditorPreview = true) => {
+  const startGiftBloomAnimation = useCallback((_totalItems: number, fromEditorPreview = true) => {
+    if (bloomIntervalRef.current !== null) {
+      clearInterval(bloomIntervalRef.current);
+      bloomIntervalRef.current = null;
+    }
     selectItem(null);
     setMobilePopover(null);
     setIsPreviewMode(fromEditorPreview);
@@ -4753,9 +4825,7 @@ export default function App() {
     musicBox.start();
     musicBox.resumeIfBlocked();
     setIsMusicPlaying(true);
-    // Also start blooming gently in the background or when unwrapped
-    runStemBloomSequence(totalItems);
-  }, [selectItem, runStemBloomSequence]);
+  }, [selectItem]);
 
   const handleUnwrapGiftEntrance = useCallback(() => {
     musicBox.start();
@@ -4916,9 +4986,38 @@ export default function App() {
     }
 
     try {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+      const isInAppWebView = /FBAN|FBAV|Messenger|Instagram|Line\/|MicroMessenger|TikTok|Snapchat|Wv|WebView/i.test(ua);
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
+
       triggerToast('Generating high-res image...');
-      await exportSvgElementToPng(targetSvg, 'bouquet.png');
-      triggerToast('Saved image');
+      const exportedUrl = await exportSvgElementToPng(targetSvg, 'bouquet.png');
+
+      if (isInAppWebView || isMobileDevice) {
+        // Always show the Save Image preview sheet on mobile / in-app browsers (Messenger, Instagram, etc.)
+        // so the user can either tap Share/Save or press-and-hold the PNG to save to Photos.
+        if (exportedUrl.startsWith('data:image/')) {
+          setSavedPngDataUrl(exportedUrl);
+        }
+        // If native file sharing is supported outside strict in-app WebViews, also offer native share sheet
+        if (!isInAppWebView && navigator.share && navigator.canShare && exportedUrl.startsWith('data:image/png')) {
+          try {
+            const res = await fetch(exportedUrl);
+            const blob = await res.blob();
+            const file = new File([blob], 'bouquet.png', { type: 'image/png' });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: 'Bouquet'
+              });
+            }
+          } catch {
+            // User dismissed share sheet or WebView blocked share; modal remains open for easy saving
+          }
+        }
+      } else {
+        triggerToast('Saved image');
+      }
     } catch (err) {
       console.error('Failed to export image:', err);
       triggerToast('Could not export image.');
@@ -5454,6 +5553,7 @@ export default function App() {
           {/* ===================================================================
               GIFT ENTRANCE OVERLAY
               Minimal editorial keepsake card with clear hierarchy and zero clutter.
+              Opaque background prevents any glimpse of the stage before opening.
               =================================================================== */}
           {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
             <div
@@ -5461,8 +5561,8 @@ export default function App() {
               aria-modal="true"
               aria-label="Bouquet Gift Entrance"
               onClick={handleUnwrapGiftEntrance}
-              className={`absolute inset-0 z-40 flex items-center justify-center p-4 backdrop-blur-md transition-opacity duration-300 cursor-pointer ${
-                isDarkMode ? 'bg-[#141211]/85' : 'bg-[#FAFAF8]/85'
+              className={`absolute inset-0 z-40 flex items-center justify-center p-4 transition-opacity duration-300 cursor-pointer ${
+                isDarkMode ? 'bg-[#141211]' : 'bg-[#FAFAF8]'
               }`}
             >
               <div
@@ -5548,7 +5648,11 @@ export default function App() {
           {/* Interactive SVG Bouquet Stage (Always 100% height, zero layout shift) */}
           <div
             className={`flex-1 w-full h-full min-h-0 flex items-center justify-center relative touch-none ${
-              (isGiftView || isPreviewMode) && !isGiftEntranceOpen ? 'gift-stage-entrance' : ''
+              (isGiftView || isPreviewMode) && isGiftEntranceOpen
+                ? 'opacity-0 pointer-events-none'
+                : (isGiftView || isPreviewMode) && !isGiftEntranceOpen
+                ? 'gift-stage-entrance'
+                : ''
             }`}
           >
             <BouquetStage
@@ -7296,6 +7400,91 @@ export default function App() {
                   Save PNG
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE / IN-APP BROWSER (MESSENGER, INSTAGRAM, LINE) PNG SAVE MODAL */}
+      {savedPngDataUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Save Bouquet Image"
+          onClick={() => setSavedPngDataUrl(null)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-2xl p-4 sm:p-5 shadow-2xl border relative text-center ${
+              isDarkMode
+                ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+                : 'bg-white border-stone-200 text-[#1C1917]'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setSavedPngDataUrl(null)}
+              aria-label="Close save image dialog"
+              className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3
+              className="text-lg font-medium tracking-tight"
+              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+            >
+              Save Bouquet Image
+            </h3>
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 mb-3">
+              Press and hold the image to save to Photos
+            </p>
+
+            <div className="rounded-xl overflow-hidden border border-stone-200/80 dark:border-stone-800 bg-[#FAFAF8] dark:bg-[#141211] flex items-center justify-center p-2">
+              <img
+                src={savedPngDataUrl}
+                alt="Bouquet Keepsake PNG"
+                className="max-h-[52vh] w-auto object-contain rounded-lg select-auto"
+              />
+            </div>
+
+            <div className="mt-4 flex items-center gap-2">
+              <a
+                href={savedPngDataUrl}
+                download="bouquet.png"
+                onClick={async (e) => {
+                  if (navigator.share && navigator.canShare) {
+                    try {
+                      e.preventDefault();
+                      const res = await fetch(savedPngDataUrl);
+                      const blob = await res.blob();
+                      const file = new File([blob], 'bouquet.png', { type: 'image/png' });
+                      if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'Bouquet' });
+                        return;
+                      }
+                    } catch {
+                      // Fall back to direct anchor download
+                    }
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Share / Save Image</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setSavedPngDataUrl(null)}
+                className={`py-2.5 px-4 rounded-full border text-xs font-medium transition ${
+                  isDarkMode
+                    ? 'border-stone-700 hover:bg-stone-800 text-stone-300'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700'
+                }`}
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
