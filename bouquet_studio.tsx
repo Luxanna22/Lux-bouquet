@@ -87,6 +87,7 @@ export type CardTheme =
 export interface CardThemePalette {
   id: CardTheme;
   label: string;
+  shapeName: string;
   bg: string;
   border: string;
   inner: string;
@@ -100,7 +101,8 @@ export interface CardThemePalette {
 export const CARD_THEME_CATALOG: CardThemePalette[] = [
   {
     id: 'cream',
-    label: 'Cream',
+    label: 'Stitched Tag',
+    shapeName: 'Classic Stitched Tag',
     bg: '#FEF3C7',
     border: '#D97706',
     inner: '#B4846C',
@@ -112,7 +114,8 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   },
   {
     id: 'blush',
-    label: 'Blush',
+    label: 'Scallop Lace',
+    shapeName: 'Scalloped Lace Card',
     bg: '#FCE7F3',
     border: '#F472B6',
     inner: '#E11D48',
@@ -124,7 +127,8 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   },
   {
     id: 'lavender',
-    label: 'Lavender',
+    label: 'Cathedral Arch',
+    shapeName: 'Arched Bell Note',
     bg: '#EDE9FE',
     border: '#A78BFA',
     inner: '#7C3AED',
@@ -136,7 +140,8 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   },
   {
     id: 'sage',
-    label: 'Sage',
+    label: 'Botanical Frame',
+    shapeName: 'Chamfered Leaf Plaque',
     bg: '#ECFDF5',
     border: '#6EE7B7',
     inner: '#059669',
@@ -148,7 +153,8 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   },
   {
     id: 'sky',
-    label: 'Porcelain',
+    label: 'Folded Scroll',
+    shapeName: 'Parchment Scroll Note',
     bg: '#F0F9FF',
     border: '#7DD3FC',
     inner: '#0284C7',
@@ -160,7 +166,8 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   },
   {
     id: 'terracotta',
-    label: 'Terracotta',
+    label: 'Dovetail Banner',
+    shapeName: 'Notched Pennant Tag',
     bg: '#FFF7ED',
     border: '#FDBA74',
     inner: '#C2410C',
@@ -172,7 +179,8 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   },
   {
     id: 'midnight',
-    label: 'Noir Gilt',
+    label: 'Starlit Plaque',
+    shapeName: 'Celestial Filigree Card',
     bg: '#1E293B',
     border: '#F59E0B',
     inner: '#FBBF24',
@@ -184,9 +192,95 @@ export const CARD_THEME_CATALOG: CardThemePalette[] = [
   }
 ];
 
-export function getCardThemePalette(theme: CardTheme): CardThemePalette {
-  return CARD_THEME_CATALOG.find((t) => t.id === theme) || CARD_THEME_CATALOG[0];
+export const CARD_COLOR_SWATCHES: string[] = [
+  '#FEF3C7',
+  '#FCE7F3',
+  '#EDE9FE',
+  '#ECFDF5',
+  '#F0F9FF',
+  '#FFF7ED',
+  '#FFFFFF',
+  '#FFE4E6',
+  '#F3E8FF',
+  '#FEF9C3',
+  '#E0E7FF',
+  '#F5F5F4',
+  '#1E293B',
+  '#292524'
+];
+
+function adjustHexBrightness(hex: string, delta: number): string {
+  const clean = hex.replace('#', '').trim();
+  if (clean.length !== 6) return hex;
+  const num = parseInt(clean, 16);
+  if (Number.isNaN(num)) return hex;
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  const r = clamp(((num >> 16) & 0xff) + delta);
+  const g = clamp(((num >> 8) & 0xff) + delta);
+  const b = clamp((num & 0xff) + delta);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
+
+export function getCardThemePalette(theme: CardTheme, customBg?: string): CardThemePalette {
+  const base = CARD_THEME_CATALOG.find((t) => t.id === theme) || CARD_THEME_CATALOG[0];
+  if (!customBg || !/^#[0-9A-Fa-f]{6}$/.test(customBg.trim())) {
+    return base;
+  }
+  const clean = customBg.trim();
+  const r = parseInt(clean.slice(1, 3), 16);
+  const g = parseInt(clean.slice(3, 5), 16);
+  const b = parseInt(clean.slice(5, 7), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+  if (lum < 0.42) {
+    return {
+      ...base,
+      bg: clean,
+      border: adjustHexBrightness(clean, 65),
+      inner: '#FBBF24',
+      seal: '#D97706',
+      title: '#FEF3C7',
+      body: '#F8FAFC',
+      sign: '#FDE68A',
+      rule: 'rgba(251, 191, 36, 0.2)'
+    };
+  }
+
+  return {
+    ...base,
+    bg: clean,
+    border: adjustHexBrightness(clean, -42),
+    inner: adjustHexBrightness(clean, -78),
+    seal: adjustHexBrightness(clean, -68),
+    title: '#1C1917',
+    body: '#292524',
+    sign: '#57534E',
+    rule: 'rgba(120, 113, 108, 0.16)'
+  };
+}
+
+export type RibbonStyle =
+  | 'satin'
+  | 'lace'
+  | 'corset'
+  | 'double'
+  | 'waxCord'
+  | 'organza'
+  | 'velvet';
+
+export const RIBBON_STYLE_CATALOG: {
+  id: RibbonStyle;
+  label: string;
+  subtitle: string;
+}[] = [
+  { id: 'satin', label: 'Satin Bow', subtitle: 'Classic tailored loops' },
+  { id: 'lace', label: 'Eyelet Lace', subtitle: 'Scalloped bridal lace & pearl' },
+  { id: 'corset', label: 'Corset Tie', subtitle: 'Criss-cross ribbon waist' },
+  { id: 'double', label: 'Couture Rosette', subtitle: 'Multi-loop Parisian bow' },
+  { id: 'waxCord', label: 'Twine & Seal', subtitle: 'Artisan cord & wax emblem' },
+  { id: 'organza', label: 'Sheer Chiffon', subtitle: 'Billowy translucent veil' },
+  { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp' }
+];
 
 export type typeWrapStyle =
   | 'kraft'
@@ -227,6 +321,7 @@ export interface BouquetItem {
   flipX: boolean;
   petalColor: string;
   centerColor: string;
+  stemLength?: number; // 0.15 .. 1.35 (1.0 default)
   locked?: boolean;
   hidden?: boolean;
 }
@@ -237,6 +332,7 @@ export interface GreetingCardData {
   message: string;
   visibleOnStage: boolean;
   theme: CardTheme;
+  customBg?: string;
   locked?: boolean;
 }
 
@@ -245,6 +341,7 @@ export interface BouquetSnapshot {
   wrapStyle: typeWrapStyle;
   wrapColor: string;
   ribbonColor: string;
+  ribbonStyle?: RibbonStyle;
   card: GreetingCardData;
 }
 
@@ -1808,6 +1905,16 @@ const SHARE_WRAP_STYLES: typeWrapStyle[] = [
   'plain'
 ];
 
+const SHARE_RIBBON_STYLES: RibbonStyle[] = [
+  'satin',
+  'lace',
+  'corset',
+  'double',
+  'waxCord',
+  'organza',
+  'velvet'
+];
+
 const SHARE_CARD_THEMES: CardTheme[] = [
   'cream',
   'blush',
@@ -1864,6 +1971,7 @@ function itemsMatchPreset(a: BouquetItem[], b: BouquetItem[]): boolean {
       Math.round(x.y) !== Math.round(y.y) ||
       Math.round(x.scale * 100) !== Math.round(y.scale * 100) ||
       Math.round(x.rotation) !== Math.round(y.rotation) ||
+      Math.round((x.stemLength ?? 1) * 100) !== Math.round((y.stemLength ?? 1) * 100) ||
       Boolean(x.flipX) !== Boolean(y.flipX) ||
       Boolean(x.hidden) !== Boolean(y.hidden) ||
       x.petalColor.toLowerCase() !== y.petalColor.toLowerCase() ||
@@ -1914,7 +2022,7 @@ export function getShortCodeFromPathname(pathnameOverride?: string): string | nu
 }
 
 export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift = true): string {
-  // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex> (trimmed trailing ~)
+  // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex>~<optRibbonStyleIdx> (trimmed trailing ~)
   const wIdx = Math.max(0, SHARE_WRAP_STYLES.indexOf(snapshot.wrapStyle)).toString(36);
   const defaultWrapHex =
     WRAPPER_CATALOG.find((w) => w.id === snapshot.wrapStyle)?.defaultHex.toLowerCase() || '';
@@ -1926,9 +2034,11 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
     snapshot.ribbonColor.toLowerCase() === '#e11d48'
       ? ''
       : snapshot.ribbonColor.replace('#', '').toLowerCase();
-  const headerPart = `${wIdx}~${wHex}~${rHex}`.replace(/~+$/, '');
+  const rStyleIdx = Math.max(0, SHARE_RIBBON_STYLES.indexOf(snapshot.ribbonStyle || 'satin'));
+  const rStyleStr = rStyleIdx === 0 ? '' : rStyleIdx.toString(36);
+  const headerPart = `${wIdx}~${wHex}~${rHex}~${rStyleStr}`.replace(/~+$/, '');
 
-  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64> (trimmed trailing ~!)
+  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>~<optCustomBgHex> (trimmed trailing ~!)
   const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
   const cVis = snapshot.card.visibleOnStage ? 1 : 0;
   const cMeta = (cTheme * 2 + cVis).toString(36);
@@ -1937,7 +2047,10 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
     snapshot.card.from === DEFAULT_SHARE_CARD_FROM ? '!' : toBase64Url(snapshot.card.from);
   const cMsg =
     snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
-  const cardPart = `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
+  const cBg = snapshot.card.customBg ? snapshot.card.customBg.replace('#', '').toLowerCase() : '';
+  const cardPart = cBg
+    ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}`
+    : `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
 
   // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
   //    or 8 chars per stem with 1-char type code (0..23 in base36) and flags in extraFlags
@@ -1976,14 +2089,17 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
         const isDefCenter =
           meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
         const extraFlags = (item.flipX ? 1 : 0) | (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
+        const stemLen = item.stemLength ?? 1;
+        const isDefStemLen = Math.abs(stemLen - 1) < 0.02;
+        const stemLenStr = isDefStemLen ? '' : Math.round(clampNum(stemLen, 0.15, 1.35) * 20).toString(36);
 
         const base = `${typeChar}${xStr}${yStr}${sStr}${rStr}`;
-        if (isDefPetal && isDefCenter && extraFlags === 0) {
+        if (isDefPetal && isDefCenter && extraFlags === 0 && isDefStemLen) {
           return base;
         }
         const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
         const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
-        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}`.replace(/~+$/, '');
+        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}`.replace(/~+$/, '');
       })
       .join('.');
   }
@@ -2071,14 +2187,15 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       if (parts.length < 2) return null;
 
       const [headerPart, cardPart, ...stemParts] = parts;
-      const [wIdxStr = '0', wHex = '', rHex = ''] = headerPart.split('~');
+      const [wIdxStr = '0', wHex = '', rHex = '', rStyleStr = ''] = headerPart.split('~');
       const wrapStyle = SHARE_WRAP_STYLES[parseInt(wIdxStr, 36)] || 'kraft';
       const defaultWrapHex =
         WRAPPER_CATALOG.find((w) => w.id === wrapStyle)?.defaultHex || '#C8B9AE';
       const wrapColor = wHex ? `#${wHex}` : defaultWrapHex;
       const ribbonColor = rHex ? `#${rHex}` : '#e11d48';
+      const ribbonStyle = rStyleStr ? SHARE_RIBBON_STYLES[parseInt(rStyleStr, 36)] || 'satin' : 'satin';
 
-      const [cMetaStr = '1', cToB64 = '!', cFromB64 = '!', cMsgB64 = '!'] = cardPart.split('~');
+      const [cMetaStr = '1', cToB64 = '!', cFromB64 = '!', cMsgB64 = '!', cBgHex = ''] = cardPart.split('~');
       const cMeta = parseInt(cMetaStr, 36) || 0;
       const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'cream';
       const visibleOnStage = cMeta % 2 === 1;
@@ -2086,6 +2203,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const from = !cFromB64 || cFromB64 === '!' ? DEFAULT_SHARE_CARD_FROM : fromBase64Url(cFromB64);
       const message =
         !cMsgB64 || cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
+      const customBg = cBgHex && /^[0-9a-fA-F]{6}$/.test(cBgHex) ? `#${cBgHex}` : undefined;
 
       let items: BouquetItem[] = [];
       if (stemParts.length === 1 && stemParts[0].startsWith('@')) {
@@ -2099,7 +2217,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         items = stemParts
           .filter((sp) => sp.length >= 8)
           .map((sp, idx) => {
-            const [base, flagsStr = '0', pHex = '', cHex = ''] = sp.split('~');
+            const [base, flagsStr = '0', pHex = '', cHex = '', stemLenStr = ''] = sp.split('~');
             const rawCode = parseInt(base[0], 36) || 0;
             const type = SHARE_FLOWER_TYPES[rawCode] || 'rose';
             const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
@@ -2110,6 +2228,9 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
             const rInt = parseInt(base.slice(6, 8), 36);
             const rotation = rInt * 2 - 180;
             const flags = parseInt(flagsStr, 36) || 0;
+            const stemLength = stemLenStr
+              ? Number((parseInt(stemLenStr, 36) / 20).toFixed(2))
+              : 1;
 
             return {
               id: `s-${idx}-${type}`,
@@ -2122,7 +2243,8 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               locked: Boolean(flags & 2),
               hidden: Boolean(flags & 4),
               petalColor: pHex ? `#${pHex}` : meta.defaultPetalColor,
-              centerColor: cHex ? `#${cHex}` : meta.defaultCenterColor
+              centerColor: cHex ? `#${cHex}` : meta.defaultCenterColor,
+              stemLength: Number.isFinite(stemLength) ? stemLength : 1
             };
           });
       }
@@ -2132,12 +2254,14 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         wrapStyle,
         wrapColor,
         ribbonColor,
+        ribbonStyle,
         card: {
           to,
           from,
           message,
           visibleOnStage,
-          theme
+          theme,
+          customBg
         }
       };
     }
@@ -2576,6 +2700,7 @@ interface BouquetStoreState extends BouquetSnapshot {
   setWrapStyle: (style: typeWrapStyle) => void;
   setWrapColor: (color: string) => void;
   setRibbonColor: (color: string) => void;
+  setRibbonStyle: (style: RibbonStyle) => void;
   updateCard: (patch: Partial<GreetingCardData>) => void;
   randomizeBouquet: () => void;
   clearBouquet: () => void;
@@ -2590,6 +2715,7 @@ function takeSnapshot(state: BouquetStoreState): BouquetSnapshot {
     wrapStyle: state.wrapStyle,
     wrapColor: state.wrapColor,
     ribbonColor: state.ribbonColor,
+    ribbonStyle: state.ribbonStyle || 'satin',
     card: { ...state.card }
   };
 }
@@ -2609,6 +2735,7 @@ function getInitialStoreState() {
               : ('kraft' as Exclude<WrapStyle, 'plain'>),
           wrapColor: shared.wrapColor || '#d6b38e',
           ribbonColor: shared.ribbonColor || '#e11d48',
+          ribbonStyle: shared.ribbonStyle || ('satin' as RibbonStyle),
           card: {
             to: shared.card?.to ?? 'My Dearest',
             from: shared.card?.from ?? 'Yours Always',
@@ -2616,7 +2743,8 @@ function getInitialStoreState() {
               shared.card?.message ??
               'Every petal in this bouquet holds a reason why you make my world brighter.',
             visibleOnStage: shared.card?.visibleOnStage ?? true,
-            theme: shared.card?.theme ?? 'cream'
+            theme: shared.card?.theme ?? 'cream',
+            customBg: shared.card?.customBg
           },
           selectedId: isGiftShareHash(hash)
             ? null
@@ -2627,12 +2755,14 @@ function getInitialStoreState() {
       // Fall back to default
     }
   }
+  const isBrowser = typeof window !== 'undefined';
   return {
-    items: INITIAL_ITEMS,
+    items: isBrowser ? [] : INITIAL_ITEMS,
     wrapStyle: 'kraft' as WrapStyle,
     lastNonPlainWrapStyle: 'kraft' as Exclude<WrapStyle, 'plain'>,
     wrapColor: '#d6b38e',
     ribbonColor: '#e11d48',
+    ribbonStyle: 'satin' as RibbonStyle,
     card: {
       to: 'My Dearest',
       from: 'Yours Always',
@@ -2640,7 +2770,7 @@ function getInitialStoreState() {
       visibleOnStage: true,
       theme: 'cream' as const
     },
-    selectedId: 'f-14' as string | null
+    selectedId: isBrowser ? null : ('f-14' as string | null)
   };
 }
 
@@ -2652,6 +2782,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   lastNonPlainWrapStyle: INITIAL_STORE_STATE.lastNonPlainWrapStyle,
   wrapColor: INITIAL_STORE_STATE.wrapColor,
   ribbonColor: INITIAL_STORE_STATE.ribbonColor,
+  ribbonStyle: INITIAL_STORE_STATE.ribbonStyle,
   card: INITIAL_STORE_STATE.card,
   selectedId: INITIAL_STORE_STATE.selectedId,
   past: [],
@@ -2685,6 +2816,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       flipX: Math.random() > 0.5,
       petalColor: meta.defaultPetalColor,
       centerColor: meta.defaultCenterColor,
+      stemLength: 1,
       locked: false,
       hidden: false
     };
@@ -2963,6 +3095,15 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     }));
   },
 
+  setRibbonStyle: (ribbonStyle) => {
+    const snap = takeSnapshot(get());
+    set((state) => ({
+      past: [...state.past.slice(-29), snap],
+      future: [],
+      ribbonStyle
+    }));
+  },
+
   updateCard: (patch) => {
     set((state) => ({
       card: { ...state.card, ...patch }
@@ -3142,6 +3283,677 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
 // MODULE 5: components/BouquetStage.tsx — INTERACTIVE POINTER-EVENTS SVG STAGE
 // ============================================================================
 
+/**
+ * Universal Architectural Ribbon & Lace Renderer — 7 Unique Designs that adapt to every wrapper's waist
+ */
+const BouquetRibbonSVG: React.FC<{
+  ribbonStyle: RibbonStyle;
+  ribbonColor: string;
+  wrapStyle: typeWrapStyle;
+}> = ({ ribbonStyle, ribbonColor, wrapStyle }) => {
+  // Compute wrapper-specific waist Y and half-width so every ribbon/lace fits every wrapper
+  const waistY = wrapStyle === 'basket' ? 436 : wrapStyle === 'vase' ? 442 : 506;
+  const halfW =
+    wrapStyle === 'basket'
+      ? 144
+      : wrapStyle === 'vase'
+      ? 92
+      : wrapStyle === 'plain'
+      ? 36
+      : 80;
+  const leftX = 300 - halfW;
+  const rightX = 300 + halfW;
+  const tailBottomY = wrapStyle === 'basket' ? 536 : wrapStyle === 'vase' ? 534 : 622;
+
+  return (
+    <g className="pointer-events-none">
+      {/* 1. CLASSIC SATIN BOW (Sculpted satin loops, waist sash & dovetail streamers) */}
+      {ribbonStyle === 'satin' && (
+        <g>
+          {/* Flowing Dovetail Streamers */}
+          <path
+            d={`M295,${waistY + 2} Q272,${(waistY + tailBottomY) / 2} 252,${tailBottomY} L264,${tailBottomY - 10} L274,${tailBottomY} Q288,${(waistY + tailBottomY) / 2} 300,${waistY + 8} Z`}
+            fill={ribbonColor}
+          />
+          <path
+            d={`M305,${waistY + 2} Q328,${(waistY + tailBottomY) / 2} 348,${tailBottomY} L336,${tailBottomY - 10} L326,${tailBottomY} Q312,${(waistY + tailBottomY) / 2} 300,${waistY + 8} Z`}
+            fill={ribbonColor}
+            opacity="0.92"
+          />
+          {/* Contoured Satin Waist Sash */}
+          <path
+            d={`M${leftX},${waistY - 6} Q300,${waistY + 8} ${rightX},${waistY - 6} L${rightX - 2},${waistY + 9} Q300,${waistY + 23} ${leftX + 2},${waistY + 9} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1"
+            strokeOpacity="0.35"
+          />
+          {/* Left & Right Sculpted Satin Bow Loops */}
+          <path
+            d={`M296,${waistY} C244,${waistY - 36} 230,${waistY + 24} 288,${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.45"
+          />
+          <path
+            d={`M304,${waistY} C356,${waistY - 36} 370,${waistY + 24} 312,${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.45"
+          />
+          {/* Inner Loop Depth Crease */}
+          <path
+            d={`M288,${waistY + 1} C262,${waistY - 12} 258,${waistY + 10} 286,${waistY + 5}`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            opacity="0.45"
+          />
+          <path
+            d={`M312,${waistY + 1} C338,${waistY - 12} 342,${waistY + 10} 314,${waistY + 5}`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            opacity="0.45"
+          />
+          {/* Center Pillow Knot */}
+          <rect
+            x="289"
+            y={waistY - 11}
+            width="22"
+            height="23"
+            rx="7"
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.55"
+          />
+        </g>
+      )}
+
+      {/* 2. BRIDAL EYELET LACE (Scalloped pierced-eyelet lace band + floral lace bow + pearl brooch) */}
+      {ribbonStyle === 'lace' && (
+        <g>
+          {/* Scalloped Lace Tails */}
+          <path
+            d={`M294,${waistY + 4} Q272,${(waistY + tailBottomY) / 2} 254,${tailBottomY - 4} L274,${tailBottomY - 2} Q290,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.4"
+            strokeDasharray="3 2"
+          />
+          <path
+            d={`M306,${waistY + 4} Q328,${(waistY + tailBottomY) / 2} 346,${tailBottomY - 4} L326,${tailBottomY - 2} Q310,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.4"
+            strokeDasharray="3 2"
+          />
+          {/* Scalloped White Eyelet Trim Backing Waist Band */}
+          <path
+            d={`M${leftX - 2},${waistY - 11} Q300,${waistY + 5} ${rightX + 2},${waistY - 11} L${rightX},${waistY + 15} Q300,${waistY + 31} ${leftX},${waistY + 15} Z`}
+            fill="#FFFFFF"
+            stroke={ribbonColor}
+            strokeWidth="1.5"
+            strokeDasharray="4 3"
+          />
+          {/* Inner Colored Lace Waist Band */}
+          <path
+            d={`M${leftX + 2},${waistY - 5} Q300,${waistY + 9} ${rightX - 2},${waistY - 5} L${rightX - 4},${waistY + 9} Q300,${waistY + 23} ${leftX + 4},${waistY + 9} Z`}
+            fill={ribbonColor}
+          />
+          {/* Pierced Eyelet Lace Dots Along Waist */}
+          <g fill="#FFFFFF" opacity="0.88">
+            <circle cx={300 - halfW * 0.65} cy={waistY + 1} r="2.3" />
+            <circle cx={300 - halfW * 0.35} cy={waistY + 4} r="2.3" />
+            <circle cx={300 + halfW * 0.35} cy={waistY + 4} r="2.3" />
+            <circle cx={300 + halfW * 0.65} cy={waistY + 1} r="2.3" />
+          </g>
+          {/* Scalloped Lace Bow Loops */}
+          <path
+            d={`M296,${waistY + 1} C238,${waistY - 40} 226,${waistY + 28} 290,${waistY + 12} Z`}
+            fill={ribbonColor}
+            stroke="#FFFFFF"
+            strokeWidth="2"
+            strokeDasharray="4 2.5"
+          />
+          <path
+            d={`M304,${waistY + 1} C362,${waistY - 40} 374,${waistY + 28} 310,${waistY + 12} Z`}
+            fill={ribbonColor}
+            stroke="#FFFFFF"
+            strokeWidth="2"
+            strokeDasharray="4 2.5"
+          />
+          {/* Center Pearl & Gold Filigree Brooch */}
+          <circle cx="300" cy={waistY + 2} r="12" fill="#FFFDF9" stroke="#FDE68A" strokeWidth="2.2" />
+          <circle cx="300" cy={waistY + 2} r="7.5" fill={ribbonColor} opacity="0.25" />
+          <circle cx="297" cy={waistY - 1} r="3" fill="#FFFFFF" />
+        </g>
+      )}
+
+      {/* 3. CRISS-CROSS CORSET TIE (Architectural X-laced ribbon corset waist + lower bow & tassels) */}
+      {ribbonStyle === 'corset' && (
+        <g>
+          {/* Upper & Lower Horizontal Corset Bands */}
+          <path
+            d={`M${leftX + 6},${waistY - 22} Q300,${waistY - 10} ${rightX - 6},${waistY - 22}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="4.5"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${leftX + 2},${waistY + 18} Q300,${waistY + 30} ${rightX - 2},${waistY + 18}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="4.5"
+            strokeLinecap="round"
+          />
+          {/* Criss-Cross X-Lacing */}
+          <path
+            d={`M${300 - halfW * 0.55},${waistY - 18} L${300 + halfW * 0.52},${waistY + 2} M${300 + halfW * 0.55},${waistY - 18} L${300 - halfW * 0.52},${waistY + 2}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="3.8"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${300 - halfW * 0.52},${waistY + 2} L${300 + halfW * 0.48},${waistY + 21} M${300 + halfW * 0.52},${waistY + 2} L${300 - halfW * 0.48},${waistY + 21}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="3.8"
+            strokeLinecap="round"
+          />
+          {/* Pearl Eyelet Studs at Corset Anchor Points */}
+          <g fill="#FFFDF9" stroke={ribbonColor} strokeWidth="1.4">
+            <circle cx={300 - halfW * 0.55} cy={waistY - 18} r="3.5" />
+            <circle cx={300 + halfW * 0.55} cy={waistY - 18} r="3.5" />
+            <circle cx={300 - halfW * 0.52} cy={waistY + 2} r="3.5" />
+            <circle cx={300 + halfW * 0.52} cy={waistY + 2} r="3.5" />
+            <circle cx={300 - halfW * 0.48} cy={waistY + 21} r="3.5" />
+            <circle cx={300 + halfW * 0.48} cy={waistY + 21} r="3.5" />
+          </g>
+          {/* Petite Lower Tie Bow & Hanging Tassels */}
+          <path
+            d={`M297,${waistY + 24} C266,${waistY + 8} 262,${waistY + 42} 295,${waistY + 30} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1"
+          />
+          <path
+            d={`M303,${waistY + 24} C334,${waistY + 8} 338,${waistY + 42} 305,${waistY + 30} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1"
+          />
+          <path
+            d={`M296,${waistY + 26} Q284,${(waistY + tailBottomY) / 2 + 12} 276,${tailBottomY} M304,${waistY + 26} Q316,${(waistY + tailBottomY) / 2 + 12} 324,${tailBottomY}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="3.8"
+            strokeLinecap="round"
+          />
+          <circle cx="300" cy={waistY + 26} r="6.5" fill={ribbonColor} stroke="#ffffff" strokeWidth="1.2" />
+        </g>
+      )}
+
+      {/* 4. DOUBLE COUTURE ROSETTE (Multi-looped Parisian rosette bow + wide sash + twin tails) */}
+      {ribbonStyle === 'double' && (
+        <g>
+          {/* Four Layered Ribbon Tails */}
+          <path
+            d={`M292,${waistY + 4} L246,${tailBottomY - 6} L264,${tailBottomY} L298,${waistY + 10} Z`}
+            fill={ribbonColor}
+            opacity="0.88"
+          />
+          <path
+            d={`M308,${waistY + 4} L354,${tailBottomY - 6} L336,${tailBottomY} L302,${waistY + 10} Z`}
+            fill={ribbonColor}
+            opacity="0.88"
+          />
+          <path
+            d={`M296,${waistY + 6} L274,${tailBottomY} L288,${tailBottomY - 4} L300,${waistY + 12} Z`}
+            fill={ribbonColor}
+          />
+          <path
+            d={`M304,${waistY + 6} L326,${tailBottomY} L312,${tailBottomY - 4} L300,${waistY + 12} Z`}
+            fill={ribbonColor}
+          />
+          {/* Wide Belted Waist Sash */}
+          <path
+            d={`M${leftX},${waistY - 8} Q300,${waistY + 6} ${rightX},${waistY - 8} L${rightX - 2},${waistY + 10} Q300,${waistY + 24} ${leftX + 2},${waistY + 10} Z`}
+            fill={ribbonColor}
+          />
+          {/* Outer Large Bow Loops */}
+          <path
+            d={`M295,${waistY} C228,${waistY - 46} 218,${waistY + 34} 288,${waistY + 14} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.4"
+          />
+          <path
+            d={`M305,${waistY} C372,${waistY - 46} 382,${waistY + 34} 312,${waistY + 14} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.4"
+          />
+          {/* Upper Diagonal Rosette Loops */}
+          <path
+            d={`M296,${waistY - 3} C254,${waistY - 52} 248,${waistY - 6} 292,${waistY + 2} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.3"
+            strokeOpacity="0.55"
+          />
+          <path
+            d={`M304,${waistY - 3} C346,${waistY - 52} 352,${waistY - 6} 308,${waistY + 2} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.3"
+            strokeOpacity="0.55"
+          />
+          {/* Inner Petite Loops */}
+          <path
+            d={`M297,${waistY + 2} C266,${waistY - 18} 262,${waistY + 18} 293,${waistY + 8} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.65"
+          />
+          <path
+            d={`M303,${waistY + 2} C334,${waistY - 18} 338,${waistY + 18} 307,${waistY + 8} Z`}
+            fill={ribbonColor}
+            stroke="#ffffff"
+            strokeWidth="1.2"
+            strokeOpacity="0.65"
+          />
+          {/* Center Gathered Rosette Knot */}
+          <circle cx="300" cy={waistY + 2} r="11" fill={ribbonColor} stroke="#ffffff" strokeWidth="1.5" strokeOpacity="0.65" />
+        </g>
+      )}
+
+      {/* 5. TWINE & BOTANICAL WAX SEAL (Multi-strand artisan cord wrap + embossed wax medallion) */}
+      {ribbonStyle === 'waxCord' && (
+        <g>
+          {/* Triple Wrapped Artisan Cord Strands */}
+          <path
+            d={`M${leftX + 2},${waistY - 6} Q300,${waistY + 8} ${rightX - 2},${waistY - 6}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="4.2"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${leftX + 3},${waistY + 1} Q300,${waistY + 15} ${rightX - 3},${waistY + 1}`}
+            fill="none"
+            stroke="#FFFBEB"
+            strokeWidth="2.4"
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${leftX + 4},${waistY + 8} Q300,${waistY + 22} ${rightX - 4},${waistY + 8}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="4.2"
+            strokeLinecap="round"
+          />
+          {/* Delicate Twine Loops */}
+          <path
+            d={`M295,${waistY + 4} C254,${waistY - 22} 248,${waistY + 26} 292,${waistY + 11}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M305,${waistY + 4} C346,${waistY - 22} 352,${waistY + 26} 308,${waistY + 11}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+          {/* Trailing Cord Ends with Beaded Tips */}
+          <path
+            d={`M296,${waistY + 10} Q280,${(waistY + tailBottomY) / 2} 268,${tailBottomY - 6} M304,${waistY + 10} Q320,${(waistY + tailBottomY) / 2} 332,${tailBottomY - 6}`}
+            fill="none"
+            stroke={ribbonColor}
+            strokeWidth="3.6"
+            strokeLinecap="round"
+          />
+          <circle cx="268" cy={tailBottomY - 5} r="4.5" fill={ribbonColor} />
+          <circle cx="332" cy={tailBottomY - 5} r="4.5" fill={ribbonColor} />
+          {/* Embossed Botanical Wax Seal Medallion */}
+          <circle cx="300" cy={waistY + 6} r="16" fill={ribbonColor} stroke="#FFFBEB" strokeWidth="1.8" />
+          <circle cx="300" cy={waistY + 6} r="11.5" fill="none" stroke="#FFFBEB" strokeWidth="1" strokeDasharray="3 2" opacity="0.85" />
+          {/* Pressed Leaf Sprig Inside Wax Seal */}
+          <path
+            d={`M300,${waistY + 13} L300,${waistY - 1} M300,${waistY + 8} L295,${waistY + 4} M300,${waistY + 5} L305,${waistY + 1}`}
+            stroke="#FFFBEB"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </g>
+      )}
+
+      {/* 6. SHEER CHIFFON DRAPE (Translucent billowy organza butterfly loops + gossamer trailing veils) */}
+      {ribbonStyle === 'organza' && (
+        <g>
+          {/* Wide Billowy Gossamer Trailing Veils */}
+          <path
+            d={`M292,${waistY + 2} Q256,${(waistY + tailBottomY) / 2} 228,${tailBottomY} Q256,${tailBottomY + 6} 282,${tailBottomY - 4} Q294,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.48"
+            stroke="#FFFFFF"
+            strokeWidth="1.2"
+            strokeOpacity="0.65"
+          />
+          <path
+            d={`M308,${waistY + 2} Q344,${(waistY + tailBottomY) / 2} 372,${tailBottomY} Q344,${tailBottomY + 6} 318,${tailBottomY - 4} Q306,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.48"
+            stroke="#FFFFFF"
+            strokeWidth="1.2"
+            strokeOpacity="0.65"
+          />
+          {/* Sheer Pleated Organza Waist Wrap */}
+          <path
+            d={`M${leftX - 2},${waistY - 10} Q300,${waistY + 6} ${rightX + 2},${waistY - 10} L${rightX - 1},${waistY + 12} Q300,${waistY + 28} ${leftX + 1},${waistY + 12} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.62"
+            stroke="#FFFFFF"
+            strokeWidth="1.2"
+          />
+          {/* Oversized Translucent Butterfly Chiffon Wings */}
+          <path
+            d={`M296,${waistY + 1} C216,${waistY - 56} 206,${waistY + 42} 290,${waistY + 14} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.55"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          />
+          <path
+            d={`M304,${waistY + 1} C384,${waistY - 56} 394,${waistY + 42} 310,${waistY + 14} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.55"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          />
+          {/* Inner Shimmer Fold */}
+          <path
+            d={`M296,${waistY + 1} C244,${waistY - 28} 238,${waistY + 18} 290,${waistY + 8} Z`}
+            fill="#FFFFFF"
+            fillOpacity="0.32"
+          />
+          <path
+            d={`M304,${waistY + 1} C356,${waistY - 28} 362,${waistY + 18} 310,${waistY + 8} Z`}
+            fill="#FFFFFF"
+            fillOpacity="0.32"
+          />
+          {/* Gathered Silk Knot */}
+          <ellipse cx="300" cy={waistY + 2} rx="12" ry="10" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.4" />
+        </g>
+      )}
+
+      {/* 7. CAMEO VELVET SASH (Rich draped velvet band + gold-rimmed oval pearl cameo clasp & fringed ends) */}
+      {ribbonStyle === 'velvet' && (
+        <g>
+          {/* Draped Velvet Sash Ends with Gold Fringe Trim */}
+          <path
+            d={`M290,${waistY + 4} L256,${tailBottomY - 8} L282,${tailBottomY - 4} L300,${waistY + 10} Z`}
+            fill={ribbonColor}
+          />
+          <path
+            d={`M310,${waistY + 4} L344,${tailBottomY - 8} L318,${tailBottomY - 4} L300,${waistY + 10} Z`}
+            fill={ribbonColor}
+          />
+          {/* Gold Bullion Fringe on Sash Tips */}
+          <path
+            d={`M256,${tailBottomY - 8} L282,${tailBottomY - 4} M344,${tailBottomY - 8} L318,${tailBottomY - 4}`}
+            stroke="#FBBF24"
+            strokeWidth="3.5"
+            strokeDasharray="2.5 2"
+          />
+          {/* Rich Velvet Waist Belt with Gold Piping */}
+          <path
+            d={`M${leftX},${waistY - 8} Q300,${waistY + 6} ${rightX},${waistY - 8} L${rightX - 2},${waistY + 10} Q300,${waistY + 24} ${leftX + 2},${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#FDE68A"
+            strokeWidth="1.4"
+          />
+          {/* Tailored Velvet Bow Loops */}
+          <path
+            d={`M294,${waistY} C242,${waistY - 30} 236,${waistY + 22} 288,${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#FDE68A"
+            strokeWidth="1.3"
+          />
+          <path
+            d={`M306,${waistY} C358,${waistY - 30} 364,${waistY + 22} 312,${waistY + 10} Z`}
+            fill={ribbonColor}
+            stroke="#FDE68A"
+            strokeWidth="1.3"
+          />
+          {/* Gold-Rimmed Oval Pearl Cameo Brooch */}
+          <ellipse cx="300" cy={waistY + 2} rx="12" ry="15" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.5" />
+          <ellipse cx="300" cy={waistY + 2} rx="8.5" ry="11.5" fill="#FFFDF9" />
+          <circle cx="298" cy={waistY - 2} r="2.8" fill="#FFFFFF" />
+        </g>
+      )}
+    </g>
+  );
+};
+
+/**
+ * 7 Unique Architectural Greeting Card Tag Silhouettes for BouquetStage
+ */
+const BouquetCardShapeSVG: React.FC<{
+  theme: CardTheme;
+  palette: CardThemePalette;
+}> = ({ theme, palette }) => (
+  <g>
+    {/* 1. STITCHED TAG (Classic rounded rectangle with dashed tailor-stitch frame & wax seal) */}
+    {theme === 'cream' && (
+      <g>
+        <rect
+          x="-85"
+          y="-42"
+          width="175"
+          height="112"
+          rx="12"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.8"
+        />
+        <rect
+          x="-79"
+          y="-36"
+          width="163"
+          height="100"
+          rx="8"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="0.9"
+          strokeDasharray="3 3"
+          opacity="0.6"
+        />
+        <circle cx="-62" cy="-22" r="8.5" fill={palette.seal} />
+        <circle cx="-62" cy="-22" r="5.5" fill="none" stroke="#ffffff" strokeWidth="0.6" opacity="0.65" />
+      </g>
+    )}
+
+    {/* 2. SCALLOP LACE (Romantic scalloped bridal lace card with eyelet dots & pearl stud) */}
+    {theme === 'blush' && (
+      <g>
+        <rect
+          x="-87"
+          y="-44"
+          width="179"
+          height="116"
+          rx="16"
+          fill="#FFFFFF"
+          stroke={palette.border}
+          strokeWidth="2.2"
+          strokeDasharray="6 3"
+        />
+        <rect
+          x="-83"
+          y="-40"
+          width="171"
+          height="108"
+          rx="13"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.3"
+        />
+        <rect
+          x="-77"
+          y="-34"
+          width="159"
+          height="96"
+          rx="9"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="1"
+          strokeDasharray="2 3"
+          opacity="0.55"
+        />
+        <circle cx="-62" cy="-22" r="8" fill="#FFFDF9" stroke={palette.seal} strokeWidth="2" />
+        <circle cx="-62" cy="-22" r="3.5" fill={palette.seal} />
+      </g>
+    )}
+
+    {/* 3. CATHEDRAL ARCH (Domed arched top note with double architectural border & star emblem) */}
+    {theme === 'lavender' && (
+      <g>
+        <path
+          d="M-85,-22 Q-85,-46 -56,-46 L61,-46 Q90,-46 90,-22 L90,58 Q90,70 78,70 L-73,70 Q-85,70 -85,58 Z"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.9"
+        />
+        <path
+          d="M-79,-20 Q-79,-40 -54,-40 L59,-40 Q84,-40 84,-20 L84,54 Q84,64 74,64 L-69,64 Q-79,64 -79,54 Z"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="0.9"
+          opacity="0.55"
+        />
+        <circle cx="-62" cy="-22" r="8" fill={palette.seal} />
+        <path
+          d="M-62,-27 L-60.5,-23.5 L-57,-22 L-60.5,-20.5 L-62,-17 L-63.5,-20.5 L-67,-22 L-63.5,-23.5 Z"
+          fill="#FFFFFF"
+        />
+      </g>
+    )}
+
+    {/* 4. BOTANICAL FRAME (Chamfered octagon gallery plaque with corner leaf flourishes) */}
+    {theme === 'sage' && (
+      <g>
+        <polygon
+          points="-73,-42 78,-42 90,-30 90,58 78,70 -73,70 -85,58 -85,-30"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.9"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points="-69,-36 74,-36 84,-26 84,54 74,64 -69,64 -79,54 -79,-26"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="1"
+          opacity="0.55"
+        />
+        {/* Corner Botanical Flourishes */}
+        <path d="M70,-33 Q80,-33 80,-23 M-65,61 Q-75,61 -75,51" fill="none" stroke={palette.inner} strokeWidth="1.4" />
+        <circle cx="-62" cy="-22" r="8.5" fill={palette.seal} />
+        <path d="M-65,-19 Q-62,-26 -58,-24 Q-60,-18 -65,-19 Z" fill="#FFFFFF" opacity="0.85" />
+      </g>
+    )}
+
+    {/* 5. FOLDED SCROLL (Dog-eared folded parchment note with ribbon-slit header) */}
+    {theme === 'sky' && (
+      <g>
+        <path
+          d="M-85,-42 L68,-42 L90,-20 L90,62 Q90,70 82,70 L-77,70 Q-85,70 -85,62 Z"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        {/* Dog-Ear Folded Top-Right Corner */}
+        <path
+          d="M68,-42 L68,-20 L90,-20 Z"
+          fill={palette.border}
+          fillOpacity="0.35"
+          stroke={palette.border}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <line x1="-75" y1="-34" x2="58" y2="-34" stroke={palette.inner} strokeWidth="0.9" opacity="0.45" />
+        <line x1="-75" y1="62" x2="80" y2="62" stroke={palette.inner} strokeWidth="0.9" opacity="0.45" />
+        <circle cx="-62" cy="-22" r="8" fill={palette.seal} />
+        <circle cx="-62" cy="-22" r="4" fill="none" stroke="#FFFFFF" strokeWidth="1" />
+      </g>
+    )}
+
+    {/* 6. DOVETAIL BANNER (Swallowtail notched pennant tag with brass grommet) */}
+    {theme === 'terracotta' && (
+      <g>
+        <path
+          d="M-78,-42 L90,-42 L80,14 L90,70 L-78,70 L-88,14 Z"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.9"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M-73,-36 L83,-36 L75,14 L83,64 L-73,64 L-81,14 Z"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="0.9"
+          strokeDasharray="4 2"
+          opacity="0.55"
+        />
+        <circle cx="-62" cy="-22" r="8" fill={palette.seal} />
+        <circle cx="-62" cy="-22" r="3.5" fill={palette.bg} stroke="#FFFFFF" strokeWidth="1" />
+      </g>
+    )}
+
+    {/* 7. STARLIT PLAQUE (Couture scalloped-corner plaque with 4-point star filigree) */}
+    {theme === 'midnight' && (
+      <g>
+        <path
+          d="M-73,-42 L78,-42 A12,12 0 0,0 90,-30 L90,58 A12,12 0 0,0 78,70 L-73,70 A12,12 0 0,0 -85,58 L-85,-30 A12,12 0 0,0 -73,-42 Z"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="2"
+        />
+        <rect
+          x="-77"
+          y="-35"
+          width="159"
+          height="98"
+          rx="4"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="0.9"
+          opacity="0.65"
+        />
+        <circle cx="-62" cy="-22" r="8.5" fill={palette.seal} stroke={palette.inner} strokeWidth="1" />
+        <path
+          d="M-62,-28 L-60,-23.5 L-55.5,-22 L-60,-20.5 L-62,-16 L-64,-20.5 L-68.5,-22 L-64,-23.5 Z"
+          fill="#FEF3C7"
+        />
+      </g>
+    )}
+  </g>
+);
+
 interface BouquetStageProps {
   svgRef: React.RefObject<SVGSVGElement | null> | React.RefObject<SVGSVGElement> | any;
   isPreviewMode: boolean;
@@ -3165,6 +3977,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     wrapStyle,
     wrapColor,
     ribbonColor,
+    ribbonStyle,
     card,
     selectItem,
     updateItem,
@@ -3305,6 +4118,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   };
 
   const selectedItem = items.find((i) => i.id === selectedId) || null;
+  const wrapperBottomClipY =
+    wrapStyle === 'basket'
+      ? 596
+      : wrapStyle === 'vase'
+      ? 610
+      : wrapStyle === 'plain'
+      ? 650
+      : 618;
 
   return (
     <div className="relative w-full h-full flex items-center justify-center p-2 sm:p-4 select-none overflow-hidden">
@@ -3349,6 +4170,22 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1C1917" floodOpacity="0.06" />
           </filter>
+
+          {/* Wrapper Bottom Boundary Clip (Prevents stems from poking below wrapper/basket/vase) */}
+          <clipPath id="bouquetWrapperBoundsClip">
+            <rect x="0" y="0" width="600" height={wrapperBottomClipY} />
+          </clipPath>
+
+          {/* Per-Flower Adjustable Stem Length ClipPaths */}
+          {items.map((item) => {
+            const stemRatio = item.stemLength ?? 1;
+            const localBottomY = Math.round(18 + 145 * stemRatio);
+            return (
+              <clipPath key={`stem-clip-${item.id}`} id={`stem-clip-${item.id}`}>
+                <rect x="-170" y="-170" width="340" height={170 + localBottomY} />
+              </clipPath>
+            );
+          })}
         </defs>
 
         {/* 1. Arch Backdrop */}
@@ -3566,106 +4403,81 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           </g>
         )}
 
-        {/* Gather Stems at the Bouquet Tie Point */}
-        <g opacity="0.85">
-          <path d="M288,490 L262,615" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
-          <path d="M296,490 L284,625" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
-          <path d="M304,490 L314,625" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
-          <path d="M312,490 L338,615" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
-          <path d="M300,490 L300,630" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
+        {/* Gather Stems at the Bouquet Tie Point (Only shown for hand-tied or open-bottom sleeves) */}
+        {wrapStyle !== 'basket' && wrapStyle !== 'vase' && (
+          <g opacity="0.85" clipPath="url(#bouquetWrapperBoundsClip)">
+            <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
+            <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
+            <path d="M304,490 L315,616" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
+            <path d="M312,490 L336,612" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
+            <path d="M300,490 L300,618" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
+          </g>
+        )}
+
+        {/* 3. BOUQUET FLOWERS & FOLIAGE LAYER (Clipped to wrapper bounds & per-stem adjustable stemLength) */}
+        <g clipPath="url(#bouquetWrapperBoundsClip)">
+          {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+            if (item.hidden) return null;
+            const isSelected = !isPreviewMode && item.id === selectedId;
+            return (
+              <g
+                key={item.id}
+                transform={`translate(${item.x}, ${item.y}) rotate(${item.rotation}) scale(${
+                  item.flipX ? -item.scale : item.scale
+                }, ${item.scale})`}
+                onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                className={
+                  isPreviewMode
+                    ? 'pointer-events-none cursor-default'
+                    : item.locked
+                    ? 'cursor-pointer'
+                    : 'cursor-grab active:cursor-grabbing'
+                }
+                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : 'url(#softShadow)' }}
+              >
+                <g
+                  clipPath={`url(#stem-clip-${item.id})`}
+                  className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                >
+                  {/* Invisible generous hit target for easy touch tapping */}
+                  <circle cx="0" cy="-10" r="48" fill="transparent" />
+                  <FlowerRenderer
+                    type={item.type}
+                    petalColor={item.petalColor}
+                    centerColor={item.centerColor}
+                  />
+                </g>
+              </g>
+            );
+          })}
         </g>
 
-        {/* 3. BOUQUET FLOWERS & FOLIAGE LAYER */}
-        {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
-          if (item.hidden) return null;
-          const isSelected = !isPreviewMode && item.id === selectedId;
-          return (
-            <g
-              key={item.id}
-              transform={`translate(${item.x}, ${item.y}) rotate(${item.rotation}) scale(${
-                item.flipX ? -item.scale : item.scale
-              }, ${item.scale})`}
-              onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
-              className={
-                isPreviewMode
-                  ? 'pointer-events-none cursor-default'
-                  : item.locked
-                  ? 'cursor-pointer'
-                  : 'cursor-grab active:cursor-grabbing'
-              }
-              style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : 'url(#softShadow)' }}
-            >
-              <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
-                {/* Invisible generous hit target for easy touch tapping */}
-                <circle cx="0" cy="-10" r="48" fill="transparent" />
-                <FlowerRenderer
-                  type={item.type}
-                  petalColor={item.petalColor}
-                  centerColor={item.centerColor}
-                />
-              </g>
-            </g>
-          );
-        })}
-
-        {/* 4. FRONT WRAPPING LAYER & SIGNATURE RIBBON TIE (Overlaps Lower Stems) */}
+        {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems) */}
         <g filter="url(#softShadow)" className="pointer-events-none">
-          {/* STYLE 1 FRONT: ORIGAMI KRAFT (Mid-tier cuff + vertical pleated sleeve + white twine bow, ref #1) */}
+          {/* STYLE 1 FRONT: ORIGAMI KRAFT */}
           {wrapStyle === 'kraft' && (
             <g>
-              {/* Left & Right Mid-Tier Angled Side Flaps */}
               <path d="M168,390 L265,455 L242,518 L195,512 Z" fill="#B3A296" />
               <path d="M432,390 L335,455 L358,518 L405,512 Z" fill="#B3A296" />
-              {/* Center Mid-Tier Collar Cuff with Gently Curved Rim */}
               <path
                 d="M174,394 Q300,418 426,394 L388,512 L212,512 Z"
                 fill="#CEC0B5"
                 stroke="#DFD5CD"
                 strokeWidth="1.2"
               />
-              {/* Lower Structured Vertical-Pleated Sleeve Handle */}
               <path
                 d="M224,508 L376,508 L360,625 L240,625 Z"
                 fill="#C4B4A8"
               />
-              {/* Architectural Vertical Box Pleats in Lower Handle */}
               <path d="M258,510 L248,625 L270,625 L276,510 Z" fill="#AE9D90" opacity="0.85" />
               <path d="M342,510 L352,625 L330,625 L324,510 Z" fill="#AE9D90" opacity="0.85" />
               <line x1="300" y1="510" x2="300" y2="625" stroke="#B3A296" strokeWidth="1.5" />
-              {/* Twin White Twine Waist Bands & Delicate Double-Loop Knot */}
-              <path d="M218,505 Q300,514 382,505" fill="none" stroke="#F8FAFC" strokeWidth="4.5" strokeLinecap="round" />
-              <path d="M220,513 Q300,522 380,513" fill="none" stroke="#E2E8F0" strokeWidth="3.5" strokeLinecap="round" />
-              {/* Left & Right Petite Twine Loops */}
-              <path
-                d="M296,509 C264,492 260,524 294,514 Z"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="3.8"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M304,509 C336,492 340,524 306,514 Z"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="3.8"
-                strokeLinejoin="round"
-              />
-              {/* Hanging Twine Tails */}
-              <path
-                d="M296,513 Q282,568 276,622 M304,513 Q318,568 324,622"
-                fill="none"
-                stroke="#F8FAFC"
-                strokeWidth="3.2"
-                strokeLinecap="round"
-              />
-              <circle cx="300" cy="511" r="5" fill="#F1F5F9" stroke="#CBD5E1" strokeWidth="1.2" />
             </g>
           )}
 
-          {/* STYLE 2 FRONT: BUTTERFLY PETAL (Hugging side petal lapels + flared skirt + dainty crimson cord, ref #2) */}
+          {/* STYLE 2 FRONT: BUTTERFLY PETAL */}
           {wrapStyle === 'tissue' && (
             <g>
-              {/* Lower Softly Flared Skirt Base */}
               <path
                 d="M225,512 L375,512 L362,625 Q300,632 238,625 Z"
                 fill="#FFE0E7"
@@ -3676,62 +4488,28 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 strokeWidth="1.5"
                 opacity="0.65"
               />
-              {/* Left Hugging Petal Lapel */}
               <path
                 d="M150,362 Q232,415 318,518 L222,520 Q180,445 150,362 Z"
                 fill="#FFC6D3"
                 stroke="#FFE8EE"
                 strokeWidth="1.2"
               />
-              {/* Right Overlapping Hugging Petal Lapel */}
               <path
                 d="M450,362 Q368,415 282,518 L378,520 Q420,445 450,362 Z"
                 fill="#FFD4DF"
                 stroke="#FFF0F4"
                 strokeWidth="1.2"
               />
-              {/* Dainty Thin Cord Tie with Petite Center Bead Knot */}
-              <path
-                d="M222,512 Q300,526 378,512"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3.8"
-                strokeLinecap="round"
-              />
-              {/* Delicate Cord Loops & Long Straight Hanging Ends */}
-              <path
-                d="M298,517 C275,500 272,526 296,520"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3"
-              />
-              <path
-                d="M302,517 C325,500 328,526 304,520"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3"
-              />
-              <path
-                d="M297,519 L278,625 M303,519 L322,625"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3.2"
-                strokeLinecap="round"
-              />
-              <circle cx="300" cy="517" r="6" fill={ribbonColor} />
-              <circle cx="300" cy="509" r="3.5" fill={ribbonColor} />
             </g>
           )}
 
-          {/* STYLE 3 FRONT: TULIP ORGANZA (Curved overlapping cradle + flared skirt + lilac satin band, ref #3) */}
+          {/* STYLE 3 FRONT: TULIP ORGANZA */}
           {wrapStyle === 'chalice' && (
             <g>
-              {/* Lower Flared Organza Skirt */}
               <path
                 d="M218,505 L382,505 L370,625 Q300,632 230,625 Z"
                 fill="#E8D7F3"
               />
-              {/* Left & Right Sweeping Curved Front Cradle Folds */}
               <path
                 d="M155,375 Q245,425 345,495 L218,508 Q182,445 155,375 Z"
                 fill="#DFC9EE"
@@ -3742,42 +4520,23 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 fill="#EADEF6"
                 opacity="0.92"
               />
-              {/* Center Curved Tulip Pocket Overlay */}
               <path
                 d="M182,415 Q300,455 418,415 L380,508 L220,508 Z"
                 fill="#F3E9FA"
                 opacity="0.78"
               />
-              {/* Wide Satin Waist Band & Long Angled Ribbon Streamers */}
-              <path
-                d="M217,500 Q300,512 383,500 L381,514 Q300,526 219,514 Z"
-                fill="#C084FC"
-              />
-              <path
-                d="M292,514 L262,625 L274,625 L300,516 Z"
-                fill="#C084FC"
-                opacity="0.9"
-              />
-              <path
-                d="M308,514 L338,625 L326,625 L300,516 Z"
-                fill="#A855F7"
-                opacity="0.9"
-              />
-              <rect x="288" y="503" width="24" height="14" rx="5" fill="#A855F7" />
             </g>
           )}
 
-          {/* STYLE 4 FRONT: WICKER BASKET (Woven rattan basket body + braided collar rim + footed base) */}
+          {/* STYLE 4 FRONT: WICKER BASKET */}
           {wrapStyle === 'basket' && (
             <g>
-              {/* Tapered Woven Basket Body */}
               <path
                 d="M158,422 L442,422 L392,598 Q300,616 208,598 Z"
                 fill="#C89B6E"
                 stroke="#9C6F44"
                 strokeWidth="2.5"
               />
-              {/* Horizontal & Diagonal Woven Rattan Texture */}
               <path
                 d="M168,456 Q300,472 432,456 M178,490 Q300,506 422,490 M188,524 Q300,540 412,524 M198,558 Q300,574 402,558"
                 fill="none"
@@ -3793,12 +4552,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 strokeDasharray="9 7"
                 opacity="0.75"
               />
-              {/* Sturdy Footed Rattan Base */}
               <path
                 d="M202,594 Q300,612 398,594 L392,614 Q300,630 208,614 Z"
                 fill="#8B5E34"
               />
-              {/* Thick Braided Top Rim Collar */}
               <path
                 d="M146,416 Q300,444 454,416 L450,438 Q300,466 150,438 Z"
                 fill="#B08257"
@@ -3813,40 +4570,30 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 strokeLinecap="round"
                 strokeDasharray="12 8"
               />
-              {/* Decorative Ribbon Bow Tied on Basket Rim */}
-              <path d="M294,444 L268,525 L284,522 L300,448 Z" fill={ribbonColor} />
-              <path d="M306,444 L332,525 L316,522 L300,448 Z" fill={ribbonColor} />
-              <path d="M296,442 C256,416 246,464 290,452 Z" fill={ribbonColor} />
-              <path d="M304,442 C344,416 354,464 310,452 Z" fill={ribbonColor} />
-              <rect x="290" y="434" width="20" height="18" rx="6" fill={ribbonColor} />
             </g>
           )}
 
-          {/* STYLE 5 FRONT: PARISIAN SCRIPT (Rolled French newspaper cone with editorial script & raffia bow) */}
+          {/* STYLE 5 FRONT: PARISIAN SCRIPT */}
           {wrapStyle === 'vintage' && (
             <g>
-              {/* Left Rolled Parchment Cone Lapel */}
               <path
                 d="M126,282 L310,475 L252,618 L194,492 Z"
                 fill="#E5D7C3"
                 stroke="#CBB99F"
                 strokeWidth="1.5"
               />
-              {/* Right Overlapping Script Cone Lapel */}
               <path
                 d="M474,272 L288,482 L348,618 L408,485 Z"
                 fill="#F3ECE0"
                 stroke="#D5C5AE"
                 strokeWidth="1.5"
               />
-              {/* Center Lower Tapered Newspaper Cone */}
               <path
                 d="M214,432 L300,486 L388,426 L346,618 Q300,628 254,618 Z"
                 fill="#EFE6D5"
                 stroke="#D5C5AE"
                 strokeWidth="1.2"
               />
-              {/* Editorial Typography & Botanical Stamp Details */}
               <g stroke="#9E8C74" strokeWidth="1.4" opacity="0.6">
                 <line x1="335" y1="382" x2="412" y2="352" />
                 <line x1="328" y1="396" x2="405" y2="366" />
@@ -3856,30 +4603,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 <line x1="268" y1="561" x2="332" y2="561" />
                 <line x1="274" y1="574" x2="326" y2="574" />
               </g>
-              {/* Vintage Botanical Seal Stamp */}
               <circle cx="356" cy="436" r="14" fill="none" stroke="#B4846C" strokeWidth="1.4" strokeDasharray="3 2" opacity="0.75" />
               <circle cx="356" cy="436" r="9" fill="#B4846C" opacity="0.2" />
-              {/* Rustic Multi-Strand Raffia Bow */}
-              <path d="M236,496 Q300,510 364,496" fill="none" stroke="#B4846C" strokeWidth="7" strokeLinecap="round" />
-              <path d="M238,502 Q300,516 362,502" fill="none" stroke="#8C5E47" strokeWidth="3" strokeLinecap="round" />
-              <path d="M296,502 C248,472 242,526 292,510 Z" fill="none" stroke="#B4846C" strokeWidth="5" />
-              <path d="M304,502 C352,472 358,526 308,510 Z" fill="none" stroke="#B4846C" strokeWidth="5" />
-              <path d="M294,506 L258,615 M306,506 L342,615" stroke="#B4846C" strokeWidth="4" strokeLinecap="round" />
-              <circle cx="300" cy="503" r="8" fill="#9C6B53" />
             </g>
           )}
 
-          {/* STYLE 6 FRONT: EYELET LACE (Accordion-pleated blush skirt + scalloped lace collar + pearl satin bow) */}
+          {/* STYLE 6 FRONT: EYELET LACE */}
           {wrapStyle === 'lace' && (
             <g>
-              {/* Accordion-Pleated Blush & Ivory Cone Skirt */}
               <path
                 d="M172,380 L300,468 L428,380 L356,618 Q300,630 244,618 Z"
                 fill="#FCE7F3"
                 stroke="#F9A8D4"
                 strokeWidth="1.2"
               />
-              {/* Crisp Sunburst Accordion Pleat Lines */}
               <g stroke="#F472B6" strokeWidth="1.2" opacity="0.35">
                 <line x1="205" y1="405" x2="256" y2="618" />
                 <line x1="238" y1="428" x2="274" y2="620" />
@@ -3889,49 +4626,36 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 <line x1="362" y1="428" x2="326" y2="620" />
                 <line x1="395" y1="405" x2="344" y2="618" />
               </g>
-              {/* Scalloped White Eyelet-Lace Front Collar Overlay */}
               <path
                 d="M168,376 Q192,402 216,386 Q240,414 266,398 Q284,424 300,408 Q316,424 334,398 Q360,414 384,386 Q408,402 432,376 L402,458 Q350,482 300,472 Q250,482 198,458 Z"
                 fill="#FFFFFF"
                 stroke="#F9A8D4"
                 strokeWidth="1.5"
               />
-              {/* Satin Bow with Center Pearl Brooch */}
-              <path d="M295,505 Q270,565 248,622 L268,618 Q286,568 300,512 Z" fill={ribbonColor} />
-              <path d="M305,505 Q330,565 352,622 L332,618 Q314,568 300,512 Z" fill={ribbonColor} />
-              <rect x="246" y="492" width="108" height="18" rx="9" fill={ribbonColor} />
-              <path d="M296,501 C246,466 232,524 288,512 Z" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.2" />
-              <path d="M304,501 C354,466 368,524 312,512 Z" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.2" />
-              <circle cx="300" cy="501" r="11" fill="#FFF1F2" stroke="#F9A8D4" strokeWidth="2" />
-              <circle cx="297" cy="498" r="3.5" fill="#FFFFFF" />
             </g>
           )}
 
-          {/* STYLE 7 FRONT: STARLIT NOIR (Midnight couture lapels + gold-foil trim + constellations) */}
+          {/* STYLE 7 FRONT: STARLIT NOIR */}
           {wrapStyle === 'celestial' && (
             <g>
-              {/* Left Midnight Couture Lapel */}
               <path
                 d="M118,272 L300,472 L250,618 L190,488 Z"
                 fill="#1E293B"
                 stroke="#F59E0B"
                 strokeWidth="2"
               />
-              {/* Right Overlapping Midnight Couture Lapel */}
               <path
                 d="M482,272 L300,472 L350,618 L410,488 Z"
                 fill="#0F172A"
                 stroke="#FBBF24"
                 strokeWidth="2"
               />
-              {/* Center Lower Cone with Gold-Foil Border */}
               <path
                 d="M210,432 L300,482 L390,432 L346,616 Q300,628 254,616 Z"
                 fill="#1E293B"
                 stroke="#F59E0B"
                 strokeWidth="1.8"
               />
-              {/* Golden Constellation Lines & Four-Point Stars */}
               <path
                 d="M245,485 L275,525 L262,568 M355,475 L328,532 L342,575"
                 fill="none"
@@ -3949,20 +4673,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 <circle cx="342" cy="575" r="2.2" />
                 <circle cx="215" cy="395" r="2.5" />
               </g>
-              {/* Champagne-Gold Luxe Bow */}
-              <path d="M295,505 Q270,565 248,622 L268,618 Q286,568 300,512 Z" fill="#F59E0B" />
-              <path d="M305,505 Q330,565 352,622 L332,618 Q314,568 300,512 Z" fill="#D97706" />
-              <rect x="252" y="492" width="96" height="18" rx="9" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1" />
-              <path d="M296,501 C250,468 236,522 288,512 Z" fill="#FBBF24" stroke="#FEF08A" strokeWidth="1.2" />
-              <path d="M304,501 C350,468 364,522 312,512 Z" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.2" />
-              <rect x="289" y="490" width="22" height="22" rx="7" fill="#D97706" stroke="#FEF08A" strokeWidth="1.2" />
             </g>
           )}
 
-          {/* STYLE 8 FRONT: CERAMIC VASE (Sculptural fluted stoneware amphora with twin ear handles) */}
+          {/* STYLE 8 FRONT: CERAMIC VASE */}
           {wrapStyle === 'vase' && (
             <g>
-              {/* Twin Sculptural Amphora Side Ear Handles */}
               <path
                 d="M214,442 C152,432 152,522 204,528"
                 fill="none"
@@ -3984,20 +4700,17 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 strokeWidth="14"
                 strokeLinecap="round"
               />
-              {/* Main Sculptural Ceramic Amphora Body */}
               <path
                 d="M206,408 L394,408 C382,446 426,505 384,598 L368,622 L232,622 L216,598 C174,505 218,446 206,408 Z"
                 fill="#EAE0D5"
                 stroke="#CBB9A8"
                 strokeWidth="2"
               />
-              {/* Right-Side Soft Ceramic Shading */}
               <path
                 d="M300,408 L394,408 C382,446 426,505 384,598 L368,622 L300,622 Z"
                 fill="#D8C8B8"
                 opacity="0.45"
               />
-              {/* Vertical Architectural Fluted Ribs */}
               <g stroke="#C4B2A0" strokeWidth="2" fill="none" opacity="0.72">
                 <path d="M236,422 C215,485 222,555 246,612" />
                 <path d="M266,424 C254,485 258,555 272,614" />
@@ -4005,60 +4718,22 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 <path d="M334,424 C346,485 342,555 328,614" />
                 <path d="M364,422 C385,485 378,555 354,612" />
               </g>
-              {/* Flared Ceramic Lip Collar & Terracotta Foot Base */}
               <rect x="198" y="398" width="204" height="16" rx="8" fill="#F4EDE6" stroke="#CBB9A8" strokeWidth="1.8" />
               <rect x="226" y="612" width="148" height="14" rx="6" fill="#B4846C" />
-              {/* Neck Ribbon Tie & Botanical Wax Seal Charm */}
-              <path d="M208,438 Q300,452 392,438" fill="none" stroke={ribbonColor} strokeWidth="6" strokeLinecap="round" />
-              <path d="M296,445 L278,518 M304,445 L322,518" stroke={ribbonColor} strokeWidth="4" strokeLinecap="round" />
-              <circle cx="300" cy="446" r="11" fill={ribbonColor} stroke="#FFFBEB" strokeWidth="2" />
             </g>
           )}
 
-          {/* STYLE 9 FRONT: HAND-TIED PLAIN (Classic Satin Ribbon & Bow Around Natural Stems) */}
-          {wrapStyle === 'plain' && (
-            <g>
-              <path
-                d="M295,505 Q270,565 248,622 L268,618 Q286,568 300,512 Z"
-                fill={ribbonColor}
-              />
-              <path
-                d="M305,505 Q330,565 352,622 L332,618 Q314,568 300,512 Z"
-                fill={ribbonColor}
-              />
-              <rect x="268" y="492" width="64" height="20" rx="10" fill={ribbonColor} />
-              <path
-                d="M296,502 C250,468 236,522 288,512 Z"
-                fill={ribbonColor}
-                stroke="#ffffff"
-                strokeWidth="1.2"
-                strokeOpacity="0.35"
-              />
-              <path
-                d="M304,502 C350,468 364,522 312,512 Z"
-                fill={ribbonColor}
-                stroke="#ffffff"
-                strokeWidth="1.2"
-                strokeOpacity="0.35"
-              />
-              <rect
-                x="289"
-                y="490"
-                width="22"
-                height="24"
-                rx="8"
-                fill={ribbonColor}
-                stroke="#ffffff"
-                strokeWidth="1.2"
-                strokeOpacity="0.45"
-              />
-            </g>
-          )}
+          {/* UNIVERSAL RIBBON / LACE DESIGN (Fits every wrapper!) */}
+          <BouquetRibbonSVG
+            ribbonStyle={ribbonStyle || 'satin'}
+            ribbonColor={ribbonColor}
+            wrapStyle={wrapStyle}
+          />
         </g>
 
-        {/* 5. PINNED GREETING CARD TAG ON BOUQUET (Wiggles & opens letter modal ONLY on shared/preview action; scrollable to preserve card design & length) */}
+        {/* 5. PINNED GREETING CARD TAG ON BOUQUET (Clickable in editor to open Card Editor; wiggles & opens letter modal in preview/gift mode) */}
         {card.visibleOnStage && showCardInGiftView && (() => {
-          const cardPalette = getCardThemePalette(card.theme);
+          const cardPalette = getCardThemePalette(card.theme, card.customBg);
           return (
             <g transform="translate(425, 520) rotate(-6)" filter="url(#softShadow)">
               {/* Fastener cord pinned to bouquet */}
@@ -4070,13 +4745,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 opacity="0.85"
                 className={isPreviewMode ? 'pointer-events-none bouquet-cord-bloom' : 'pointer-events-none'}
               />
-              {/* Card Group: Wiggles ONLY in shared/preview mode, stays calm on main editing canvas */}
+              {/* Card Group: Clickable in BOTH editor mode (opens card editor) and preview/shared mode (opens letter modal) */}
               <g
-                role={isPreviewMode ? 'button' : undefined}
-                tabIndex={isPreviewMode ? 0 : undefined}
-                aria-label={isPreviewMode ? 'Open greeting card letter' : undefined}
+                role="button"
+                tabIndex={0}
+                aria-label={isPreviewMode ? 'Open greeting card letter' : 'Edit greeting card'}
                 onClick={(e) => {
-                  if (!isPreviewMode) return;
                   e.stopPropagation();
                   onCardTagClick?.();
                 }}
@@ -4084,40 +4758,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   e.stopPropagation();
                 }}
                 onKeyDown={(e) => {
-                  if (!isPreviewMode) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     e.stopPropagation();
                     onCardTagClick?.();
                   }
                 }}
-                className={isPreviewMode ? 'bouquet-card-wiggle cursor-pointer' : ''}
+                className={
+                  isPreviewMode
+                    ? 'bouquet-card-wiggle cursor-pointer'
+                    : 'cursor-pointer hover:brightness-[0.98] transition'
+                }
               >
-                <rect
-                  x="-85"
-                  y="-42"
-                  width="175"
-                  height="112"
-                  rx="12"
-                  fill={cardPalette.bg}
-                  stroke={cardPalette.border}
-                  strokeWidth="1.8"
-                />
-                <rect
-                  x="-79"
-                  y="-36"
-                  width="163"
-                  height="100"
-                  rx="8"
-                  fill="none"
-                  stroke={cardPalette.inner}
-                  strokeWidth="0.9"
-                  strokeDasharray="3 3"
-                  opacity="0.55"
-                />
-                {/* Wax Seal */}
-                <circle cx="-62" cy="-22" r="8.5" fill={cardPalette.seal} />
-                <circle cx="-62" cy="-22" r="5.5" fill="none" stroke="#ffffff" strokeWidth="0.6" opacity="0.6" />
+                <BouquetCardShapeSVG theme={card.theme} palette={cardPalette} />
+
                 <text
                   x="-46"
                   y="-18"
@@ -4126,7 +4780,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   fontWeight="600"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  To: {card.to.slice(0, 22)}
+                  {card.to.slice(0, 22)}
                 </text>
 
                 {/* Scrollable Message Area inside Fixed Card Dimensions (Preserves card design & length) */}
@@ -4138,9 +4792,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   data-text-color={cardPalette.body}
                 >
                   <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCardTagClick?.();
+                    }}
                     onPointerDown={(e) => e.stopPropagation()}
                     onWheel={(e) => e.stopPropagation()}
-                    className="w-full h-full overflow-y-auto pr-1 select-none"
+                    className="w-full h-full overflow-y-auto pr-1 select-none cursor-pointer"
                     style={{
                       color: cardPalette.body,
                       fontFamily: "'Cormorant Garamond', serif",
@@ -4165,7 +4823,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   fontStyle="italic"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  — {card.from.slice(0, 20)}
+                  {card.from ? `— ${card.from.slice(0, 20)}` : ''}
                 </text>
 
                 {/* Subtle Floating "Tap to open" Hint Badge — Shown ONLY in Shared/Preview Mode (Ignored on PNG export) */}
@@ -4632,25 +5290,194 @@ const MiniTemplateBouquetSVG: React.FC<{
   </svg>
 );
 
-const MiniRibbonBowSVG: React.FC<{ hex: string }> = ({ hex }) => (
-  <svg viewBox="0 0 64 64" className="w-10 h-10">
-    <path d="M29,33 Q24,44 20,52 L25,51 Q28,43 31,34 Z" fill={hex} />
-    <path d="M35,33 Q40,44 44,52 L39,51 Q36,43 33,34 Z" fill={hex} />
-    <path
-      d="M30,31 C16,20 14,38 28,34 Z"
-      fill={hex}
-      stroke="#cbd5e1"
-      strokeWidth="0.8"
-    />
-    <path
-      d="M34,31 C48,20 50,38 36,34 Z"
-      fill={hex}
-      stroke="#cbd5e1"
-      strokeWidth="0.8"
-    />
-    <rect x="28.5" y="27.5" width="7" height="8" rx="3" fill={hex} stroke="#ffffff" strokeWidth="0.8" />
-  </svg>
-);
+const MiniRibbonBowSVG: React.FC<{ hex: string; styleType?: RibbonStyle }> = ({
+  hex,
+  styleType = 'satin'
+}) => {
+  const isLight = ['#ffffff', '#fef3c7', '#fbcfe8', '#fde68a', '#e2e8f0'].includes(hex.toLowerCase());
+  const strokeCol = isLight ? '#94a3b8' : '#ffffff';
+
+  if (styleType === 'lace') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Scalloped floral lace collar & bow */}
+        <path
+          d="M14,28 Q20,23 26,28 Q32,23 38,28 Q44,23 50,28 L48,36 Q42,41 36,36 Q32,41 28,36 Q22,41 16,36 Z"
+          fill="#ffffff"
+          stroke={hex}
+          strokeWidth="1.3"
+        />
+        <circle cx="22" cy="32" r="1.4" fill={hex} />
+        <circle cx="32" cy="32" r="1.4" fill={hex} />
+        <circle cx="42" cy="32" r="1.4" fill={hex} />
+        <path d="M29,35 L23,52 M35,35 L41,52" stroke={hex} strokeWidth="2.4" strokeLinecap="round" strokeDasharray="2 1.5" />
+        <path d="M30,32 C18,22 16,38 29,35 Z" fill="#ffffff" stroke={hex} strokeWidth="1.3" />
+        <path d="M34,32 C46,22 48,38 35,35 Z" fill="#ffffff" stroke={hex} strokeWidth="1.3" />
+        <circle cx="32" cy="33" r="3.5" fill="#fffdf9" stroke={hex} strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'corset') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Crisscross corset lacing */}
+        <path d="M20,18 L44,27 M44,18 L20,27 M21,27 L43,36 M43,27 L21,36" stroke={hex} strokeWidth="2" strokeLinecap="round" />
+        <circle cx="20" cy="18" r="1.6" fill="#fef3c7" stroke={hex} strokeWidth="1" />
+        <circle cx="44" cy="18" r="1.6" fill="#fef3c7" stroke={hex} strokeWidth="1" />
+        <circle cx="20" cy="27" r="1.6" fill="#fef3c7" stroke={hex} strokeWidth="1" />
+        <circle cx="44" cy="27" r="1.6" fill="#fef3c7" stroke={hex} strokeWidth="1" />
+        <path d="M20,37 Q32,40 44,37" fill="none" stroke={hex} strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M30,38 C20,31 19,44 30,40 Z" fill={hex} />
+        <path d="M34,38 C44,31 45,44 34,40 Z" fill={hex} />
+        <path d="M30,40 L25,53 M34,40 L39,53" stroke={hex} strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'double') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Layered double butterfly rosette */}
+        <path d="M27,34 L18,52 L24,50 L30,35 Z" fill={hex} opacity="0.8" />
+        <path d="M37,34 L46,52 L40,50 L34,35 Z" fill={hex} opacity="0.8" />
+        <path d="M30,30 C11,14 9,40 28,35 Z" fill={hex} opacity="0.65" />
+        <path d="M34,30 C53,14 55,40 36,35 Z" fill={hex} opacity="0.65" />
+        <path d="M30,31 C17,21 16,37 29,34 Z" fill={hex} stroke={strokeCol} strokeWidth="0.8" />
+        <path d="M34,31 C47,21 48,37 35,34 Z" fill={hex} stroke={strokeCol} strokeWidth="0.8" />
+        <circle cx="32" cy="32" r="4" fill={hex} stroke="#fde68a" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'waxCord') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Botanical twine & embossed wax seal */}
+        <path d="M16,28 Q32,32 48,28 M17,32 Q32,36 47,32 M18,36 Q32,40 46,36" fill="none" stroke="#b4846c" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M29,36 L22,52 M35,36 L42,52" stroke="#b4846c" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="32" cy="34" r="7.5" fill={hex} stroke="#ffffff" strokeWidth="1" />
+        <circle cx="32" cy="34" r="5" fill="none" stroke="#fde68a" strokeWidth="0.9" strokeDasharray="2 1.5" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'organza') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Sheer floating organza sash */}
+        <path d="M28,33 C20,44 14,50 18,55 C23,52 27,44 31,34 Z" fill={hex} fillOpacity="0.45" stroke={hex} strokeWidth="1" />
+        <path d="M36,33 C44,44 50,50 46,55 C41,52 37,44 33,34 Z" fill={hex} fillOpacity="0.45" stroke={hex} strokeWidth="1" />
+        <path d="M30,30 C10,12 10,44 29,34 Z" fill={hex} fillOpacity="0.4" stroke={hex} strokeWidth="1.2" />
+        <path d="M34,30 C54,12 54,44 35,34 Z" fill={hex} fillOpacity="0.4" stroke={hex} strokeWidth="1.2" />
+        <ellipse cx="32" cy="32" rx="4" ry="3.5" fill={hex} fillOpacity="0.75" stroke="#ffffff" strokeWidth="0.9" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'velvet') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Velvet ribbon with pearl & cameo brooch */}
+        <rect x="16" y="28" width="32" height="6" rx="3" fill={hex} />
+        <path d="M28,34 L21,52 L27,50 L31,34 Z" fill={hex} />
+        <path d="M36,34 L43,52 L37,50 L33,34 Z" fill={hex} />
+        <ellipse cx="32" cy="31" rx="6.5" ry="7.5" fill="#fde68a" stroke="#b45309" strokeWidth="1" />
+        <ellipse cx="32" cy="31" rx="4.5" ry="5.5" fill="#fffdf9" />
+        <circle cx="32" cy="42" r="2.2" fill="#fffdf9" stroke="#cbd5e1" strokeWidth="0.7" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 64 64" className="w-10 h-10">
+      <path d="M29,33 Q24,44 20,52 L25,51 Q28,43 31,34 Z" fill={hex} />
+      <path d="M35,33 Q40,44 44,52 L39,51 Q36,43 33,34 Z" fill={hex} />
+      <path
+        d="M30,31 C16,20 14,38 28,34 Z"
+        fill={hex}
+        stroke="#cbd5e1"
+        strokeWidth="0.8"
+      />
+      <path
+        d="M34,31 C48,20 50,38 36,34 Z"
+        fill={hex}
+        stroke="#cbd5e1"
+        strokeWidth="0.8"
+      />
+      <rect x="28.5" y="27.5" width="7" height="8" rx="3" fill={hex} stroke="#ffffff" strokeWidth="0.8" />
+    </svg>
+  );
+};
+
+const MiniCardShapeSVG: React.FC<{
+  theme: CardTheme;
+  customBg?: string;
+}> = ({ theme, customBg }) => {
+  const pal = getCardThemePalette(theme, customBg);
+  return (
+    <svg viewBox="0 0 64 48" className="w-11 h-8">
+      {theme === 'blush' ? (
+        <path
+          d="M8,10 Q14,6 20,10 Q26,6 32,10 Q38,6 44,10 Q50,6 56,10 L56,38 Q50,42 44,38 Q38,42 32,38 Q26,42 20,38 Q14,42 8,38 Z"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      ) : theme === 'lavender' ? (
+        <path
+          d="M10,40 L10,20 C10,9 22,5 32,5 C42,5 54,9 54,20 L54,40 Z"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      ) : theme === 'sage' ? (
+        <polygon
+          points="14,7 50,7 57,14 57,34 50,41 14,41 7,34 7,14"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      ) : theme === 'sky' ? (
+        <path
+          d="M9,9 C20,6 44,6 55,9 C53,19 53,29 55,39 C44,42 20,42 9,39 C11,29 11,19 9,9 Z"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      ) : theme === 'terracotta' ? (
+        <polygon
+          points="7,9 57,9 51,24 57,39 7,39 13,24"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      ) : theme === 'midnight' ? (
+        <path
+          d="M14,8 L50,8 A6,6 0 0 0 56,14 L56,34 A6,6 0 0 0 50,40 L14,40 A6,6 0 0 0 8,34 L8,14 A6,6 0 0 0 14,8 Z"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      ) : (
+        <rect
+          x="7"
+          y="8"
+          width="50"
+          height="32"
+          rx="6"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+      )}
+      <circle cx="19" cy="20" r="3.5" fill={pal.seal} />
+      <line x1="26" y1="19" x2="46" y2="19" stroke={pal.title} strokeWidth="1.6" strokeLinecap="round" opacity="0.7" />
+      <line x1="16" y1="27" x2="48" y2="27" stroke={pal.body} strokeWidth="1.3" strokeLinecap="round" opacity="0.45" />
+      <line x1="16" y1="32" x2="39" y2="32" stroke={pal.body} strokeWidth="1.3" strokeLinecap="round" opacity="0.35" />
+    </svg>
+  );
+};
 
 // ============================================================================
 // MODULE 5C: components/LayerManagerPanel.tsx — DRAGGABLE & ORDERABLE LAYER MANAGER
@@ -4695,6 +5522,119 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
     currentY: number;
   } | null>(null);
 
+  const panelRootRef = useRef<HTMLDivElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const pointerClientYRef = useRef<number | null>(null);
+  const pointerStoreIdxRef = useRef<number | null>(null);
+  const itemsLengthRef = useRef<number>(items.length);
+  itemsLengthRef.current = items.length;
+
+  // Locate the nearest scrollable ancestor (either listScrollRef itself or the sidebar's overflow-y-auto container)
+  const getScrollContainer = useCallback((): HTMLElement | null => {
+    let el: HTMLElement | null = listScrollRef.current;
+    while (el) {
+      const style = window.getComputedStyle(el);
+      if (
+        (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+        el.scrollHeight > el.clientHeight + 2
+      ) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return listScrollRef.current;
+  }, []);
+
+  // Reorder based on which layer row is currently under clientY
+  const reorderAtClientY = useCallback(
+    (clientY: number) => {
+      const currentIdx = pointerStoreIdxRef.current;
+      if (currentIdx === null || !listScrollRef.current) return;
+      const rows = listScrollRef.current.querySelectorAll<HTMLElement>('[data-layer-store-index]');
+      let targetIdx: number | null = null;
+      rows.forEach((row) => {
+        const rect = row.getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+          const parsed = Number(row.getAttribute('data-layer-store-index'));
+          if (!Number.isNaN(parsed)) {
+            targetIdx = parsed;
+          }
+        }
+      });
+
+      // If pointer is above the first row or below the last row, clamp to frontmost/backmost
+      if (targetIdx === null && rows.length > 0) {
+        const firstRect = rows[0].getBoundingClientRect();
+        const lastRect = rows[rows.length - 1].getBoundingClientRect();
+        if (clientY < firstRect.top) {
+          targetIdx = itemsLengthRef.current - 1;
+        } else if (clientY > lastRect.bottom) {
+          targetIdx = 0;
+        }
+      }
+
+      if (targetIdx !== null && targetIdx !== currentIdx) {
+        reorderItems(currentIdx, targetIdx);
+        pointerStoreIdxRef.current = targetIdx;
+        setPointerDrag((prev) =>
+          prev
+            ? {
+                ...prev,
+                storeIdx: targetIdx!,
+                startY: clientY,
+                currentY: clientY
+              }
+            : null
+        );
+      }
+    },
+    [reorderItems]
+  );
+
+  // Continuous auto-scroll loop when dragging near the top or bottom edge of the layer list
+  useEffect(() => {
+    const isDragging = pointerDrag !== null || draggedStoreIdx !== null;
+    if (!isDragging) return;
+
+    let rafId: number;
+    const edgeThreshold = 58; // px from top/bottom edge of scroll container
+    const maxScrollSpeed = 9; // px per frame
+
+    const stepAutoScroll = () => {
+      const clientY = pointerClientYRef.current;
+      const scrollEl = getScrollContainer();
+      if (clientY !== null && scrollEl) {
+        const rect = scrollEl.getBoundingClientRect();
+        let deltaY = 0;
+        if (clientY < rect.top + edgeThreshold) {
+          const intensity = Math.min(
+            1,
+            Math.max(0.15, (rect.top + edgeThreshold - clientY) / edgeThreshold)
+          );
+          deltaY = -Math.ceil(intensity * maxScrollSpeed);
+        } else if (clientY > rect.bottom - edgeThreshold) {
+          const intensity = Math.min(
+            1,
+            Math.max(0.15, (clientY - (rect.bottom - edgeThreshold)) / edgeThreshold)
+          );
+          deltaY = Math.ceil(intensity * maxScrollSpeed);
+        }
+
+        if (deltaY !== 0) {
+          const prevScrollTop = scrollEl.scrollTop;
+          scrollEl.scrollTop += deltaY;
+          if (scrollEl.scrollTop !== prevScrollTop && pointerStoreIdxRef.current !== null) {
+            reorderAtClientY(clientY);
+          }
+        }
+      }
+      rafId = requestAnimationFrame(stepAutoScroll);
+    };
+
+    rafId = requestAnimationFrame(stepAutoScroll);
+    return () => cancelAnimationFrame(rafId);
+  }, [pointerDrag !== null, draggedStoreIdx !== null, getScrollContainer, reorderAtClientY]);
+
   const hasAnyLocked = items.some((i) => i.locked);
   const hasAnyHidden = items.some((i) => i.hidden);
 
@@ -4711,6 +5651,8 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
     if (isLocked) return;
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    pointerClientYRef.current = e.clientY;
+    pointerStoreIdxRef.current = storeIndex;
     setPointerDrag({
       storeIdx: storeIndex,
       startY: e.clientY,
@@ -4721,37 +5663,22 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
   const handleGripPointerMove = (e: React.PointerEvent) => {
     if (!pointerDrag) return;
     e.stopPropagation();
-    const dy = e.clientY - pointerDrag.startY;
-    const rowHeight = 48;
-    // Moving UP in the visual list (negative dy) increases storeIndex (towards front)
-    // Moving DOWN in the visual list (positive dy) decreases storeIndex (towards back)
-    const indexDelta = -Math.round(dy / rowHeight);
-    if (indexDelta !== 0) {
-      const targetStoreIdx = Math.max(
-        0,
-        Math.min(items.length - 1, pointerDrag.storeIdx + indexDelta)
-      );
-      if (targetStoreIdx !== pointerDrag.storeIdx) {
-        reorderItems(pointerDrag.storeIdx, targetStoreIdx);
-        setPointerDrag({
-          storeIdx: targetStoreIdx,
-          startY: e.clientY,
-          currentY: e.clientY
-        });
-        return;
-      }
-    }
+    pointerClientYRef.current = e.clientY;
+    reorderAtClientY(e.clientY);
     setPointerDrag((prev) => (prev ? { ...prev, currentY: e.clientY } : null));
   };
 
   const handleGripPointerUp = (e: React.PointerEvent) => {
     if (!pointerDrag) return;
     e.stopPropagation();
+    pointerClientYRef.current = null;
+    pointerStoreIdxRef.current = null;
     setPointerDrag(null);
   };
 
   return (
     <div
+      ref={panelRootRef}
       className={`${
         isEmbeddedInSidebar
           ? 'flex flex-col gap-3'
@@ -4795,6 +5722,7 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
 
       {/* Layer Stack List */}
       <div
+        ref={listScrollRef}
         className={`space-y-1.5 ${
           isEmbeddedInSidebar ? '' : 'overflow-y-auto max-h-[42vh] pr-0.5'
         }`}
@@ -4873,17 +5801,20 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
             return (
               <div
                 key={item.id}
+                data-layer-store-index={storeIndex}
                 draggable={!item.locked}
                 onDragStart={(e) => {
                   if (item.locked) {
                     e.preventDefault();
                     return;
                   }
+                  pointerClientYRef.current = e.clientY;
                   setDraggedStoreIdx(storeIndex);
                   e.dataTransfer.effectAllowed = 'move';
                 }}
                 onDragOver={(e) => {
                   e.preventDefault();
+                  pointerClientYRef.current = e.clientY;
                   if (draggedStoreIdx !== null && draggedStoreIdx !== storeIndex) {
                     setDragOverStoreIdx(storeIndex);
                   }
@@ -4895,6 +5826,7 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
+                  pointerClientYRef.current = null;
                   if (draggedStoreIdx !== null && draggedStoreIdx !== storeIndex) {
                     reorderItems(draggedStoreIdx, storeIndex);
                   }
@@ -4902,6 +5834,7 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                   setDragOverStoreIdx(null);
                 }}
                 onDragEnd={() => {
+                  pointerClientYRef.current = null;
                   setDraggedStoreIdx(null);
                   setDragOverStoreIdx(null);
                 }}
@@ -5105,10 +6038,14 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
 // MODULE 6: components/SelectedFlowerToolbar.tsx — FLOATING INSPECTOR & COLOR PICKER
 // ============================================================================
 
+export type UnifiedColorTarget = 'petal' | 'center' | 'wrapper' | 'ribbon' | 'card';
+
 export interface SelectedFlowerToolbarProps {
   isDrawerOpen?: boolean;
   onRequestCollapseDrawer?: () => void;
-  mobileSheetMode?: 'color' | 'layers' | 'full';
+  mobileSheetMode?: 'color' | 'stem' | 'layers' | 'full';
+  activeColorTarget?: UnifiedColorTarget;
+  onColorTargetChange?: (target: UnifiedColorTarget) => void;
   onCloseMobileSheet?: () => void;
   onOpenLayerManager?: () => void;
 }
@@ -5117,12 +6054,23 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
   isDrawerOpen = false,
   onRequestCollapseDrawer,
   mobileSheetMode = 'full',
+  activeColorTarget,
+  onColorTargetChange,
   onCloseMobileSheet,
   onOpenLayerManager
 }) => {
   const {
     items,
     selectedId,
+    wrapStyle,
+    lastNonPlainWrapStyle,
+    wrapColor,
+    ribbonColor,
+    card,
+    setWrapStyle,
+    setWrapColor,
+    setRibbonColor,
+    updateCard,
     updateItem,
     duplicateSelected,
     deleteSelected,
@@ -5136,8 +6084,15 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
   } = useBouquetStore();
 
   const [colorTarget, setColorTarget] = useState<'petal' | 'center'>('petal');
+  const [unifiedTarget, setUnifiedTarget] = useState<UnifiedColorTarget>('petal');
   const [isMinimized, setIsMinimized] = useState(false);
   const isSliderDraggingRef = useRef(false);
+
+  const effectiveUnifiedTarget = activeColorTarget ?? unifiedTarget;
+  const setEffectiveUnifiedTarget = (target: UnifiedColorTarget) => {
+    setUnifiedTarget(target);
+    onColorTargetChange?.(target);
+  };
 
   useEffect(() => {
     isSliderDraggingRef.current = false;
@@ -5158,89 +6113,122 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
   };
 
   const selected = items.find((i) => i.id === selectedId);
-  if (!selected) return null;
+  const meta = selected ? FLOWER_CATALOG.find((m) => m.type === selected.type) : undefined;
 
-  const meta = FLOWER_CATALOG.find((m) => m.type === selected.type);
-
-  // Clean Color-Only Mode for the Slide-in Drawer (Zero extra settings or text clutter)
+  // Unified Color Editor in One Place (Petals, Center, Wrapper, Ribbon, Card)
   if (mobileSheetMode === 'color') {
+    const cardHex = card.customBg || getCardThemePalette(card.theme).bg;
+    const getActiveColorForTarget = (t: UnifiedColorTarget): string => {
+      if (t === 'petal') return selected?.petalColor || '#f43f5e';
+      if (t === 'center') return selected?.centerColor || '#fbbf24';
+      if (t === 'wrapper') return wrapColor;
+      if (t === 'ribbon') return ribbonColor;
+      return cardHex;
+    };
+
+    const currentTargetHex = getActiveColorForTarget(effectiveUnifiedTarget);
+    const isStemTargetDisabled =
+      (effectiveUnifiedTarget === 'petal' || effectiveUnifiedTarget === 'center') &&
+      Boolean(selected?.locked);
+
+    const applyUnifiedColor = (hex: string) => {
+      if (effectiveUnifiedTarget === 'wrapper') {
+        if (wrapStyle === 'plain') {
+          setWrapStyle(lastNonPlainWrapStyle || 'kraft');
+        }
+        setWrapColor(hex);
+        return;
+      }
+      if (effectiveUnifiedTarget === 'ribbon') {
+        setRibbonColor(hex);
+        return;
+      }
+      if (effectiveUnifiedTarget === 'card') {
+        updateCard({ customBg: hex, visibleOnStage: true });
+        return;
+      }
+      // Petal or Center
+      const targetFlower =
+        selected || [...items].reverse().find((i) => !i.hidden && !i.locked);
+      if (!targetFlower || targetFlower.locked) return;
+      if (!selected) {
+        selectItem(targetFlower.id);
+      }
+      updateItem(
+        targetFlower.id,
+        effectiveUnifiedTarget === 'petal' ? { petalColor: hex } : { centerColor: hex },
+        true
+      );
+    };
+
+    const colorTargets: { id: UnifiedColorTarget; label: string; dotColor: string }[] = [
+      { id: 'petal', label: 'Petals', dotColor: selected?.petalColor || '#f43f5e' },
+      { id: 'center', label: 'Center', dotColor: selected?.centerColor || '#fbbf24' },
+      { id: 'wrapper', label: 'Wrapper', dotColor: wrapColor },
+      { id: 'ribbon', label: 'Ribbon', dotColor: ribbonColor },
+      { id: 'card', label: 'Card', dotColor: cardHex }
+    ];
+
     return (
-      <div className="space-y-3" role="region" aria-label="Flower Color Picker">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setColorTarget('petal')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition ${
-                colorTarget === 'petal'
-                  ? 'bg-[#1C1917] text-white dark:bg-white dark:text-[#1C1917]'
-                  : 'bg-stone-100 hover:bg-stone-200/70 text-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
-              }`}
-            >
-              <span
-                className="w-3 h-3 rounded-full border border-white/50 shadow-2xs"
-                style={{ backgroundColor: selected.petalColor }}
-              />
-              <span>Petals</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setColorTarget('center')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition ${
-                colorTarget === 'center'
-                  ? 'bg-[#1C1917] text-white dark:bg-white dark:text-[#1C1917]'
-                  : 'bg-stone-100 hover:bg-stone-200/70 text-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
-              }`}
-            >
-              <span
-                className="w-3 h-3 rounded-full border border-white/50 shadow-2xs"
-                style={{ backgroundColor: selected.centerColor }}
-              />
-              <span>Center</span>
-            </button>
+      <div className="space-y-3" role="region" aria-label="Unified Color Picker">
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1 flex-wrap">
+            {colorTargets.map((t) => {
+              const isActive = effectiveUnifiedTarget === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setEffectiveUnifiedTarget(t.id)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 transition ${
+                    isActive
+                      ? 'bg-[#1C1917] text-white dark:bg-white dark:text-[#1C1917]'
+                      : 'bg-stone-100 hover:bg-stone-200/70 text-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
+                  }`}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-black/15 shadow-2xs shrink-0"
+                    style={{ backgroundColor: t.dotColor }}
+                  />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <label
-            title="Custom color"
+            title="Pick any custom color"
             className="w-8 h-8 rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 flex items-center justify-center cursor-pointer shrink-0 transition"
           >
             <input
               type="color"
-              disabled={Boolean(selected.locked)}
-              value={colorTarget === 'petal' ? selected.petalColor : selected.centerColor}
-              onChange={(e) =>
-                updateItem(
-                  selected.id,
-                  colorTarget === 'petal'
-                    ? { petalColor: e.target.value }
-                    : { centerColor: e.target.value },
-                  true
-                )
-              }
-              aria-label={`Pick custom ${colorTarget} color`}
+              disabled={isStemTargetDisabled}
+              value={currentTargetHex}
+              onChange={(e) => applyUnifiedColor(e.target.value)}
+              aria-label={`Pick custom ${effectiveUnifiedTarget} color`}
               className="w-5 h-5 rounded-full border-0 bg-transparent cursor-pointer"
             />
           </label>
         </div>
 
+        {(effectiveUnifiedTarget === 'petal' || effectiveUnifiedTarget === 'center') &&
+          !selected &&
+          items.length === 0 && (
+            <p className="text-[11px] text-stone-500 dark:text-stone-400 text-center py-0.5">
+              Add a flower below to color petals, or select Wrapper, Ribbon, or Card above.
+            </p>
+          )}
+
         <div className="grid grid-cols-5 gap-2.5 pt-0.5">
           {ROMANTIC_SWATCHES.map((hex) => {
-            const activeHex =
-              colorTarget === 'petal' ? selected.petalColor : selected.centerColor;
-            const isMatch = activeHex.toLowerCase() === hex.toLowerCase();
+            const isMatch = currentTargetHex.toLowerCase() === hex.toLowerCase();
             return (
               <button
                 key={hex}
                 type="button"
-                disabled={Boolean(selected.locked)}
-                onClick={() =>
-                  updateItem(
-                    selected.id,
-                    colorTarget === 'petal' ? { petalColor: hex } : { centerColor: hex },
-                    true
-                  )
-                }
-                aria-label={`Set ${colorTarget} color ${hex}`}
+                disabled={isStemTargetDisabled}
+                onClick={() => applyUnifiedColor(hex)}
+                aria-label={`Set ${effectiveUnifiedTarget} color ${hex}`}
                 className={`w-9 h-9 rounded-full mx-auto border transition-transform disabled:opacity-40 ${
                   isMatch
                     ? 'scale-110 ring-2 ring-[#B4846C] ring-offset-2 border-white'
@@ -5254,6 +6242,156 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
       </div>
     );
   }
+
+  // Dedicated Stem Settings Mode (Stem Length, Size, Tilt & Quick Stem Actions)
+  if (mobileSheetMode === 'stem') {
+    if (!selected) {
+      return (
+        <div className="py-6 text-center space-y-1.5" role="region" aria-label="Stem Settings">
+          <Sliders className="w-5 h-5 mx-auto text-[#B4846C]/70" />
+          <p className="text-xs font-medium text-stone-700 dark:text-stone-200">
+            No flower selected
+          </p>
+          <p className="text-[11px] text-stone-500 dark:text-stone-400 px-2">
+            Tap any flower or foliage on the canvas to adjust its stem length, size, and tilt.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3" role="region" aria-label="Stem Settings">
+        {/* Selected Stem Header + Quick Actions */}
+        <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-200/80 dark:border-stone-800">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="w-3.5 h-3.5 rounded-full border border-stone-300 dark:border-stone-600 shrink-0"
+              style={{ backgroundColor: selected.petalColor }}
+            />
+            <span className="text-xs font-semibold text-[#1C1917] dark:text-stone-100 truncate">
+              {meta?.name || selected.type}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={flipSelected}
+              disabled={Boolean(selected.locked)}
+              className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 disabled:opacity-30 transition"
+              title="Flip Horizontally"
+              aria-label="Flip Flower Horizontally"
+            >
+              <FlipHorizontal className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={duplicateSelected}
+              className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
+              title="Duplicate Stem"
+              aria-label="Duplicate Flower"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleItemLock(selected.id)}
+              className={`p-1.5 rounded-lg transition ${
+                selected.locked
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                  : 'bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300'
+              }`}
+              title={selected.locked ? 'Unlock Flower' : 'Lock Flower'}
+              aria-label={selected.locked ? 'Unlock Flower' : 'Lock Flower'}
+            >
+              {selected.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={deleteSelected}
+              disabled={Boolean(selected.locked)}
+              className="p-1.5 rounded-lg bg-stone-100 hover:bg-red-50 text-stone-500 hover:text-red-500 dark:bg-stone-800 dark:hover:bg-red-950/40 dark:text-stone-400 dark:hover:text-red-400 disabled:opacity-30 transition"
+              title="Remove Stem"
+              aria-label="Delete Flower"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Sliders for Stem Length, Size & Tilt */}
+        <div className="space-y-3 text-xs">
+          <div>
+            <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+              <span className="text-stone-600 dark:text-stone-400">Stem Length</span>
+              <span>{Math.round((selected.stemLength ?? 1) * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="15"
+              max="130"
+              disabled={Boolean(selected.locked)}
+              value={Math.round((selected.stemLength ?? 1) * 100)}
+              onChange={(e) =>
+                handleSliderChange({ stemLength: Number(e.target.value) / 100 })
+              }
+              onPointerUp={handleSliderPointerUp}
+              onPointerCancel={handleSliderPointerUp}
+              onBlur={handleSliderPointerUp}
+              aria-label="Flower Stem Length"
+              className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+              <span className="text-stone-600 dark:text-stone-400">Size</span>
+              <span>{Math.round(selected.scale * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="45"
+              max="200"
+              disabled={Boolean(selected.locked)}
+              value={Math.round(selected.scale * 100)}
+              onChange={(e) =>
+                handleSliderChange({ scale: Number(e.target.value) / 100 })
+              }
+              onPointerUp={handleSliderPointerUp}
+              onPointerCancel={handleSliderPointerUp}
+              onBlur={handleSliderPointerUp}
+              aria-label="Flower Size"
+              className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+              <span className="text-stone-600 dark:text-stone-400">Tilt</span>
+              <span>{selected.rotation}°</span>
+            </div>
+            <input
+              type="range"
+              min="-140"
+              max="140"
+              disabled={Boolean(selected.locked)}
+              value={selected.rotation}
+              onChange={(e) =>
+                handleSliderChange({ rotation: Number(e.target.value) })
+              }
+              onPointerUp={handleSliderPointerUp}
+              onPointerCancel={handleSliderPointerUp}
+              onBlur={handleSliderPointerUp}
+              aria-label="Flower Rotation Angle"
+              className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selected) return null;
 
   const shouldMinimize = isMinimized || (isDrawerOpen && typeof window !== 'undefined' && window.innerWidth < 1024 && mobileSheetMode === 'full');
 
@@ -5506,8 +6644,8 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
         </div>
       </div>
 
-      {/* Third Row: Scale & Rotation Sliders */}
-      <div className="grid grid-cols-2 gap-3 text-[11px]">
+      {/* Third Row: Scale, Rotation & Stem Length Sliders */}
+      <div className="grid grid-cols-3 gap-2.5 text-[11px]">
         <div>
           <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
             <span className="flex items-center gap-1 text-stone-600 dark:text-stone-400">
@@ -5551,6 +6689,27 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
             onPointerCancel={handleSliderPointerUp}
             onBlur={handleSliderPointerUp}
             aria-label="Flower Rotation Angle"
+            className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
+          />
+        </div>
+        <div>
+          <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+            <span className="text-stone-600 dark:text-stone-400">Stem</span>
+            <span>{Math.round((selected.stemLength ?? 1) * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="15"
+            max="130"
+            disabled={Boolean(selected.locked)}
+            value={Math.round((selected.stemLength ?? 1) * 100)}
+            onChange={(e) =>
+              handleSliderChange({ stemLength: Number(e.target.value) / 100 })
+            }
+            onPointerUp={handleSliderPointerUp}
+            onPointerCancel={handleSliderPointerUp}
+            onBlur={handleSliderPointerUp}
+            aria-label="Flower Stem Length"
             className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
           />
         </div>
@@ -5671,6 +6830,7 @@ export default function App() {
     wrapStyle,
     wrapColor,
     ribbonColor,
+    ribbonStyle,
     card,
     past,
     future,
@@ -5678,6 +6838,7 @@ export default function App() {
     setWrapStyle,
     setWrapColor,
     setRibbonColor,
+    setRibbonStyle,
     updateCard,
     randomizeBouquet,
     clearBouquet,
@@ -5691,7 +6852,8 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'flowers' | 'wrap' | 'card' | 'layers'>('flowers');
   const [mobileCategory, setMobileCategory] = useState<MobileCategory>('wrapping');
-  const [mobilePopover, setMobilePopover] = useState<'color' | 'layers' | 'card' | null>(null);
+  const [mobilePopover, setMobilePopover] = useState<'color' | 'stem' | 'layers' | 'card' | null>(null);
+  const [activeColorTarget, setActiveColorTarget] = useState<UnifiedColorTarget>('wrapper');
   const [isMobileToolsExpanded, setIsMobileToolsExpanded] = useState(false);
   const [isDesktopDockCollapsed, setIsDesktopDockCollapsed] = useState(false);
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
@@ -5798,8 +6960,11 @@ export default function App() {
   );
 
   useEffect(() => {
-    // When a flower is selected on compact viewports, auto-collapse drawer
-    // so the stage and inspector toolbar have maximum space.
+    if (selectedId) {
+      setActiveColorTarget((prev) =>
+        prev === 'petal' || prev === 'center' ? prev : 'petal'
+      );
+    }
     if (selectedId && !prevSelectedIdRef.current) {
       if (typeof window !== 'undefined' && window.innerWidth < 1024) {
         if (drawerState !== 'collapsed') {
@@ -5808,7 +6973,7 @@ export default function App() {
         }
       }
     } else if (!selectedId && prevSelectedIdRef.current) {
-      setMobilePopover((prev) => (prev === 'color' ? null : prev));
+      setMobilePopover((prev) => (prev === 'stem' ? null : prev));
       if (autoCollapsedRef.current) {
         setDrawerState('peek');
         autoCollapsedRef.current = false;
@@ -5937,7 +7102,7 @@ export default function App() {
     setShowGiftCardReveal(true);
   }, []);
 
-  // When a recipient clicks "Create Yours" on a shared bouquet, start a fresh studio bouquet
+  // When a recipient clicks "Create Yours" on a shared bouquet, start a fresh empty bouquet
   // so they can never edit or overwrite the sender's shared arrangement!
   const handleCreateOwnFromShared = useCallback(() => {
     if (bloomIntervalRef.current !== null) {
@@ -5949,15 +7114,15 @@ export default function App() {
     } catch {
       // Ignore history error
     }
-    loadSnapshot(STARTER_TEMPLATES[0].snapshot);
+    clearBouquet();
     selectItem(null);
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
-    triggerToast('Started a fresh bouquet for you to arrange');
-  }, [loadSnapshot, selectItem, triggerToast]);
+    triggerToast('Started a fresh empty bouquet for you to arrange');
+  }, [clearBouquet, selectItem, triggerToast]);
 
   // Autosave to localStorage & Hydrate Shared Links (including first-party /<code> short links)
   useEffect(() => {
@@ -6022,10 +7187,10 @@ export default function App() {
           setCorruptedLinkAlert('Could not load shared bouquet link. It may have been truncated or corrupted.');
         }
 
-        const saved = localStorage.getItem('bouquet_studio_autosave');
+        const saved = localStorage.getItem('bouquet_studio_autosave_v2');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+          if (parsed && Array.isArray(parsed.items)) {
             loadSnapshot(parsed);
           }
         }
@@ -6048,16 +7213,17 @@ export default function App() {
           wrapStyle,
           wrapColor,
           ribbonColor,
+          ribbonStyle,
           card
         };
-        localStorage.setItem('bouquet_studio_autosave', JSON.stringify(snap));
+        localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
         setAutosaveStatus('saved');
       } catch {
         setAutosaveStatus('saved');
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [items, wrapStyle, wrapColor, ribbonColor, card, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
 
   // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
@@ -6134,11 +7300,12 @@ export default function App() {
         wrapStyle,
         wrapColor,
         ribbonColor,
+        ribbonStyle,
         card
       };
       return encodeBouquetToShareUrl(snap, asGift);
     },
-    [items, wrapStyle, wrapColor, ribbonColor, card]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card]
   );
 
   const registerShortCodeOnServer = useCallback(
@@ -6148,6 +7315,7 @@ export default function App() {
         wrapStyle,
         wrapColor,
         ribbonColor,
+        ribbonStyle,
         card
       };
       const hashPayload = encodeBouquetToCompactPayload(snap, asGift);
@@ -6163,7 +7331,7 @@ export default function App() {
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, card]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card]
   );
 
   // Immediately generate and register our own first-party short link (e.g. https://[domain]/Vu18KSuusq9133s)
@@ -6182,21 +7350,31 @@ export default function App() {
     triggerToast('Link copied');
   };
 
-  const handleMobileFloatingTool = (mode: 'color' | 'layers' | 'card') => {
+  const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card') => {
     // Clicking the currently active tool icon again ALWAYS collapses the side drawer
     if (mobilePopover === mode) {
       setMobilePopover(null);
       return;
     }
-    if (mode === 'color' && !selectedId) {
+    if (mode === 'stem' && !selectedId) {
       const visibleItems = items.filter((i) => !i.hidden);
       if (visibleItems.length > 0) {
         selectItem(visibleItems[visibleItems.length - 1].id);
-        setMobilePopover('color');
-      } else {
-        triggerToast('Tap a flower below to add to your bouquet');
       }
-      return;
+    }
+    if (mode === 'color' && !selectedId && (activeColorTarget === 'petal' || activeColorTarget === 'center')) {
+      const visibleItems = items.filter((i) => !i.hidden);
+      if (visibleItems.length > 0) {
+        selectItem(visibleItems[visibleItems.length - 1].id);
+      } else {
+        setActiveColorTarget(
+          mobileCategory === 'ribbon'
+            ? 'ribbon'
+            : mobileCategory === 'card'
+            ? 'card'
+            : 'wrapper'
+        );
+      }
     }
     setMobilePopover(mode);
   };
@@ -6388,35 +7566,55 @@ export default function App() {
               </button>
             </div>
 
-            {/* Grouped Undo / Redo Pill */}
-            <div
-              className={`flex items-center rounded-full p-0.5 shrink-0 ${
-                isDarkMode ? 'bg-[#292524]' : 'bg-stone-100'
-              }`}
-            >
+            {/* Grouped Undo / Redo Pill + Prominent Start Over Button */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <div
+                className={`flex items-center rounded-full p-0.5 shrink-0 ${
+                  isDarkMode ? 'bg-[#292524]' : 'bg-stone-100'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    undo();
+                    triggerToast('Undid last change');
+                  }}
+                  disabled={past.length === 0}
+                  aria-label="Undo"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 disabled:opacity-30 active:scale-95 transition"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    redo();
+                    triggerToast('Redid change');
+                  }}
+                  disabled={future.length === 0}
+                  aria-label="Redo"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 disabled:opacity-30 active:scale-95 transition"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
-                  undo();
-                  triggerToast('Undid last change');
+                  clearBouquet();
+                  triggerToast('Started over with an empty bouquet');
                 }}
-                disabled={past.length === 0}
-                aria-label="Undo"
-                className="w-7 h-7 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 disabled:opacity-30 active:scale-95 transition"
+                aria-label="Start over and clear bouquet"
+                title="Start Over (Reset Bouquet)"
+                className={`h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 border shrink-0 active:scale-95 transition ${
+                  isDarkMode
+                    ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-red-400 hover:text-red-300'
+                    : 'bg-stone-100/90 border-stone-200/90 text-stone-600 hover:border-red-300 hover:text-red-600'
+                }`}
               >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  redo();
-                  triggerToast('Redid change');
-                }}
-                disabled={future.length === 0}
-                aria-label="Redo"
-                className="w-7 h-7 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 disabled:opacity-30 active:scale-95 transition"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3 h-3" />
+                <span className="hidden sm:inline">Start Over</span>
               </button>
             </div>
 
@@ -6425,13 +7623,13 @@ export default function App() {
               {selectedItem ? (
                 <button
                   type="button"
-                  onClick={() => handleMobileFloatingTool('color')}
+                  onClick={() => handleMobileFloatingTool('stem')}
                   className={`max-w-full px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 truncate transition ${
-                    mobilePopover === 'color'
+                    mobilePopover === 'stem' || mobilePopover === 'color'
                       ? 'bg-[#B4846C] text-white'
                       : 'bg-stone-100/80 dark:bg-[#292524] text-stone-700 dark:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-stone-700'
                   }`}
-                  title="Tap to toggle stem color & size side panel"
+                  title="Tap to adjust stem length, size & tilt"
                 >
                   <span
                     className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15"
@@ -6776,14 +7974,21 @@ export default function App() {
               bloomedCount={isGiftView ? bloomedCount : undefined}
               showCardInGiftView={isGiftView ? showGiftCardReveal : true}
               onCardTagClick={() => {
-                setLetterTypedChars(0);
-                setIsLetterModalOpen(true);
+                if (isPreviewMode || isGiftView) {
+                  setLetterTypedChars(0);
+                  setIsLetterModalOpen(true);
+                } else {
+                  setIsMobileToolsExpanded(true);
+                  setMobilePopover('card');
+                  setMobileCategory('card');
+                  setActiveTab('card');
+                }
               }}
             />
 
             {/* ===============================================================
                 COLLAPSIBLE RIGHT-SIDE ACTION STACK (Phone & Desktop)
-                Collapses the 4 right-side tools down to the Eye button capsule.
+                Collapses the right-side tools down to the Eye button capsule.
                 Clicking an active tool icon again immediately slides the side
                 drawer closed.
                 =============================================================== */}
@@ -6795,8 +8000,8 @@ export default function App() {
                       type="button"
                       onClick={() => handleMobileFloatingTool('color')}
                       aria-pressed={mobilePopover === 'color'}
-                      aria-label="Customize flower colors and size"
-                      title={mobilePopover === 'color' ? 'Hide Colors & Size Drawer' : 'Colors & Size'}
+                      aria-label="Open Unified Color Picker"
+                      title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon & Card)'}
                       className={`w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'color'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
@@ -6806,6 +8011,23 @@ export default function App() {
                       }`}
                     >
                       <Palette className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleMobileFloatingTool('stem')}
+                      aria-pressed={mobilePopover === 'stem'}
+                      aria-label="Open Stem Length, Size & Tilt Settings"
+                      title={mobilePopover === 'stem' ? 'Hide Stem Settings Drawer' : 'Stem Settings (Length, Size & Tilt)'}
+                      className={`w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                        mobilePopover === 'stem'
+                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                          : isDarkMode
+                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                      }`}
+                    >
+                      <Sliders className="w-4 h-4" />
                     </button>
 
                     <button
@@ -6874,9 +8096,9 @@ export default function App() {
                     aria-label={
                       isMobileToolsExpanded
                         ? 'Collapse canvas tools down to eye button'
-                        : 'Expand canvas tools (Colors, Layers, Card)'
+                        : 'Expand canvas tools (Colors, Stem, Layers, Card)'
                     }
-                    title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Layers, Card)'}
+                    title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card)'}
                     className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${
                       isMobileToolsExpanded
                         ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
@@ -6911,7 +8133,7 @@ export default function App() {
             )}
 
             {/* ===============================================================
-                SLIDE-IN LEFT SIDE DRAWER FOR COLORS, LAYERS & GREETING CARD
+                SLIDE-IN LEFT SIDE DRAWER FOR COLORS, STEM, LAYERS & GREETING CARD
                 Slides smoothly from the left edge instead of popping a card over
                 the center canvas. Clicking the active right-side icon again or
                 tapping the side drawer's hide button slides it right back out.
@@ -6922,7 +8144,7 @@ export default function App() {
                 aria-hidden={!mobilePopover}
                 className={`absolute left-2.5 sm:left-4 top-2 sm:top-3 ${
                   mobilePopover === 'layers' ? 'bottom-3 sm:bottom-4' : 'max-h-[calc(100%-1.5rem)]'
-                } z-30 w-[264px] sm:w-[300px] max-w-[calc(100vw-4.5rem)] rounded-2xl border shadow-xl backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
+                } z-30 w-[274px] sm:w-[310px] max-w-[calc(100vw-4.5rem)] rounded-2xl border shadow-xl backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
                   isDarkMode
                     ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
                     : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
@@ -6932,13 +8154,13 @@ export default function App() {
                     : '-translate-x-[calc(100%+1.5rem)] opacity-0 pointer-events-none'
                 }`}
               >
-                {/* Side Drawer Top Bar: Mode Switcher Pills + Slide-Left Collapse Button */}
-                <div className="flex items-center justify-between gap-1.5 px-3 py-2 border-b border-stone-200/80 dark:border-stone-800 shrink-0">
-                  <div className="flex items-center gap-1">
+                {/* Side Drawer Top Bar: Mode Switcher Pills (Color | Stem | Layers | Card) + Slide-Left Collapse Button */}
+                <div className="flex items-center justify-between gap-1 px-2.5 py-2 border-b border-stone-200/80 dark:border-stone-800 shrink-0">
+                  <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar">
                     <button
                       type="button"
                       onClick={() => handleMobileFloatingTool('color')}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition ${
+                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
                         mobilePopover === 'color'
                           ? 'bg-[#B4846C] text-white'
                           : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
@@ -6949,8 +8171,20 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleMobileFloatingTool('stem')}
+                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
+                        mobilePopover === 'stem'
+                          ? 'bg-[#B4846C] text-white'
+                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
+                      }`}
+                    >
+                      <Sliders className="w-3 h-3" />
+                      <span>Stem</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleMobileFloatingTool('layers')}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition ${
+                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
                         mobilePopover === 'layers'
                           ? 'bg-[#B4846C] text-white'
                           : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
@@ -6962,7 +8196,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleMobileFloatingTool('card')}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition ${
+                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
                         mobilePopover === 'card'
                           ? 'bg-[#B4846C] text-white'
                           : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
@@ -6978,29 +8212,30 @@ export default function App() {
                     onClick={() => setMobilePopover(null)}
                     aria-label="Slide drawer closed"
                     title="Slide panel closed"
-                    className="p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-[#1C1917] dark:text-stone-400 dark:hover:text-white transition"
+                    className="p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-[#1C1917] dark:text-stone-400 dark:hover:text-white shrink-0 transition"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Side Drawer Scrollable Content */}
+                {/* Side Drawer Content */}
                 <div className="flex-1 overflow-y-auto p-3">
                   {mobilePopover === 'color' && (
-                    selectedId ? (
-                      <SelectedFlowerToolbar
-                        isDrawerOpen={false}
-                        mobileSheetMode="color"
-                        onCloseMobileSheet={() => setMobilePopover(null)}
-                      />
-                    ) : (
-                      <div className="py-5 text-center">
-                        <Palette className="w-5 h-5 mx-auto mb-1 text-[#B4846C]/70" />
-                        <p className="text-xs font-medium text-stone-500 dark:text-stone-400">
-                          Select a flower
-                        </p>
-                      </div>
-                    )
+                    <SelectedFlowerToolbar
+                      isDrawerOpen={false}
+                      mobileSheetMode="color"
+                      activeColorTarget={activeColorTarget}
+                      onColorTargetChange={setActiveColorTarget}
+                      onCloseMobileSheet={() => setMobilePopover(null)}
+                    />
+                  )}
+
+                  {mobilePopover === 'stem' && (
+                    <SelectedFlowerToolbar
+                      isDrawerOpen={false}
+                      mobileSheetMode="stem"
+                      onCloseMobileSheet={() => setMobilePopover(null)}
+                    />
                   )}
 
                   {mobilePopover === 'layers' && (
@@ -7012,36 +8247,16 @@ export default function App() {
 
                   {mobilePopover === 'card' && (
                     <div className="space-y-2.5">
-                      <div className="flex items-start justify-between gap-1.5">
-                        <div className="grid grid-cols-3 gap-1.5 flex-1">
-                          {CARD_THEME_CATALOG.map((t) => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => updateCard({ theme: t.id, visibleOnStage: true })}
-                              className={`py-1.5 px-2 rounded-xl border text-[11px] font-medium flex items-center justify-center gap-1.5 transition ${
-                                card.theme === t.id && card.visibleOnStage
-                                  ? 'border-[#B4846C] bg-[#B4846C]/15 text-[#1C1917] dark:text-white ring-1 ring-[#B4846C]'
-                                  : isDarkMode
-                                  ? 'border-stone-700 bg-[#292524] text-stone-300'
-                                  : 'border-stone-200 bg-stone-50 text-stone-600'
-                              }`}
-                            >
-                              <span
-                                className="w-3 h-3 rounded-full shrink-0 border"
-                                style={{ backgroundColor: t.bg, borderColor: t.border }}
-                              />
-                              <span className="truncate">{t.label}</span>
-                            </button>
-                          ))}
-                        </div>
-
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-stone-500 dark:text-stone-400">
+                          Card Note
+                        </span>
                         <button
                           type="button"
                           onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
                           title={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
                           aria-label={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
-                          className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition ${
+                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
                             !card.visibleOnStage
                               ? 'bg-rose-50 border-rose-200 text-rose-500 dark:bg-rose-950/50 dark:border-rose-800 dark:text-rose-400'
                               : isDarkMode
@@ -7050,20 +8265,26 @@ export default function App() {
                           }`}
                         >
                           {card.visibleOnStage ? (
-                            <Eye className="w-3.5 h-3.5" />
+                            <>
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Visible</span>
+                            </>
                           ) : (
-                            <EyeOff className="w-3.5 h-3.5" />
+                            <>
+                              <EyeOff className="w-3.5 h-3.5" />
+                              <span>Hidden</span>
+                            </>
                           )}
                         </button>
                       </div>
 
+                      {/* Card Text Inputs — No Placeholders or Labels for For, Message, and From */}
                       <div className="space-y-2">
                         <input
                           type="text"
                           maxLength={32}
                           value={card.to}
                           onChange={(e) => updateCard({ to: e.target.value })}
-                          placeholder="To..."
                           aria-label="Recipient"
                           className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
@@ -7075,7 +8296,6 @@ export default function App() {
                             maxLength={600}
                             value={card.message}
                             onChange={(e) => updateCard({ message: e.target.value })}
-                            placeholder="Write your heartfelt message (scrolls inside the card)..."
                             aria-label="Card message"
                             className="w-full px-3 py-1.5 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto"
                             style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
@@ -7090,7 +8310,6 @@ export default function App() {
                           maxLength={32}
                           value={card.from}
                           onChange={(e) => updateCard({ from: e.target.value })}
-                          placeholder="From..."
                           aria-label="Sender"
                           className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
@@ -7192,7 +8411,7 @@ export default function App() {
                 : 'bg-white border-stone-200/80 text-[#1C1917]'
             }`}
           >
-            {/* Row 1: Category Pill Tabs + Collapse/Expand Tray Button (Works on Phone & Desktop) */}
+            {/* Row 1: Category Pill Tabs + Reset & Collapse/Expand Tray Buttons (Works on Phone & Desktop) */}
             <div
               className={`flex items-center justify-between gap-1.5 sm:gap-2 ${
                 isDesktopDockCollapsed ? 'pb-0' : 'pb-2'
@@ -7220,6 +8439,11 @@ export default function App() {
                       role="tab"
                       aria-selected={isActive}
                       onClick={() => {
+                        if (cat.id === 'wrapping') setActiveColorTarget('wrapper');
+                        else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
+                        else if (cat.id === 'card') setActiveColorTarget('card');
+                        else if (cat.id === 'flowers' || cat.id === 'fillers') setActiveColorTarget('petal');
+
                         if (isActive) {
                           setIsDesktopDockCollapsed((prev) => !prev);
                         } else {
@@ -7241,34 +8465,54 @@ export default function App() {
                 })}
               </div>
 
-              {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section (Phone & Desktop) */}
-              <button
-                type="button"
-                onClick={() => setIsDesktopDockCollapsed((prev) => !prev)}
-                aria-expanded={!isDesktopDockCollapsed}
-                aria-label={
-                  isDesktopDockCollapsed
-                    ? 'Expand bottom flowers and wrappers tray'
-                    : 'Collapse bottom flowers and wrappers tray down'
-                }
-                title={
-                  isDesktopDockCollapsed
-                    ? 'Expand tray'
-                    : 'Collapse tray down'
-                }
-                className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border shrink-0 transition ${
-                  isDarkMode
-                    ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-[#B4846C] hover:text-white'
-                    : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-[#B4846C] hover:text-[#1C1917]'
-                }`}
-              >
-                <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show Tray' : 'Hide Tray'}</span>
-                {isDesktopDockCollapsed ? (
-                  <ChevronUp className="w-3.5 h-3.5 text-[#B4846C]" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5 text-[#B4846C]" />
-                )}
-              </button>
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearBouquet();
+                    triggerToast('Started over with an empty bouquet');
+                  }}
+                  aria-label="Reset bouquet and start over"
+                  title="Reset / Start Over"
+                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border shrink-0 transition active:scale-95 ${
+                    isDarkMode
+                      ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-red-400 hover:text-red-300'
+                      : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-red-300 hover:text-red-600'
+                  }`}
+                >
+                  <RotateCcw className="w-3 h-3 text-[#B4846C]" />
+                  <span>Reset</span>
+                </button>
+
+                {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section (Phone & Desktop) */}
+                <button
+                  type="button"
+                  onClick={() => setIsDesktopDockCollapsed((prev) => !prev)}
+                  aria-expanded={!isDesktopDockCollapsed}
+                  aria-label={
+                    isDesktopDockCollapsed
+                      ? 'Expand bottom flowers and wrappers tray'
+                      : 'Collapse bottom flowers and wrappers tray down'
+                  }
+                  title={
+                    isDesktopDockCollapsed
+                      ? 'Expand tray'
+                      : 'Collapse tray down'
+                  }
+                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border shrink-0 transition ${
+                    isDarkMode
+                      ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-[#B4846C] hover:text-white'
+                      : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-[#B4846C] hover:text-[#1C1917]'
+                  }`}
+                >
+                  <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show Tray' : 'Hide Tray'}</span>
+                  {isDesktopDockCollapsed ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-[#B4846C]" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-[#B4846C]" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Row 2: Horizontal Circular Item Carousel (Collapsible down on Phone & Desktop) */}
@@ -7280,6 +8524,28 @@ export default function App() {
               {/* CATEGORY 1: TEMPLATES */}
               {mobileCategory === 'templates' && (
                 <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearBouquet();
+                      triggerToast('Started over with an empty bouquet');
+                    }}
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                  >
+                    <div
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
+                        isDarkMode
+                          ? 'bg-[#292524] border-stone-700 group-hover:border-red-400'
+                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-red-300'
+                      }`}
+                    >
+                      <RotateCcw className="w-5 h-5 text-[#B4846C] group-hover:text-red-500" />
+                    </div>
+                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                      Start Over
+                    </span>
+                  </button>
+
                   {STARTER_TEMPLATES.map((tpl) => (
                     <button
                       key={tpl.id}
@@ -7308,30 +8574,6 @@ export default function App() {
                       </span>
                     </button>
                   ))}
-
-                  {items.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        clearBouquet();
-                        triggerToast('Cleared canvas');
-                      }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
-                    >
-                      <div
-                        className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
-                          isDarkMode
-                            ? 'bg-[#292524] border-stone-700 group-hover:border-red-400'
-                            : 'bg-stone-50/70 border-stone-200/90 group-hover:border-red-300'
-                        }`}
-                      >
-                        <RotateCcw className="w-5 h-5 text-stone-400 group-hover:text-red-500" />
-                      </div>
-                      <span className="text-[11px] font-medium text-stone-500 dark:text-stone-400 truncate w-full text-center">
-                        Reset
-                      </span>
-                    </button>
-                  )}
                 </>
               )}
 
@@ -7347,6 +8589,7 @@ export default function App() {
                         onClick={() => {
                           setWrapStyle(ws.id);
                           setWrapColor(ws.defaultHex);
+                          setActiveColorTarget('wrapper');
                         }}
                         className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[64px] sm:w-[72px] group"
                       >
@@ -7382,6 +8625,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       addFlower(entry.type);
+                      setActiveColorTarget('petal');
                       triggerToast(`Added ${entry.name}`);
                     }}
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
@@ -7415,6 +8659,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       addFlower(entry.type);
+                      setActiveColorTarget('petal');
                       triggerToast(`Added ${entry.name}`);
                     }}
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
@@ -7440,41 +8685,50 @@ export default function App() {
                   </button>
                 ))}
 
-              {/* CATEGORY 5: RIBBONS */}
-              {mobileCategory === 'ribbon' &&
-                RIBBON_SWATCHES.map((rb) => {
-                  const isSelected = ribbonColor.toLowerCase() === rb.hex.toLowerCase();
-                  return (
-                    <button
-                      key={rb.hex}
-                      type="button"
-                      onClick={() => setRibbonColor(rb.hex)}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
-                    >
-                      <div
-                        className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
-                          isSelected
-                            ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
-                            : isDarkMode
-                            ? 'bg-[#292524] border-stone-700'
-                            : 'bg-stone-50/70 border-stone-200/90'
-                        }`}
+              {/* CATEGORY 5: RIBBON & LACE DESIGNS (Colors are unified in the Color drawer tab) */}
+              {mobileCategory === 'ribbon' && (
+                <>
+                  {RIBBON_STYLE_CATALOG.map((rs) => {
+                    const isSelected = ribbonStyle === rs.id;
+                    return (
+                      <button
+                        key={rs.id}
+                        type="button"
+                        onClick={() => {
+                          setRibbonStyle(rs.id);
+                          setActiveColorTarget('ribbon');
+                        }}
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[64px] sm:w-[72px] group"
                       >
-                        <MiniRibbonBowSVG hex={rb.hex} />
-                      </div>
-                      <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                        {rb.name.split(' ')[0]}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <div
+                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-2xl border flex items-center justify-center transition-transform group-active:scale-95 ${
+                            isSelected
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-sm'
+                              : isDarkMode
+                              ? 'bg-[#292524] border-stone-700 hover:border-stone-600'
+                              : 'bg-white border-stone-200/90 shadow-xs hover:border-stone-300'
+                          }`}
+                        >
+                          <MiniRibbonBowSVG hex={ribbonColor} styleType={rs.id} />
+                        </div>
+                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                          {rs.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
 
-              {/* CATEGORY 6: GREETING CARD */}
+              {/* CATEGORY 6: GREETING CARD DESIGNS & FREEFORM COLORS */}
               {mobileCategory === 'card' && (
                 <>
                   <button
                     type="button"
-                    onClick={() => handleMobileFloatingTool('card')}
+                    onClick={() => {
+                      setIsMobileToolsExpanded(true);
+                      setMobilePopover('card');
+                    }}
                     className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
                   >
                     <div
@@ -7489,7 +8743,7 @@ export default function App() {
                       <PenLine className="w-5 h-5 text-[#B4846C]" />
                     </div>
                     <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                      Edit Note
+                      Write Note
                     </span>
                   </button>
 
@@ -7500,10 +8754,10 @@ export default function App() {
                         key={th.id}
                         type="button"
                         onClick={() => updateCard({ theme: th.id, visibleOnStage: true })}
-                        className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                        className="flex flex-col items-center gap-1.5 shrink-0 w-[72px] group"
                       >
                         <div
-                          className={`w-16 h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
+                          className={`w-16 h-16 rounded-2xl border flex items-center justify-center transition-transform group-active:scale-95 ${
                             isSelected
                               ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
                               : isDarkMode
@@ -7511,25 +8765,7 @@ export default function App() {
                               : 'bg-stone-50/70 border-stone-200/90'
                           }`}
                         >
-                          <div
-                            className="w-10 h-7 rounded-md border flex items-center justify-start px-1.5 gap-1 shadow-2xs"
-                            style={{ backgroundColor: th.bg, borderColor: th.border }}
-                          >
-                            <span
-                              className="w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: th.seal }}
-                            />
-                            <div className="flex flex-col gap-0.5 flex-1">
-                              <span
-                                className="h-[1.5px] w-full rounded-full opacity-50"
-                                style={{ backgroundColor: th.inner }}
-                              />
-                              <span
-                                className="h-[1.5px] w-2/3 rounded-full opacity-35"
-                                style={{ backgroundColor: th.inner }}
-                              />
-                            </div>
-                          </div>
+                          <MiniCardShapeSVG theme={th.id} customBg={card.customBg} />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {th.label}
@@ -7800,16 +9036,14 @@ export default function App() {
                       Wrapping
                     </h2>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-                      {[
-                        { id: 'kraft' as typeWrapStyle, title: 'Kraft paper' },
-                        { id: 'tissue' as typeWrapStyle, title: 'Silk tissue' },
-                        { id: 'celestial' as typeWrapStyle, title: 'Starlit wrap' },
-                        { id: 'plain' as typeWrapStyle, title: 'Hand-tied stems' }
-                      ].map((st) => (
+                      {WRAPPER_CATALOG.map((st) => (
                         <button
                           key={st.id}
                           type="button"
-                          onClick={() => setWrapStyle(st.id)}
+                          onClick={() => {
+                            setWrapStyle(st.id);
+                            setWrapColor(st.defaultHex);
+                          }}
                           className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
                             wrapStyle === st.id
                               ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
@@ -7821,7 +9055,7 @@ export default function App() {
                           <div className="w-10 h-10 rounded-full bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-center shrink-0">
                             <MiniWrapConeSVG styleType={st.id} color={wrapColor} ribbon={ribbonColor} />
                           </div>
-                          <span className="text-xs font-medium truncate">{st.title}</span>
+                          <span className="text-xs font-medium truncate">{st.label}</span>
                         </button>
                       ))}
                     </div>
@@ -7859,8 +9093,30 @@ export default function App() {
 
                   <div>
                     <h3 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
-                      Ribbon
+                      Ribbon &amp; Lace Design
                     </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2 mb-3">
+                      {RIBBON_STYLE_CATALOG.map((rs) => (
+                        <button
+                          key={rs.id}
+                          type="button"
+                          onClick={() => setRibbonStyle(rs.id)}
+                          className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-2 transition ${
+                            ribbonStyle === rs.id
+                              ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
+                              : isDarkMode
+                              ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                              : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                          }`}
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-stone-50 dark:bg-stone-900 flex items-center justify-center shrink-0">
+                            <MiniRibbonBowSVG hex={ribbonColor} styleType={rs.id} />
+                          </div>
+                          <span className="truncate">{rs.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
                       {RIBBON_SWATCHES.map((rb) => (
                         <button
@@ -7905,71 +9161,43 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* Card Stationary Theme */}
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {CARD_THEME_CATALOG.map((th) => (
-                      <button
-                        key={th.id}
-                        type="button"
-                        onClick={() => updateCard({ theme: th.id })}
-                        className={`py-1.5 px-2 rounded-xl text-xs font-medium truncate border transition ${
-                          card.theme === th.id
-                            ? 'bg-[#1C1917] text-white border-[#1C1917] dark:bg-white dark:text-[#1C1917] dark:border-white'
-                            : isDarkMode
-                            ? 'border-stone-700 bg-[#292524] text-stone-200 hover:bg-stone-800'
-                            : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
-                        }`}
-                      >
-                        {th.label}
-                      </button>
-                    ))}
-                  </div>
-
+                  {/* Card Text Inputs — No Placeholders or Labels for For, Message, and From */}
                   <div className="space-y-3 p-3.5 rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1C1A]">
                     <div>
-                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-300 mb-1">
-                        To
-                      </label>
                       <input
                         type="text"
                         maxLength={22}
                         value={card.to}
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ to: e.target.value })}
-                        placeholder="My Dearest"
-                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 transition"
+                        aria-label="Recipient"
+                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 transition"
                         style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-300 mb-1">
-                        Message
-                      </label>
                       <textarea
                         rows={3}
                         maxLength={86}
                         value={card.message}
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ message: e.target.value })}
-                        placeholder="Write a sweet note..."
-                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
+                        aria-label="Card message"
+                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
                         style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-300 mb-1">
-                        From
-                      </label>
                       <input
                         type="text"
                         maxLength={20}
                         value={card.from}
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ from: e.target.value })}
-                        placeholder="Yours Always"
-                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 transition"
+                        aria-label="Sender"
+                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 transition"
                         style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                       />
                     </div>
@@ -8072,12 +9300,11 @@ export default function App() {
 
       {/* =====================================================================
           ZOOMING HANDWRITTEN GREETING CARD MODAL
-          Triggered when clicking the wiggling card tag pinned on the bouquet.
-          Uses the exact same card design (Cream, Blush, or Lavender) and writes
-          out the note like a sweet handwritten letter!
+          Triggered when clicking the wiggling card tag pinned on the bouquet
+          in shared/preview mode.
           ===================================================================== */}
       {isLetterModalOpen && (() => {
-        const cardPalette = getCardThemePalette(card.theme);
+        const cardPalette = getCardThemePalette(card.theme, card.customBg);
 
         const toFull = `Dearest ${card.to || 'Someone Special'},`;
         const msgFull = card.message || 'Thinking of you with love and blossoms.';
@@ -8203,7 +9430,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Subtle Card Footer Actions (Replay writing removed) */}
+                {/* Subtle Card Footer Actions */}
                 <div
                   className="mt-5 pt-3.5 flex items-center justify-end gap-2"
                   style={{ borderTop: `1px solid ${cardPalette.rule}` }}
@@ -8266,64 +9493,37 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
-              {CARD_THEME_CATALOG.map((th) => (
-                <button
-                  key={th.id}
-                  type="button"
-                  onClick={() => updateCard({ theme: th.id })}
-                  className={`py-1.5 px-2 rounded-xl text-xs font-medium truncate border transition ${
-                    card.theme === th.id
-                      ? 'bg-[#B4846C] text-white border-[#B4846C]'
-                      : isDarkMode
-                      ? 'border-stone-700 bg-[#292524] text-stone-200'
-                      : 'border-stone-200 bg-stone-50 text-stone-700'
-                  }`}
-                >
-                  {th.label}
-                </button>
-              ))}
-            </div>
-
+            {/* Card Text Inputs — No Placeholders or Labels for For, Message, and From */}
             <div className="space-y-2.5">
               <div>
-                <label className="block text-[11px] font-medium text-stone-500 dark:text-stone-400 mb-1">
-                  To
-                </label>
                 <input
                   type="text"
                   maxLength={22}
                   value={card.to}
                   onChange={(e) => updateCard({ to: e.target.value })}
-                  placeholder="My Dearest"
+                  aria-label="Recipient"
                   className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
                   style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-stone-500 dark:text-stone-400 mb-1">
-                  Message
-                </label>
                 <textarea
                   rows={3}
                   maxLength={86}
                   value={card.message}
                   onChange={(e) => updateCard({ message: e.target.value })}
-                  placeholder="Write a sweet note..."
+                  aria-label="Card message"
                   className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
                   style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-stone-500 dark:text-stone-400 mb-1">
-                  From
-                </label>
                 <input
                   type="text"
                   maxLength={20}
                   value={card.from}
                   onChange={(e) => updateCard({ from: e.target.value })}
-                  placeholder="Yours Always"
+                  aria-label="Sender"
                   className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
                   style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                 />
