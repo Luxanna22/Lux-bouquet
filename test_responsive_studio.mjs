@@ -20,7 +20,7 @@ try {
   console.log('✓ App renders cleanly (HTML size:', html.length, 'bytes)');
 
   // 2. Responsive Header Elements Check
-  assert(html.includes('Bouquet Studio'), 'App header title present');
+  assert(html.includes('Flowers For You'), 'App header title present');
   assert(html.includes('hidden sm:inline'), 'Autosave status text adapts to screen size');
   assert(html.includes('hidden md:inline') && html.includes('Randomize'), 'Randomize button adapts responsively');
   assert(html.includes('hidden xl:inline'), 'Music box button adapts responsively');

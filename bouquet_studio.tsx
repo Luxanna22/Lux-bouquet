@@ -1193,26 +1193,32 @@ export function wrapCardText(text: string, maxLineLength = 22): string[] {
   return lines.slice(0, 4);
 }
 
-function dataUrlToPngFile(dataUrl: string, filename = 'bouquet.png'): File | null {
-  try {
-    const parts = dataUrl.split(',');
-    if (parts.length < 2) return null;
-    const byteString = atob(parts[1]);
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
-    const blob = new Blob([ab], { type: 'image/png' });
-    return new File([blob], filename, { type: 'image/png' });
-  } catch {
-    return null;
+export function isInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || navigator.vendor || '';
+  if (
+    /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Line\/|MicroMessenger|TikTok|BytedanceWebview|Musical\.ly|Snapchat|Twitter|LinkedInApp|Telegram|Threads|Pinterest|KAKAOTALK|Viber|WhatsApp/i.test(
+      ua
+    )
+  ) {
+    return true;
   }
+  if (/Android/i.test(ua) && /;\s*wv\b/i.test(ua)) {
+    return true;
+  }
+  if (
+    /iPhone|iPad|iPod/i.test(ua) &&
+    /AppleWebKit/i.test(ua) &&
+    !/Safari\/|CriOS\/|FxiOS\/|EdgiOS\//i.test(ua)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export async function exportSvgElementToPng(
   svgElement: SVGSVGElement,
-  filename = 'bouquet.png'
+  filename = 'flowers-for-you.png'
 ): Promise<string> {
   const clone = svgElement.cloneNode(true) as SVGSVGElement;
 
@@ -1263,10 +1269,6 @@ export async function exportSvgElementToPng(
   // Base64 data URL avoids cross-origin tainting from Blob URLs
   const base64Svg = 'data:image/svg+xml;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(svgString)));
 
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-  const isInAppWebView = /FBAN|FBAV|Messenger|Instagram|Line\/|MicroMessenger|TikTok|Snapchat|Wv|WebView/i.test(ua);
-  const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
-
   const triggerDownload = (url: string, downloadName: string) => {
     const link = document.createElement('a');
     link.download = downloadName;
@@ -1299,27 +1301,20 @@ export async function exportSvgElementToPng(
 
         const dataUrl = canvas.toDataURL('image/png');
 
-        // On desktop browsers, trigger standard file download immediately.
-        // On mobile / in-app browsers (Messenger, Instagram, LINE, etc.), return dataUrl
-        // so the caller can invoke native Web Share or open the Save Image modal.
-        if (!isInAppWebView && !isMobileDevice) {
-          if (canvas.toBlob) {
-            canvas.toBlob((blob) => {
-              if (blob) {
-                const blobUrl = URL.createObjectURL(blob);
-                triggerDownload(blobUrl, filename);
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-                resolve(dataUrl);
-              } else {
-                triggerDownload(dataUrl, filename);
-                resolve(dataUrl);
-              }
-            }, 'image/png');
-          } else {
-            triggerDownload(dataUrl, filename);
-            resolve(dataUrl);
-          }
+        if (canvas.toBlob) {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const blobUrl = URL.createObjectURL(blob);
+              triggerDownload(blobUrl, filename);
+              setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+              resolve(dataUrl);
+            } else {
+              triggerDownload(dataUrl, filename);
+              resolve(dataUrl);
+            }
+          }, 'image/png');
         } else {
+          triggerDownload(dataUrl, filename);
           resolve(dataUrl);
         }
       } catch (err) {
@@ -4702,9 +4697,7 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shortShareUrl, setShortShareUrl] = useState<string | null>(null);
   const [isShorteningUrl, setIsShorteningUrl] = useState(false);
-  const [savedPngDataUrl, setSavedPngDataUrl] = useState<string | null>(null);
-  const [savedPngHostedUrl, setSavedPngHostedUrl] = useState<string | null>(null);
-  const [savedPngFile, setSavedPngFile] = useState<File | null>(null);
+  const [isInAppBrowserModalOpen, setIsInAppBrowserModalOpen] = useState(false);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving'>('saved');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -5049,6 +5042,13 @@ export default function App() {
   }, [isGiftView, isPreviewMode, undo, redo, deleteSelected, duplicateSelected, triggerToast]);
 
   const handleExportPng = async () => {
+    // When inside an in-app browser (Messenger, Instagram, TikTok, LINE, etc.),
+    // prompt the user to open the page in their external browser to save the PNG.
+    if (isInAppBrowser()) {
+      setIsInAppBrowserModalOpen(true);
+      return;
+    }
+
     const targetSvg =
       svgRef.current ||
       (document.querySelector('svg[aria-label="Interactive Flower Bouquet Canvas"]') as SVGSVGElement | null);
@@ -5059,41 +5059,9 @@ export default function App() {
     }
 
     try {
-      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-      const isInAppWebView = /FBAN|FBAV|Messenger|Instagram|Line\/|MicroMessenger|TikTok|Snapchat|Wv|WebView/i.test(ua);
-      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(ua);
-
       triggerToast('Generating high-res image...');
-      const exportedUrl = await exportSvgElementToPng(targetSvg, 'bouquet.png');
-
-      if (isInAppWebView || isMobileDevice) {
-        if (exportedUrl.startsWith('data:image/')) {
-          const prebuiltFile = dataUrlToPngFile(exportedUrl, 'bouquet.png');
-          setSavedPngFile(prebuiltFile);
-          setSavedPngDataUrl(exportedUrl);
-          setSavedPngHostedUrl(null);
-
-          // Register a real HTTP/HTTPS PNG URL on the server so in-app WebViews
-          // (Messenger, Instagram, LINE, Android DownloadManager, iOS WKWebView)
-          // recognize the <img> for native long-press "Save Image" and attachment download.
-          fetch('/api/bouquet-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: exportedUrl })
-          })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-              if (data && typeof data.url === 'string') {
-                setSavedPngHostedUrl(data.url);
-              }
-            })
-            .catch(() => {
-              // Keep dataUrl fallback if offline
-            });
-        }
-      } else {
-        triggerToast('Saved image');
-      }
+      await exportSvgElementToPng(targetSvg, 'flowers-for-you.png');
+      triggerToast('Saved image');
     } catch (err) {
       console.error('Failed to export image:', err);
       triggerToast('Could not export image.');
@@ -5324,7 +5292,7 @@ export default function App() {
                   className="text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  Bouquet Studio
+                  Flowers For You
                 </span>
               </div>
 
@@ -5461,7 +5429,7 @@ export default function App() {
             className="text-sm sm:text-base md:text-lg font-semibold tracking-tight text-[#1C1917] dark:text-stone-100"
             style={{ fontFamily: "'Cormorant Garamond', serif" }}
           >
-            Bouquet Studio
+            Flowers For You
           </h1>
           {!isGiftView && (
             <span
@@ -7509,21 +7477,18 @@ export default function App() {
         </div>
       )}
 
-      {/* MOBILE / IN-APP BROWSER (MESSENGER, INSTAGRAM, LINE) PNG SAVE MODAL */}
-      {savedPngDataUrl && (
+      {/* IN-APP BROWSER DETECTED MODAL (Prompts user to open in external browser to save PNG) */}
+      {isInAppBrowserModalOpen && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Save Bouquet Image"
-          onClick={() => {
-            setSavedPngDataUrl(null);
-            setSavedPngHostedUrl(null);
-          }}
+          aria-label="Open in Browser to Save Image"
+          onClick={() => setIsInAppBrowserModalOpen(false)}
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-2xl p-4 sm:p-5 shadow-2xl border relative text-center ${
+            className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl border relative text-center ${
               isDarkMode
                 ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
                 : 'bg-white border-stone-200 text-[#1C1917]'
@@ -7531,92 +7496,67 @@ export default function App() {
           >
             <button
               type="button"
-              onClick={() => {
-                setSavedPngDataUrl(null);
-                setSavedPngHostedUrl(null);
-              }}
-              aria-label="Close save image dialog"
-              className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
+              onClick={() => setIsInAppBrowserModalOpen(false)}
+              aria-label="Close dialog"
+              className="absolute top-3.5 right-3.5 p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
             >
               <X className="w-4 h-4" />
             </button>
 
             <h3
-              className="text-lg font-medium tracking-tight"
+              className="text-xl font-medium tracking-tight"
               style={{ fontFamily: "'Cormorant Garamond', serif" }}
             >
-              Save Bouquet Image
+              Open in Browser to Save
             </h3>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 mb-3">
-              Tap Download below, or press and hold the image
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1.5 leading-relaxed">
+              In-app browsers (like Messenger or Instagram) block image downloads. Please open this page in Safari or Chrome to save your bouquet as a PNG.
             </p>
 
-            <div className="rounded-xl overflow-hidden border border-stone-200/80 dark:border-stone-800 bg-[#FAFAF8] dark:bg-[#141211] flex items-center justify-center p-2">
-              <img
-                src={savedPngHostedUrl || savedPngDataUrl}
-                alt="Bouquet Keepsake PNG"
-                className="max-h-[48vh] w-auto object-contain rounded-lg"
-                style={{
-                  WebkitTouchCallout: 'default',
-                  WebkitUserSelect: 'auto',
-                  userSelect: 'auto',
-                  pointerEvents: 'auto'
-                }}
-              />
+            <div
+              className={`mt-4 p-3 rounded-xl border text-left text-xs space-y-1.5 ${
+                isDarkMode
+                  ? 'bg-[#141211] border-stone-800 text-stone-300'
+                  : 'bg-stone-50 border-stone-200/80 text-stone-700'
+              }`}
+            >
+              <p className="font-medium">How to open in browser:</p>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                1. Tap the menu icon (⋯ or ⋮) at the top corner of your screen.
+              </p>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                2. Tap &ldquo;Open in external browser&rdquo; (Safari / Chrome), then tap Save as PNG.
+              </p>
             </div>
 
-            <div className="mt-4 flex flex-col gap-2">
-              {/* Native HTTP Content-Disposition attachment download (Works in Messenger, Instagram, Android DownloadManager & iOS WebViews) */}
-              <form
-                method="POST"
-                action="/api/bouquet-image?download=1"
-                className="w-full"
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const currentUrl =
+                    typeof window !== 'undefined' ? window.location.href : getShareUrl(true);
+                  if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(currentUrl).catch(() => {});
+                  }
+                  triggerToast('Link copied — paste in Safari or Chrome');
+                  setIsInAppBrowserModalOpen(false);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
               >
-                <input type="hidden" name="image" value={savedPngDataUrl} />
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-98"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download Image</span>
-                </button>
-              </form>
-
-              {/* Synchronous Native OS Share / Save to Photos Sheet (Zero await before navigator.share) */}
-              {savedPngFile &&
-                typeof navigator !== 'undefined' &&
-                typeof navigator.share === 'function' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (navigator.canShare && navigator.canShare({ files: [savedPngFile] })) {
-                        navigator
-                          .share({
-                            files: [savedPngFile],
-                            title: 'Bouquet'
-                          })
-                          .catch(() => {});
-                      } else {
-                        navigator
-                          .share({
-                            title: 'Bouquet',
-                            url: savedPngHostedUrl
-                              ? `${window.location.origin}${savedPngHostedUrl}`
-                              : window.location.href
-                          })
-                          .catch(() => {});
-                      }
-                    }}
-                    className={`w-full py-2 px-4 rounded-full border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                      isDarkMode
-                        ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                        : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
-                    }`}
-                  >
-                    <Share2 className="w-3.5 h-3.5 text-[#B4846C]" />
-                    <span>Share / Save to Photos</span>
-                  </button>
-                )}
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Link for Browser</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsInAppBrowserModalOpen(false)}
+                className={`py-2.5 px-4 rounded-full border text-xs font-medium transition ${
+                  isDarkMode
+                    ? 'border-stone-700 hover:bg-stone-800 text-stone-300'
+                    : 'border-stone-200 hover:bg-stone-50 text-stone-700'
+                }`}
+              >
+                Got it
+              </button>
             </div>
           </div>
         </div>
