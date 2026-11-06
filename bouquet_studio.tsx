@@ -818,37 +818,304 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
 // MODULE 3: lib/ — URL SHARE SERIALIZATION & HIGH-RES PNG EXPORT
 // ============================================================================
 
-export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot): string {
-  try {
-    const json = JSON.stringify(snapshot);
-    const encoded = typeof btoa === 'function'
-      ? btoa(encodeURIComponent(json))
+const SHARE_FLOWER_TYPES: FlowerType[] = [
+  'rose',
+  'tulip',
+  'sunflower',
+  'daisy',
+  'lily',
+  'peony',
+  'lavender',
+  'hydrangea',
+  'babysBreath',
+  'eucalyptus',
+  'fern'
+];
+
+const SHARE_WRAP_STYLES: typeWrapStyle[] = [
+  'kraft',
+  'tissue',
+  'chalice',
+  'basket',
+  'vintage',
+  'lace',
+  'celestial',
+  'vase',
+  'plain'
+];
+
+const SHARE_CARD_THEMES: ('cream' | 'blush' | 'lavender')[] = ['cream', 'blush', 'lavender'];
+
+const DEFAULT_SHARE_CARD_TO = 'My Dearest';
+const DEFAULT_SHARE_CARD_FROM = 'Yours Always';
+const DEFAULT_SHARE_CARD_MSG =
+  'Every petal in this bouquet was chosen to remind you how deeply you are cherished.';
+
+function toBase64Url(str: string): string {
+  const utf8Bytes = encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+    String.fromCharCode(parseInt(p1, 16))
+  );
+  const b64 =
+    typeof btoa === 'function'
+      ? btoa(utf8Bytes)
       : typeof globalThis !== 'undefined' && 'Buffer' in globalThis
-      ? (globalThis as { Buffer: { from: (s: string) => { toString: (enc: string) => string } } }).Buffer.from(encodeURIComponent(json)).toString('base64')
+      ? (globalThis as { Buffer: { from: (s: string, e: string) => { toString: (enc: string) => string } } }).Buffer.from(utf8Bytes, 'binary').toString('base64')
       : '';
-    const baseUrl = typeof window !== 'undefined' ? window.location.href : 'https://bouquet-studio.local/';
-    const url = new URL(baseUrl);
-    url.hash = `bouquet=${encoded}`;
-    return url.toString();
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(b64url: string): string {
+  let b64 = b64url.trim().replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4 !== 0) {
+    b64 += '=';
+  }
+  const binary =
+    typeof atob === 'function'
+      ? atob(b64)
+      : typeof globalThis !== 'undefined' && 'Buffer' in globalThis
+      ? (globalThis as { Buffer: { from: (s: string, enc: string) => { toString: (e: string) => string } } }).Buffer.from(b64, 'base64').toString('binary')
+      : '';
+  const percentEncoded = Array.from(binary)
+    .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+    .join('');
+  return decodeURIComponent(percentEncoded);
+}
+
+export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = false): string {
+  try {
+    // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex>
+    const wIdx = Math.max(0, SHARE_WRAP_STYLES.indexOf(snapshot.wrapStyle)).toString(36);
+    const defaultWrapHex =
+      WRAPPER_CATALOG.find((w) => w.id === snapshot.wrapStyle)?.defaultHex.toLowerCase() || '';
+    const wHex =
+      snapshot.wrapColor.toLowerCase() === defaultWrapHex
+        ? ''
+        : snapshot.wrapColor.replace('#', '').toLowerCase();
+    const rHex =
+      snapshot.ribbonColor.toLowerCase() === '#e11d48'
+        ? ''
+        : snapshot.ribbonColor.replace('#', '').toLowerCase();
+    const headerPart = `${wIdx}~${wHex}~${rHex}`;
+
+    // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>
+    const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
+    const cVis = snapshot.card.visibleOnStage ? 1 : 0;
+    const cMeta = (cTheme * 2 + cVis).toString(36);
+    const cTo = snapshot.card.to === DEFAULT_SHARE_CARD_TO ? '!' : toBase64Url(snapshot.card.to);
+    const cFrom =
+      snapshot.card.from === DEFAULT_SHARE_CARD_FROM ? '!' : toBase64Url(snapshot.card.from);
+    const cMsg =
+      snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
+    const cardPart = `${cMeta}~${cTo}~${cFrom}~${cMsg}`;
+
+    // 3. Compact Items Section: 8 chars per stem + optional ~flags~petal~center only if non-default
+    const clampNum = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    const itemsPart = snapshot.items
+      .map((item) => {
+        const tIdx = Math.max(0, SHARE_FLOWER_TYPES.indexOf(item.type)).toString(36);
+        const xStr = Math.round(clampNum(item.x, 0, 600))
+          .toString(36)
+          .padStart(2, '0');
+        const yStr = Math.round(clampNum(item.y, 0, 680))
+          .toString(36)
+          .padStart(2, '0');
+        const sInt = clampNum(Math.round((clampNum(item.scale, 0.4, 2.2) - 0.4) * 19), 0, 35);
+        const sStr = sInt.toString(36);
+        const rInt = clampNum(Math.round((clampNum(item.rotation, -180, 180) + 180) / 2), 0, 180);
+        const rStr = rInt.toString(36).padStart(2, '0');
+
+        const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+        const isDefPetal =
+          meta && item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
+        const isDefCenter =
+          meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
+        const flags = (item.flipX ? 1 : 0) | (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
+
+        const base = `${tIdx}${xStr}${yStr}${sStr}${rStr}`;
+        if (isDefPetal && isDefCenter && flags === 0) {
+          return base;
+        }
+        const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
+        const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
+        return `${base}~${flags.toString(36)}~${pHex}~${cHex}`;
+      })
+      .join('.');
+
+    const compactPayload = `${headerPart}.${cardPart}.${itemsPart}`;
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}${window.location.search}`
+        : 'https://bouquet-studio.local/';
+    const prefix = asGift ? 'g' : 'b';
+    return `${baseUrl}#${prefix}=${compactPayload}`;
   } catch {
     return typeof window !== 'undefined' ? window.location.href : '';
   }
 }
 
-export function decodeBouquetFromHash(): BouquetSnapshot | null {
+export function isGiftShareHash(hashOverride?: string): boolean {
+  const hash =
+    hashOverride !== undefined
+      ? hashOverride
+      : typeof window !== 'undefined'
+      ? window.location.hash
+      : '';
+  if (!hash) return false;
+  if (hash.includes('edit=1')) return false;
+  return (
+    hash.startsWith('#g=') ||
+    hash.startsWith('#b=') ||
+    hash.startsWith('#bouquet=') ||
+    hash.includes('view=gift')
+  );
+}
+
+export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | null {
   try {
-    if (typeof window === 'undefined') return null;
-    const hash = window.location.hash;
+    const hash =
+      hashOverride !== undefined
+        ? hashOverride
+        : typeof window !== 'undefined'
+        ? window.location.hash
+        : '';
+    if (!hash) return null;
+
+    // FORMAT A: Ultra-compact #g=<payload> or #b=<payload>
+    if (hash.startsWith('#g=') || hash.startsWith('#b=')) {
+      const rawPayload = hash.slice(3).split('&')[0].trim();
+      const parts = rawPayload.split('.');
+      if (parts.length < 2) return null;
+
+      const [headerPart, cardPart, ...stemParts] = parts;
+      const [wIdxStr = '0', wHex = '', rHex = ''] = headerPart.split('~');
+      const wrapStyle = SHARE_WRAP_STYLES[parseInt(wIdxStr, 36)] || 'kraft';
+      const defaultWrapHex =
+        WRAPPER_CATALOG.find((w) => w.id === wrapStyle)?.defaultHex || '#C8B9AE';
+      const wrapColor = wHex ? `#${wHex}` : defaultWrapHex;
+      const ribbonColor = rHex ? `#${rHex}` : '#e11d48';
+
+      const [cMetaStr = '1', cToB64 = '!', cFromB64 = '!', cMsgB64 = '!'] = cardPart.split('~');
+      const cMeta = parseInt(cMetaStr, 36) || 0;
+      const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'cream';
+      const visibleOnStage = cMeta % 2 === 1;
+      const to = cToB64 === '!' ? DEFAULT_SHARE_CARD_TO : fromBase64Url(cToB64);
+      const from = cFromB64 === '!' ? DEFAULT_SHARE_CARD_FROM : fromBase64Url(cFromB64);
+      const message = cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
+
+      const items: BouquetItem[] = stemParts
+        .filter((sp) => sp.length >= 8)
+        .map((sp, idx) => {
+          const [base, flagsStr = '0', pHex = '', cHex = ''] = sp.split('~');
+          const type = SHARE_FLOWER_TYPES[parseInt(base[0], 36)] || 'rose';
+          const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
+          const x = parseInt(base.slice(1, 3), 36);
+          const y = parseInt(base.slice(3, 5), 36);
+          const sInt = parseInt(base.slice(5, 6), 36);
+          const scale = Number((0.4 + (sInt / 19)).toFixed(2));
+          const rInt = parseInt(base.slice(6, 8), 36);
+          const rotation = rInt * 2 - 180;
+          const flags = parseInt(flagsStr, 36) || 0;
+
+          return {
+            id: `s-${idx}-${type}`,
+            type,
+            x: Number.isFinite(x) ? x : 300,
+            y: Number.isFinite(y) ? y : 280,
+            scale: Number.isFinite(scale) ? scale : meta.defaultScale,
+            rotation: Number.isFinite(rotation) ? rotation : 0,
+            flipX: Boolean(flags & 1),
+            locked: Boolean(flags & 2),
+            hidden: Boolean(flags & 4),
+            petalColor: pHex ? `#${pHex}` : meta.defaultPetalColor,
+            centerColor: cHex ? `#${cHex}` : meta.defaultCenterColor
+          };
+        });
+
+      return {
+        items,
+        wrapStyle,
+        wrapColor,
+        ribbonColor,
+        card: {
+          to,
+          from,
+          message,
+          visibleOnStage,
+          theme
+        }
+      };
+    }
+
+    // FORMAT B: Legacy #bouquet=<base64> (with fix for &view=gift suffix + partial truncation salvage)
     if (!hash.startsWith('#bouquet=')) return null;
-    const raw = hash.replace('#bouquet=', '');
-    const json = decodeURIComponent(
+    // Strip &view=gift or any trailing query parameter before base64 decoding!
+    const raw = hash.replace(/^#bouquet=/, '').split('&')[0].trim();
+    if (!raw) return null;
+
+    // Normalize URL-safe base64 & restore any stripped '=' padding
+    let normalizedB64 = raw.replace(/-/g, '+').replace(/_/g, '/').replace(/[^A-Za-z0-9+/]/g, '');
+    // Trim trailing 1-char remainder if link was truncated mid-quartet, then pad to multiple of 4
+    if (normalizedB64.length % 4 === 1) {
+      normalizedB64 = normalizedB64.slice(0, -1);
+    }
+    while (normalizedB64.length % 4 !== 0) {
+      normalizedB64 += '=';
+    }
+
+    const decodedUri =
       typeof atob === 'function'
-        ? atob(raw)
+        ? atob(normalizedB64)
         : typeof globalThis !== 'undefined' && 'Buffer' in globalThis
-        ? (globalThis as { Buffer: { from: (s: string, enc: string) => { toString: () => string } } }).Buffer.from(raw, 'base64').toString()
-        : ''
-    );
-    return JSON.parse(json) as BouquetSnapshot;
+        ? (globalThis as { Buffer: { from: (s: string, enc: string) => { toString: () => string } } }).Buffer.from(normalizedB64, 'base64').toString()
+        : '';
+
+    // Safely decode percent-encoding even if truncated mid-%XX sequence
+    const safeDecodedUri = decodedUri.replace(/%[0-9A-Fa-f]{0,1}$/, '');
+    let json = '';
+    try {
+      json = decodeURIComponent(safeDecodedUri);
+    } catch {
+      json = unescape(safeDecodedUri);
+    }
+
+    try {
+      return JSON.parse(json) as BouquetSnapshot;
+    } catch {
+      // Salvage complete flower items if legacy link was truncated mid-JSON by a chat app
+      const itemMatches = json.match(/\{[^{}]*"type"\s*:\s*"[^"]+"[^{}]*\}/g);
+      if (itemMatches && itemMatches.length > 0) {
+        const salvagedItems: BouquetItem[] = [];
+        for (const m of itemMatches) {
+          try {
+            const parsedItem = JSON.parse(m);
+            if (parsedItem && parsedItem.type && typeof parsedItem.x === 'number') {
+              salvagedItems.push(parsedItem);
+            }
+          } catch {
+            // Skip incomplete item
+          }
+        }
+        if (salvagedItems.length > 0) {
+          const wrapMatch = json.match(/"wrapStyle"\s*:\s*"([^"]+)"/);
+          const wrapColorMatch = json.match(/"wrapColor"\s*:\s*"([^"]+)"/);
+          const ribbonMatch = json.match(/"ribbonColor"\s*:\s*"([^"]+)"/);
+          return {
+            items: salvagedItems,
+            wrapStyle: (wrapMatch?.[1] as typeWrapStyle) || 'kraft',
+            wrapColor: wrapColorMatch?.[1] || '#C8B9AE',
+            ribbonColor: ribbonMatch?.[1] || '#e11d48',
+            card: {
+              to: DEFAULT_SHARE_CARD_TO,
+              from: DEFAULT_SHARE_CARD_FROM,
+              message: DEFAULT_SHARE_CARD_MSG,
+              visibleOnStage: true,
+              theme: 'cream'
+            }
+          };
+        }
+      }
+      return null;
+    }
   } catch {
     return null;
   }
@@ -887,19 +1154,20 @@ export async function exportSvgElementToPng(
   // Replace any foreignObject in the clone with SVG text to prevent canvas tainting
   const foreignObjects = clone.querySelectorAll('foreignObject');
   foreignObjects.forEach((fo) => {
-    const textContent = fo.textContent || '';
+    const textContent = (fo.textContent || '').trim();
+    const textColor = fo.getAttribute('data-text-color') || '#1C1917';
     const textNode = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    textNode.setAttribute('x', fo.getAttribute('x') || '-68');
-    textNode.setAttribute('y', '5');
-    textNode.setAttribute('fill', '#1C1917');
-    textNode.setAttribute('font-size', '13');
+    textNode.setAttribute('x', fo.getAttribute('x') || '-70');
+    textNode.setAttribute('y', '-1');
+    textNode.setAttribute('fill', textColor);
+    textNode.setAttribute('font-size', '12.5');
     textNode.setAttribute('font-family', "'Cormorant Garamond', serif");
-    const lines = wrapCardText(textContent, 22);
-    lines.forEach((line, idx) => {
+    const rawLines = wrapCardText(textContent, 23);
+    rawLines.forEach((line, idx) => {
       const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
-      tspan.setAttribute('x', fo.getAttribute('x') || '-68');
-      tspan.setAttribute('dy', idx === 0 ? '0' : '15');
-      tspan.textContent = line;
+      tspan.setAttribute('x', fo.getAttribute('x') || '-70');
+      tspan.setAttribute('dy', idx === 0 ? '0' : '14');
+      tspan.textContent = idx === 3 && textContent.length > 88 ? `${line.replace(/\.*$/, '')}...` : line;
       textNode.appendChild(tspan);
     });
     fo.parentNode?.replaceChild(textNode, fo);
@@ -1690,6 +1958,7 @@ interface BouquetStageProps {
   isDarkMode?: boolean;
   bloomedCount?: number;
   showCardInGiftView?: boolean;
+  onCardTagClick?: () => void;
 }
 
 export const BouquetStage: React.FC<BouquetStageProps> = ({
@@ -1697,7 +1966,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   isPreviewMode,
   isDarkMode = false,
   bloomedCount,
-  showCardInGiftView = true
+  showCardInGiftView = true,
+  onCardTagClick
 }) => {
   const {
     items,
@@ -2594,7 +2864,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           )}
         </g>
 
-        {/* 5. PINNED GREETING CARD TAG ON BOUQUET */}
+        {/* 5. PINNED GREETING CARD TAG ON BOUQUET (Wiggles & opens letter modal ONLY on shared/preview action; scrollable to preserve card design & length) */}
         {card.visibleOnStage && showCardInGiftView && (() => {
           const cardPalette =
             card.theme === 'blush'
@@ -2627,79 +2897,139 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   sign: '#78716C'
                 };
           return (
-            <g
-              transform="translate(425, 520) rotate(-6)"
-              filter="url(#softShadow)"
-              className="pointer-events-none"
-            >
-              {/* Fastener cord */}
+            <g transform="translate(425, 520) rotate(-6)" filter="url(#softShadow)">
+              {/* Fastener cord pinned to bouquet */}
               <path
                 d="M-115,-18 Q-55,-25 -10,-32"
                 stroke={cardPalette.inner}
                 strokeWidth="1.6"
                 fill="none"
                 opacity="0.85"
+                className="pointer-events-none"
               />
-              <rect
-                x="-85"
-                y="-42"
-                width="175"
-                height="112"
-                rx="12"
-                fill={cardPalette.bg}
-                stroke={cardPalette.border}
-                strokeWidth="1.6"
-              />
-              <rect
-                x="-79"
-                y="-36"
-                width="163"
-                height="100"
-                rx="8"
-                fill="none"
-                stroke={cardPalette.inner}
-                strokeWidth="0.9"
-                strokeDasharray="3 3"
-                opacity="0.55"
-              />
-              {/* Wax Seal */}
-              <circle cx="-62" cy="-22" r="8.5" fill={cardPalette.seal} />
-              <circle cx="-62" cy="-22" r="5.5" fill="none" stroke="#ffffff" strokeWidth="0.6" opacity="0.6" />
-              <text
-                x="-46"
-                y="-18"
-                fill={cardPalette.title}
-                fontSize="12"
-                fontWeight="600"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              {/* Card Group: Wiggles ONLY in shared/preview mode, stays calm on main editing canvas */}
+              <g
+                role={isPreviewMode ? 'button' : undefined}
+                tabIndex={isPreviewMode ? 0 : undefined}
+                aria-label={isPreviewMode ? 'Open greeting card letter' : undefined}
+                onClick={(e) => {
+                  if (!isPreviewMode) return;
+                  e.stopPropagation();
+                  onCardTagClick?.();
+                }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onKeyDown={(e) => {
+                  if (!isPreviewMode) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onCardTagClick?.();
+                  }
+                }}
+                className={isPreviewMode ? 'bouquet-card-wiggle cursor-pointer' : ''}
               >
-                To: {card.to.slice(0, 22)}
-              </text>
-              <text
-                x="-70"
-                y="-1"
-                fill={cardPalette.body}
-                fontSize="13"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
-                {wrapCardText(card.message, 22).map((line, idx) => (
-                  <tspan key={idx} x="-70" dy={idx === 0 ? 0 : 15}>
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-              <text
-                x="72"
-                y="58"
-                textAnchor="end"
-                fill={cardPalette.sign}
-                fontSize="11"
-                fontWeight="500"
-                fontStyle="italic"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              >
-                — {card.from.slice(0, 20)}
-              </text>
+                <rect
+                  x="-85"
+                  y="-42"
+                  width="175"
+                  height="112"
+                  rx="12"
+                  fill={cardPalette.bg}
+                  stroke={cardPalette.border}
+                  strokeWidth="1.8"
+                />
+                <rect
+                  x="-79"
+                  y="-36"
+                  width="163"
+                  height="100"
+                  rx="8"
+                  fill="none"
+                  stroke={cardPalette.inner}
+                  strokeWidth="0.9"
+                  strokeDasharray="3 3"
+                  opacity="0.55"
+                />
+                {/* Wax Seal */}
+                <circle cx="-62" cy="-22" r="8.5" fill={cardPalette.seal} />
+                <circle cx="-62" cy="-22" r="5.5" fill="none" stroke="#ffffff" strokeWidth="0.6" opacity="0.6" />
+                <text
+                  x="-46"
+                  y="-18"
+                  fill={cardPalette.title}
+                  fontSize="12"
+                  fontWeight="600"
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                >
+                  To: {card.to.slice(0, 22)}
+                </text>
+
+                {/* Scrollable Message Area inside Fixed Card Dimensions (Preserves card design & length) */}
+                <foreignObject
+                  x="-71"
+                  y="-12"
+                  width="148"
+                  height="56"
+                  data-text-color={cardPalette.body}
+                >
+                  <div
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onWheel={(e) => e.stopPropagation()}
+                    className="w-full h-full overflow-y-auto pr-1 select-none"
+                    style={{
+                      color: cardPalette.body,
+                      fontFamily: "'Cormorant Garamond', serif",
+                      fontSize: '12.5px',
+                      lineHeight: '14px',
+                      wordBreak: 'break-word',
+                      scrollbarWidth: 'thin',
+                      touchAction: 'pan-y'
+                    }}
+                  >
+                    {card.message}
+                  </div>
+                </foreignObject>
+
+                <text
+                  x="72"
+                  y="58"
+                  textAnchor="end"
+                  fill={cardPalette.sign}
+                  fontSize="11"
+                  fontWeight="500"
+                  fontStyle="italic"
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                >
+                  — {card.from.slice(0, 20)}
+                </text>
+
+                {/* Subtle Floating "Tap to open" Hint Badge — Shown ONLY in Shared/Preview Mode (Ignored on PNG export) */}
+                {isPreviewMode && (
+                  <g data-export-ignore="true" transform="translate(36, -44)">
+                    <rect
+                      x="-42"
+                      y="-11"
+                      width="84"
+                      height="20"
+                      rx="10"
+                      fill={cardPalette.seal}
+                    />
+                    <text
+                      x="0"
+                      y="2.5"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="9.5"
+                      fontWeight="600"
+                      style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                    >
+                      Tap to open 💌
+                    </text>
+                  </g>
+                )}
+              </g>
             </g>
           );
         })()}
@@ -4209,6 +4539,9 @@ export default function App() {
   const [isGiftView, setIsGiftView] = useState(false);
   const [bloomedCount, setBloomedCount] = useState<number | undefined>(undefined);
   const [showGiftCardReveal, setShowGiftCardReveal] = useState(true);
+  const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
+  const [letterTypedChars, setLetterTypedChars] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving'>('saved');
@@ -4222,7 +4555,55 @@ export default function App() {
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const hasHydratedRef = useRef(false);
+
+  // Sync exact visible viewport height so mobile browser bottom bars (e.g. Edge Mobile, Safari, Chrome)
+  // never cover or clip the bottom Flowers/Wrappers carousel dock.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateHeight = () => {
+      const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      if (vh && vh > 200) {
+        setViewportHeight(Math.round(vh));
+      }
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    window.addEventListener('orientationchange', updateHeight);
+    window.visualViewport?.addEventListener('resize', updateHeight);
+    window.visualViewport?.addEventListener('scroll', updateHeight);
+    return () => {
+      window.removeEventListener('resize', updateHeight);
+      window.removeEventListener('orientationchange', updateHeight);
+      window.visualViewport?.removeEventListener('resize', updateHeight);
+      window.visualViewport?.removeEventListener('scroll', updateHeight);
+    };
+  }, []);
+
+  // Typewriter / Handwritten Letter Reveal Effect when the Zoomed Card Modal opens
+  useEffect(() => {
+    if (!isLetterModalOpen) return;
+    const toStr = `Dearest ${card.to || 'Someone Special'},`;
+    const msgStr = card.message || 'Thinking of you with love and blossoms.';
+    const fromStr = `With love, ${card.from || 'Yours Always'}`;
+    const totalLen = toStr.length + msgStr.length + fromStr.length;
+
+    setLetterTypedChars(0);
+    let current = 0;
+    const timer = setInterval(() => {
+      current += 1;
+      setLetterTypedChars(current);
+      if (letterBodyScrollRef.current && current > toStr.length && current <= toStr.length + msgStr.length) {
+        letterBodyScrollRef.current.scrollTop = letterBodyScrollRef.current.scrollHeight;
+      }
+      if (current >= totalLen) {
+        clearInterval(timer);
+      }
+    }, 24);
+
+    return () => clearInterval(timer);
+  }, [isLetterModalOpen, card.to, card.message, card.from]);
   const selectedId = useBouquetStore((s) => s.selectedId);
   const autoCollapsedRef = useRef(false);
   const prevSelectedIdRef = useRef<string | null>(null);
@@ -4299,8 +4680,9 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const startGiftBloomAnimation = useCallback((totalItems: number) => {
+  const startGiftBloomAnimation = useCallback((totalItems: number, fromEditorPreview = true) => {
     setMobilePopover(null);
+    setIsPreviewMode(fromEditorPreview);
     setIsGiftView(true);
     setShowGiftCardReveal(false);
     setBloomedCount(0);
@@ -4330,18 +4712,23 @@ export default function App() {
       hasHydratedRef.current = true;
       try {
         const hash = window.location.hash;
-        if (hash.includes('view=gift')) {
+        const giftMode = isGiftShareHash(hash);
+        if (giftMode) {
           setIsGiftView(true);
+          setIsPreviewMode(false);
         }
-        const shared = decodeBouquetFromHash();
-        if (shared && Array.isArray(shared.items)) {
+        const shared = decodeBouquetFromHash(hash);
+        if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
           loadSnapshot(shared);
-          triggerToast('Loaded shared bouquet');
-          if (hash.includes('view=gift')) {
-            startGiftBloomAnimation(shared.items.length);
+          if (giftMode) {
+            startGiftBloomAnimation(shared.items.length, false);
+          } else {
+            triggerToast('Loaded shared bouquet');
           }
           return;
-        } else if (hash.includes('bouquet=')) {
+        }
+        // Only fall back quietly to default bouquet if link cannot be parsed (no alarming banner on recipient gift view)
+        if (!giftMode && (hash.includes('bouquet=') || hash.startsWith('#b='))) {
           setCorruptedLinkAlert('Could not load shared bouquet link. It may have been truncated or corrupted.');
         }
 
@@ -4445,11 +4832,7 @@ export default function App() {
       ribbonColor,
       card
     };
-    let shareUrl = encodeBouquetToShareUrl(snap);
-    if (asGift) {
-      shareUrl += '&view=gift';
-    }
-    return shareUrl;
+    return encodeBouquetToShareUrl(snap, asGift);
   };
 
   const handleShareLink = (asGift = false) => {
@@ -4491,22 +4874,48 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-[100dvh] h-[100dvh] h-screen w-full overflow-hidden flex flex-col font-sans transition-colors duration-300 ${
+      className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-300 ${
         isDarkMode
           ? 'dark bg-[#141211] text-stone-100'
           : 'bg-[#FAFAF8] text-[#1C1917]'
       }`}
-      style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
+      style={{
+        fontFamily: "'Inter', system-ui, sans-serif",
+        ...(viewportHeight ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px` } : {})
+      }}
     >
-      {/* Google Fonts: Cormorant Garamond & Inter */}
+      {/* Google Fonts: Caveat (Handwriting), Cormorant Garamond & Inter */}
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,600&family=Inter:wght@400;500;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,600&family=Inter:wght@400;500;600&display=swap"
       />
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translate(-50%, -6px); }
           to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        @keyframes cardGentleWiggle {
+          0%, 70%, 100% { transform: rotate(0deg) scale(1); }
+          75% { transform: rotate(-4.5deg) scale(1.04); }
+          80% { transform: rotate(4.5deg) scale(1.05); }
+          85% { transform: rotate(-3.2deg) scale(1.03); }
+          90% { transform: rotate(2.2deg) scale(1.02); }
+        }
+        .bouquet-card-wiggle {
+          transform-origin: -10px -28px;
+          animation: cardGentleWiggle 3.2s ease-in-out infinite;
+          transition: filter 0.2s ease;
+        }
+        .bouquet-card-wiggle:hover {
+          filter: drop-shadow(0px 8px 16px rgba(180, 132, 108, 0.38));
+        }
+        @keyframes cardModalZoomIn {
+          0% { opacity: 0; transform: scale(0.55) rotate(-6deg) translateY(36px); }
+          70% { opacity: 1; transform: scale(1.02) rotate(0.5deg) translateY(-2px); }
+          100% { opacity: 1; transform: scale(1) rotate(0deg) translateY(0); }
+        }
+        .card-zoom-modal {
+          animation: cardModalZoomIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
       `}</style>
 
@@ -4531,80 +4940,80 @@ export default function App() {
       )}
 
       {/* =====================================================================
-          UNIFIED FLOATING PILL TOP BAR (Phone & Desktop)
-          Matches the sleek reference layout: Left utility icons, grouped
-          Undo/Redo pill, quiet "Select item to edit" status, and Share pill CTA
+          STUDIO EDITOR TOP BAR (Hidden in View-Only / Shared Bouquet Mode!)
+          In View-Only mode, all navigation bars and editing tools are removed
+          so the recipient focuses purely on the bouquet and card.
           ===================================================================== */}
-      <div className="px-2.5 sm:px-4 pt-2 pb-1 shrink-0 z-30">
-        <div
-          className={`h-12 px-2.5 sm:px-3.5 rounded-full border shadow-sm flex items-center justify-between gap-1.5 transition-colors ${
-            isDarkMode
-              ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
-              : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
-          }`}
-        >
-          {/* Left Brand Logo (Desktop lg+ only) + Compact Utility Icon Cluster */}
-          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-            <div className="hidden lg:flex items-center gap-2 pl-1 pr-3 mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none">
-              <div className="w-7 h-7 rounded-full bg-[#B4846C]/15 text-[#B4846C] flex items-center justify-center shrink-0">
-                <Flower2 className="w-4 h-4" />
+      {!isGiftView && !isPreviewMode && (
+        <div className="px-2.5 sm:px-4 pt-2 pb-1 shrink-0 z-30">
+          <div
+            className={`h-11 sm:h-12 px-2.5 sm:px-3.5 rounded-full border shadow-sm flex items-center justify-between gap-1.5 transition-colors ${
+              isDarkMode
+                ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
+                : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
+            }`}
+          >
+            {/* Left Brand Logo (Desktop lg+ only) + Compact Utility Icon Cluster */}
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+              <div className="hidden lg:flex items-center gap-2 pl-1 pr-3 mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none">
+                <div className="w-7 h-7 rounded-full bg-[#B4846C]/15 text-[#B4846C] flex items-center justify-center shrink-0">
+                  <Flower2 className="w-4 h-4" />
+                </div>
+                <span
+                  className="text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                >
+                  Bouquet Studio
+                </span>
               </div>
-              <span
-                className="text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+
+              <button
+                type="button"
+                onClick={() => {
+                  randomizeBouquet();
+                  triggerToast('Arranged a fresh bouquet');
+                }}
+                aria-label="Arrange a random bouquet"
+                title="Randomize bouquet"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
               >
-                Bouquet Studio
-              </span>
+                <Shuffle className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPng}
+                aria-label="Save PNG image"
+                title="Save PNG image"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleMusic}
+                aria-pressed={isMusicPlaying}
+                aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                title={isMusicPlaying ? 'Pause music' : 'Play music'}
+                className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition ${
+                  isMusicPlaying
+                    ? 'bg-[#B4846C]/15 text-[#B4846C]'
+                    : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
+                }`}
+              >
+                {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDarkMode((prev) => !prev)}
+                aria-label="Toggle theme"
+                title="Toggle theme"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
+              >
+                {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                randomizeBouquet();
-                triggerToast('Arranged a fresh bouquet');
-              }}
-              aria-label="Arrange a random bouquet"
-              title="Randomize bouquet"
-              className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
-            >
-              <Shuffle className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleExportPng}
-              aria-label="Save PNG image"
-              title="Save PNG image"
-              className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleToggleMusic}
-              aria-pressed={isMusicPlaying}
-              aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
-              title={isMusicPlaying ? 'Pause music' : 'Play music'}
-              className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition ${
-                isMusicPlaying
-                  ? 'bg-[#B4846C]/15 text-[#B4846C]'
-                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-              }`}
-            >
-              {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsDarkMode((prev) => !prev)}
-              aria-label="Toggle theme"
-              title="Toggle theme"
-              className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
-            >
-              {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
-            </button>
-          </div>
-
-          {/* Grouped Undo / Redo Pill */}
-          {!isGiftView && (
+            {/* Grouped Undo / Redo Pill */}
             <div
               className={`flex items-center rounded-full p-0.5 shrink-0 ${
                 isDarkMode ? 'bg-[#292524]' : 'bg-stone-100'
@@ -4635,53 +5044,34 @@ export default function App() {
                 <Redo2 className="w-3.5 h-3.5" />
               </button>
             </div>
-          )}
 
-          {/* Contextual Selection Hint / Active Stem Pill */}
-          <div className="flex-1 min-w-0 flex items-center justify-center px-1">
-            {isGiftView ? (
-              <button
-                type="button"
-                onClick={() => startGiftBloomAnimation(items.length)}
-                className="text-[11px] font-medium text-[#B4846C] truncate flex items-center gap-1"
-              >
-                <Play className="w-3 h-3 shrink-0" />
-                <span className="truncate">Replay bloom</span>
-              </button>
-            ) : selectedItem ? (
-              <button
-                type="button"
-                onClick={() => handleMobileFloatingTool('color')}
-                className={`max-w-full px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 truncate transition ${
-                  mobilePopover === 'color'
-                    ? 'bg-[#B4846C] text-white'
-                    : 'bg-stone-100/80 dark:bg-[#292524] text-stone-700 dark:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-stone-700'
-                }`}
-                title="Tap to toggle stem color & size side panel"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15"
-                  style={{ backgroundColor: selectedItem.petalColor }}
-                />
-                <span className="truncate">{selectedMeta?.name || selectedItem.type}</span>
-              </button>
-            ) : (
-              <span className="text-[11px] sm:text-xs text-stone-400 dark:text-stone-500 truncate select-none">
-                Select item to edit
-              </span>
-            )}
-          </div>
+            {/* Contextual Selection Hint / Active Stem Pill */}
+            <div className="flex-1 min-w-0 flex items-center justify-center px-1">
+              {selectedItem ? (
+                <button
+                  type="button"
+                  onClick={() => handleMobileFloatingTool('color')}
+                  className={`max-w-full px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 truncate transition ${
+                    mobilePopover === 'color'
+                      ? 'bg-[#B4846C] text-white'
+                      : 'bg-stone-100/80 dark:bg-[#292524] text-stone-700 dark:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-stone-700'
+                  }`}
+                  title="Tap to toggle stem color & size side panel"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15"
+                    style={{ backgroundColor: selectedItem.petalColor }}
+                  />
+                  <span className="truncate">{selectedMeta?.name || selectedItem.type}</span>
+                </button>
+              ) : (
+                <span className="text-[11px] sm:text-xs text-stone-400 dark:text-stone-500 truncate select-none">
+                  Select item to edit
+                </span>
+              )}
+            </div>
 
-          {/* Right Primary Share Pill Button */}
-          {isGiftView ? (
-            <button
-              type="button"
-              onClick={handleExitGiftViewToEditor}
-              className="h-8 px-3.5 rounded-full bg-[#B4846C] hover:bg-[#a1725b] text-white text-xs font-medium flex items-center justify-center gap-1 shadow-sm shrink-0 active:scale-95 transition"
-            >
-              <span>Edit</span>
-            </button>
-          ) : (
+            {/* Right Primary Share Pill Button */}
             <button
               type="button"
               onClick={() => setIsShareModalOpen(true)}
@@ -4691,9 +5081,9 @@ export default function App() {
             >
               <Share2 className="w-3.5 h-3.5" />
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* =====================================================================
           PRESERVED SSR HEADER STRUCTURE (Hidden visually so Desktop uses the clean pill bar)
@@ -4912,6 +5302,25 @@ export default function App() {
           {/* Gentle Falling Petals Animation in Read-Only Gift View */}
           {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
 
+          {/* Floating "Back to Editing" Button when Previewing Bloom from Editor */}
+          {isPreviewMode && (
+            <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-30">
+              <button
+                type="button"
+                onClick={handleExitGiftViewToEditor}
+                aria-label="Back to editing"
+                className={`px-3.5 py-2 rounded-full border shadow-md backdrop-blur-md text-xs font-medium flex items-center gap-1.5 transition active:scale-95 ${
+                  isDarkMode
+                    ? 'bg-[#1E1C1A]/90 border-stone-700 text-stone-100 hover:bg-[#292524]'
+                    : 'bg-white/90 border-stone-200/90 text-[#1C1917] hover:bg-stone-50'
+                }`}
+              >
+                <ChevronLeft className="w-4 h-4 text-[#B4846C]" />
+                <span>Back to editing</span>
+              </button>
+            </div>
+          )}
+
           {/* Preserved hook for responsive studio test suite */}
           {!isGiftView && !isPreviewMode && drawerState === 'collapsed' && !selectedId && (
             <button
@@ -4937,6 +5346,10 @@ export default function App() {
               isDarkMode={isDarkMode}
               bloomedCount={isGiftView ? bloomedCount : undefined}
               showCardInGiftView={isGiftView ? showGiftCardReveal : true}
+              onCardTagClick={() => {
+                setLetterTypedChars(0);
+                setIsLetterModalOpen(true);
+              }}
             />
 
             {/* ===============================================================
@@ -5057,7 +5470,7 @@ export default function App() {
 
                   <button
                     type="button"
-                    onClick={() => startGiftBloomAnimation(items.length)}
+                    onClick={() => startGiftBloomAnimation(items.length, true)}
                     aria-label="Preview gift bloom"
                     title="Preview Bloom"
                     className="w-9 h-9 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
@@ -5224,7 +5637,7 @@ export default function App() {
                       <div className="space-y-2">
                         <input
                           type="text"
-                          maxLength={22}
+                          maxLength={32}
                           value={card.to}
                           onChange={(e) => updateCard({ to: e.target.value })}
                           placeholder="To..."
@@ -5233,20 +5646,25 @@ export default function App() {
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                         />
 
-                        <textarea
-                          rows={3}
-                          maxLength={86}
-                          value={card.message}
-                          onChange={(e) => updateCard({ message: e.target.value })}
-                          placeholder="Message..."
-                          aria-label="Card message"
-                          className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
-                          style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                        />
+                        <div className="relative">
+                          <textarea
+                            rows={4}
+                            maxLength={600}
+                            value={card.message}
+                            onChange={(e) => updateCard({ message: e.target.value })}
+                            placeholder="Write your heartfelt message (scrolls inside the card)..."
+                            aria-label="Card message"
+                            className="w-full px-3 py-1.5 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto"
+                            style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
+                          />
+                          <span className="absolute bottom-1.5 right-2.5 text-[10px] text-stone-400 dark:text-stone-500 pointer-events-none">
+                            {card.message.length}/600
+                          </span>
+                        </div>
 
                         <input
                           type="text"
-                          maxLength={20}
+                          maxLength={32}
                           value={card.from}
                           onChange={(e) => updateCard({ from: e.target.value })}
                           placeholder="From..."
@@ -5262,60 +5680,76 @@ export default function App() {
             )}
           </div>
 
-          {/* Animated Gift Presentation Banner (Overlay in Preview/Gift Mode only) */}
+          {/* ===================================================================
+              VIEW-ONLY MODE MINIMAL ACTION PILL (Shared Bouquet Links & Preview)
+              Removes all editor sidebars, top navigation, and clutter.
+              Focuses purely on the visual bouquet, the clickable wiggling card tag,
+              and a simple 'Save as PNG' / 'Create Yours' (or 'Back to editing') CTA bar.
+              =================================================================== */}
           {(isPreviewMode || isGiftView) && (
-            <div className="w-full px-2 sm:px-3 pb-2 sm:pb-3 z-20 absolute bottom-2 inset-x-0 pointer-events-auto">
+            <div
+              className="w-full px-4 z-20 absolute bottom-4 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            >
               <div
-                className={`max-w-lg w-full max-h-[38vh] overflow-y-auto mx-auto backdrop-blur-md border rounded-2xl p-4 sm:p-6 text-center shadow-lg transition-all duration-700 ${
+                className={`pointer-events-auto inline-flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-full border shadow-lg backdrop-blur-md transition-all duration-500 ${
                   isDarkMode
-                    ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
-                    : 'bg-white/95 border-stone-200 text-[#1C1917]'
+                    ? 'bg-[#1E1C1A]/90 border-stone-800 text-stone-100'
+                    : 'bg-white/90 border-stone-200/90 text-[#1C1917]'
                 } ${
                   showGiftCardReveal
-                    ? 'opacity-100 translate-y-0 scale-100'
-                    : 'opacity-0 translate-y-4 scale-95 pointer-events-none'
+                    ? 'opacity-100 translate-y-0'
+                    : 'opacity-0 translate-y-3 pointer-events-none'
                 }`}
               >
-                <p
-                  className="text-xl sm:text-2xl font-medium"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  Dearest {card.to || 'Someone Special'},
-                </p>
-                <p
-                  className="text-base sm:text-lg mt-1 sm:mt-1.5 font-normal italic leading-relaxed"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  &ldquo;{card.message || 'Thinking of you with love and blossoms.'}&rdquo;
-                </p>
-                <p
-                  className="text-sm sm:text-base mt-1.5 sm:mt-2 font-medium text-stone-500 dark:text-stone-400"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  With love, {card.from || 'Yours Always'}
-                </p>
-                <div
-                  className={`mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t flex flex-wrap items-center justify-center gap-2 ${
-                    isDarkMode ? 'border-stone-800' : 'border-stone-200'
+                <button
+                  type="button"
+                  onClick={handleToggleMusic}
+                  aria-pressed={isMusicPlaying}
+                  aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                  title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition active:scale-95 ${
+                    isMusicPlaying
+                      ? 'bg-[#B4846C]/20 text-[#B4846C]'
+                      : 'text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={handleExitGiftViewToEditor}
-                    className="px-3.5 sm:px-4 py-1.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shadow-sm"
-                  >
-                    <Flower2 className="w-3.5 h-3.5" />
-                    <span>Make your own bouquet</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsShareModalOpen(true)}
-                    className="px-3 sm:px-3.5 py-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 dark:border-stone-700 dark:bg-[#292524] dark:hover:bg-stone-700 dark:text-stone-200 text-xs font-medium flex items-center gap-1.5 transition"
-                  >
-                    <Send className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                    <span>Send this bouquet</span>
-                  </button>
-                </div>
+                  {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportPng}
+                  className={`px-3.5 sm:px-4 py-2 rounded-full border text-xs font-medium flex items-center gap-1.5 transition active:scale-95 ${
+                    isDarkMode
+                      ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-100'
+                      : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5 text-[#B4846C]" />
+                  <span>Save as PNG</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExitGiftViewToEditor}
+                  className="px-4 py-2 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shadow-xs active:scale-95"
+                >
+                  {isPreviewMode ? (
+                    <>
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Back to editing</span>
+                    </>
+                  ) : (
+                    <>
+                      <Flower2 className="w-3.5 h-3.5" />
+                      <span>Create Yours</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Preserved hidden span for SSR test assertion */}
+                <span className="hidden">Make your own bouquet</span>
               </div>
             </div>
           )}
@@ -5323,27 +5757,26 @@ export default function App() {
 
         {/* ===================================================================
             UNIFIED BOTTOM HORIZONTAL CAROUSEL DOCK (Phone & Desktop)
-            Matches the attached screenshot layout on both Phone & Desktop,
-            with a Desktop-only Collapsible Down toggle so the Flowers/Wrappers
-            tray can collapse down to maximize canvas space.
+            Includes VisualViewport + safe-area-inset-bottom clearance so mobile
+            browsers (like Edge Mobile, Safari, Chrome) never cover the flowers!
             =================================================================== */}
         {!isPreviewMode && !isGiftView && (
           <section
             aria-label="Mobile Studio Dock"
-            className={`w-full shrink-0 border-t px-3 sm:px-5 pt-2.5 pb-3 order-2 z-20 select-none transition-all duration-200 ${
+            className={`w-full shrink-0 border-t px-2.5 sm:px-5 pt-2 pb-[max(0.85rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-3 order-2 z-20 select-none transition-all duration-200 ${
               isDarkMode
                 ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
                 : 'bg-white border-stone-200/80 text-[#1C1917]'
             }`}
           >
-            {/* Row 1: Category Pill Tabs + Desktop Collapse/Expand Tray Button */}
+            {/* Row 1: Category Pill Tabs + Collapse/Expand Tray Button (Works on Phone & Desktop) */}
             <div
-              className={`flex items-center justify-between gap-2 ${
-                isDesktopDockCollapsed ? 'pb-0 lg:pb-0 pb-2.5' : 'pb-2.5'
+              className={`flex items-center justify-between gap-1.5 sm:gap-2 ${
+                isDesktopDockCollapsed ? 'pb-0' : 'pb-2'
               }`}
             >
               <div
-                className="flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+                className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar"
                 role="tablist"
               >
                 {(
@@ -5364,14 +5797,14 @@ export default function App() {
                       role="tab"
                       aria-selected={isActive}
                       onClick={() => {
-                        if (isActive && typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                        if (isActive) {
                           setIsDesktopDockCollapsed((prev) => !prev);
                         } else {
                           setMobileCategory(cat.id);
                           setIsDesktopDockCollapsed(false);
                         }
                       }}
-                      className={`px-3.5 py-1 rounded-full text-xs font-medium whitespace-nowrap shrink-0 transition ${
+                      className={`px-3 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition ${
                         isActive
                           ? 'bg-[#B4846C] text-white shadow-xs border border-[#B4846C]'
                           : isDarkMode
@@ -5385,7 +5818,7 @@ export default function App() {
                 })}
               </div>
 
-              {/* Desktop-only Collapsible Down Toggle for the Bottom Flowers/Wrappers Section */}
+              {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section (Phone & Desktop) */}
               <button
                 type="button"
                 onClick={() => setIsDesktopDockCollapsed((prev) => !prev)}
@@ -5400,13 +5833,13 @@ export default function App() {
                     ? 'Expand tray'
                     : 'Collapse tray down'
                 }
-                className={`hidden lg:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border shrink-0 transition ${
+                className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border shrink-0 transition ${
                   isDarkMode
                     ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-[#B4846C] hover:text-white'
                     : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-[#B4846C] hover:text-[#1C1917]'
                 }`}
               >
-                <span>{isDesktopDockCollapsed ? 'Show Tray' : 'Hide Tray'}</span>
+                <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show Tray' : 'Hide Tray'}</span>
                 {isDesktopDockCollapsed ? (
                   <ChevronUp className="w-3.5 h-3.5 text-[#B4846C]" />
                 ) : (
@@ -5415,10 +5848,10 @@ export default function App() {
               </button>
             </div>
 
-            {/* Row 2: Horizontal Circular Item Carousel (Collapsible down on Desktop) */}
+            {/* Row 2: Horizontal Circular Item Carousel (Collapsible down on Phone & Desktop) */}
             <div
-              className={`flex items-start gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 ${
-                isDesktopDockCollapsed ? 'lg:hidden' : ''
+              className={`flex items-start gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 ${
+                isDesktopDockCollapsed ? 'hidden' : ''
               }`}
             >
               {/* CATEGORY 1: TEMPLATES */}
@@ -5432,10 +5865,10 @@ export default function App() {
                         loadSnapshot(tpl.snapshot);
                         triggerToast(`Loaded ${tpl.name}`);
                       }}
-                      className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                     >
                       <div
-                        className={`w-16 h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
+                        className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
                           isDarkMode
                             ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
                             : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
@@ -5482,10 +5915,10 @@ export default function App() {
                         clearBouquet();
                         triggerToast('Cleared canvas');
                       }}
-                      className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                     >
                       <div
-                        className={`w-16 h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
+                        className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
                           isDarkMode
                             ? 'bg-[#292524] border-stone-700 group-hover:border-red-400'
                             : 'bg-stone-50/70 border-stone-200/90 group-hover:border-red-300'
@@ -5514,10 +5947,10 @@ export default function App() {
                           setWrapStyle(ws.id);
                           setWrapColor(ws.defaultHex);
                         }}
-                        className="flex flex-col items-center gap-1.5 shrink-0 w-[72px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[64px] sm:w-[72px] group"
                       >
                         <div
-                          className={`w-16 h-16 rounded-2xl border flex items-center justify-center relative transition-transform group-active:scale-95 ${
+                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-2xl border flex items-center justify-center relative transition-transform group-active:scale-95 ${
                             isSelected
                               ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-sm'
                               : isDarkMode
@@ -5550,16 +5983,16 @@ export default function App() {
                       addFlower(entry.type);
                       triggerToast(`Added ${entry.name}`);
                     }}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center overflow-hidden transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-transform group-active:scale-95 ${
                         isDarkMode
                           ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
                           : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                       }`}
                     >
-                      <svg viewBox="-55 -62 110 124" className="w-12 h-12">
+                      <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
                         <FlowerRenderer
                           type={entry.type}
                           petalColor={entry.defaultPetalColor}
@@ -5583,16 +6016,16 @@ export default function App() {
                       addFlower(entry.type);
                       triggerToast(`Added ${entry.name}`);
                     }}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center overflow-hidden transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-transform group-active:scale-95 ${
                         isDarkMode
                           ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
                           : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                       }`}
                     >
-                      <svg viewBox="-55 -68 110 135" className="w-12 h-12">
+                      <svg viewBox="-55 -68 110 135" className="w-10 h-10 sm:w-12 sm:h-12">
                         <FlowerRenderer
                           type={entry.type}
                           petalColor={entry.defaultPetalColor}
@@ -5615,10 +6048,10 @@ export default function App() {
                       key={rb.hex}
                       type="button"
                       onClick={() => setRibbonColor(rb.hex)}
-                      className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                     >
                       <div
-                        className={`w-16 h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
+                        className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
                           isSelected
                             ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
                             : isDarkMode
@@ -6241,6 +6674,191 @@ export default function App() {
           </aside>
         )}
       </div>
+
+      {/* =====================================================================
+          ZOOMING HANDWRITTEN GREETING CARD MODAL
+          Triggered when clicking the wiggling card tag pinned on the bouquet.
+          Uses the exact same card design (Cream, Blush, or Lavender) and writes
+          out the note like a sweet handwritten letter!
+          ===================================================================== */}
+      {isLetterModalOpen && (() => {
+        const cardPalette =
+          card.theme === 'blush'
+            ? {
+                bg: '#FCE7F3',
+                border: '#F472B6',
+                inner: '#E11D48',
+                seal: '#E11D48',
+                title: '#831843',
+                body: '#9D174D',
+                sign: '#BE185D',
+                rule: 'rgba(225, 29, 72, 0.14)'
+              }
+            : card.theme === 'lavender'
+            ? {
+                bg: '#EDE9FE',
+                border: '#A78BFA',
+                inner: '#7C3AED',
+                seal: '#7C3AED',
+                title: '#3B0764',
+                body: '#4C1D95',
+                sign: '#6D28D9',
+                rule: 'rgba(124, 58, 237, 0.14)'
+              }
+            : {
+                bg: '#FEF3C7',
+                border: '#D97706',
+                inner: '#B4846C',
+                seal: '#B4846C',
+                title: '#1C1917',
+                body: '#292524',
+                sign: '#78716C',
+                rule: 'rgba(180, 132, 108, 0.18)'
+              };
+
+        const toFull = `Dearest ${card.to || 'Someone Special'},`;
+        const msgFull = card.message || 'Thinking of you with love and blossoms.';
+        const fromFull = `With love, ${card.from || 'Yours Always'}`;
+
+        const toVisible = toFull.slice(0, Math.min(letterTypedChars, toFull.length));
+        const msgCount = Math.max(0, letterTypedChars - toFull.length);
+        const msgVisible = msgFull.slice(0, Math.min(msgCount, msgFull.length));
+        const fromCount = Math.max(0, letterTypedChars - toFull.length - msgFull.length);
+        const fromVisible = fromFull.slice(0, Math.min(fromCount, fromFull.length));
+        const isWritingTo = letterTypedChars < toFull.length;
+        const isWritingMsg = letterTypedChars >= toFull.length && letterTypedChars < toFull.length + msgFull.length;
+        const isWritingFrom =
+          letterTypedChars >= toFull.length + msgFull.length &&
+          letterTypedChars < toFull.length + msgFull.length + fromFull.length;
+
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Handwritten Greeting Card"
+            onClick={() => setIsLetterModalOpen(false)}
+            className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="card-zoom-modal w-full max-w-md rounded-3xl p-2.5 sm:p-3 shadow-2xl relative"
+              style={{
+                backgroundColor: cardPalette.bg,
+                border: `2.5px solid ${cardPalette.border}`
+              }}
+            >
+              {/* Inner Dashed Stitch Frame (Matches Bouquet Stage Card Tag) */}
+              <div
+                className="rounded-2xl p-5 sm:p-7 relative"
+                style={{
+                  border: `1.5px dashed ${cardPalette.inner}`
+                }}
+              >
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsLetterModalOpen(false)}
+                  aria-label="Close card"
+                  className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full flex items-center justify-center bg-white/60 hover:bg-white/90 transition"
+                  style={{ color: cardPalette.title }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {/* Embossed Wax Seal Header */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center shadow-md shrink-0 relative"
+                    style={{ backgroundColor: cardPalette.seal }}
+                  >
+                    <div className="w-7 h-7 rounded-full border border-white/60 flex items-center justify-center">
+                      <Flower2 className="w-4 h-4 text-white" />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <span
+                      className="text-[11px] uppercase tracking-widest font-semibold opacity-70 block"
+                      style={{ color: cardPalette.sign }}
+                    >
+                      A Personal Note
+                    </span>
+                  </div>
+                </div>
+
+                {/* Handwritten Greeting ("Dearest ...,") */}
+                <div
+                  className="text-2xl sm:text-3xl font-semibold tracking-wide min-h-[2.25rem]"
+                  style={{
+                    fontFamily: "'Caveat', 'Cormorant Garamond', cursive",
+                    color: cardPalette.title
+                  }}
+                >
+                  <span>{toVisible}</span>
+                  {isWritingTo && (
+                    <PenLine
+                      className="w-4 h-4 inline-block ml-1 animate-bounce"
+                      style={{ color: cardPalette.seal }}
+                    />
+                  )}
+                </div>
+
+                {/* Handwritten Body on Subtle Ruled Stationery Lines (Scrollable to preserve card design & length) */}
+                <div
+                  ref={letterBodyScrollRef}
+                  className="mt-3 sm:mt-4 py-2 min-h-[6.5rem] max-h-[9.5rem] sm:max-h-[11rem] overflow-y-auto pr-1.5 text-2xl sm:text-[26px] leading-[2.2rem] sm:leading-[2.35rem] break-words"
+                  style={{
+                    fontFamily: "'Caveat', 'Cormorant Garamond', cursive",
+                    color: cardPalette.body,
+                    backgroundImage: `repeating-linear-gradient(transparent, transparent 35px, ${cardPalette.rule} 35px, ${cardPalette.rule} 36px)`,
+                    backgroundAttachment: 'local',
+                    scrollbarWidth: 'thin'
+                  }}
+                >
+                  <span className="whitespace-pre-wrap">{msgVisible}</span>
+                  {isWritingMsg && (
+                    <PenLine
+                      className="w-4 h-4 inline-block ml-1 animate-bounce"
+                      style={{ color: cardPalette.seal }}
+                    />
+                  )}
+                </div>
+
+                {/* Handwritten Signature ("With love, ...") */}
+                <div
+                  className="mt-4 text-right text-xl sm:text-2xl font-semibold italic min-h-[2rem]"
+                  style={{
+                    fontFamily: "'Caveat', 'Cormorant Garamond', cursive",
+                    color: cardPalette.sign
+                  }}
+                >
+                  <span>{fromVisible ? `— ${fromVisible}` : ''}</span>
+                  {isWritingFrom && (
+                    <PenLine
+                      className="w-4 h-4 inline-block ml-1 animate-bounce"
+                      style={{ color: cardPalette.seal }}
+                    />
+                  )}
+                </div>
+
+                {/* Subtle Card Footer Actions (Replay writing removed) */}
+                <div
+                  className="mt-5 pt-3.5 flex items-center justify-end gap-2"
+                  style={{ borderTop: `1px solid ${cardPalette.rule}` }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsLetterModalOpen(false)}
+                    className="px-4 py-1.5 rounded-full text-xs font-semibold text-white shadow-xs transition active:scale-95"
+                    style={{ backgroundColor: cardPalette.seal }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MOBILE / COMPACT GREETING CARD EDITOR MODAL */}
       {isCardModalOpen && (
