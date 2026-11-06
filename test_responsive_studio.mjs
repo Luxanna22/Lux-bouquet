@@ -127,7 +127,19 @@ try {
   // 16. Dynamic Viewport 100dvh & SVG Pointer Cancel Safety
   assert(html.includes('h-[100dvh]'), 'Root container uses 100dvh dynamic height to avoid mobile address-bar clipping');
   assert(html.includes('w-full'), 'Root container uses w-full to prevent horizontal scrollbars');
-  const studioSrc = fs.readFileSync('bouquet_studio.tsx', 'utf-8');
+  const studioFiles = [
+    'bouquet_studio.tsx',
+    'src/types/bouquet.ts',
+    'src/components/flowers/FlowerRenderer.tsx',
+    'src/lib/shareAndExport.ts',
+    'src/store/useBouquetStore.ts',
+    'src/components/BouquetStage.tsx',
+    'src/components/MiniThumbnails.tsx',
+    'src/components/LayerManagerPanel.tsx',
+    'src/components/SelectedFlowerToolbar.tsx',
+    'src/components/BouquetStudioApp.tsx',
+  ];
+  const studioSrc = studioFiles.map(f => fs.readFileSync(f, 'utf-8')).join('\n');
   assert(studioSrc.includes('onPointerCancel={handleStagePointerUp}'), 'Canvas stage handles pointer cancellation gracefully');
   console.log('✓ Dynamic viewport height (100dvh) and pointer cancellation safety verified');
 

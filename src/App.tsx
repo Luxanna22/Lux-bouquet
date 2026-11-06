@@ -1,3 +1,2 @@
-import App from '../bouquet_studio';
-
+import App from './components/BouquetStudioApp';
 export default App;
