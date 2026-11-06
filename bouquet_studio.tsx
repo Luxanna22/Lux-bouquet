@@ -2925,7 +2925,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 strokeWidth="1.6"
                 fill="none"
                 opacity="0.85"
-                className="pointer-events-none"
+                className={isPreviewMode ? 'pointer-events-none bouquet-cord-bloom' : 'pointer-events-none'}
               />
               {/* Card Group: Wiggles ONLY in shared/preview mode, stays calm on main editing canvas */}
               <g
@@ -4724,17 +4724,19 @@ export default function App() {
     setShowGiftCardReveal(false);
     setBloomedCount(0);
     let current = 0;
+    const cardRevealThreshold = Math.max(1, Math.ceil(totalItems * 0.5));
     bloomIntervalRef.current = window.setInterval(() => {
       current += 1;
       setBloomedCount(current);
+      if (current === cardRevealThreshold) {
+        setShowGiftCardReveal(true);
+      }
       if (current >= totalItems) {
         if (bloomIntervalRef.current !== null) {
           clearInterval(bloomIntervalRef.current);
           bloomIntervalRef.current = null;
         }
-        setTimeout(() => {
-          setShowGiftCardReveal(true);
-        }, 420);
+        setShowGiftCardReveal(true);
       }
     }, 130);
   }, []);
@@ -4992,16 +4994,43 @@ export default function App() {
           from { opacity: 0; transform: translate(-50%, -6px); }
           to { opacity: 1; transform: translate(-50%, 0); }
         }
+        @keyframes cardBloomSwingIn {
+          0% {
+            opacity: 0;
+            transform: rotate(-18deg) scale(0.45) translateY(20px);
+          }
+          55% {
+            opacity: 1;
+            transform: rotate(7deg) scale(1.06) translateY(-4px);
+          }
+          78% {
+            opacity: 1;
+            transform: rotate(-4deg) scale(0.99) translateY(1px);
+          }
+          100% {
+            opacity: 1;
+            transform: rotate(0deg) scale(1) translateY(0px);
+          }
+        }
+        @keyframes cordBloomFade {
+          0% { opacity: 0; stroke-dasharray: 140; stroke-dashoffset: 140; }
+          100% { opacity: 0.85; stroke-dasharray: 140; stroke-dashoffset: 0; }
+        }
+        .bouquet-cord-bloom {
+          animation: cordBloomFade 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
         @keyframes cardGentleWiggle {
-          0%, 70%, 100% { transform: rotate(0deg) scale(1); }
-          75% { transform: rotate(-4.5deg) scale(1.04); }
-          80% { transform: rotate(4.5deg) scale(1.05); }
-          85% { transform: rotate(-3.2deg) scale(1.03); }
-          90% { transform: rotate(2.2deg) scale(1.02); }
+          0%, 55%, 100% { transform: rotate(0deg) scale(1); }
+          15% { transform: rotate(-4.5deg) scale(1.04); }
+          25% { transform: rotate(4.5deg) scale(1.05); }
+          35% { transform: rotate(-3.2deg) scale(1.03); }
+          45% { transform: rotate(2.2deg) scale(1.02); }
         }
         .bouquet-card-wiggle {
           transform-origin: -10px -28px;
-          animation: cardGentleWiggle 3.2s ease-in-out infinite;
+          animation:
+            cardBloomSwingIn 0.78s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+            cardGentleWiggle 2.8s ease-in-out 0.78s infinite;
           transition: filter 0.2s ease;
         }
         .bouquet-card-wiggle:hover {
@@ -5484,12 +5513,6 @@ export default function App() {
                 >
                   For {card.to || 'You'}
                 </h2>
-
-                {card.from && (
-                  <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-                    From {card.from}
-                  </p>
-                )}
 
                 <button
                   type="button"
