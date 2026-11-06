@@ -1,4 +1,45 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
 const shortCodeMemory = new Map();
+
+function saveShortPayload(code, payload) {
+  const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || !payload) return;
+  shortCodeMemory.set(safeCode, payload);
+  if (shortCodeMemory.size > 1000) {
+    const oldest = shortCodeMemory.keys().next().value;
+    if (oldest) shortCodeMemory.delete(oldest);
+  }
+  try {
+    const filePath = path.join(os.tmpdir(), `bq_short_${safeCode}.txt`);
+    fs.writeFileSync(filePath, payload, 'utf-8');
+  } catch {
+    // Ignore tmp write errors
+  }
+}
+
+function loadLocalShortPayload(code) {
+  const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode) return null;
+  if (shortCodeMemory.has(safeCode)) {
+    return shortCodeMemory.get(safeCode);
+  }
+  try {
+    const filePath = path.join(os.tmpdir(), `bq_short_${safeCode}.txt`);
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8').trim();
+      if (data) {
+        shortCodeMemory.set(safeCode, data);
+        return data;
+      }
+    }
+  } catch {
+    // Ignore tmp read errors
+  }
+  return null;
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,19 +53,39 @@ export default async function handler(req, res) {
   }
 
   const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const codeParam = urlObj.searchParams.get('c');
+  const codeParam = (urlObj.searchParams.get('c') || '').replace(/[^0-9A-Za-z_-]/g, '');
 
   if (req.method === 'GET' && codeParam) {
-    const payload = shortCodeMemory.get(codeParam);
+    // 1. Check in-memory and /tmp cache first
+    let payload = loadLocalShortPayload(codeParam);
+
+    // 2. If serverless instance cold-started, recover payload from permanent KV slug backup
+    if (!payload) {
+      try {
+        const slug = `bq_${codeParam}`;
+        const lookup = await fetch(`https://is.gd/${slug}`, { redirect: 'manual' });
+        const loc = lookup.headers.get('location') || '';
+        const hashIdx = loc.indexOf('#');
+        if (hashIdx !== -1) {
+          payload = loc.slice(hashIdx);
+          saveShortPayload(codeParam, payload);
+        }
+      } catch {
+        // Ignore network error
+      }
+    }
+
     if (!payload) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ error: 'Not found' }));
       return;
     }
+
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify({ payload }));
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.end(JSON.stringify({ code: codeParam, payload }));
     return;
   }
 
@@ -45,54 +106,42 @@ export default async function handler(req, res) {
         bodyObj = JSON.parse(raw || '{}');
       }
 
-      const targetUrl = String(bodyObj.url || '').trim();
+      const code = String(bodyObj.code || '').replace(/[^0-9A-Za-z_-]/g, '');
       const payload = String(bodyObj.payload || '').trim();
-      if (!targetUrl) {
+      const origin = String(bodyObj.origin || '').replace(/\/+$/, '');
+
+      if (!code || !payload) {
         res.statusCode = 400;
-        res.end(JSON.stringify({ error: 'Missing url' }));
+        res.end(JSON.stringify({ error: 'Missing code or payload' }));
         return;
       }
 
-      const code = Math.random().toString(36).slice(2, 8);
-      if (payload) {
-        shortCodeMemory.set(code, payload);
-        if (shortCodeMemory.size > 500) {
-          const oldest = shortCodeMemory.keys().next().value;
-          if (oldest) shortCodeMemory.delete(oldest);
-        }
+      saveShortPayload(code, payload);
+
+      // Persist in background KV slug so cold starts on Vercel never lose the short code
+      const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;
+      const vaultUrl = `https://flowers-for-you.local/${normalizedPayload}`;
+      const slug = `bq_${code}`;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        await fetch(
+          `https://is.gd/create.php?format=simple&shorturl=${encodeURIComponent(slug)}&url=${encodeURIComponent(vaultUrl)}`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timer);
+      } catch {
+        // Local memory and /tmp already saved
       }
 
-      // 1. Try clean direct-301 URL shortener (is.gd)
-      if (/^https?:\/\//i.test(targetUrl) && !targetUrl.includes('localhost')) {
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 2800);
-          const resp = await fetch(
-            `https://is.gd/create.php?format=simple&url=${encodeURIComponent(targetUrl)}`,
-            { signal: controller.signal }
-          );
-          clearTimeout(timer);
-          if (resp.ok) {
-            const text = (await resp.text()).trim();
-            if (text.startsWith('https://is.gd/')) {
-              res.statusCode = 200;
-              res.setHeader('Content-Type', 'application/json; charset=utf-8');
-              res.end(JSON.stringify({ shortUrl: text, code }));
-              return;
-            }
-          }
-        } catch {
-          // Fall back to compact self-contained URL
-        }
-      }
-
+      const shortUrl = origin ? `${origin}/${code}` : `/${code}`;
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ shortUrl: targetUrl, code }));
+      res.end(JSON.stringify({ code, shortUrl }));
       return;
     } catch {
       res.statusCode = 500;
-      res.end(JSON.stringify({ error: 'Shorten failed' }));
+      res.end(JSON.stringify({ error: 'Failed to register short code' }));
       return;
     }
   }

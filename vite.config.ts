@@ -127,19 +127,35 @@ function handleShortenMiddleware(
   }
 
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const codeParam = urlObj.searchParams.get('c');
+  const codeParam = (urlObj.searchParams.get('c') || '').replace(/[^0-9A-Za-z_-]/g, '');
 
   if (req.method === 'GET' && codeParam) {
-    const payload = shortCodeStore.get(codeParam);
-    if (!payload) {
-      res.statusCode = 404;
+    (async () => {
+      let payload = shortCodeStore.get(codeParam) || null;
+      if (!payload) {
+        try {
+          const slug = `bq_${codeParam}`;
+          const lookup = await fetch(`https://is.gd/${slug}`, { redirect: 'manual' });
+          const loc = lookup.headers.get('location') || '';
+          const hashIdx = loc.indexOf('#');
+          if (hashIdx !== -1) {
+            payload = loc.slice(hashIdx);
+            shortCodeStore.set(codeParam, payload);
+          }
+        } catch {
+          // Ignore network error
+        }
+      }
+      if (!payload) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ error: 'Not found' }));
+        return;
+      }
+      res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ error: 'Not found' }));
-      return;
-    }
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify({ payload }));
+      res.end(JSON.stringify({ code: codeParam, payload }));
+    })();
     return;
   }
 
@@ -151,49 +167,40 @@ function handleShortenMiddleware(
     req.on('end', async () => {
       try {
         const parsed = JSON.parse(rawBody || '{}');
-        const targetUrl = String(parsed.url || '').trim();
+        const code = String(parsed.code || '').replace(/[^0-9A-Za-z_-]/g, '');
         const payload = String(parsed.payload || '').trim();
-        if (!targetUrl) {
+        const origin = String(parsed.origin || '').replace(/\/+$/, '');
+        if (!code || !payload) {
           res.statusCode = 400;
-          res.end(JSON.stringify({ error: 'Missing url' }));
+          res.end(JSON.stringify({ error: 'Missing code or payload' }));
           return;
         }
 
-        const code = Math.random().toString(36).slice(2, 8);
-        if (payload) {
-          shortCodeStore.set(code, payload);
-          if (shortCodeStore.size > 500) {
-            const oldest = shortCodeStore.keys().next().value;
-            if (oldest) shortCodeStore.delete(oldest);
-          }
+        shortCodeStore.set(code, payload);
+        if (shortCodeStore.size > 1000) {
+          const oldest = shortCodeStore.keys().next().value;
+          if (oldest) shortCodeStore.delete(oldest);
         }
 
-        if (/^https?:\/\//i.test(targetUrl) && !targetUrl.includes('localhost')) {
-          try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 2800);
-            const resp = await fetch(
-              `https://is.gd/create.php?format=simple&url=${encodeURIComponent(targetUrl)}`,
-              { signal: controller.signal }
-            );
-            clearTimeout(timer);
-            if (resp.ok) {
-              const text = (await resp.text()).trim();
-              if (text.startsWith('https://is.gd/')) {
-                res.statusCode = 200;
-                res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.end(JSON.stringify({ shortUrl: text, code }));
-                return;
-              }
-            }
-          } catch {
-            // Fall back to targetUrl
-          }
+        const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;
+        const vaultUrl = `https://flowers-for-you.local/${normalizedPayload}`;
+        const slug = `bq_${code}`;
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 2500);
+          await fetch(
+            `https://is.gd/create.php?format=simple&shorturl=${encodeURIComponent(slug)}&url=${encodeURIComponent(vaultUrl)}`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timer);
+        } catch {
+          // Memory store already saved
         }
 
+        const shortUrl = origin ? `${origin}/${code}` : `/${code}`;
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ shortUrl: targetUrl, code }));
+        res.end(JSON.stringify({ code, shortUrl }));
       } catch {
         res.statusCode = 500;
         res.end(JSON.stringify({ error: 'Shorten failed' }));

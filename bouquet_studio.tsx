@@ -56,11 +56,137 @@ export type FlowerType =
   | 'daisy'
   | 'lily'
   | 'peony'
+  | 'orchid'
+  | 'carnation'
+  | 'ranunculus'
+  | 'anemone'
+  | 'dahlia'
+  | 'iris'
+  | 'camellia'
+  | 'lotus'
   | 'lavender'
   | 'hydrangea'
   | 'babysBreath'
   | 'eucalyptus'
-  | 'fern';
+  | 'fern'
+  | 'cherryBlossom'
+  | 'waxflower'
+  | 'billyButtons'
+  | 'oliveBranch'
+  | 'monstera';
+
+export type CardTheme =
+  | 'cream'
+  | 'blush'
+  | 'lavender'
+  | 'sage'
+  | 'sky'
+  | 'midnight'
+  | 'terracotta';
+
+export interface CardThemePalette {
+  id: CardTheme;
+  label: string;
+  bg: string;
+  border: string;
+  inner: string;
+  seal: string;
+  title: string;
+  body: string;
+  sign: string;
+  rule: string;
+}
+
+export const CARD_THEME_CATALOG: CardThemePalette[] = [
+  {
+    id: 'cream',
+    label: 'Cream',
+    bg: '#FEF3C7',
+    border: '#D97706',
+    inner: '#B4846C',
+    seal: '#B4846C',
+    title: '#1C1917',
+    body: '#292524',
+    sign: '#78716C',
+    rule: 'rgba(180, 132, 108, 0.18)'
+  },
+  {
+    id: 'blush',
+    label: 'Blush',
+    bg: '#FCE7F3',
+    border: '#F472B6',
+    inner: '#E11D48',
+    seal: '#E11D48',
+    title: '#831843',
+    body: '#9D174D',
+    sign: '#BE185D',
+    rule: 'rgba(225, 29, 72, 0.14)'
+  },
+  {
+    id: 'lavender',
+    label: 'Lavender',
+    bg: '#EDE9FE',
+    border: '#A78BFA',
+    inner: '#7C3AED',
+    seal: '#7C3AED',
+    title: '#3B0764',
+    body: '#4C1D95',
+    sign: '#6D28D9',
+    rule: 'rgba(124, 58, 237, 0.14)'
+  },
+  {
+    id: 'sage',
+    label: 'Sage',
+    bg: '#ECFDF5',
+    border: '#6EE7B7',
+    inner: '#059669',
+    seal: '#047857',
+    title: '#064E3B',
+    body: '#065F46',
+    sign: '#047857',
+    rule: 'rgba(5, 150, 105, 0.14)'
+  },
+  {
+    id: 'sky',
+    label: 'Porcelain',
+    bg: '#F0F9FF',
+    border: '#7DD3FC',
+    inner: '#0284C7',
+    seal: '#0369A1',
+    title: '#0C4A6E',
+    body: '#075985',
+    sign: '#0369A1',
+    rule: 'rgba(2, 132, 199, 0.14)'
+  },
+  {
+    id: 'terracotta',
+    label: 'Terracotta',
+    bg: '#FFF7ED',
+    border: '#FDBA74',
+    inner: '#C2410C',
+    seal: '#EA580C',
+    title: '#7C2D12',
+    body: '#9A3412',
+    sign: '#C2410C',
+    rule: 'rgba(194, 65, 12, 0.14)'
+  },
+  {
+    id: 'midnight',
+    label: 'Noir Gilt',
+    bg: '#1E293B',
+    border: '#F59E0B',
+    inner: '#FBBF24',
+    seal: '#D97706',
+    title: '#FEF3C7',
+    body: '#F1F5F9',
+    sign: '#FCD34D',
+    rule: 'rgba(251, 191, 36, 0.18)'
+  }
+];
+
+export function getCardThemePalette(theme: CardTheme): CardThemePalette {
+  return CARD_THEME_CATALOG.find((t) => t.id === theme) || CARD_THEME_CATALOG[0];
+}
 
 export type typeWrapStyle =
   | 'kraft'
@@ -110,7 +236,7 @@ export interface GreetingCardData {
   from: string;
   message: string;
   visibleOnStage: boolean;
-  theme: 'cream' | 'blush' | 'lavender';
+  theme: CardTheme;
   locked?: boolean;
 }
 
@@ -125,17 +251,21 @@ export interface BouquetSnapshot {
 export interface FlowerCatalogMeta {
   type: FlowerType;
   name: string;
+  shortName: string;
   subtitle: string;
   defaultPetalColor: string;
   defaultCenterColor: string;
   defaultScale: number;
   isFoliage?: boolean;
+  isFiller?: boolean;
 }
 
 export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
+  // --- 15 FOCAL FLOWERS ---
   {
     type: 'rose',
     name: 'Garden Rose',
+    shortName: 'Rose',
     subtitle: 'Velvet classic bloom',
     defaultPetalColor: '#f43f5e',
     defaultCenterColor: '#be123c',
@@ -144,6 +274,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'peony',
     name: 'Blush Peony',
+    shortName: 'Peony',
     subtitle: 'Lush ruffled layers',
     defaultPetalColor: '#fbcfe8',
     defaultCenterColor: '#f472b6',
@@ -152,6 +283,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'tulip',
     name: 'Dutch Tulip',
+    shortName: 'Tulip',
     subtitle: 'Graceful spring cup',
     defaultPetalColor: '#fb7185',
     defaultCenterColor: '#fde047',
@@ -160,6 +292,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'lily',
     name: 'Stargazer Lily',
+    shortName: 'Lily',
     subtitle: 'Star-shaped elegance',
     defaultPetalColor: '#fdf2f8',
     defaultCenterColor: '#f97316',
@@ -168,6 +301,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'sunflower',
     name: 'Golden Sunflower',
+    shortName: 'Sunflower',
     subtitle: 'Warm sunlit rays',
     defaultPetalColor: '#facc15',
     defaultCenterColor: '#451a03',
@@ -176,6 +310,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'hydrangea',
     name: 'Cloud Hydrangea',
+    shortName: 'Hydrangea',
     subtitle: 'Billowy cluster',
     defaultPetalColor: '#c4b5fd',
     defaultCenterColor: '#ede9fe',
@@ -184,44 +319,178 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'daisy',
     name: 'Chamomile Daisy',
+    shortName: 'Daisy',
     subtitle: 'Sweet meadow charm',
     defaultPetalColor: '#ffffff',
     defaultCenterColor: '#eab308',
     defaultScale: 0.92
   },
   {
+    type: 'orchid',
+    name: 'Phalaenopsis Orchid',
+    shortName: 'Orchid',
+    subtitle: 'Exotic winged cascade',
+    defaultPetalColor: '#f0abfc',
+    defaultCenterColor: '#a21caf',
+    defaultScale: 1.1
+  },
+  {
+    type: 'carnation',
+    name: 'Ruffled Carnation',
+    shortName: 'Carnation',
+    subtitle: 'Frilled clove petals',
+    defaultPetalColor: '#fda4af',
+    defaultCenterColor: '#e11d48',
+    defaultScale: 1.04
+  },
+  {
+    type: 'ranunculus',
+    name: 'Persian Ranunculus',
+    shortName: 'Ranunculus',
+    subtitle: 'Spiral paper-thin layers',
+    defaultPetalColor: '#fdba74',
+    defaultCenterColor: '#ea580c',
+    defaultScale: 1.06
+  },
+  {
+    type: 'anemone',
+    name: 'Poppy Anemone',
+    shortName: 'Anemone',
+    subtitle: 'Dark-eyed velvet bloom',
+    defaultPetalColor: '#f8fafc',
+    defaultCenterColor: '#1e1b4b',
+    defaultScale: 1.06
+  },
+  {
+    type: 'dahlia',
+    name: 'Pompon Dahlia',
+    shortName: 'Dahlia',
+    subtitle: 'Geometric quilled sphere',
+    defaultPetalColor: '#e11d48',
+    defaultCenterColor: '#881337',
+    defaultScale: 1.14
+  },
+  {
+    type: 'iris',
+    name: 'Bearded Iris',
+    shortName: 'Iris',
+    subtitle: 'Royal cascading petals',
+    defaultPetalColor: '#818cf8',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.12
+  },
+  {
+    type: 'camellia',
+    name: 'Japonica Camellia',
+    shortName: 'Camellia',
+    subtitle: 'Porcelain rosette bloom',
+    defaultPetalColor: '#fb7185',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.06
+  },
+  {
+    type: 'lotus',
+    name: 'Sacred Lotus',
+    shortName: 'Lotus',
+    subtitle: 'Serene water blossom',
+    defaultPetalColor: '#f9a8d4',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 1.14
+  },
+  // --- 9 FILLERS & FOLIAGE ---
+  {
     type: 'lavender',
     name: 'French Lavender',
+    shortName: 'Lavender',
     subtitle: 'Fragrant tall spikes',
     defaultPetalColor: '#a855f7',
     defaultCenterColor: '#6b21a8',
-    defaultScale: 1.05
+    defaultScale: 1.05,
+    isFiller: true
   },
   {
     type: 'babysBreath',
     name: "Baby's Breath",
+    shortName: "Baby's Breath",
     subtitle: 'Delicate cloud filler',
     defaultPetalColor: '#ffffff',
     defaultCenterColor: '#fef08a',
-    defaultScale: 1.05
+    defaultScale: 1.05,
+    isFiller: true
   },
   {
     type: 'eucalyptus',
     name: 'Silver Dollar Eucalyptus',
+    shortName: 'Eucalyptus',
     subtitle: 'Muted sage foliage',
     defaultPetalColor: '#6ee7b7',
     defaultCenterColor: '#047857',
     defaultScale: 1.1,
-    isFoliage: true
+    isFoliage: true,
+    isFiller: true
   },
   {
     type: 'fern',
     name: 'Woodland Fern',
+    shortName: 'Fern',
     subtitle: 'Arching botanical frond',
     defaultPetalColor: '#4ade80',
     defaultCenterColor: '#15803d',
     defaultScale: 1.12,
-    isFoliage: true
+    isFoliage: true,
+    isFiller: true
+  },
+  {
+    type: 'cherryBlossom',
+    name: 'Sakura Blossom Branch',
+    shortName: 'Sakura',
+    subtitle: 'Spring cherry twig',
+    defaultPetalColor: '#fbcfe8',
+    defaultCenterColor: '#db2777',
+    defaultScale: 1.12,
+    isFiller: true
+  },
+  {
+    type: 'waxflower',
+    name: 'Sweet Waxflower',
+    shortName: 'Waxflower',
+    subtitle: 'Starry woody spray',
+    defaultPetalColor: '#f5d0fe',
+    defaultCenterColor: '#a21caf',
+    defaultScale: 1.08,
+    isFiller: true
+  },
+  {
+    type: 'billyButtons',
+    name: 'Billy Buttons',
+    shortName: 'Craspedia',
+    subtitle: 'Golden drumstick globes',
+    defaultPetalColor: '#facc15',
+    defaultCenterColor: '#ca8a04',
+    defaultScale: 1.08,
+    isFiller: true
+  },
+  {
+    type: 'oliveBranch',
+    name: 'Olive Branch',
+    shortName: 'Olive',
+    subtitle: 'Mediterranean silver bough',
+    defaultPetalColor: '#86efac',
+    defaultCenterColor: '#3f6212',
+    defaultScale: 1.12,
+    isFoliage: true,
+    isFiller: true
+  },
+  {
+    type: 'monstera',
+    name: 'Tropical Monstera',
+    shortName: 'Monstera',
+    subtitle: 'Sculptural split leaf',
+    defaultPetalColor: '#22c55e',
+    defaultCenterColor: '#14532d',
+    defaultScale: 1.14,
+    isFoliage: true,
+    isFiller: true
   }
 ];
 
@@ -249,7 +518,12 @@ export const RIBBON_SWATCHES = [
   { name: 'Lavender Silk', hex: '#9333ea' },
   { name: 'Sage Velvet', hex: '#059669' },
   { name: 'Midnight Navy', hex: '#1e3a8a' },
-  { name: 'Ivory Lace', hex: '#f8fafc' }
+  { name: 'Ivory Lace', hex: '#f8fafc' },
+  { name: 'Terracotta Rust', hex: '#c2410c' },
+  { name: 'Sky Organza', hex: '#38bdf8' },
+  { name: 'Espresso Ribbon', hex: '#451a03' },
+  { name: 'Matcha Chiffon', hex: '#84cc16' },
+  { name: 'Noir Velvet', hex: '#18181b' }
 ];
 
 // ============================================================================
@@ -783,6 +1057,657 @@ export const FernSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) =
   );
 };
 
+/** 12. Phalaenopsis Orchid SVG Component */
+export const OrchidSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    {/* Graceful arching orchid stem & aerial bud */}
+    <path d="M0,155 C-6,85 -10,10 6,-62" stroke="#15803d" strokeWidth="4.8" fill="none" strokeLinecap="round" />
+    <ellipse cx="6" cy="-64" rx="6" ry="9" fill={petalColor} stroke={centerColor} strokeWidth="1" />
+    {/* Upper secondary bloom */}
+    <g transform="translate(3, -38) scale(0.72) rotate(12)">
+      <ellipse cx="0" cy="-18" rx="9" ry="18" fill={petalColor} opacity="0.92" />
+      <ellipse cx="-12" cy="10" rx="8" ry="16" fill={petalColor} transform="rotate(35 -12 10)" />
+      <ellipse cx="12" cy="10" rx="8" ry="16" fill={petalColor} transform="rotate(-35 12 10)" />
+      <path d="M-4,0 C-34,-26 -38,20 -4,10 Z" fill={petalColor} stroke="#ffffff" strokeWidth="0.9" strokeOpacity="0.45" />
+      <path d="M4,0 C34,-26 38,20 4,10 Z" fill={petalColor} stroke="#ffffff" strokeWidth="0.9" strokeOpacity="0.45" />
+      <path d="M0,2 C-12,6 -10,22 0,24 C10,22 12,6 0,2 Z" fill={centerColor} />
+      <circle cx="0" cy="4" r="3.5" fill="#fde047" />
+    </g>
+    {/* Primary winged Phalaenopsis bloom */}
+    <g transform="translate(-3, 2) rotate(-6)">
+      {/* Dorsal & Lateral Sepals */}
+      <ellipse cx="0" cy="-22" rx="12" ry="22" fill={petalColor} opacity="0.92" />
+      <ellipse cx="-15" cy="14" rx="10" ry="19" fill={petalColor} opacity="0.9" transform="rotate(38 -15 14)" />
+      <ellipse cx="15" cy="14" rx="10" ry="19" fill={petalColor} opacity="0.9" transform="rotate(-38 15 14)" />
+      {/* Wide Butterfly Lateral Petals */}
+      <path
+        d="M-3,-2 C-42,-30 -46,24 -4,12 Z"
+        fill={petalColor}
+        stroke="#ffffff"
+        strokeWidth="1.2"
+        strokeOpacity="0.5"
+      />
+      <path
+        d="M3,-2 C42,-30 46,24 4,12 Z"
+        fill={petalColor}
+        stroke="#ffffff"
+        strokeWidth="1.2"
+        strokeOpacity="0.5"
+      />
+      {/* Sculpted Labellum (Lip) & Speckles */}
+      <path
+        d="M0,2 C-16,6 -14,26 0,29 C14,26 16,6 0,2 Z"
+        fill={centerColor}
+        stroke="#ffffff"
+        strokeWidth="0.9"
+        strokeOpacity="0.5"
+      />
+      <circle cx="-4" cy="12" r="1.4" fill="#fde047" />
+      <circle cx="4" cy="12" r="1.4" fill="#fde047" />
+      <circle cx="0" cy="17" r="1.4" fill="#fde047" />
+      <circle cx="0" cy="3" r="4.5" fill="#fde047" stroke={centerColor} strokeWidth="1.2" />
+    </g>
+  </g>
+);
+
+/** 13. Ruffled Carnation SVG Component */
+export const CarnationSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const outerAngles = [0, 36, 72, 108, 144, 180, 216, 252, 288, 324];
+  const innerAngles = [18, 78, 138, 198, 258, 318];
+  return (
+    <g>
+      {/* Slender blue-green carnation stem, nodes & linear leaves */}
+      <path d="M0,20 Q2,88 0,156" stroke="#15803d" strokeWidth="5" fill="none" strokeLinecap="round" />
+      <path d="M0,78 C-24,62 -32,38 -18,34 C-10,48 -4,64 0,78 Z" fill="#16a34a" />
+      <path d="M0,96 C24,80 32,56 18,52 C10,66 4,82 0,96 Z" fill="#15803d" />
+      {/* Outer Ruffled & Serrated Clove Petals */}
+      {outerAngles.map((deg) => (
+        <path
+          key={`c-out-${deg}`}
+          d="M0,0 L-11,-24 L-7,-28 L-3,-25 L0,-30 L3,-25 L7,-28 L11,-24 Z"
+          fill={petalColor}
+          stroke={centerColor}
+          strokeWidth="0.9"
+          strokeOpacity="0.45"
+          transform={`rotate(${deg}) scale(1.18)`}
+        />
+      ))}
+      {/* Mid Frilled Tier */}
+      {innerAngles.map((deg) => (
+        <path
+          key={`c-mid-${deg}`}
+          d="M0,0 L-10,-19 L-5,-23 L0,-19 L5,-23 L10,-19 Z"
+          fill={centerColor}
+          opacity="0.55"
+          transform={`rotate(${deg}) scale(1.1)`}
+        />
+      ))}
+      {/* Inner Ruffled Crown */}
+      {innerAngles.map((deg) => (
+        <path
+          key={`c-in-${deg}`}
+          d="M0,0 L-8,-14 L-4,-17 L0,-13 L4,-17 L8,-14 Z"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="1"
+          strokeOpacity="0.6"
+          transform={`rotate(${deg + 30})`}
+        />
+      ))}
+      {/* Swollen Green Calyx Cup at Base */}
+      <path d="M-11,14 C-9,28 9,28 11,14 C7,10 -7,10 -11,14 Z" fill="#15803d" />
+    </g>
+  );
+};
+
+/** 14. Persian Ranunculus SVG Component */
+export const RanunculusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const ring1 = [0, 40, 80, 120, 160, 200, 240, 280, 320];
+  const ring2 = [20, 65, 110, 155, 200, 245, 290, 335];
+  const ring3 = [0, 51, 102, 153, 204, 255, 306];
+  const ring4 = [25, 85, 145, 205, 265, 325];
+  return (
+    <g>
+      <path d="M0,22 Q-3,88 0,155" stroke="#16a34a" strokeWidth="5.8" fill="none" strokeLinecap="round" />
+      <path d="M-2,82 C-28,70 -30,48 -10,54 Z" fill="#22c55e" />
+      {/* Outer Paper-Thin Cupped Whorl */}
+      {ring1.map((deg) => (
+        <ellipse
+          key={`r1-${deg}`}
+          cx="0"
+          cy="-18"
+          rx="16"
+          ry="13"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="0.9"
+          strokeOpacity="0.45"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Second Concentric Spiral Whorl */}
+      {ring2.map((deg) => (
+        <ellipse
+          key={`r2-${deg}`}
+          cx="0"
+          cy="-13"
+          rx="13.5"
+          ry="10.5"
+          fill={centerColor}
+          opacity="0.42"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {ring2.map((deg) => (
+        <ellipse
+          key={`r2b-${deg}`}
+          cx="0"
+          cy="-12"
+          rx="12.5"
+          ry="9.5"
+          fill={petalColor}
+          stroke={centerColor}
+          strokeWidth="0.8"
+          strokeOpacity="0.4"
+          transform={`rotate(${deg + 12})`}
+        />
+      ))}
+      {/* Third Tight Inner Whorl */}
+      {ring3.map((deg) => (
+        <ellipse
+          key={`r3-${deg}`}
+          cx="0"
+          cy="-7.5"
+          rx="9.5"
+          ry="7"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="0.9"
+          strokeOpacity="0.55"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Fourth Core Whorl */}
+      {ring4.map((deg) => (
+        <ellipse
+          key={`r4-${deg}`}
+          cx="0"
+          cy="-4"
+          rx="6"
+          ry="4.5"
+          fill={centerColor}
+          opacity="0.75"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      <circle cx="0" cy="0" r="4.5" fill="#15803d" opacity="0.7" />
+    </g>
+  );
+};
+
+/** 15. Poppy Anemone SVG Component */
+export const AnemoneSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const petals = [0, 45, 90, 135, 180, 225, 270, 315];
+  const stamens = Array.from({ length: 16 }, (_, i) => i * 22.5);
+  return (
+    <g>
+      <path d="M0,22 Q3,90 0,156" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+      <path d="M-2,65 C-28,55 -30,36 -10,44 Z" fill="#16a34a" />
+      {/* 8 Overlapping Rounded Velvet Petals */}
+      {petals.map((deg, idx) => (
+        <ellipse
+          key={`an-p-${deg}`}
+          cx="0"
+          cy="-21"
+          rx="15"
+          ry="20"
+          fill={petalColor}
+          stroke="#cbd5e1"
+          strokeWidth="0.8"
+          strokeOpacity="0.55"
+          opacity={idx % 2 === 0 ? 0.96 : 1}
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Radiating Stamen Filament Ring */}
+      {stamens.map((deg) => (
+        <g key={`an-s-${deg}`} transform={`rotate(${deg})`}>
+          <line x1="0" y1="0" x2="0" y2="-16" stroke={centerColor} strokeWidth="1.2" opacity="0.85" />
+          <circle cx="0" cy="-16.5" r="1.8" fill={centerColor} />
+        </g>
+      ))}
+      {/* Dramatic Dark Velvet Button Eye */}
+      <circle cx="0" cy="0" r="10.5" fill={centerColor} stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.35" />
+      <circle cx="-3" cy="-3" r="3.5" fill="#ffffff" opacity="0.22" />
+    </g>
+  );
+};
+
+/** 16. Pompon Dahlia SVG Component */
+export const DahliaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const outer = Array.from({ length: 16 }, (_, i) => i * 22.5);
+  const mid = Array.from({ length: 12 }, (_, i) => i * 30 + 11);
+  const inner = Array.from({ length: 8 }, (_, i) => i * 45);
+  return (
+    <g>
+      <path d="M0,24 Q-3,92 0,158" stroke="#15803d" strokeWidth="6.5" fill="none" strokeLinecap="round" />
+      <path d="M2,88 C30,72 34,48 12,56 Z" fill="#16a34a" />
+      {/* Outer Quilled Geometric Ring */}
+      {outer.map((deg) => (
+        <path
+          key={`d-out-${deg}`}
+          d="M0,0 C-9,-14 -8,-34 0,-40 C8,-34 9,-14 0,0 Z"
+          fill={petalColor}
+          stroke={centerColor}
+          strokeWidth="0.8"
+          strokeOpacity="0.45"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Mid Quilled Ring */}
+      {mid.map((deg) => (
+        <path
+          key={`d-mid-${deg}`}
+          d="M0,0 C-8,-12 -7,-25 0,-30 C7,-25 8,-12 0,0 Z"
+          fill={centerColor}
+          opacity="0.48"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {mid.map((deg) => (
+        <path
+          key={`d-mid2-${deg}`}
+          d="M0,0 C-7.5,-10 -6.5,-23 0,-27 C6.5,-23 7.5,-10 0,0 Z"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="0.8"
+          strokeOpacity="0.45"
+          transform={`rotate(${deg + 15})`}
+        />
+      ))}
+      {/* Inner Quilled Rosette */}
+      {inner.map((deg) => (
+        <path
+          key={`d-in-${deg}`}
+          d="M0,0 C-6,-7 -5,-15 0,-18 C5,-15 6,-7 0,0 Z"
+          fill={centerColor}
+          opacity="0.8"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      <circle cx="0" cy="0" r="5.5" fill="#fde047" opacity="0.9" />
+    </g>
+  );
+};
+
+/** 17. Bearded Iris SVG Component */
+export const IrisSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    {/* Sword Leaf & Stem */}
+    <path d="M0,20 L0,158" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+    <path d="M-3,135 C-22,75 -20,20 -8,-10 C-6,45 -4,95 -3,135 Z" fill="#16a34a" />
+    {/* 3 Upright Domed Standards */}
+    <path
+      d="M-2,-4 C-26,-16 -22,-48 -2,-52 C8,-38 4,-16 -2,-4 Z"
+      fill={petalColor}
+      opacity="0.88"
+    />
+    <path
+      d="M2,-4 C26,-16 22,-48 2,-52 C-8,-38 -4,-16 2,-4 Z"
+      fill={petalColor}
+      opacity="0.88"
+    />
+    <path
+      d="M0,-2 C-18,-20 -16,-54 0,-58 C16,-54 18,-20 0,-2 Z"
+      fill={petalColor}
+      stroke="#ffffff"
+      strokeWidth="1"
+      strokeOpacity="0.45"
+    />
+    {/* Left & Right Cascading Falls */}
+    <path
+      d="M-4,0 C-36,0 -44,28 -24,36 C-10,34 -4,14 -4,0 Z"
+      fill={petalColor}
+      stroke={centerColor}
+      strokeWidth="1"
+      strokeOpacity="0.5"
+    />
+    <path
+      d="M4,0 C36,0 44,28 24,36 C10,34 4,14 4,0 Z"
+      fill={petalColor}
+      stroke={centerColor}
+      strokeWidth="1"
+      strokeOpacity="0.5"
+    />
+    {/* Central Cascading Fall + Golden Beard */}
+    <path
+      d="M0,0 C-22,8 -20,42 0,46 C20,42 22,8 0,0 Z"
+      fill={petalColor}
+      stroke="#ffffff"
+      strokeWidth="1.1"
+      strokeOpacity="0.5"
+    />
+    <ellipse cx="0" cy="14" rx="5" ry="11" fill={centerColor} />
+    <ellipse cx="-16" cy="14" rx="3.5" ry="7" fill={centerColor} transform="rotate(42 -16 14)" />
+    <ellipse cx="16" cy="14" rx="3.5" ry="7" fill={centerColor} transform="rotate(-42 16 14)" />
+  </g>
+);
+
+/** 18. Japonica Camellia SVG Component */
+export const CamelliaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const outer = [0, 45, 90, 135, 180, 225, 270, 315];
+  const mid = [22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5];
+  const inner = [0, 60, 120, 180, 240, 300];
+  return (
+    <g>
+      <path d="M0,22 Q-2,88 0,155" stroke="#14532d" strokeWidth="5.8" fill="none" strokeLinecap="round" />
+      {/* Glossy Dark Camellia Leaves Framing Bloom */}
+      <ellipse cx="-26" cy="20" rx="18" ry="10" fill="#15803d" transform="rotate(-28 -26 20)" />
+      <ellipse cx="26" cy="20" rx="18" ry="10" fill="#15803d" transform="rotate(28 26 20)" />
+      {/* Outer Porcelain Rosette */}
+      {outer.map((deg) => (
+        <ellipse
+          key={`cam-o-${deg}`}
+          cx="0"
+          cy="-21"
+          rx="13.5"
+          ry="18"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="0.9"
+          strokeOpacity="0.45"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Middle Imbricated Tier */}
+      {mid.map((deg) => (
+        <ellipse
+          key={`cam-m-${deg}`}
+          cx="0"
+          cy="-14"
+          rx="10.5"
+          ry="14"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="1"
+          strokeOpacity="0.55"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Inner Tier */}
+      {inner.map((deg) => (
+        <ellipse
+          key={`cam-i-${deg}`}
+          cx="0"
+          cy="-8"
+          rx="7.5"
+          ry="10"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="1"
+          strokeOpacity="0.65"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* Golden Stamen Crown */}
+      <circle cx="0" cy="0" r="7" fill={centerColor} />
+      <circle cx="-2.5" cy="-2" r="1.5" fill="#ffffff" opacity="0.6" />
+      <circle cx="2.5" cy="-2" r="1.5" fill="#ffffff" opacity="0.6" />
+      <circle cx="0" cy="2.5" r="1.5" fill="#ffffff" opacity="0.6" />
+    </g>
+  );
+};
+
+/** 19. Sacred Lotus SVG Component */
+export const LotusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const backAngles = [-68, -42, -18, 18, 42, 68];
+  const frontAngles = [-52, -26, 0, 26, 52];
+  return (
+    <g>
+      <path d="M0,20 Q2,88 0,158" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+      {/* Back Tiered Pointed Lotus Petals */}
+      {backAngles.map((deg) => (
+        <path
+          key={`lot-b-${deg}`}
+          d="M0,12 C-14,-6 -12,-38 0,-52 C12,-38 14,-6 0,12 Z"
+          fill={petalColor}
+          opacity="0.85"
+          transform={`rotate(${deg} 0 12)`}
+        />
+      ))}
+      {/* Front Cupping Lotus Petals */}
+      {frontAngles.map((deg) => (
+        <path
+          key={`lot-f-${deg}`}
+          d="M0,14 C-15,-2 -13,-34 0,-46 C13,-34 15,-2 0,14 Z"
+          fill={petalColor}
+          stroke="#ffffff"
+          strokeWidth="1.1"
+          strokeOpacity="0.55"
+          transform={`rotate(${deg} 0 14)`}
+        />
+      ))}
+      {/* Golden Receptacle Seed Pod */}
+      <ellipse cx="0" cy="2" rx="13" ry="8" fill={centerColor} />
+      <circle cx="-5" cy="1" r="1.5" fill="#78350f" opacity="0.6" />
+      <circle cx="0" cy="-1" r="1.5" fill="#78350f" opacity="0.6" />
+      <circle cx="5" cy="1" r="1.5" fill="#78350f" opacity="0.6" />
+      <circle cx="-2.5" cy="4" r="1.5" fill="#78350f" opacity="0.6" />
+      <circle cx="2.5" cy="4" r="1.5" fill="#78350f" opacity="0.6" />
+      {/* Front Central Cradle Petal */}
+      <path
+        d="M0,18 C-18,12 -16,-12 0,-22 C16,-12 18,12 0,18 Z"
+        fill={petalColor}
+        stroke="#ffffff"
+        strokeWidth="1"
+        strokeOpacity="0.6"
+      />
+    </g>
+  );
+};
+
+/** 20. Sakura Cherry Blossom Branch (Filler) SVG Component */
+export const CherryBlossomSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const blossoms = [
+    { x: -24, y: -22, s: 0.88 },
+    { x: 18, y: -38, s: 0.92 },
+    { x: -6, y: -58, s: 0.78 },
+    { x: 14, y: 4, s: 0.82 }
+  ];
+  return (
+    <g>
+      {/* Woody Branching Sakura Twig */}
+      <g stroke="#573b26" strokeLinecap="round" fill="none">
+        <path d="M0,152 Q-6,50 -4,-68" strokeWidth="4.2" />
+        <path d="M-4,15 Q-18,-5 -28,-28" strokeWidth="3" />
+        <path d="M-4,-10 Q14,-24 24,-44" strokeWidth="2.8" />
+        <path d="M-2,32 Q10,18 18,2" strokeWidth="2.6" />
+      </g>
+      {/* Unopened Spring Sakura Buds */}
+      <ellipse cx="-5" cy="-70" rx="4" ry="6.5" fill={centerColor} />
+      <ellipse cx="-29" cy="-31" rx="3.5" ry="5.5" fill={centerColor} transform="rotate(-25 -29 -31)" />
+      {/* 5-Petaled Notched Sakura Blossoms */}
+      {blossoms.map((b, idx) => (
+        <g key={idx} transform={`translate(${b.x}, ${b.y}) scale(${b.s})`}>
+          {[0, 72, 144, 216, 288].map((deg) => (
+            <path
+              key={deg}
+              d="M0,0 C-8,-6 -10,-18 -3,-20 L0,-16 L3,-20 C10,-18 8,-6 0,0 Z"
+              fill={petalColor}
+              stroke="#ffffff"
+              strokeWidth="0.7"
+              strokeOpacity="0.55"
+              transform={`rotate(${deg})`}
+            />
+          ))}
+          <circle cx="0" cy="0" r="3.5" fill={centerColor} />
+          {[0, 60, 120, 180, 240, 300].map((deg) => (
+            <circle
+              key={`st-${deg}`}
+              cx="0"
+              cy="-6.5"
+              r="1.1"
+              fill={centerColor}
+              transform={`rotate(${deg})`}
+            />
+          ))}
+        </g>
+      ))}
+    </g>
+  );
+};
+
+/** 21. Sweet Waxflower Spray (Filler) SVG Component */
+export const WaxflowerSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const florets = [
+    { x: -26, y: -38, s: 0.9 },
+    { x: 0, y: -56, s: 1 },
+    { x: 26, y: -34, s: 0.9 },
+    { x: -16, y: -12, s: 0.85 },
+    { x: 18, y: -8, s: 0.85 },
+    { x: 0, y: -26, s: 0.95 }
+  ];
+  return (
+    <g>
+      {/* Woody Needle-Leaved Spray Stems */}
+      <g stroke="#4d7c0f" strokeWidth="2.6" fill="none" strokeLinecap="round">
+        <path d="M0,150 L0,-56" />
+        <path d="M0,45 Q-16,0 -26,-38" />
+        <path d="M0,45 Q16,0 26,-34" />
+        <path d="M0,65 Q-12,25 -16,-12" />
+        <path d="M0,65 Q12,25 18,-8" />
+        {/* Fine Pine-like Needles */}
+        <path d="M-2,24 L-12,12 M2,20 L12,8 M-2,0 L-10,-12 M2,-4 L10,-16" strokeWidth="1.8" />
+      </g>
+      {/* Glossy Waxy Berry Buds */}
+      <circle cx="-30" cy="-48" r="3.5" fill={centerColor} />
+      <circle cx="30" cy="-44" r="3.5" fill={centerColor} />
+      <circle cx="-10" cy="-64" r="3" fill={petalColor} stroke={centerColor} strokeWidth="1" />
+      <circle cx="10" cy="-64" r="3" fill={petalColor} stroke={centerColor} strokeWidth="1" />
+      {/* 5-Pointed Waxy Star Florets */}
+      {florets.map((fl, i) => (
+        <g key={i} transform={`translate(${fl.x}, ${fl.y}) scale(${fl.s})`}>
+          {[0, 72, 144, 216, 288].map((deg) => (
+            <ellipse
+              key={deg}
+              cx="0"
+              cy="-8.5"
+              rx="4.2"
+              ry="7.5"
+              fill={petalColor}
+              transform={`rotate(${deg})`}
+            />
+          ))}
+          <circle cx="0" cy="0" r="4.2" fill={centerColor} />
+          <circle cx="-1" cy="-1" r="1.4" fill="#ffffff" opacity="0.5" />
+        </g>
+      ))}
+    </g>
+  );
+};
+
+/** 22. Billy Buttons / Craspedia Globes (Filler) SVG Component */
+export const BillyButtonsSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const globes = [
+    { x: -22, y: -28, r: 13 },
+    { x: 0, y: -56, r: 15 },
+    { x: 22, y: -20, r: 12.5 }
+  ];
+  return (
+    <g>
+      {/* Architectural Silvery-Green Unbranched Stems */}
+      <path d="M0,152 Q-14,55 -22,-28" stroke="#65a30d" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      <path d="M0,152 L0,-56" stroke="#4d7c0f" strokeWidth="3.8" fill="none" strokeLinecap="round" />
+      <path d="M0,152 Q14,58 22,-20" stroke="#65a30d" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      {globes.map((g, idx) => (
+        <g key={idx} transform={`translate(${g.x}, ${g.y})`}>
+          <circle cx="0" cy="0" r={g.r} fill={petalColor} stroke={centerColor} strokeWidth="1.5" />
+          {/* Textured Spherical Dimples */}
+          <circle cx={-g.r * 0.35} cy={-g.r * 0.3} r="2" fill={centerColor} opacity="0.65" />
+          <circle cx={g.r * 0.35} cy={-g.r * 0.3} r="2" fill={centerColor} opacity="0.65" />
+          <circle cx="0" cy="0" r="2.2" fill={centerColor} opacity="0.65" />
+          <circle cx={-g.r * 0.35} cy={g.r * 0.35} r="2" fill={centerColor} opacity="0.65" />
+          <circle cx={g.r * 0.35} cy={g.r * 0.35} r="2" fill={centerColor} opacity="0.65" />
+          <circle cx={-g.r * 0.25} cy={-g.r * 0.35} r={g.r * 0.45} fill="#ffffff" opacity="0.2" />
+        </g>
+      ))}
+    </g>
+  );
+};
+
+/** 23. Mediterranean Olive Branch (Filler/Foliage) SVG Component */
+export const OliveBranchSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+  const nodes = [-52, -28, -4, 20, 44];
+  return (
+    <g>
+      <path d="M0,152 Q-5,42 0,-72" stroke="#57534e" strokeWidth="3.6" fill="none" strokeLinecap="round" />
+      {nodes.map((y, idx) => (
+        <g key={y} transform={`translate(0, ${y})`}>
+          {/* Left Lanceolate Leaf */}
+          <path
+            d="M-2,0 C-18,-6 -34,-18 -38,-28 C-24,-24 -8,-12 -2,0 Z"
+            fill={petalColor}
+            stroke={centerColor}
+            strokeWidth="1"
+          />
+          {/* Right Lanceolate Leaf */}
+          <path
+            d="M2,-4 C18,-10 34,-22 38,-32 C24,-28 8,-16 2,-4 Z"
+            fill={petalColor}
+            stroke={centerColor}
+            strokeWidth="1"
+          />
+          {/* Small Olive Fruit at Alternate Nodes */}
+          {idx % 2 === 1 && (
+            <ellipse
+              cx={idx === 1 ? -10 : 10}
+              cy="-6"
+              rx="4.5"
+              ry="6"
+              fill={centerColor}
+              transform={`rotate(${idx === 1 ? -20 : 20} ${idx === 1 ? -10 : 10} -6)`}
+            />
+          )}
+        </g>
+      ))}
+      <path d="M0,-68 C-6,-82 0,-92 0,-96 C0,-92 6,-82 0,-68 Z" fill={petalColor} stroke={centerColor} strokeWidth="1" />
+    </g>
+  );
+};
+
+/** 24. Tropical Monstera Leaf (Filler/Foliage) SVG Component */
+export const MonsteraSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    {/* Petiole Stem */}
+    <path d="M0,152 Q-3,75 0,25" stroke={centerColor} strokeWidth="5" fill="none" strokeLinecap="round" />
+    {/* Heart-Shaped Fenestrated Monstera Blade with Split Lobes */}
+    <path
+      d="M0,26
+         C-22,26 -38,12 -40,-4
+         L-14,-2
+         L-42,-12
+         C-44,-22 -42,-32 -36,-40
+         L-12,-24
+         L-32,-46
+         C-24,-56 -12,-64 0,-68
+         C12,-64 24,-56 32,-46
+         L12,-24
+         L36,-40
+         C42,-32 44,-22 42,-12
+         L14,-2
+         L40,-4
+         C38,12 22,26 0,26 Z"
+      fill={petalColor}
+      stroke={centerColor}
+      strokeWidth="1.2"
+      strokeLinejoin="round"
+    />
+    {/* Central Midrib & Lateral Veins */}
+    <path d="M0,26 L0,-62" stroke={centerColor} strokeWidth="2.4" strokeLinecap="round" />
+    <path d="M0,4 L-22,-6 M0,4 L22,-6 M0,-18 L-20,-30 M0,-18 L20,-30 M0,-38 L-12,-48 M0,-38 L12,-48" stroke={centerColor} strokeWidth="1.3" strokeLinecap="round" opacity="0.65" />
+  </g>
+);
+
 export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = ({
   type,
   petalColor,
@@ -801,6 +1726,22 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <LilySVG petalColor={petalColor} centerColor={centerColor} />;
     case 'peony':
       return <PeonySVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'orchid':
+      return <OrchidSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'carnation':
+      return <CarnationSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'ranunculus':
+      return <RanunculusSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'anemone':
+      return <AnemoneSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'dahlia':
+      return <DahliaSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'iris':
+      return <IrisSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'camellia':
+      return <CamelliaSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'lotus':
+      return <LotusSVG petalColor={petalColor} centerColor={centerColor} />;
     case 'lavender':
       return <LavenderSVG petalColor={petalColor} centerColor={centerColor} />;
     case 'hydrangea':
@@ -811,6 +1752,16 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <EucalyptusSVG petalColor={petalColor} centerColor={centerColor} />;
     case 'fern':
       return <FernSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'cherryBlossom':
+      return <CherryBlossomSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'waxflower':
+      return <WaxflowerSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'billyButtons':
+      return <BillyButtonsSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'oliveBranch':
+      return <OliveBranchSVG petalColor={petalColor} centerColor={centerColor} />;
+    case 'monstera':
+      return <MonsteraSVG petalColor={petalColor} centerColor={centerColor} />;
   }
 };
 
@@ -829,7 +1780,20 @@ const SHARE_FLOWER_TYPES: FlowerType[] = [
   'hydrangea',
   'babysBreath',
   'eucalyptus',
-  'fern'
+  'fern',
+  'orchid',
+  'carnation',
+  'ranunculus',
+  'anemone',
+  'dahlia',
+  'iris',
+  'camellia',
+  'lotus',
+  'cherryBlossom',
+  'waxflower',
+  'billyButtons',
+  'oliveBranch',
+  'monstera'
 ];
 
 const SHARE_WRAP_STYLES: typeWrapStyle[] = [
@@ -844,7 +1808,15 @@ const SHARE_WRAP_STYLES: typeWrapStyle[] = [
   'plain'
 ];
 
-const SHARE_CARD_THEMES: ('cream' | 'blush' | 'lavender')[] = ['cream', 'blush', 'lavender'];
+const SHARE_CARD_THEMES: CardTheme[] = [
+  'cream',
+  'blush',
+  'lavender',
+  'sage',
+  'sky',
+  'midnight',
+  'terracotta'
+];
 
 const DEFAULT_SHARE_CARD_TO = 'My Dearest';
 const DEFAULT_SHARE_CARD_FROM = 'Yours Always';
@@ -903,95 +1875,151 @@ function itemsMatchPreset(a: BouquetItem[], b: BouquetItem[]): boolean {
   return true;
 }
 
+const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const localShortCodeCache = new Map<string, string>();
+
+export function computeShortCode(payload: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  let h3 = 0x85ebca6b;
+  for (let i = 0; i < payload.length; i++) {
+    const c = payload.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (c + i), 0x85ebca6b) >>> 0;
+    h3 = Math.imul(h3 ^ (c * 31 + i), 0xc2b2ae35) >>> 0;
+  }
+  const toB62 = (n: number, len: number) => {
+    let val = n >>> 0;
+    let s = '';
+    for (let i = 0; i < len; i++) {
+      s = BASE62_CHARS[val % 62] + s;
+      val = Math.floor(val / 62);
+    }
+    return s;
+  };
+  return toB62(h1, 5) + toB62(h2, 5) + toB62(h3, 5);
+}
+
+export function getShortCodeFromPathname(pathnameOverride?: string): string | null {
+  const raw =
+    pathnameOverride !== undefined
+      ? pathnameOverride
+      : typeof window !== 'undefined'
+      ? window.location.pathname
+      : '';
+  if (!raw) return null;
+  const cleaned = raw.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].trim();
+  const match = cleaned.match(/^\/([0-9A-Za-z]{14,16})$/);
+  return match ? match[1] : null;
+}
+
+export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift = true): string {
+  // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex> (trimmed trailing ~)
+  const wIdx = Math.max(0, SHARE_WRAP_STYLES.indexOf(snapshot.wrapStyle)).toString(36);
+  const defaultWrapHex =
+    WRAPPER_CATALOG.find((w) => w.id === snapshot.wrapStyle)?.defaultHex.toLowerCase() || '';
+  const wHex =
+    snapshot.wrapColor.toLowerCase() === defaultWrapHex
+      ? ''
+      : snapshot.wrapColor.replace('#', '').toLowerCase();
+  const rHex =
+    snapshot.ribbonColor.toLowerCase() === '#e11d48'
+      ? ''
+      : snapshot.ribbonColor.replace('#', '').toLowerCase();
+  const headerPart = `${wIdx}~${wHex}~${rHex}`.replace(/~+$/, '');
+
+  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64> (trimmed trailing ~!)
+  const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
+  const cVis = snapshot.card.visibleOnStage ? 1 : 0;
+  const cMeta = (cTheme * 2 + cVis).toString(36);
+  const cTo = snapshot.card.to === DEFAULT_SHARE_CARD_TO ? '!' : toBase64Url(snapshot.card.to);
+  const cFrom =
+    snapshot.card.from === DEFAULT_SHARE_CARD_FROM ? '!' : toBase64Url(snapshot.card.from);
+  const cMsg =
+    snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
+  const cardPart = `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
+
+  // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
+  //    or 8 chars per stem with 1-char type code (0..23 in base36) and flags in extraFlags
+  let itemsPart = '';
+  if (itemsMatchPreset(snapshot.items, INITIAL_ITEMS)) {
+    itemsPart = '@0';
+  } else {
+    const matchedTplIdx = STARTER_TEMPLATES.findIndex((tpl) =>
+      itemsMatchPreset(snapshot.items, tpl.snapshot.items)
+    );
+    if (matchedTplIdx !== -1) {
+      itemsPart = `@${matchedTplIdx + 1}`;
+    }
+  }
+
+  if (!itemsPart) {
+    const clampNum = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    itemsPart = snapshot.items
+      .map((item) => {
+        const rawTypeIdx = Math.max(0, SHARE_FLOWER_TYPES.indexOf(item.type));
+        const typeChar = rawTypeIdx.toString(36);
+        const xStr = Math.round(clampNum(item.x, 0, 600))
+          .toString(36)
+          .padStart(2, '0');
+        const yStr = Math.round(clampNum(item.y, 0, 680))
+          .toString(36)
+          .padStart(2, '0');
+        const sInt = clampNum(Math.round((clampNum(item.scale, 0.4, 2.2) - 0.4) * 19), 0, 35);
+        const sStr = sInt.toString(36);
+        const rInt = clampNum(Math.round((clampNum(item.rotation, -180, 180) + 180) / 2), 0, 180);
+        const rStr = rInt.toString(36).padStart(2, '0');
+
+        const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+        const isDefPetal =
+          meta && item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
+        const isDefCenter =
+          meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
+        const extraFlags = (item.flipX ? 1 : 0) | (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
+
+        const base = `${typeChar}${xStr}${yStr}${sStr}${rStr}`;
+        if (isDefPetal && isDefCenter && extraFlags === 0) {
+          return base;
+        }
+        const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
+        const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
+        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}`.replace(/~+$/, '');
+      })
+      .join('.');
+  }
+
+  const prefix = asGift ? 'g' : 'b';
+  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}`;
+}
+
 export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = false): string {
   try {
-    // 1. Compact Wrapper & Ribbon Header: <wrapIdxBase36>~<optWrapHex>~<optRibbonHex> (trimmed trailing ~)
-    const wIdx = Math.max(0, SHARE_WRAP_STYLES.indexOf(snapshot.wrapStyle)).toString(36);
-    const defaultWrapHex =
-      WRAPPER_CATALOG.find((w) => w.id === snapshot.wrapStyle)?.defaultHex.toLowerCase() || '';
-    const wHex =
-      snapshot.wrapColor.toLowerCase() === defaultWrapHex
-        ? ''
-        : snapshot.wrapColor.replace('#', '').toLowerCase();
-    const rHex =
-      snapshot.ribbonColor.toLowerCase() === '#e11d48'
-        ? ''
-        : snapshot.ribbonColor.replace('#', '').toLowerCase();
-    const headerPart = `${wIdx}~${wHex}~${rHex}`.replace(/~+$/, '');
-
-    // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64> (trimmed trailing ~!)
-    const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
-    const cVis = snapshot.card.visibleOnStage ? 1 : 0;
-    const cMeta = (cTheme * 2 + cVis).toString(36);
-    const cTo = snapshot.card.to === DEFAULT_SHARE_CARD_TO ? '!' : toBase64Url(snapshot.card.to);
-    const cFrom =
-      snapshot.card.from === DEFAULT_SHARE_CARD_FROM ? '!' : toBase64Url(snapshot.card.from);
-    const cMsg =
-      snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
-    const cardPart = `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
-
-    // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
-    //    or 8 chars per stem with flipX packed directly into the 1-char type code (0..23 in base36)
-    let itemsPart = '';
-    if (itemsMatchPreset(snapshot.items, INITIAL_ITEMS)) {
-      itemsPart = '@0';
-    } else {
-      const matchedTplIdx = STARTER_TEMPLATES.findIndex((tpl) =>
-        itemsMatchPreset(snapshot.items, tpl.snapshot.items)
-      );
-      if (matchedTplIdx !== -1) {
-        itemsPart = `@${matchedTplIdx + 1}`;
+    const hashPayload = encodeBouquetToCompactPayload(snapshot, asGift);
+    const code = computeShortCode(hashPayload);
+    localShortCodeCache.set(code, hashPayload);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`bq_short_${code}`, hashPayload);
+      } catch {
+        // Ignore storage quota
       }
     }
-
-    if (!itemsPart) {
-      const clampNum = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-      itemsPart = snapshot.items
-        .map((item) => {
-          const rawTypeIdx = Math.max(0, SHARE_FLOWER_TYPES.indexOf(item.type));
-          const packedTypeAndFlip = (rawTypeIdx + (item.flipX ? 12 : 0)).toString(36);
-          const xStr = Math.round(clampNum(item.x, 0, 600))
-            .toString(36)
-            .padStart(2, '0');
-          const yStr = Math.round(clampNum(item.y, 0, 680))
-            .toString(36)
-            .padStart(2, '0');
-          const sInt = clampNum(Math.round((clampNum(item.scale, 0.4, 2.2) - 0.4) * 19), 0, 35);
-          const sStr = sInt.toString(36);
-          const rInt = clampNum(Math.round((clampNum(item.rotation, -180, 180) + 180) / 2), 0, 180);
-          const rStr = rInt.toString(36).padStart(2, '0');
-
-          const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
-          const isDefPetal =
-            meta && item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
-          const isDefCenter =
-            meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
-          const extraFlags = (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
-
-          const base = `${packedTypeAndFlip}${xStr}${yStr}${sStr}${rStr}`;
-          if (isDefPetal && isDefCenter && extraFlags === 0) {
-            return base;
-          }
-          const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
-          const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
-          return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}`.replace(/~+$/, '');
-        })
-        .join('.');
-    }
-
-    const compactPayload = `${headerPart}.${cardPart}.${itemsPart}`;
-    const baseUrl =
+    const baseOrigin =
       typeof window !== 'undefined'
-        ? `${window.location.origin}${window.location.pathname}${window.location.search}`
-        : 'https://bouquet-studio.local/';
-    const prefix = asGift ? 'g' : 'b';
-    return `${baseUrl}#${prefix}=${compactPayload}`;
+        ? window.location.origin
+        : 'https://bouquet-studio.local';
+    return `${baseOrigin}/${code}`;
   } catch {
     return typeof window !== 'undefined' ? window.location.href : '';
   }
 }
 
 export function isGiftShareHash(hashOverride?: string): boolean {
+  if (hashOverride === undefined && typeof window !== 'undefined') {
+    if (getShortCodeFromPathname(window.location.pathname)) {
+      return true;
+    }
+  }
   const hash =
     hashOverride !== undefined
       ? hashOverride
@@ -999,6 +2027,7 @@ export function isGiftShareHash(hashOverride?: string): boolean {
       ? window.location.hash
       : '';
   if (!hash) return false;
+  if (getShortCodeFromPathname(hash)) return true;
   if (hash.includes('edit=1')) return false;
   return (
     hash.startsWith('#g=') ||
@@ -1010,12 +2039,29 @@ export function isGiftShareHash(hashOverride?: string): boolean {
 
 export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | null {
   try {
-    const hash =
+    let hash =
       hashOverride !== undefined
         ? hashOverride
         : typeof window !== 'undefined'
         ? window.location.hash
         : '';
+
+    // Check if the URL or pathname is a first-party short code (e.g. /Vu18KSuusq9133s)
+    const shortCode =
+      getShortCodeFromPathname(hashOverride) ||
+      (hashOverride === undefined && typeof window !== 'undefined'
+        ? getShortCodeFromPathname(window.location.pathname)
+        : null);
+
+    if (shortCode && !hash.startsWith('#g=') && !hash.startsWith('#b=') && !hash.startsWith('#bouquet=')) {
+      const cached =
+        localShortCodeCache.get(shortCode) ||
+        (typeof window !== 'undefined' ? localStorage.getItem(`bq_short_${shortCode}`) : null);
+      if (cached) {
+        hash = cached;
+      }
+    }
+
     if (!hash) return null;
 
     // FORMAT A: Ultra-compact #g=<payload> or #b=<payload>
@@ -1055,9 +2101,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           .map((sp, idx) => {
             const [base, flagsStr = '0', pHex = '', cHex = ''] = sp.split('~');
             const rawCode = parseInt(base[0], 36) || 0;
-            const packedFlip = rawCode >= 12;
-            const typeIdx = packedFlip ? rawCode - 12 : rawCode;
-            const type = SHARE_FLOWER_TYPES[typeIdx] || 'rose';
+            const type = SHARE_FLOWER_TYPES[rawCode] || 'rose';
             const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
             const x = parseInt(base.slice(1, 3), 36);
             const y = parseInt(base.slice(3, 5), 36);
@@ -1074,7 +2118,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               y: Number.isFinite(y) ? y : 280,
               scale: Number.isFinite(scale) ? scale : meta.defaultScale,
               rotation: Number.isFinite(rotation) ? rotation : 0,
-              flipX: packedFlip || Boolean(flags & 1),
+              flipX: Boolean(flags & 1),
               locked: Boolean(flags & 2),
               hidden: Boolean(flags & 4),
               petalColor: pHex ? `#${pHex}` : meta.defaultPetalColor,
@@ -3014,36 +4058,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
         {/* 5. PINNED GREETING CARD TAG ON BOUQUET (Wiggles & opens letter modal ONLY on shared/preview action; scrollable to preserve card design & length) */}
         {card.visibleOnStage && showCardInGiftView && (() => {
-          const cardPalette =
-            card.theme === 'blush'
-              ? {
-                  bg: '#FCE7F3',
-                  border: '#F472B6',
-                  inner: '#E11D48',
-                  seal: '#E11D48',
-                  title: '#831843',
-                  body: '#9D174D',
-                  sign: '#BE185D'
-                }
-              : card.theme === 'lavender'
-              ? {
-                  bg: '#EDE9FE',
-                  border: '#A78BFA',
-                  inner: '#7C3AED',
-                  seal: '#7C3AED',
-                  title: '#3B0764',
-                  body: '#4C1D95',
-                  sign: '#6D28D9'
-                }
-              : {
-                  bg: '#FEF3C7',
-                  border: '#D97706',
-                  inner: '#B4846C',
-                  seal: '#B4846C',
-                  title: '#1C1917',
-                  body: '#292524',
-                  sign: '#78716C'
-                };
+          const cardPalette = getCardThemePalette(card.theme);
           return (
             <g transform="translate(425, 520) rotate(-6)" filter="url(#softShadow)">
               {/* Fastener cord pinned to bouquet */}
@@ -4683,10 +5698,19 @@ export default function App() {
   const [drawerState, setDrawerState] = useState<'collapsed' | 'peek' | 'expanded'>('peek');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInspectorSidebarOpen, setIsInspectorSidebarOpen] = useState(true);
-  const initialGiftMode = typeof window !== 'undefined' && isGiftShareHash(window.location.hash);
+  const initialGiftMode = typeof window !== 'undefined' && isGiftShareHash();
+  const initialPathShortCode =
+    typeof window !== 'undefined' ? getShortCodeFromPathname(window.location.pathname) : null;
+  const initialNeedsRemoteResolve = Boolean(
+    initialPathShortCode &&
+      typeof window !== 'undefined' &&
+      !localShortCodeCache.has(initialPathShortCode) &&
+      !localStorage.getItem(`bq_short_${initialPathShortCode}`)
+  );
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isGiftView, setIsGiftView] = useState<boolean>(initialGiftMode);
   const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState<boolean>(initialGiftMode);
+  const [isResolvingShortCode, setIsResolvingShortCode] = useState<boolean>(initialNeedsRemoteResolve);
   const [bloomedCount, setBloomedCount] = useState<number | undefined>(
     initialGiftMode ? 0 : undefined
   );
@@ -4921,7 +5945,7 @@ export default function App() {
       bloomIntervalRef.current = null;
     }
     try {
-      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      window.history.replaceState(null, '', '/');
     } catch {
       // Ignore history error
     }
@@ -4935,22 +5959,25 @@ export default function App() {
     triggerToast('Started a fresh bouquet for you to arrange');
   }, [loadSnapshot, selectItem, triggerToast]);
 
-  // Autosave to localStorage
+  // Autosave to localStorage & Hydrate Shared Links (including first-party /<code> short links)
   useEffect(() => {
     if (!hasHydratedRef.current) {
       hasHydratedRef.current = true;
       try {
         const hash = window.location.hash;
-        const giftMode = isGiftShareHash(hash);
+        const pathCode = getShortCodeFromPathname(window.location.pathname);
+        const giftMode = isGiftShareHash();
         if (giftMode) {
           setIsGiftView(true);
           setIsPreviewMode(false);
           setIsGiftEntranceOpen(true);
         }
-        const shared = decodeBouquetFromHash(hash);
+
+        const shared = decodeBouquetFromHash();
         if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
           loadSnapshot(shared);
           selectItem(null);
+          setIsResolvingShortCode(false);
           if (giftMode) {
             startGiftBloomAnimation(shared.items.length, false);
           } else {
@@ -4958,6 +5985,38 @@ export default function App() {
           }
           return;
         }
+
+        // If opened via a first-party short link (e.g. https://[domain]/Vu18KSuusq9133s) on a new device,
+        // fetch the bouquet payload by short code from /api/shorten?c=<code>
+        if (pathCode) {
+          setIsResolvingShortCode(true);
+          fetch(`/api/shorten?c=${encodeURIComponent(pathCode)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data && typeof data.payload === 'string') {
+                localShortCodeCache.set(pathCode, data.payload);
+                try {
+                  localStorage.setItem(`bq_short_${pathCode}`, data.payload);
+                } catch {
+                  // Ignore storage quota
+                }
+                const resolvedSnap = decodeBouquetFromHash(data.payload);
+                if (resolvedSnap && Array.isArray(resolvedSnap.items) && resolvedSnap.items.length > 0) {
+                  loadSnapshot(resolvedSnap);
+                  selectItem(null);
+                  startGiftBloomAnimation(resolvedSnap.items.length, false);
+                }
+              }
+            })
+            .catch(() => {
+              // Fall back quietly
+            })
+            .finally(() => {
+              setIsResolvingShortCode(false);
+            });
+          return;
+        }
+
         // Only fall back quietly to default bouquet if link cannot be parsed (no alarming banner on recipient gift view)
         if (!giftMode && (hash.includes('bouquet=') || hash.startsWith('#b='))) {
           setCorruptedLinkAlert('Could not load shared bouquet link. It may have been truncated or corrupted.');
@@ -4971,7 +6030,7 @@ export default function App() {
           }
         }
       } catch {
-        // Ignore parsing error
+        setIsResolvingShortCode(false);
       }
       return;
     }
@@ -5082,44 +6141,43 @@ export default function App() {
     [items, wrapStyle, wrapColor, ribbonColor, card]
   );
 
-  // Automatically generate a 20-char short link (e.g. https://is.gd/xxxxxx) when the Share modal opens
+  const registerShortCodeOnServer = useCallback(
+    (asGift = true) => {
+      const snap: BouquetSnapshot = {
+        items,
+        wrapStyle,
+        wrapColor,
+        ribbonColor,
+        card
+      };
+      const hashPayload = encodeBouquetToCompactPayload(snap, asGift);
+      const code = computeShortCode(hashPayload);
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const firstPartyUrl = origin ? `${origin}/${code}` : `/${code}`;
+
+      fetch('/api/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, payload: hashPayload, origin })
+      }).catch(() => {});
+
+      return firstPartyUrl;
+    },
+    [items, wrapStyle, wrapColor, ribbonColor, card]
+  );
+
+  // Immediately generate and register our own first-party short link (e.g. https://[domain]/Vu18KSuusq9133s)
   useEffect(() => {
     if (!isShareModalOpen) return;
-    let cancelled = false;
-    const fullUrl = getShareUrl(true);
-    setShortShareUrl(fullUrl);
-    setIsShorteningUrl(true);
-
-    fetch('/api/shorten', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: fullUrl })
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && data && typeof data.shortUrl === 'string' && data.shortUrl) {
-          setShortShareUrl(data.shortUrl);
-        }
-      })
-      .catch(() => {
-        // Keep compact #g= URL fallback
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsShorteningUrl(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isShareModalOpen, getShareUrl]);
+    const firstPartyUrl = registerShortCodeOnServer(true);
+    setShortShareUrl(firstPartyUrl);
+    setIsShorteningUrl(false);
+  }, [isShareModalOpen, registerShortCodeOnServer]);
 
   const handleShareLink = async (asGift = true) => {
-    const fallbackUrl = getShareUrl(asGift);
-    const linkToCopy = asGift && shortShareUrl ? shortShareUrl : fallbackUrl;
+    const firstPartyUrl = registerShortCodeOnServer(asGift);
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(linkToCopy).catch(() => {});
+      navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
     triggerToast('Link copied');
   };
@@ -5144,11 +6202,11 @@ export default function App() {
   };
 
   const focalFlowers = useMemo(
-    () => FLOWER_CATALOG.filter((f) => !f.isFoliage && f.type !== 'babysBreath' && f.type !== 'lavender'),
+    () => FLOWER_CATALOG.filter((f) => !f.isFoliage && !f.isFiller),
     []
   );
   const fillerFlowers = useMemo(
-    () => FLOWER_CATALOG.filter((f) => f.isFoliage || f.type === 'babysBreath' || f.type === 'lavender'),
+    () => FLOWER_CATALOG.filter((f) => Boolean(f.isFoliage || f.isFiller)),
     []
   );
 
@@ -5296,18 +6354,6 @@ export default function App() {
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  randomizeBouquet();
-                  triggerToast('Arranged a fresh bouquet');
-                }}
-                aria-label="Arrange a random bouquet"
-                title="Randomize bouquet"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
-              >
-                <Shuffle className="w-4 h-4" />
-              </button>
               <button
                 type="button"
                 onClick={handleExportPng}
@@ -5480,23 +6526,6 @@ export default function App() {
             >
               <Redo2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                randomizeBouquet();
-                triggerToast('Arranged a fresh bouquet');
-              }}
-              title="Arrange a random bouquet"
-              aria-label="Arrange a random bouquet"
-              className={`w-8 h-8 sm:w-auto sm:px-3 sm:h-9 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                isDarkMode
-                  ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                  : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-              }`}
-            >
-              <Shuffle className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-              <span className="hidden md:inline">Randomize</span>
-            </button>
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
@@ -5641,71 +6670,75 @@ export default function App() {
               role="dialog"
               aria-modal="true"
               aria-label="Bouquet Gift Entrance"
-              onClick={handleUnwrapGiftEntrance}
+              onClick={() => {
+                if (!isResolvingShortCode) handleUnwrapGiftEntrance();
+              }}
               className={`absolute inset-0 z-40 flex items-center justify-center p-4 transition-opacity duration-300 cursor-pointer ${
                 isDarkMode ? 'bg-[#141211]' : 'bg-[#FAFAF8]'
               }`}
             >
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleUnwrapGiftEntrance();
-                }}
-                className={`card-zoom-modal w-full max-w-[320px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
-                  isDarkMode
-                    ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
-                    : 'bg-white border-stone-200/90 text-[#1C1917]'
-                }`}
-              >
-                {/* Minimal Wax-Sealed Envelope Icon */}
-                <div className="float-keepsake-envelope mx-auto mb-5 w-20 h-16 flex items-center justify-center">
-                  <svg viewBox="0 0 120 92" className="w-full h-full">
-                    <rect
-                      x="10"
-                      y="14"
-                      width="100"
-                      height="66"
-                      rx="8"
-                      fill={isDarkMode ? '#292524' : '#FAF8F5'}
-                      stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="M12,78 L60,46 L108,78"
-                      fill="none"
-                      stroke={isDarkMode ? '#44403C' : '#E5DFD7'}
-                      strokeWidth="1.2"
-                    />
-                    <path
-                      d="M11,16 L60,52 L109,16"
-                      fill={isDarkMode ? '#24211E' : '#F3EFEA'}
-                      stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
-                      strokeWidth="1.5"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx="60" cy="50" r="10" fill="#B4846C" />
-                    <circle cx="60" cy="50" r="6.5" fill="none" stroke="#FFFDF9" strokeWidth="0.8" opacity="0.7" />
-                  </svg>
-                </div>
-
-                <h2
-                  className="text-2xl sm:text-[28px] font-medium tracking-tight leading-snug"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  For {card.to || 'You'}
-                </h2>
-
-                <button
-                  type="button"
+              {!isResolvingShortCode && (
+                <div
                   onClick={(e) => {
                     e.stopPropagation();
                     handleUnwrapGiftEntrance();
                   }}
-                  className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98"
+                  className={`card-zoom-modal w-full max-w-[320px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
+                    isDarkMode
+                      ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+                      : 'bg-white border-stone-200/90 text-[#1C1917]'
+                  }`}
                 >
-                  Open Bouquet
-                </button>
-              </div>
+                  {/* Minimal Wax-Sealed Envelope Icon */}
+                  <div className="float-keepsake-envelope mx-auto mb-5 w-20 h-16 flex items-center justify-center">
+                    <svg viewBox="0 0 120 92" className="w-full h-full">
+                      <rect
+                        x="10"
+                        y="14"
+                        width="100"
+                        height="66"
+                        rx="8"
+                        fill={isDarkMode ? '#292524' : '#FAF8F5'}
+                        stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
+                        strokeWidth="1.5"
+                      />
+                      <path
+                        d="M12,78 L60,46 L108,78"
+                        fill="none"
+                        stroke={isDarkMode ? '#44403C' : '#E5DFD7'}
+                        strokeWidth="1.2"
+                      />
+                      <path
+                        d="M11,16 L60,52 L109,16"
+                        fill={isDarkMode ? '#24211E' : '#F3EFEA'}
+                        stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
+                        strokeWidth="1.5"
+                        strokeLinejoin="round"
+                      />
+                      <circle cx="60" cy="50" r="10" fill="#B4846C" />
+                      <circle cx="60" cy="50" r="6.5" fill="none" stroke="#FFFDF9" strokeWidth="0.8" opacity="0.7" />
+                    </svg>
+                  </div>
+
+                  <h2
+                    className="text-2xl sm:text-[28px] font-medium tracking-tight leading-snug"
+                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  >
+                    For {card.to || 'You'}
+                  </h2>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUnwrapGiftEntrance();
+                    }}
+                    className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98"
+                  >
+                    Open Bouquet
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -5979,15 +7012,9 @@ export default function App() {
 
                   {mobilePopover === 'card' && (
                     <div className="space-y-2.5">
-                      <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-start justify-between gap-1.5">
                         <div className="grid grid-cols-3 gap-1.5 flex-1">
-                          {(
-                            [
-                              { id: 'cream', label: 'Cream', dot: '#FEF3C7', ring: '#D97706' },
-                              { id: 'blush', label: 'Blush', dot: '#FCE7F3', ring: '#E11D48' },
-                              { id: 'lavender', label: 'Lavender', dot: '#EDE9FE', ring: '#7C3AED' }
-                            ] as const
-                          ).map((t) => (
+                          {CARD_THEME_CATALOG.map((t) => (
                             <button
                               key={t.id}
                               type="button"
@@ -6002,9 +7029,9 @@ export default function App() {
                             >
                               <span
                                 className="w-3 h-3 rounded-full shrink-0 border"
-                                style={{ backgroundColor: t.dot, borderColor: t.ring }}
+                                style={{ backgroundColor: t.bg, borderColor: t.border }}
                               />
-                              <span>{t.label}</span>
+                              <span className="truncate">{t.label}</span>
                             </button>
                           ))}
                         </div>
@@ -6282,28 +7309,6 @@ export default function App() {
                     </button>
                   ))}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      randomizeBouquet();
-                      triggerToast('Random arrangement');
-                    }}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
-                  >
-                    <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
-                        isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
-                    >
-                      <Shuffle className="w-5 h-5 text-[#B4846C]" />
-                    </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                      Surprise
-                    </span>
-                  </button>
-
                   {items.length > 0 && (
                     <button
                       type="button"
@@ -6397,7 +7402,7 @@ export default function App() {
                       </svg>
                     </div>
                     <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                      {entry.name.replace('Garden ', '').replace('Dutch ', '').replace('Stargazer ', '').replace('Golden ', '').replace('Cloud ', '').replace('Chamomile ', '')}
+                      {entry.shortName}
                     </span>
                   </button>
                 ))}
@@ -6430,7 +7435,7 @@ export default function App() {
                       </svg>
                     </div>
                     <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                      {entry.name.replace('Silver Dollar ', '').replace('Woodland ', '').replace('French ', '')}
+                      {entry.shortName}
                     </span>
                   </button>
                 ))}
@@ -6488,19 +7493,13 @@ export default function App() {
                     </span>
                   </button>
 
-                  {(['cream', 'blush', 'lavender'] as const).map((th) => {
-                    const isSelected = card.theme === th && card.visibleOnStage;
-                    const bgFill =
-                      th === 'blush' ? '#FCE7F3' : th === 'lavender' ? '#EDE9FE' : '#FEF3C7';
-                    const borderCol =
-                      th === 'blush' ? '#F472B6' : th === 'lavender' ? '#A78BFA' : '#D97706';
-                    const sealCol =
-                      th === 'blush' ? '#E11D48' : th === 'lavender' ? '#7C3AED' : '#B4846C';
+                  {CARD_THEME_CATALOG.map((th) => {
+                    const isSelected = card.theme === th.id && card.visibleOnStage;
                     return (
                       <button
-                        key={th}
+                        key={th.id}
                         type="button"
-                        onClick={() => updateCard({ theme: th, visibleOnStage: true })}
+                        onClick={() => updateCard({ theme: th.id, visibleOnStage: true })}
                         className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
                       >
                         <div
@@ -6514,26 +7513,26 @@ export default function App() {
                         >
                           <div
                             className="w-10 h-7 rounded-md border flex items-center justify-start px-1.5 gap-1 shadow-2xs"
-                            style={{ backgroundColor: bgFill, borderColor: borderCol }}
+                            style={{ backgroundColor: th.bg, borderColor: th.border }}
                           >
                             <span
                               className="w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: sealCol }}
+                              style={{ backgroundColor: th.seal }}
                             />
                             <div className="flex flex-col gap-0.5 flex-1">
                               <span
                                 className="h-[1.5px] w-full rounded-full opacity-50"
-                                style={{ backgroundColor: sealCol }}
+                                style={{ backgroundColor: th.inner }}
                               />
                               <span
                                 className="h-[1.5px] w-2/3 rounded-full opacity-35"
-                                style={{ backgroundColor: sealCol }}
+                                style={{ backgroundColor: th.inner }}
                               />
                             </div>
                           </div>
                         </div>
-                        <span className="text-[11px] font-medium capitalize text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                          {th}
+                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                          {th.label}
                         </span>
                       </button>
                     );
@@ -6907,21 +7906,21 @@ export default function App() {
                   </div>
 
                   {/* Card Stationary Theme */}
-                  <div className="flex items-center gap-2">
-                    {(['cream', 'blush', 'lavender'] as const).map((th) => (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {CARD_THEME_CATALOG.map((th) => (
                       <button
-                        key={th}
+                        key={th.id}
                         type="button"
-                        onClick={() => updateCard({ theme: th })}
-                        className={`flex-1 py-1.5 rounded-xl text-xs font-medium capitalize border transition ${
-                          card.theme === th
+                        onClick={() => updateCard({ theme: th.id })}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-medium truncate border transition ${
+                          card.theme === th.id
                             ? 'bg-[#1C1917] text-white border-[#1C1917] dark:bg-white dark:text-[#1C1917] dark:border-white'
                             : isDarkMode
                             ? 'border-stone-700 bg-[#292524] text-stone-200 hover:bg-stone-800'
                             : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
                         }`}
                       >
-                        {th}
+                        {th.label}
                       </button>
                     ))}
                   </div>
@@ -7078,39 +8077,7 @@ export default function App() {
           out the note like a sweet handwritten letter!
           ===================================================================== */}
       {isLetterModalOpen && (() => {
-        const cardPalette =
-          card.theme === 'blush'
-            ? {
-                bg: '#FCE7F3',
-                border: '#F472B6',
-                inner: '#E11D48',
-                seal: '#E11D48',
-                title: '#831843',
-                body: '#9D174D',
-                sign: '#BE185D',
-                rule: 'rgba(225, 29, 72, 0.14)'
-              }
-            : card.theme === 'lavender'
-            ? {
-                bg: '#EDE9FE',
-                border: '#A78BFA',
-                inner: '#7C3AED',
-                seal: '#7C3AED',
-                title: '#3B0764',
-                body: '#4C1D95',
-                sign: '#6D28D9',
-                rule: 'rgba(124, 58, 237, 0.14)'
-              }
-            : {
-                bg: '#FEF3C7',
-                border: '#D97706',
-                inner: '#B4846C',
-                seal: '#B4846C',
-                title: '#1C1917',
-                body: '#292524',
-                sign: '#78716C',
-                rule: 'rgba(180, 132, 108, 0.18)'
-              };
+        const cardPalette = getCardThemePalette(card.theme);
 
         const toFull = `Dearest ${card.to || 'Someone Special'},`;
         const msgFull = card.message || 'Thinking of you with love and blossoms.';
@@ -7299,21 +8266,21 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              {(['cream', 'blush', 'lavender'] as const).map((th) => (
+            <div className="grid grid-cols-3 gap-1.5">
+              {CARD_THEME_CATALOG.map((th) => (
                 <button
-                  key={th}
+                  key={th.id}
                   type="button"
-                  onClick={() => updateCard({ theme: th })}
-                  className={`flex-1 py-1.5 rounded-xl text-xs font-medium capitalize border transition ${
-                    card.theme === th
+                  onClick={() => updateCard({ theme: th.id })}
+                  className={`py-1.5 px-2 rounded-xl text-xs font-medium truncate border transition ${
+                    card.theme === th.id
                       ? 'bg-[#B4846C] text-white border-[#B4846C]'
                       : isDarkMode
                       ? 'border-stone-700 bg-[#292524] text-stone-200'
                       : 'border-stone-200 bg-stone-50 text-stone-700'
                   }`}
                 >
-                  {th}
+                  {th.label}
                 </button>
               ))}
             </div>

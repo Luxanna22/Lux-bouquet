@@ -22,7 +22,7 @@ try {
   // 2. Responsive Header Elements Check
   assert(html.includes('Flowers For You'), 'App header title present');
   assert(html.includes('hidden sm:inline'), 'Autosave status text adapts to screen size');
-  assert(html.includes('hidden md:inline') && html.includes('Randomize'), 'Randomize button adapts responsively');
+  assert(!html.includes('Randomize') && !html.includes('Surprise'), 'Randomizer removed so users craft with their own creativity');
   assert(html.includes('hidden xl:inline'), 'Music box button adapts responsively');
   assert(html.includes('Save &amp; Send'), 'Save & Send CTA button present with responsive label');
   console.log('✓ Header controls and breakpoint-specific hiding verified');
@@ -64,10 +64,12 @@ try {
   assert(typeof studioMod.musicBox.toggle === 'function', 'musicBox toggle function present');
   console.log('✓ Procedural music box audio system preserved');
 
-  // 9. Flower Catalog & Templates Check
-  assert(studioMod.FLOWER_CATALOG.length === 11, `Expected 11 flower entries, got ${studioMod.FLOWER_CATALOG.length}`);
+  // 9. Flower Catalog, Fillers, Ribbons, Cards & Templates Check
+  assert(studioMod.FLOWER_CATALOG.length === 24, `Expected 24 botanical entries (15 focal + 9 fillers), got ${studioMod.FLOWER_CATALOG.length}`);
+  assert(studioMod.RIBBON_SWATCHES.length === 12, `Expected 12 ribbon swatches, got ${studioMod.RIBBON_SWATCHES.length}`);
+  assert(studioMod.CARD_THEME_CATALOG.length === 7, `Expected 7 greeting card themes, got ${studioMod.CARD_THEME_CATALOG.length}`);
   assert(studioMod.STARTER_TEMPLATES.length >= 4, `Expected at least 4 starter templates, got ${studioMod.STARTER_TEMPLATES.length}`);
-  console.log('✓ Botanical flower catalog and starter templates preserved');
+  console.log('✓ Botanical flower catalog (24), ribbons (12), cards (7) and starter templates preserved');
 
   // 10. PNG Export Check
   assert(typeof studioMod.exportSvgElementToPng === 'function', 'High-res PNG export function preserved');
