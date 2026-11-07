@@ -98,7 +98,8 @@ function getInitialStoreState() {
             customBg: shared.card?.customBg,
             customAccent: shared.card?.customAccent,
             x: shared.card?.x ?? 410,
-            y: shared.card?.y ?? 525
+            y: shared.card?.y ?? 525,
+            scale: shared.card?.scale ?? 0.72
           },
           voice: shared.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...shared.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
           selectedId: isGiftShareHash(hash)
@@ -125,7 +126,8 @@ function getInitialStoreState() {
       visibleOnStage: true,
       theme: 'sealed' as const,
       x: 410,
-      y: 525
+      y: 525,
+      scale: 0.72
     },
     voice: { ...DEFAULT_VOICE_KEEPSAKE },
     selectedId: isBrowser ? null : ('f-14' as string | null)

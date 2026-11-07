@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "SharedBouquet": {
+      "title": "SharedBouquet",
+      "description": "A shared bouquet arrangement including floral items, greeting card, and optional recorded voice keepsake.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Unique short code identifier for the shared bouquet link.",
+          "minLength": 7,
+          "maxLength": 24,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "payload": {
+          "type": "string",
+          "description": "Compact serialized bouquet snapshot string.",
+          "minLength": 3,
+          "maxLength": 900000
+        },
+        "voiceAudioDataUrl": {
+          "type": "string",
+          "description": "Base64-encoded recorded voice audio data URL.",
+          "minLength": 0,
+          "maxLength": 900000
+        },
+        "voiceStyle": {
+          "type": "string",
+          "description": "Selected romantic voice keepsake style.",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "voiceTitle": {
+          "type": "string",
+          "description": "Title displayed on the voice keepsake.",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "voiceDurationSec": {
+          "type": "number",
+          "description": "Duration of the recorded voice note in seconds."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the shared bouquet was created."
+        }
+      },
+      "required": ["code", "payload", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/shared_bouquets/{code}": {
+      "schema": "SharedBouquet",
+      "description": "Stores shared bouquet arrangements and recorded voice keepsakes indexed by short code."
+    }
+  }
+}

@@ -114,7 +114,89 @@ function handleBouquetImageMiddleware(
   next();
 }
 
-const shortCodeStore = new Map<string, string>();
+interface ShortCodeEntry {
+  code: string;
+  payload: string;
+  voiceAudioDataUrl?: string | null;
+  voiceStyle?: string | null;
+  voiceTitle?: string | null;
+  voiceDurationSec?: number | null;
+}
+
+const shortCodeStore = new Map<string, ShortCodeEntry>();
+const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
+const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
+const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/shared_bouquets`;
+
+async function fetchFromFirestoreRest(code: string): Promise<ShortCodeEntry | null> {
+  if (!code || code.length < 7 || code.length > 24) return null;
+  try {
+    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(code)}`);
+    if (!resp.ok) return null;
+    const docJson = (await resp.json()) as {
+      fields?: Record<string, { stringValue?: string; integerValue?: string; doubleValue?: number }>;
+    };
+    const fields = docJson?.fields;
+    if (!fields || !fields.payload?.stringValue) return null;
+    return {
+      code,
+      payload: fields.payload.stringValue,
+      voiceAudioDataUrl: fields.voiceAudioDataUrl?.stringValue || null,
+      voiceStyle: fields.voiceStyle?.stringValue || null,
+      voiceTitle: fields.voiceTitle?.stringValue || null,
+      voiceDurationSec:
+        fields.voiceDurationSec?.integerValue !== undefined
+          ? Number(fields.voiceDurationSec.integerValue)
+          : fields.voiceDurationSec?.doubleValue !== undefined
+          ? Number(fields.voiceDurationSec.doubleValue)
+          : null
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function saveToFirestoreRest(code: string, entry: ShortCodeEntry): Promise<boolean> {
+  if (!code || code.length < 7 || code.length > 24 || !entry.payload) return false;
+  try {
+    const fields: Record<string, Record<string, string>> = {
+      code: { stringValue: code },
+      payload: { stringValue: entry.payload.slice(0, 900000) },
+      createdAt: { stringValue: new Date().toISOString() }
+    };
+    if (entry.voiceAudioDataUrl) {
+      fields.voiceAudioDataUrl = { stringValue: entry.voiceAudioDataUrl.slice(0, 900000) };
+    }
+    if (entry.voiceStyle) {
+      fields.voiceStyle = { stringValue: entry.voiceStyle.slice(0, 32) };
+    }
+    if (entry.voiceTitle) {
+      fields.voiceTitle = { stringValue: entry.voiceTitle.slice(0, 64) };
+    }
+    if (typeof entry.voiceDurationSec === 'number' && Number.isFinite(entry.voiceDurationSec)) {
+      fields.voiceDurationSec = {
+        integerValue: String(Math.max(0, Math.min(600, Math.round(entry.voiceDurationSec))))
+      };
+    }
+    const existingResp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(code)}`);
+    if (existingResp.ok) {
+      const existingDoc = (await existingResp.json()) as {
+        fields?: { createdAt?: { stringValue?: string } };
+      };
+      if (existingDoc?.fields?.createdAt?.stringValue) {
+        fields.createdAt = { stringValue: existingDoc.fields.createdAt.stringValue };
+      }
+    }
+    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(code)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
 
 function handleShortenMiddleware(
   req: IncomingMessage,
@@ -131,22 +213,28 @@ function handleShortenMiddleware(
 
   if (req.method === 'GET' && codeParam) {
     (async () => {
-      let payload = shortCodeStore.get(codeParam) || null;
-      if (!payload) {
+      let entry = shortCodeStore.get(codeParam) || null;
+      if (!entry) {
+        entry = await fetchFromFirestoreRest(codeParam);
+        if (entry) {
+          shortCodeStore.set(codeParam, entry);
+        }
+      }
+      if (!entry) {
         try {
           const slug = `bq_${codeParam}`;
           const lookup = await fetch(`https://is.gd/${slug}`, { redirect: 'manual' });
           const loc = lookup.headers.get('location') || '';
           const hashIdx = loc.indexOf('#');
           if (hashIdx !== -1) {
-            payload = loc.slice(hashIdx);
-            shortCodeStore.set(codeParam, payload);
+            entry = { code: codeParam, payload: loc.slice(hashIdx) };
+            shortCodeStore.set(codeParam, entry);
           }
         } catch {
           // Ignore network error
         }
       }
-      if (!payload) {
+      if (!entry || !entry.payload) {
         res.statusCode = 404;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ error: 'Not found' }));
@@ -154,7 +242,16 @@ function handleShortenMiddleware(
       }
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ code: codeParam, payload }));
+      res.end(
+        JSON.stringify({
+          code: codeParam,
+          payload: entry.payload,
+          voiceAudioDataUrl: entry.voiceAudioDataUrl || null,
+          voiceStyle: entry.voiceStyle || null,
+          voiceTitle: entry.voiceTitle || null,
+          voiceDurationSec: entry.voiceDurationSec ?? null
+        })
+      );
     })();
     return;
   }
@@ -176,30 +273,23 @@ function handleShortenMiddleware(
           return;
         }
 
-        shortCodeStore.set(code, payload);
+        const entry: ShortCodeEntry = {
+          code,
+          payload,
+          voiceAudioDataUrl: parsed.voiceAudioDataUrl || null,
+          voiceStyle: parsed.voiceStyle || null,
+          voiceTitle: parsed.voiceTitle || null,
+          voiceDurationSec:
+            typeof parsed.voiceDurationSec === 'number' ? parsed.voiceDurationSec : null
+        };
+
+        shortCodeStore.set(code, entry);
         if (shortCodeStore.size > 1000) {
           const oldest = shortCodeStore.keys().next().value;
           if (oldest) shortCodeStore.delete(oldest);
         }
 
-        const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;
-        const safeIsGdPayload =
-          normalizedPayload.length > 3200
-            ? normalizedPayload.replace(/&v=[^&]*/, (m) => m.split('~').slice(0, 6).join('~'))
-            : normalizedPayload;
-        const vaultUrl = `https://flowers-for-you.local/${safeIsGdPayload}`;
-        const slug = `bq_${code}`;
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 2500);
-          await fetch(
-            `https://is.gd/create.php?format=simple&shorturl=${encodeURIComponent(slug)}&url=${encodeURIComponent(vaultUrl)}`,
-            { signal: controller.signal }
-          );
-          clearTimeout(timer);
-        } catch {
-          // Memory store already saved
-        }
+        await saveToFirestoreRest(code, entry);
 
         const shortUrl = origin ? `${origin}/${code}` : `/${code}`;
         res.statusCode = 200;

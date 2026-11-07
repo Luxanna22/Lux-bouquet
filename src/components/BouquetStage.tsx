@@ -1381,8 +1381,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     commitHistorySnapshot
   } = useBouquetStore();
 
+  const [activeSpecialObject, setActiveSpecialObject] = useState<'card' | 'voice' | null>(null);
+
   const [interaction, setInteraction] = useState<{
-    mode: 'move' | 'transform' | 'move-card' | 'move-voice';
+    mode: 'move' | 'transform' | 'move-card' | 'move-voice' | 'resize-card' | 'resize-voice';
     itemId: string;
     startPointerX: number;
     startPointerY: number;
@@ -1411,6 +1413,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const handleItemPointerDown = (e: React.PointerEvent, item: BouquetItem) => {
     if (isPreviewMode || item.hidden) return;
     e.stopPropagation();
+    setActiveSpecialObject(null);
     selectItem(item.id);
     if (item.locked) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -1433,6 +1436,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     e.stopPropagation();
     if (isPreviewMode) return;
     selectItem(null);
+    setActiveSpecialObject('card');
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     hasCommittedDragHistoryRef.current = false;
     hasDraggedSpecialRef.current = false;
@@ -1444,7 +1448,28 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       startPointerY: pt.y,
       startItemX: card.x ?? 410,
       startItemY: card.y ?? 525,
-      startScale: 1,
+      startScale: card.scale ?? 0.72,
+      startRotation: 0
+    });
+  };
+
+  const handleCardResizePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (isPreviewMode) return;
+    selectItem(null);
+    setActiveSpecialObject('card');
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    hasCommittedDragHistoryRef.current = false;
+    hasDraggedSpecialRef.current = true;
+    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    setInteraction({
+      mode: 'resize-card',
+      itemId: 'card',
+      startPointerX: pt.x,
+      startPointerY: pt.y,
+      startItemX: card.x ?? 410,
+      startItemY: card.y ?? 525,
+      startScale: card.scale ?? 0.72,
       startRotation: 0
     });
   };
@@ -1453,6 +1478,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     e.stopPropagation();
     if (isPreviewMode) return;
     selectItem(null);
+    setActiveSpecialObject('voice');
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     hasCommittedDragHistoryRef.current = false;
     hasDraggedSpecialRef.current = false;
@@ -1464,7 +1490,28 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       startPointerY: pt.y,
       startItemX: voice?.x ?? 185,
       startItemY: voice?.y ?? 525,
-      startScale: 1,
+      startScale: voice?.scale ?? 0.84,
+      startRotation: 0
+    });
+  };
+
+  const handleVoiceResizePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (isPreviewMode) return;
+    selectItem(null);
+    setActiveSpecialObject('voice');
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    hasCommittedDragHistoryRef.current = false;
+    hasDraggedSpecialRef.current = true;
+    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    setInteraction({
+      mode: 'resize-voice',
+      itemId: 'voice',
+      startPointerX: pt.x,
+      startPointerY: pt.y,
+      startItemX: voice?.x ?? 185,
+      startItemY: voice?.y ?? 525,
+      startScale: voice?.scale ?? 0.84,
       startRotation: 0
     });
   };
@@ -1507,29 +1554,73 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     } else if (interaction.mode === 'move-card') {
       const dx = pt.x - interaction.startPointerX;
       const dy = pt.y - interaction.startPointerY;
-      if (Math.hypot(dx, dy) > 2.5) {
+      if (Math.hypot(dx, dy) > 2.0) {
         hasDraggedSpecialRef.current = true;
         if (!hasCommittedDragHistoryRef.current) {
           commitHistorySnapshot();
           hasCommittedDragHistoryRef.current = true;
         }
-        const nx = Math.max(65, Math.min(535, Math.round(interaction.startItemX + dx)));
-        const ny = Math.max(65, Math.min(625, Math.round(interaction.startItemY + dy)));
+        const nx = Math.max(55, Math.min(545, Math.round(interaction.startItemX + dx)));
+        const ny = Math.max(55, Math.min(630, Math.round(interaction.startItemY + dy)));
         updateCard({ x: nx, y: ny });
       }
     } else if (interaction.mode === 'move-voice') {
       const dx = pt.x - interaction.startPointerX;
       const dy = pt.y - interaction.startPointerY;
-      if (Math.hypot(dx, dy) > 2.5) {
+      if (Math.hypot(dx, dy) > 2.0) {
         hasDraggedSpecialRef.current = true;
         if (!hasCommittedDragHistoryRef.current) {
           commitHistorySnapshot();
           hasCommittedDragHistoryRef.current = true;
         }
-        const nx = Math.max(65, Math.min(535, Math.round(interaction.startItemX + dx)));
-        const ny = Math.max(65, Math.min(625, Math.round(interaction.startItemY + dy)));
+        const nx = Math.max(55, Math.min(545, Math.round(interaction.startItemX + dx)));
+        const ny = Math.max(55, Math.min(630, Math.round(interaction.startItemY + dy)));
         updateVoice({ x: nx, y: ny });
       }
+    } else if (interaction.mode === 'resize-card') {
+      const startDist = Math.max(
+        18,
+        Math.hypot(
+          interaction.startPointerX - interaction.startItemX,
+          interaction.startPointerY - interaction.startItemY
+        )
+      );
+      const currentDist = Math.hypot(
+        pt.x - interaction.startItemX,
+        pt.y - interaction.startItemY
+      );
+      const ratio = currentDist / startDist;
+      const newScale = Math.max(
+        0.45,
+        Math.min(1.45, Number((interaction.startScale * ratio).toFixed(2)))
+      );
+      if (!hasCommittedDragHistoryRef.current) {
+        commitHistorySnapshot();
+        hasCommittedDragHistoryRef.current = true;
+      }
+      updateCard({ scale: newScale });
+    } else if (interaction.mode === 'resize-voice') {
+      const startDist = Math.max(
+        18,
+        Math.hypot(
+          interaction.startPointerX - interaction.startItemX,
+          interaction.startPointerY - interaction.startItemY
+        )
+      );
+      const currentDist = Math.hypot(
+        pt.x - interaction.startItemX,
+        pt.y - interaction.startItemY
+      );
+      const ratio = currentDist / startDist;
+      const newScale = Math.max(
+        0.5,
+        Math.min(1.55, Number((interaction.startScale * ratio).toFixed(2)))
+      );
+      if (!hasCommittedDragHistoryRef.current) {
+        commitHistorySnapshot();
+        hasCommittedDragHistoryRef.current = true;
+      }
+      updateVoice({ scale: newScale });
     } else if (interaction.mode === 'transform') {
       const startAngle = Math.atan2(
         interaction.startPointerY - interaction.startItemY,
@@ -1601,7 +1692,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         onPointerLeave={handleStagePointerUp}
         onPointerCancel={handleStagePointerUp}
         onPointerDown={() => {
-          if (!isPreviewMode) selectItem(null);
+          if (!isPreviewMode) {
+            selectItem(null);
+            setActiveSpecialObject(null);
+          }
         }}
       >
         <defs>
@@ -2235,15 +2329,16 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           />
         </g>
 
-        {/* 5. DRAGGABLE & COMPACT GREETING CARD ON BOUQUET (Unopened 'sealed' envelope by default, or open note tag) */}
+        {/* 5. DRAGGABLE & RESIZABLE GREETING CARD ON BOUQUET (Unopened 'sealed' envelope by default, or open note tag) */}
         {card.visibleOnStage && showCardInGiftView && (() => {
           const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
           const cardX = card.x ?? 410;
           const cardY = card.y ?? 525;
+          const cardScale = card.scale ?? 0.72;
           const isUnopenedEnvelope = card.theme === 'sealed';
           return (
             <g
-              transform={`translate(${cardX}, ${cardY}) scale(0.72)`}
+              transform={`translate(${cardX}, ${cardY}) scale(${cardScale})`}
               filter="url(#softShadow)"
             >
               {/* Card Group: Freely draggable anywhere in editor mode; clicks open Card Editor or Recipient Letter Modal */}
@@ -2273,6 +2368,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     : 'cursor-grab active:cursor-grabbing hover:brightness-[0.98] transition'
                 }
               >
+                {/* Generous transparent hit area so dragging works smoothly from anywhere on the card */}
+                <rect x="-94" y="-54" width="188" height="132" rx="14" fill="transparent" />
+
                 <BouquetCardShapeSVG theme={card.theme} palette={cardPalette} />
 
                 {/* Only render open message text when NOT using the unopened 'sealed' envelope style */}
@@ -2284,6 +2382,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       fill={cardPalette.title}
                       fontSize="12"
                       fontWeight="600"
+                      className="pointer-events-none"
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     >
                       {card.to.slice(0, 22)}
@@ -2295,9 +2394,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       width="148"
                       height="56"
                       data-text-color={cardPalette.body}
+                      className={isPreviewMode ? '' : 'pointer-events-none'}
                     >
                       <div
                         onClick={(e) => {
+                          if (!isPreviewMode) return;
                           e.stopPropagation();
                           if (hasDraggedSpecialRef.current) {
                             hasDraggedSpecialRef.current = false;
@@ -2306,7 +2407,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                           onCardTagClick?.();
                         }}
                         onWheel={(e) => e.stopPropagation()}
-                        className="w-full h-full overflow-y-auto pr-1 select-none"
+                        className={`w-full h-full overflow-y-auto pr-1 select-none ${
+                          isPreviewMode ? '' : 'pointer-events-none'
+                        }`}
                         style={{
                           color: cardPalette.body,
                           fontFamily: "'Cormorant Garamond', serif",
@@ -2314,7 +2417,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                           lineHeight: '14px',
                           wordBreak: 'break-word',
                           scrollbarWidth: 'thin',
-                          touchAction: 'pan-y'
+                          touchAction: isPreviewMode ? 'pan-y' : 'none'
                         }}
                       >
                         {card.message}
@@ -2329,6 +2432,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       fontSize="11"
                       fontWeight="500"
                       fontStyle="italic"
+                      className="pointer-events-none"
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     >
                       {card.from ? `— ${card.from.slice(0, 20)}` : ''}
@@ -2365,98 +2469,350 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           );
         })()}
 
-        {/* 5B. DRAGGABLE & UPRIGHT ROMANTIC VOICE KEEPSAKE ON BOUQUET (Mixtape, Vintage Vinyl, Plushie, Ballerina Music Box, Heart Locket) */}
-        {voice?.visibleOnStage && (
-          <g
-            transform={`translate(${voice.x ?? 185}, ${voice.y ?? 525}) scale(0.84)`}
-            filter="url(#softShadow)"
-          >
+        {/* 5B. DRAGGABLE & RESIZABLE ROMANTIC VOICE KEEPSAKE ON BOUQUET (Mixtape, Vintage Vinyl, Plushie, Ballerina Music Box, Heart Locket) */}
+        {voice?.visibleOnStage && (() => {
+          const voiceX = voice.x ?? 185;
+          const voiceY = voice.y ?? 525;
+          const voiceScale = voice.scale ?? 0.84;
+          return (
             <g
-              role="button"
-              tabIndex={0}
-              aria-label={
-                isPreviewMode
-                  ? isVoicePlaying
-                    ? 'Pause voice keepsake'
-                    : 'Play voice keepsake'
-                  : 'Drag or edit voice keepsake'
-              }
-              onPointerDown={handleVoicePointerDown}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (hasDraggedSpecialRef.current) {
-                  hasDraggedSpecialRef.current = false;
-                  return;
-                }
-                onVoiceKeepsakeClick?.();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onVoiceKeepsakeClick?.();
-                }
-              }}
-              className={
-                isPreviewMode
-                  ? 'bouquet-card-wiggle cursor-pointer'
-                  : 'cursor-grab active:cursor-grabbing hover:brightness-[1.02] transition'
-              }
+              transform={`translate(${voiceX}, ${voiceY}) scale(${voiceScale})`}
+              filter="url(#softShadow)"
             >
-              <BouquetVoiceKeepsakeSVG voice={voice} isPlaying={isVoicePlaying} />
+              <g
+                role="button"
+                tabIndex={0}
+                aria-label={
+                  isPreviewMode
+                    ? isVoicePlaying
+                      ? 'Pause voice keepsake'
+                      : 'Play voice keepsake'
+                    : 'Drag or edit voice keepsake'
+                }
+                onPointerDown={handleVoicePointerDown}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (hasDraggedSpecialRef.current) {
+                    hasDraggedSpecialRef.current = false;
+                    return;
+                  }
+                  onVoiceKeepsakeClick?.();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onVoiceKeepsakeClick?.();
+                  }
+                }}
+                className={
+                  isPreviewMode
+                    ? 'bouquet-card-wiggle cursor-pointer'
+                    : 'cursor-grab active:cursor-grabbing hover:brightness-[1.02] transition'
+                }
+              >
+                {/* Generous transparent hit area so dragging works smoothly from anywhere on the voice keepsake */}
+                <rect x="-70" y="-58" width="140" height="118" rx="14" fill="transparent" />
 
-              {/* Icon-Only Play/Pause Badge for Recipient in Preview/Gift Mode; Status Pill in Editor Mode (Ignored on PNG export) */}
-              {isPreviewMode ? (
-                <g data-export-ignore="true" transform="translate(0, -52)">
-                  <circle
-                    cx="0"
-                    cy="0"
-                    r="12"
-                    fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
-                    stroke="#ffffff"
-                    strokeWidth="1.4"
-                  />
-                  {isVoicePlaying ? (
-                    <g fill="#ffffff">
-                      <rect x="-3.5" y="-4.5" width="2.4" height="9" rx="0.8" />
-                      <rect x="1.1" y="-4.5" width="2.4" height="9" rx="0.8" />
-                    </g>
-                  ) : (
-                    <polygon points="-2.5,-4.8 5.2,0 -2.5,4.8" fill="#ffffff" />
-                  )}
-                </g>
-              ) : (
-                <g data-export-ignore="true" transform="translate(0, -52)">
-                  <rect
-                    x="-46"
-                    y="-11"
-                    width="92"
-                    height="20"
-                    rx="10"
-                    fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
-                    stroke="#ffffff"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x="0"
-                    y="2.5"
-                    textAnchor="middle"
-                    fill="#ffffff"
-                    fontSize="9.2"
-                    fontWeight="600"
-                    style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
-                  >
-                    {isVoicePlaying
-                      ? '⏸ Playing...'
-                      : voice.audioDataUrl
-                      ? '🎙️ Voice ready'
-                      : '🎙️ Tap to record'}
-                  </text>
-                </g>
-              )}
+                <BouquetVoiceKeepsakeSVG voice={voice} isPlaying={isVoicePlaying} />
+
+                {/* Icon-Only Play/Pause Badge for Recipient in Preview/Gift Mode; Status Pill in Editor Mode (Ignored on PNG export) */}
+                {isPreviewMode ? (
+                  <g data-export-ignore="true" transform="translate(0, -52)">
+                    <circle
+                      cx="0"
+                      cy="0"
+                      r="12"
+                      fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
+                      stroke="#ffffff"
+                      strokeWidth="1.4"
+                    />
+                    {isVoicePlaying ? (
+                      <g fill="#ffffff">
+                        <rect x="-3.5" y="-4.5" width="2.4" height="9" rx="0.8" />
+                        <rect x="1.1" y="-4.5" width="2.4" height="9" rx="0.8" />
+                      </g>
+                    ) : (
+                      <polygon points="-2.5,-4.8 5.2,0 -2.5,4.8" fill="#ffffff" />
+                    )}
+                  </g>
+                ) : (
+                  <g data-export-ignore="true" transform="translate(0, -52)">
+                    <rect
+                      x="-46"
+                      y="-11"
+                      width="92"
+                      height="20"
+                      rx="10"
+                      fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
+                      stroke="#ffffff"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x="0"
+                      y="2.5"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="9.2"
+                      fontWeight="600"
+                      style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                    >
+                      {isVoicePlaying
+                        ? '⏸ Playing...'
+                        : voice.audioDataUrl
+                        ? '🎙️ Voice ready'
+                        : '🎙️ Tap to record'}
+                    </text>
+                  </g>
+                )}
+              </g>
             </g>
-          </g>
-        )}
+          );
+        })()}
+
+        {/* 5C. ON-CANVAS SELECTION RING & CORNER PULL-TO-RESIZE HANDLE FOR GREETING CARD */}
+        {!isPreviewMode && card.visibleOnStage && showCardInGiftView && (() => {
+          const cardX = card.x ?? 410;
+          const cardY = card.y ?? 525;
+          const cardScale = card.scale ?? 0.72;
+          const halfW = 90 * cardScale;
+          const halfH = 56 * cardScale;
+          const isCardActive =
+            activeSpecialObject === 'card' ||
+            interaction?.mode === 'move-card' ||
+            interaction?.mode === 'resize-card';
+          return (
+            <g data-export-ignore="true" transform={`translate(${cardX}, ${cardY})`}>
+              {isCardActive && (
+                <>
+                  <rect
+                    x={-halfW}
+                    y={-halfH - 4}
+                    width={halfW * 2}
+                    height={halfH * 2 + 16}
+                    rx="12"
+                    fill="none"
+                    stroke="#B4846C"
+                    strokeWidth="1.6"
+                    strokeDasharray="6 4"
+                    className="pointer-events-none"
+                  />
+                  {/* Top-Right Hide Card Button */}
+                  <g
+                    transform={`translate(${halfW}, ${-halfH - 4})`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      updateCard({ visibleOnStage: false });
+                      setActiveSpecialObject(null);
+                    }}
+                    className="cursor-pointer"
+                    role="button"
+                    aria-label="Hide greeting card from canvas"
+                  >
+                    <title>Hide card from canvas</title>
+                    <circle cx="0" cy="0" r="20" fill="transparent" />
+                    <circle cx="0" cy="0" r="11" fill="#e11d48" stroke="#ffffff" strokeWidth="1.8" />
+                    <path
+                      d="M-3.5,-3.5 L3.5,3.5 M3.5,-3.5 L-3.5,3.5"
+                      stroke="#ffffff"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </g>
+                </>
+              )}
+
+              {/* Bottom-Right Corner Pull-to-Resize Handle for Card (Always accessible in editor mode) */}
+              <g
+                transform={`translate(${halfW}, ${halfH + 12})`}
+                onPointerDown={handleCardResizePointerDown}
+                className="cursor-nwse-resize"
+                role="slider"
+                aria-label="Pull in or out to resize greeting card"
+                aria-valuenow={Math.round(cardScale * 100)}
+              >
+                <title>Drag corner to resize card</title>
+                <circle
+                  cx="0"
+                  cy="0"
+                  r={interaction?.mode === 'resize-card' ? 18 : 14}
+                  fill="#B4846C"
+                  opacity={interaction?.mode === 'resize-card' ? 0.28 : isCardActive ? 0.16 : 0.08}
+                  className="pointer-events-none"
+                />
+                {/* 48px invisible touch target */}
+                <circle cx="0" cy="0" r="24" fill="transparent" />
+                <circle
+                  cx="0"
+                  cy="0"
+                  r={isCardActive ? 12 : 10}
+                  fill={interaction?.mode === 'resize-card' ? '#B4846C' : '#1C1917'}
+                  stroke="#ffffff"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M-3.8,-3.8 L3.8,3.8 M-3.8,-0.8 L-3.8,-3.8 L-0.8,-3.8 M3.8,0.8 L3.8,3.8 L0.8,3.8"
+                  stroke="#ffffff"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+                {isCardActive && (
+                  <g transform="translate(0, 22)" className="pointer-events-none">
+                    <rect
+                      x="-44"
+                      y="-8.5"
+                      width="88"
+                      height="17"
+                      rx="8.5"
+                      fill="#1C1917"
+                      fillOpacity="0.88"
+                      stroke="#ffffff"
+                      strokeWidth="0.8"
+                      strokeOpacity="0.4"
+                    />
+                    <text
+                      x="0"
+                      y="3"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="9"
+                      fontWeight="600"
+                      style={{ fontFamily: "'Inter', sans-serif" }}
+                    >
+                      {interaction?.mode === 'resize-card'
+                        ? `Card ${Math.round(cardScale * 100)}%`
+                        : '⤡ Resize card'}
+                    </text>
+                  </g>
+                )}
+              </g>
+            </g>
+          );
+        })()}
+
+        {/* 5D. ON-CANVAS SELECTION RING & CORNER PULL-TO-RESIZE HANDLE FOR VOICE KEEPSAKE */}
+        {!isPreviewMode && voice?.visibleOnStage && (() => {
+          const voiceX = voice.x ?? 185;
+          const voiceY = voice.y ?? 525;
+          const voiceScale = voice.scale ?? 0.84;
+          const halfW = 58 * voiceScale;
+          const halfH = 48 * voiceScale;
+          const isVoiceActive =
+            activeSpecialObject === 'voice' ||
+            interaction?.mode === 'move-voice' ||
+            interaction?.mode === 'resize-voice';
+          return (
+            <g data-export-ignore="true" transform={`translate(${voiceX}, ${voiceY})`}>
+              {isVoiceActive && (
+                <>
+                  <rect
+                    x={-halfW}
+                    y={-halfH - 6}
+                    width={halfW * 2}
+                    height={halfH * 2 + 12}
+                    rx="12"
+                    fill="none"
+                    stroke="#B4846C"
+                    strokeWidth="1.6"
+                    strokeDasharray="6 4"
+                    className="pointer-events-none"
+                  />
+                  {/* Top-Right Hide Voice Keepsake Button */}
+                  <g
+                    transform={`translate(${halfW}, ${-halfH - 6})`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      updateVoice({ visibleOnStage: false });
+                      setActiveSpecialObject(null);
+                    }}
+                    className="cursor-pointer"
+                    role="button"
+                    aria-label="Hide voice keepsake from canvas"
+                  >
+                    <title>Hide voice keepsake from canvas</title>
+                    <circle cx="0" cy="0" r="20" fill="transparent" />
+                    <circle cx="0" cy="0" r="11" fill="#e11d48" stroke="#ffffff" strokeWidth="1.8" />
+                    <path
+                      d="M-3.5,-3.5 L3.5,3.5 M3.5,-3.5 L-3.5,3.5"
+                      stroke="#ffffff"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </g>
+                </>
+              )}
+
+              {/* Bottom-Right Corner Pull-to-Resize Handle for Voice Keepsake (Always accessible in editor mode) */}
+              <g
+                transform={`translate(${halfW}, ${halfH + 6})`}
+                onPointerDown={handleVoiceResizePointerDown}
+                className="cursor-nwse-resize"
+                role="slider"
+                aria-label="Pull in or out to resize voice keepsake"
+                aria-valuenow={Math.round(voiceScale * 100)}
+              >
+                <title>Drag corner to resize voice keepsake</title>
+                <circle
+                  cx="0"
+                  cy="0"
+                  r={interaction?.mode === 'resize-voice' ? 18 : 14}
+                  fill="#B4846C"
+                  opacity={interaction?.mode === 'resize-voice' ? 0.28 : isVoiceActive ? 0.16 : 0.08}
+                  className="pointer-events-none"
+                />
+                {/* 48px invisible touch target */}
+                <circle cx="0" cy="0" r="24" fill="transparent" />
+                <circle
+                  cx="0"
+                  cy="0"
+                  r={isVoiceActive ? 12 : 10}
+                  fill={interaction?.mode === 'resize-voice' ? '#B4846C' : '#1C1917'}
+                  stroke="#ffffff"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M-3.8,-3.8 L3.8,3.8 M-3.8,-0.8 L-3.8,-3.8 L-0.8,-3.8 M3.8,0.8 L3.8,3.8 L0.8,3.8"
+                  stroke="#ffffff"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+                {isVoiceActive && (
+                  <g transform="translate(0, 22)" className="pointer-events-none">
+                    <rect
+                      x="-46"
+                      y="-8.5"
+                      width="92"
+                      height="17"
+                      rx="8.5"
+                      fill="#1C1917"
+                      fillOpacity="0.88"
+                      stroke="#ffffff"
+                      strokeWidth="0.8"
+                      strokeOpacity="0.4"
+                    />
+                    <text
+                      x="0"
+                      y="3"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="9"
+                      fontWeight="600"
+                      style={{ fontFamily: "'Inter', sans-serif" }}
+                    >
+                      {interaction?.mode === 'resize-voice'
+                        ? `Voice ${Math.round(voiceScale * 100)}%`
+                        : '⤡ Resize keepsake'}
+                    </text>
+                  </g>
+                )}
+              </g>
+            </g>
+          );
+        })()}
 
         {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE */}
         {!isPreviewMode && selectedItem && !selectedItem.hidden && (

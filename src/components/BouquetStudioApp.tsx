@@ -61,6 +61,7 @@ import {
   CARD_THEME_CATALOG,
   CARD_COLOR_SWATCHES,
   VOICE_KEEPSAKE_CATALOG,
+  DEFAULT_VOICE_KEEPSAKE,
   ROMANTIC_SWATCHES,
   STARTER_TEMPLATES,
   getCardThemePalette,
@@ -78,6 +79,10 @@ import {
   exportSvgElementToPng,
   musicBox,
 } from '../lib/shareAndExport';
+import {
+  saveSharedBouquetToFirestore,
+  fetchSharedBouquetFromFirestore,
+} from '../lib/firebase';
 import { useBouquetStore } from '../store/useBouquetStore';
 import { BouquetStage, FallingPetalsOverlay } from './BouquetStage';
 import {
@@ -491,16 +496,44 @@ export default function App() {
           } else {
             triggerToast('Loaded shared bouquet');
           }
+          // If the hash had its audio stripped by an external URL shortener, check Firestore by short code
+          if (shared.voice?.visibleOnStage && !shared.voice.audioDataUrl && pathCode) {
+            fetchSharedBouquetFromFirestore(pathCode)
+              .then((docData) => {
+                if (docData?.voiceAudioDataUrl) {
+                  loadSnapshot({
+                    ...shared,
+                    voice: {
+                      ...(shared.voice || DEFAULT_VOICE_KEEPSAKE),
+                      audioDataUrl: docData.voiceAudioDataUrl,
+                      visibleOnStage: true,
+                    },
+                  });
+                }
+              })
+              .catch(() => {});
+          }
           return;
         }
 
         // If opened via a first-party short link (e.g. https://[domain]/Vu18KSuusq9133s) on a new device,
-        // fetch the bouquet payload by short code from /api/shorten?c=<code>
+        // fetch the bouquet payload and voice recording from Firebase Firestore first, with fallback to /api/shorten?c=<code>
         if (pathCode) {
           setIsResolvingShortCode(true);
-          fetch(`/api/shorten?c=${encodeURIComponent(pathCode)}`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
+          (async () => {
+            try {
+              let data: {
+                payload?: string;
+                voiceAudioDataUrl?: string | null;
+              } | null = await fetchSharedBouquetFromFirestore(pathCode);
+
+              if (!data || typeof data.payload !== 'string') {
+                const r = await fetch(`/api/shorten?c=${encodeURIComponent(pathCode)}`);
+                if (r.ok) {
+                  data = await r.json();
+                }
+              }
+
               if (data && typeof data.payload === 'string') {
                 localShortCodeCache.set(pathCode, data.payload);
                 try {
@@ -510,18 +543,24 @@ export default function App() {
                 }
                 const resolvedSnap = decodeBouquetFromHash(data.payload);
                 if (resolvedSnap && Array.isArray(resolvedSnap.items) && resolvedSnap.items.length > 0) {
+                  if (data.voiceAudioDataUrl && (!resolvedSnap.voice || !resolvedSnap.voice.audioDataUrl)) {
+                    resolvedSnap.voice = {
+                      ...(resolvedSnap.voice || DEFAULT_VOICE_KEEPSAKE),
+                      audioDataUrl: data.voiceAudioDataUrl,
+                      visibleOnStage: true,
+                    };
+                  }
                   loadSnapshot(resolvedSnap);
                   selectItem(null);
                   startGiftBloomAnimation(resolvedSnap.items.length, false);
                 }
               }
-            })
-            .catch(() => {
+            } catch {
               // Fall back quietly
-            })
-            .finally(() => {
+            } finally {
               setIsResolvingShortCode(false);
-            });
+            }
+          })();
           return;
         }
 
@@ -669,10 +708,22 @@ export default function App() {
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
       const firstPartyUrl = origin ? `${origin}/${code}` : `/${code}`;
 
+      // Persist directly to Firebase Firestore for instant cross-device & Vercel persistence
+      saveSharedBouquetToFirestore(code, hashPayload, snap).catch(() => {});
+
+      // Also register via /api/shorten serverless endpoint (which also writes to Firestore REST API)
       fetch('/api/shorten', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, payload: hashPayload, origin })
+        body: JSON.stringify({
+          code,
+          payload: hashPayload,
+          origin,
+          voiceAudioDataUrl: voice?.audioDataUrl || null,
+          voiceStyle: voice?.style || null,
+          voiceTitle: voice?.title || null,
+          voiceDurationSec: voice?.durationSec ?? null
+        })
       }).catch(() => {});
 
       return firstPartyUrl;

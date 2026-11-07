@@ -179,7 +179,7 @@ export function getShortCodeFromPathname(pathnameOverride?: string): string | nu
       : '';
   if (!raw) return null;
   const cleaned = raw.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].trim();
-  const match = cleaned.match(/^\/([0-9A-Za-z]{14,16})$/);
+  const match = cleaned.match(/^\/([0-9A-Za-z]{7,20})$/);
   return match ? match[1] : null;
 }
 
@@ -200,7 +200,7 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
   const rStyleStr = rStyleIdx === 0 ? '' : rStyleIdx.toString(36);
   const headerPart = `${wIdx}~${wHex}~${rHex}~${rStyleStr}`.replace(/~+$/, '');
 
-  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>~<optCustomBgHex>~<optCustomAccHex>~<optCardX>~<optCardY>
+  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>~<optCustomBgHex>~<optCustomAccHex>~<optCardX>~<optCardY>~<optCardScale>
   const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
   const cVis = snapshot.card.visibleOnStage ? 1 : 0;
   const cMeta = (cTheme * 2 + cVis).toString(36);
@@ -221,9 +221,13 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
     snapshot.card.y !== undefined && Math.round(snapshot.card.y) !== 525
       ? Math.round(snapshot.card.y).toString(36)
       : '';
+  const cScale =
+    snapshot.card.scale !== undefined && Math.abs(snapshot.card.scale - 0.72) > 0.01
+      ? Math.round(snapshot.card.scale * 100).toString(36)
+      : '';
   const cardPart =
-    cBg || cAcc || cX || cY
-      ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}~${cAcc}~${cX}~${cY}`.replace(/~+$/, '')
+    cBg || cAcc || cX || cY || cScale
+      ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}~${cAcc}~${cX}~${cY}~${cScale}`.replace(/~+$/, '')
       : `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
 
   // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
@@ -296,7 +300,11 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
       snapshot.voice.y !== undefined && Math.round(snapshot.voice.y) !== 525
         ? Math.round(snapshot.voice.y).toString(36)
         : '';
-    voiceSuffix = `&v=${vIdx}~${vVis}~${vPrimaryHex}~${vAccentHex}~${vTitleB64}~${vDur}~${vAudioB64}~${vX}~${vY}`.replace(/~+$/, '');
+    const vScale =
+      snapshot.voice.scale !== undefined && Math.abs(snapshot.voice.scale - 0.84) > 0.01
+        ? Math.round(snapshot.voice.scale * 100).toString(36)
+        : '';
+    voiceSuffix = `&v=${vIdx}~${vVis}~${vPrimaryHex}~${vAccentHex}~${vTitleB64}~${vDur}~${vAudioB64}~${vX}~${vY}~${vScale}`.replace(/~+$/, '');
   }
   return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}`;
 }
@@ -393,12 +401,14 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           vDurStr = '0',
           vAudioB64 = '',
           vXStr = '',
-          vYStr = ''
+          vYStr = '',
+          vScaleStr = ''
         ] = vSegment.slice(2).split('~');
         const style = SHARE_VOICE_STYLES[parseInt(vIdxStr, 36)] || 'mixtape';
         const vMeta = VOICE_KEEPSAKE_CATALOG.find((k) => k.id === style) || VOICE_KEEPSAKE_CATALOG[0];
         const parsedVX = vXStr ? parseInt(vXStr, 36) : 185;
         const parsedVY = vYStr ? parseInt(vYStr, 36) : 525;
+        const parsedVScale = vScaleStr ? parseInt(vScaleStr, 36) / 100 : 0.84;
         voice = {
           style,
           visibleOnStage: vVisStr === '1',
@@ -408,7 +418,11 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           audioDataUrl: vAudioB64 ? fromBase64Url(vAudioB64) : null,
           durationSec: Number(vDurStr) || 0,
           x: Number.isFinite(parsedVX) ? parsedVX : 185,
-          y: Number.isFinite(parsedVY) ? parsedVY : 525
+          y: Number.isFinite(parsedVY) ? parsedVY : 525,
+          scale:
+            Number.isFinite(parsedVScale) && parsedVScale >= 0.35 && parsedVScale <= 2.0
+              ? Number(parsedVScale.toFixed(2))
+              : 0.84
         };
       }
 
@@ -429,7 +443,8 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         cBgHex = '',
         cAccHex = '',
         cXStr = '',
-        cYStr = ''
+        cYStr = '',
+        cScaleStr = ''
       ] = cardPart.split('~');
       const cMeta = parseInt(cMetaStr, 36) || 0;
       const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'sealed';
@@ -442,6 +457,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const customAccent = cAccHex && /^[0-9a-fA-F]{6}$/.test(cAccHex) ? `#${cAccHex}` : undefined;
       const parsedCX = cXStr ? parseInt(cXStr, 36) : 410;
       const parsedCY = cYStr ? parseInt(cYStr, 36) : 525;
+      const parsedCScale = cScaleStr ? parseInt(cScaleStr, 36) / 100 : 0.72;
 
       let items: BouquetItem[] = [];
       if (stemParts.length === 1 && stemParts[0].startsWith('@')) {
@@ -502,7 +518,11 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           customBg,
           customAccent,
           x: Number.isFinite(parsedCX) ? parsedCX : 410,
-          y: Number.isFinite(parsedCY) ? parsedCY : 525
+          y: Number.isFinite(parsedCY) ? parsedCY : 525,
+          scale:
+            Number.isFinite(parsedCScale) && parsedCScale >= 0.35 && parsedCScale <= 2.0
+              ? Number(parsedCScale.toFixed(2))
+              : 0.72
         },
         voice
       };

@@ -4,17 +4,29 @@ import os from 'node:os';
 
 const shortCodeMemory = new Map();
 
-function saveShortPayload(code, payload) {
+const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
+const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
+const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/shared_bouquets`;
+
+function saveShortPayload(code, payload, extra = {}) {
   const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
   if (!safeCode || !payload) return;
-  shortCodeMemory.set(safeCode, payload);
+  const entry = {
+    code: safeCode,
+    payload,
+    voiceAudioDataUrl: extra.voiceAudioDataUrl || null,
+    voiceStyle: extra.voiceStyle || null,
+    voiceTitle: extra.voiceTitle || null,
+    voiceDurationSec: typeof extra.voiceDurationSec === 'number' ? extra.voiceDurationSec : null
+  };
+  shortCodeMemory.set(safeCode, entry);
   if (shortCodeMemory.size > 1000) {
     const oldest = shortCodeMemory.keys().next().value;
     if (oldest) shortCodeMemory.delete(oldest);
   }
   try {
-    const filePath = path.join(os.tmpdir(), `bq_short_${safeCode}.txt`);
-    fs.writeFileSync(filePath, payload, 'utf-8');
+    const filePath = path.join(os.tmpdir(), `bq_short_${safeCode}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(entry), 'utf-8');
   } catch {
     // Ignore tmp write errors
   }
@@ -27,18 +39,110 @@ function loadLocalShortPayload(code) {
     return shortCodeMemory.get(safeCode);
   }
   try {
-    const filePath = path.join(os.tmpdir(), `bq_short_${safeCode}.txt`);
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf-8').trim();
+    const jsonPath = path.join(os.tmpdir(), `bq_short_${safeCode}.json`);
+    if (fs.existsSync(jsonPath)) {
+      const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      if (parsed && parsed.payload) {
+        shortCodeMemory.set(safeCode, parsed);
+        return parsed;
+      }
+    }
+    const txtPath = path.join(os.tmpdir(), `bq_short_${safeCode}.txt`);
+    if (fs.existsSync(txtPath)) {
+      const data = fs.readFileSync(txtPath, 'utf-8').trim();
       if (data) {
-        shortCodeMemory.set(safeCode, data);
-        return data;
+        const entry = { code: safeCode, payload: data };
+        shortCodeMemory.set(safeCode, entry);
+        return entry;
       }
     }
   } catch {
     // Ignore tmp read errors
   }
   return null;
+}
+
+async function fetchFromFirestoreRest(code) {
+  const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || safeCode.length < 7 || safeCode.length > 24) return null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const docJson = await resp.json();
+    const fields = docJson?.fields;
+    if (!fields || !fields.payload?.stringValue) return null;
+    return {
+      code: safeCode,
+      payload: fields.payload.stringValue,
+      voiceAudioDataUrl: fields.voiceAudioDataUrl?.stringValue || null,
+      voiceStyle: fields.voiceStyle?.stringValue || null,
+      voiceTitle: fields.voiceTitle?.stringValue || null,
+      voiceDurationSec:
+        fields.voiceDurationSec?.integerValue !== undefined
+          ? Number(fields.voiceDurationSec.integerValue)
+          : fields.voiceDurationSec?.doubleValue !== undefined
+          ? Number(fields.voiceDurationSec.doubleValue)
+          : null
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function saveToFirestoreRest(code, payload, extra = {}) {
+  const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || safeCode.length < 7 || safeCode.length > 24 || !payload) return false;
+  try {
+    const fields = {
+      code: { stringValue: safeCode },
+      payload: { stringValue: String(payload).slice(0, 900000) },
+      createdAt: { stringValue: new Date().toISOString() }
+    };
+    if (extra.voiceAudioDataUrl && typeof extra.voiceAudioDataUrl === 'string') {
+      fields.voiceAudioDataUrl = { stringValue: extra.voiceAudioDataUrl.slice(0, 900000) };
+    }
+    if (extra.voiceStyle && typeof extra.voiceStyle === 'string') {
+      fields.voiceStyle = { stringValue: extra.voiceStyle.slice(0, 32) };
+    }
+    if (extra.voiceTitle && typeof extra.voiceTitle === 'string') {
+      fields.voiceTitle = { stringValue: extra.voiceTitle.slice(0, 64) };
+    }
+    if (typeof extra.voiceDurationSec === 'number' && Number.isFinite(extra.voiceDurationSec)) {
+      fields.voiceDurationSec = {
+        integerValue: String(Math.max(0, Math.min(600, Math.round(extra.voiceDurationSec))))
+      };
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    // Check if document already exists so we preserve immutable createdAt if updating
+    const existingResp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    if (existingResp.ok) {
+      const existingDoc = await existingResp.json();
+      if (existingDoc?.fields?.createdAt?.stringValue) {
+        fields.createdAt = { stringValue: existingDoc.fields.createdAt.stringValue };
+      }
+    }
+    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    return resp.ok;
+  } catch {
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
@@ -57,17 +161,27 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET' && codeParam) {
     // 1. Check in-memory and /tmp cache first
-    let payload = loadLocalShortPayload(codeParam);
+    let entry = loadLocalShortPayload(codeParam);
 
-    // 2. If serverless instance cold-started, recover payload from permanent KV slug backup
-    if (!payload) {
+    // 2. Query persistent Firebase Firestore database (preserves full voiceAudioDataUrl across Vercel cold starts)
+    if (!entry || !entry.payload) {
+      const firestoreEntry = await fetchFromFirestoreRest(codeParam);
+      if (firestoreEntry && firestoreEntry.payload) {
+        entry = firestoreEntry;
+        saveShortPayload(codeParam, firestoreEntry.payload, firestoreEntry);
+      }
+    }
+
+    // 3. Fallback to is.gd slug if needed
+    if (!entry || !entry.payload) {
       try {
         const slug = `bq_${codeParam}`;
         const lookup = await fetch(`https://is.gd/${slug}`, { redirect: 'manual' });
         const loc = lookup.headers.get('location') || '';
         const hashIdx = loc.indexOf('#');
         if (hashIdx !== -1) {
-          payload = loc.slice(hashIdx);
+          const payload = loc.slice(hashIdx);
+          entry = { code: codeParam, payload };
           saveShortPayload(codeParam, payload);
         }
       } catch {
@@ -75,7 +189,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!payload) {
+    if (!entry || !entry.payload) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -85,7 +199,16 @@ export default async function handler(req, res) {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.end(JSON.stringify({ code: codeParam, payload }));
+    res.end(
+      JSON.stringify({
+        code: codeParam,
+        payload: entry.payload,
+        voiceAudioDataUrl: entry.voiceAudioDataUrl || null,
+        voiceStyle: entry.voiceStyle || null,
+        voiceTitle: entry.voiceTitle || null,
+        voiceDurationSec: entry.voiceDurationSec ?? null
+      })
+    );
     return;
   }
 
@@ -109,6 +232,13 @@ export default async function handler(req, res) {
       const code = String(bodyObj.code || '').replace(/[^0-9A-Za-z_-]/g, '');
       const payload = String(bodyObj.payload || '').trim();
       const origin = String(bodyObj.origin || '').replace(/\/+$/, '');
+      const extra = {
+        voiceAudioDataUrl: bodyObj.voiceAudioDataUrl || null,
+        voiceStyle: bodyObj.voiceStyle || null,
+        voiceTitle: bodyObj.voiceTitle || null,
+        voiceDurationSec:
+          typeof bodyObj.voiceDurationSec === 'number' ? bodyObj.voiceDurationSec : null
+      };
 
       if (!code || !payload) {
         res.statusCode = 400;
@@ -116,9 +246,12 @@ export default async function handler(req, res) {
         return;
       }
 
-      saveShortPayload(code, payload);
+      saveShortPayload(code, payload, extra);
 
-      // Persist in background KV slug so cold starts on Vercel never lose the short code
+      // 1. Persist full bouquet & voice recording to Firebase Firestore
+      await saveToFirestoreRest(code, payload, extra);
+
+      // 2. Also keep secondary is.gd backup
       const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;
       const safeIsGdPayload =
         normalizedPayload.length > 3200
@@ -128,14 +261,14 @@ export default async function handler(req, res) {
       const slug = `bq_${code}`;
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2500);
+        const timer = setTimeout(() => controller.abort(), 2000);
         await fetch(
           `https://is.gd/create.php?format=simple&shorturl=${encodeURIComponent(slug)}&url=${encodeURIComponent(vaultUrl)}`,
           { signal: controller.signal }
         );
         clearTimeout(timer);
       } catch {
-        // Local memory and /tmp already saved
+        // Firestore and local cache already saved
       }
 
       const shortUrl = origin ? `${origin}/${code}` : `/${code}`;

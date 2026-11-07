@@ -320,6 +320,7 @@ export interface GreetingCardData {
   customAccent?: string;
   x?: number;
   y?: number;
+  scale?: number;
   locked?: boolean;
 }
 
@@ -399,6 +400,7 @@ export interface VoiceKeepsakeData {
   duration?: number;
   x?: number;
   y?: number;
+  scale?: number;
 }
 
 export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
@@ -411,7 +413,8 @@ export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
   durationSec: 0,
   duration: 0,
   x: 185,
-  y: 525
+  y: 525,
+  scale: 0.84
 };
 
 export interface BouquetSnapshot {

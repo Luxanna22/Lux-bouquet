@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for Firebase Firestore persistence of shared bouquets, short links, and voice recordings across AI Studio and Vercel, plus on-canvas drag and corner resize handles for the greeting card and voice keepsake.",
+  "updatedAt":  "2026-11-07T16:04:57.912220240Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

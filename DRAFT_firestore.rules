@@ -1,0 +1,67 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 7 && id.size() <= 24 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidSharedBouquet(data, docId) {
+      return data.keys().hasAll(['code', 'payload', 'createdAt']) &&
+        data.keys().hasOnly([
+          'code',
+          'payload',
+          'voiceAudioDataUrl',
+          'voiceStyle',
+          'voiceTitle',
+          'voiceDurationSec',
+          'createdAt'
+        ]) &&
+        data.code is string &&
+        data.code == docId &&
+        data.code.size() >= 7 &&
+        data.code.size() <= 24 &&
+        data.code.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.payload is string &&
+        data.payload.size() >= 3 &&
+        data.payload.size() <= 900000 &&
+        (!('voiceAudioDataUrl' in data) || (data.voiceAudioDataUrl is string && data.voiceAudioDataUrl.size() <= 900000)) &&
+        (!('voiceStyle' in data) || (data.voiceStyle is string && data.voiceStyle.size() >= 1 && data.voiceStyle.size() <= 32)) &&
+        (!('voiceTitle' in data) || (data.voiceTitle is string && data.voiceTitle.size() <= 64)) &&
+        (!('voiceDurationSec' in data) || (data.voiceDurationSec is number && data.voiceDurationSec >= 0 && data.voiceDurationSec <= 600)) &&
+        data.createdAt is string &&
+        data.createdAt.size() >= 10 &&
+        data.createdAt.size() <= 64;
+    }
+
+    match /shared_bouquets/{code} {
+      allow get: if isValidId(code);
+      allow list: if false;
+      allow create: if isValidId(code) && isValidSharedBouquet(incoming(), code);
+      allow update: if isValidId(code) &&
+        isValidSharedBouquet(incoming(), code) &&
+        incoming().code == existing().code &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'payload',
+          'voiceAudioDataUrl',
+          'voiceStyle',
+          'voiceTitle',
+          'voiceDurationSec'
+        ]);
+      allow delete: if false;
+    }
+  }
+}
