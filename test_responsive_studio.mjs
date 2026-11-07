@@ -205,7 +205,7 @@ try {
   assert(studioSrc.includes('hidden sm:flex') && studioSrc.includes('Preview bloom'), 'Header controls fit cleanly within 360px/375px mobile viewports with modal bloom preview');
   console.log('✓ Mobile header responsiveness & share modal bloom preview verified');
 
-  // 26. Voice Keepsake Catalog, Store, Draggable & Resizable Coordinates/Scale & Share Payload Round-Trip Verification
+  // 26. Voice Keepsake Catalog, Store, Draggable, Resizable & Rotatable Coordinates/Scale/Rotation & Share Payload Round-Trip Verification
   assert(studioMod.VOICE_KEEPSAKE_CATALOG.length === 5, `Expected 5 romantic voice keepsakes, got ${studioMod.VOICE_KEEPSAKE_CATALOG.length}`);
   assert(!studioSrc.includes('Upload audio file'), 'Audio file upload removed so all recordings are authentic live microphone voice notes');
   testStore.updateCard({
@@ -213,6 +213,7 @@ try {
     x: 442,
     y: 498,
     scale: 0.95,
+    rotation: -18,
   });
   testStore.updateVoice({
     style: 'vinyl',
@@ -225,12 +226,15 @@ try {
     x: 164,
     y: 512,
     scale: 1.15,
+    rotation: 24,
   });
   const voiceState = studioMod.useBouquetStore.getState();
   assert.strictEqual(voiceState.voice.style, 'vinyl', 'Voice keepsake style updated to vinyl');
   assert.strictEqual(voiceState.voice.visibleOnStage, true, 'Voice keepsake visible on stage');
   assert.strictEqual(voiceState.card.scale, 0.95, 'Card scale updated');
+  assert.strictEqual(voiceState.card.rotation, -18, 'Card rotation updated');
   assert.strictEqual(voiceState.voice.scale, 1.15, 'Voice keepsake scale updated');
+  assert.strictEqual(voiceState.voice.rotation, 24, 'Voice keepsake rotation updated');
   const encodedWithVoice = studioMod.encodeBouquetToCompactPayload({
     items: voiceState.items,
     wrapStyle: voiceState.wrapStyle,
@@ -247,25 +251,33 @@ try {
   assert.strictEqual(decodedWithVoice.card.x, 442, 'Decoded draggable card X coordinate matches');
   assert.strictEqual(decodedWithVoice.card.y, 498, 'Decoded draggable card Y coordinate matches');
   assert.strictEqual(decodedWithVoice.card.scale, 0.95, 'Decoded resizable card scale matches');
+  assert.strictEqual(decodedWithVoice.card.rotation, -18, 'Decoded rotatable card angle matches');
   assert.strictEqual(decodedWithVoice.voice.style, 'vinyl', 'Decoded voice style matches');
   assert.strictEqual(decodedWithVoice.voice.title, 'Our Song', 'Decoded voice title matches');
   assert.strictEqual(decodedWithVoice.voice.durationSec, 12, 'Decoded voice duration matches');
   assert.strictEqual(decodedWithVoice.voice.x, 164, 'Decoded draggable voice X coordinate matches');
   assert.strictEqual(decodedWithVoice.voice.y, 512, 'Decoded draggable voice Y coordinate matches');
   assert.strictEqual(decodedWithVoice.voice.scale, 1.15, 'Decoded resizable voice scale matches');
+  assert.strictEqual(decodedWithVoice.voice.rotation, 24, 'Decoded rotatable voice angle matches');
   assert(decodedWithVoice.voice.audioDataUrl?.startsWith('data:audio/webm;base64,'), 'Decoded voice audioDataUrl matches');
-  console.log('✓ Voice keepsake catalog (5 designs), draggable/resizable card & voice coordinates/scale, and share payload round-trip verified');
+  console.log('✓ Voice keepsake catalog (5 designs), draggable/resizable/rotatable card & voice state, and share payload round-trip verified');
 
-  // 27. On-Canvas Corner Resize Handles & Firebase Firestore Database Persistence Verification
-  assert(studioSrc.includes('resize-card') && studioSrc.includes('resize-voice'), 'On-canvas corner resize modes present for card and voice keepsake');
-  assert(studioSrc.includes('Pull in or out to resize greeting card') && studioSrc.includes('Pull in or out to resize voice keepsake'), 'Accessible corner resize handles rendered on canvas');
+  // 27. On-Canvas Corner Resize+Rotate Handles, Smooth Dragging & Firebase Firestore Database Persistence Verification
+  assert(studioSrc.includes('resize-card') && studioSrc.includes('resize-voice'), 'On-canvas corner resize/rotate modes present for card and voice keepsake');
+  assert(studioSrc.includes('Drag corner to resize and rotate card') && studioSrc.includes('Drag corner to resize and rotate voice keepsake'), 'Accessible corner resize & rotate handles rendered on canvas');
+  assert(studioSrc.includes('captureSvgPointer') && studioSrc.includes('onCardSelect') && studioSrc.includes('onVoiceSelect'), 'SVG root pointer capture and non-blocking selection wired for effortless dragging');
   assert(fs.existsSync('src/lib/firebase.ts'), 'Firebase Firestore client module exists');
   assert(fs.existsSync('firestore.rules'), 'Firestore security rules file exists');
   const shortenApiSrc = fs.readFileSync('api/shorten.js', 'utf-8');
   assert(shortenApiSrc.includes('firestore.googleapis.com') && shortenApiSrc.includes('voiceAudioDataUrl'), 'Vercel /api/shorten persists shared bouquets and voiceAudioDataUrl to Firebase Firestore');
-  console.log('✓ On-canvas corner resize handles and Firebase Firestore database persistence verified');
+  console.log('✓ On-canvas corner resize & rotate handles, smooth SVG drag capture, and Firebase Firestore database persistence verified');
 
-  console.log('\nAll 27 Verification and Edge Case Checks Passed Successfully! 🎉');
+  // 28. Panel Outside-Click Dismissal, Automatic Voice Saving/Saved Feedback & Consistent Gizmo Handles
+  assert(studioSrc.includes('handleOutsidePointerDown') && studioSrc.includes('slideDrawerRef'), 'Outside-click listener closes Color, Stem, Layers, Card, and Voice panels');
+  assert(!studioSrc.includes('Ready for recipient') && studioSrc.includes('Saving...') && studioSrc.includes('Saved'), 'Voice recorder provides automatic Saving... and Saved visual feedback');
+  console.log('✓ Panel outside-click dismissal and automatic voice Saving/Saved feedback verified');
+
+  console.log('\nAll 28 Verification and Edge Case Checks Passed Successfully! 🎉');
 } finally {
   await vite.close();
 }

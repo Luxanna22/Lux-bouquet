@@ -321,6 +321,7 @@ export interface GreetingCardData {
   x?: number;
   y?: number;
   scale?: number;
+  rotation?: number;
   locked?: boolean;
 }
 
@@ -401,6 +402,7 @@ export interface VoiceKeepsakeData {
   x?: number;
   y?: number;
   scale?: number;
+  rotation?: number;
 }
 
 export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
@@ -414,7 +416,8 @@ export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
   duration: 0,
   x: 185,
   y: 525,
-  scale: 0.84
+  scale: 0.84,
+  rotation: 0
 };
 
 export interface BouquetSnapshot {

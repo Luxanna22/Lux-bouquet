@@ -225,9 +225,13 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
     snapshot.card.scale !== undefined && Math.abs(snapshot.card.scale - 0.72) > 0.01
       ? Math.round(snapshot.card.scale * 100).toString(36)
       : '';
+  const cRot =
+    snapshot.card.rotation !== undefined && Math.round(snapshot.card.rotation) !== 0
+      ? Math.round(snapshot.card.rotation + 180).toString(36)
+      : '';
   const cardPart =
-    cBg || cAcc || cX || cY || cScale
-      ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}~${cAcc}~${cX}~${cY}~${cScale}`.replace(/~+$/, '')
+    cBg || cAcc || cX || cY || cScale || cRot
+      ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}~${cAcc}~${cX}~${cY}~${cScale}~${cRot}`.replace(/~+$/, '')
       : `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
 
   // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
@@ -304,7 +308,11 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
       snapshot.voice.scale !== undefined && Math.abs(snapshot.voice.scale - 0.84) > 0.01
         ? Math.round(snapshot.voice.scale * 100).toString(36)
         : '';
-    voiceSuffix = `&v=${vIdx}~${vVis}~${vPrimaryHex}~${vAccentHex}~${vTitleB64}~${vDur}~${vAudioB64}~${vX}~${vY}~${vScale}`.replace(/~+$/, '');
+    const vRot =
+      snapshot.voice.rotation !== undefined && Math.round(snapshot.voice.rotation) !== 0
+        ? Math.round(snapshot.voice.rotation + 180).toString(36)
+        : '';
+    voiceSuffix = `&v=${vIdx}~${vVis}~${vPrimaryHex}~${vAccentHex}~${vTitleB64}~${vDur}~${vAudioB64}~${vX}~${vY}~${vScale}~${vRot}`.replace(/~+$/, '');
   }
   return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}`;
 }
@@ -402,13 +410,15 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           vAudioB64 = '',
           vXStr = '',
           vYStr = '',
-          vScaleStr = ''
+          vScaleStr = '',
+          vRotStr = ''
         ] = vSegment.slice(2).split('~');
         const style = SHARE_VOICE_STYLES[parseInt(vIdxStr, 36)] || 'mixtape';
         const vMeta = VOICE_KEEPSAKE_CATALOG.find((k) => k.id === style) || VOICE_KEEPSAKE_CATALOG[0];
         const parsedVX = vXStr ? parseInt(vXStr, 36) : 185;
         const parsedVY = vYStr ? parseInt(vYStr, 36) : 525;
         const parsedVScale = vScaleStr ? parseInt(vScaleStr, 36) / 100 : 0.84;
+        const parsedVRot = vRotStr ? parseInt(vRotStr, 36) - 180 : 0;
         voice = {
           style,
           visibleOnStage: vVisStr === '1',
@@ -422,7 +432,11 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           scale:
             Number.isFinite(parsedVScale) && parsedVScale >= 0.35 && parsedVScale <= 2.0
               ? Number(parsedVScale.toFixed(2))
-              : 0.84
+              : 0.84,
+          rotation:
+            Number.isFinite(parsedVRot) && parsedVRot >= -180 && parsedVRot <= 180
+              ? Math.round(parsedVRot)
+              : 0
         };
       }
 
@@ -444,7 +458,8 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         cAccHex = '',
         cXStr = '',
         cYStr = '',
-        cScaleStr = ''
+        cScaleStr = '',
+        cRotStr = ''
       ] = cardPart.split('~');
       const cMeta = parseInt(cMetaStr, 36) || 0;
       const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'sealed';
@@ -458,6 +473,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const parsedCX = cXStr ? parseInt(cXStr, 36) : 410;
       const parsedCY = cYStr ? parseInt(cYStr, 36) : 525;
       const parsedCScale = cScaleStr ? parseInt(cScaleStr, 36) / 100 : 0.72;
+      const parsedCRot = cRotStr ? parseInt(cRotStr, 36) - 180 : 0;
 
       let items: BouquetItem[] = [];
       if (stemParts.length === 1 && stemParts[0].startsWith('@')) {
@@ -522,7 +538,11 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           scale:
             Number.isFinite(parsedCScale) && parsedCScale >= 0.35 && parsedCScale <= 2.0
               ? Number(parsedCScale.toFixed(2))
-              : 0.72
+              : 0.72,
+          rotation:
+            Number.isFinite(parsedCRot) && parsedCRot >= -180 && parsedCRot <= 180
+              ? Math.round(parsedCRot)
+              : 0
         },
         voice
       };

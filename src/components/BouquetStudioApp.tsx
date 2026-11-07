@@ -187,10 +187,40 @@ export default function App() {
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const slideDrawerRef = useRef<HTMLElement | null>(null);
+  const floatingToolStackRef = useRef<HTMLDivElement | null>(null);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const bloomIntervalRef = useRef<number | null>(null);
   const hasHydratedRef = useRef(false);
+
+  // Close the Slide-in Tool Drawer (Colors, Stem, Layers, Edit Note / Card, Voice) when clicking anywhere outside it
+  useEffect(() => {
+    if (!mobilePopover || typeof document === 'undefined') return;
+
+    const handleOutsidePointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (!target) return;
+      if (slideDrawerRef.current?.contains(target)) return;
+      if (floatingToolStackRef.current?.contains(target)) return;
+      if (target.closest?.('[data-drawer-trigger="true"]')) return;
+      setMobilePopover(null);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobilePopover(null);
+      }
+    };
+
+    // Use capture phase so SVG elements calling e.stopPropagation() on the canvas still close open panels
+    document.addEventListener('pointerdown', handleOutsidePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [mobilePopover]);
 
   // Sync exact visible viewport height so mobile browser bottom bars (e.g. Edge Mobile, Safari, Chrome)
   // never cover or clip the bottom Flowers/Wrappers carousel dock.
@@ -1402,15 +1432,18 @@ export default function App() {
                 if (isPreviewMode || isGiftView) return;
                 selectItem(null);
                 setActiveColorTarget('wrapper');
-                setIsMobileToolsExpanded(true);
-                setMobilePopover('color');
               }}
               onRibbonClick={() => {
                 if (isPreviewMode || isGiftView) return;
                 selectItem(null);
                 setActiveColorTarget('ribbon');
-                setIsMobileToolsExpanded(true);
-                setMobilePopover('color');
+              }}
+              onCardSelect={() => {
+                if (isPreviewMode || isGiftView) return;
+                selectItem(null);
+                setActiveColorTarget('card');
+                setMobileCategory('card');
+                setActiveTab('card');
               }}
               onCardTagClick={() => {
                 if (isPreviewMode || isGiftView) {
@@ -1420,12 +1453,16 @@ export default function App() {
                   selectItem(null);
                   setActiveColorTarget('card');
                   setIsMobileToolsExpanded(true);
-                  if (mobilePopover !== 'color') {
-                    setMobilePopover('card');
-                  }
+                  setMobilePopover('card');
                   setMobileCategory('card');
                   setActiveTab('card');
                 }
+              }}
+              onVoiceSelect={() => {
+                if (isPreviewMode || isGiftView) return;
+                selectItem(null);
+                setActiveColorTarget('voicePrimary');
+                setMobileCategory('voice');
               }}
               onVoiceKeepsakeClick={() => {
                 if (isPreviewMode || isGiftView) {
@@ -1437,9 +1474,7 @@ export default function App() {
                   selectItem(null);
                   setActiveColorTarget('voicePrimary');
                   setIsMobileToolsExpanded(true);
-                  if (mobilePopover !== 'color') {
-                    setMobilePopover('voice');
-                  }
+                  setMobilePopover('voice');
                   setMobileCategory('voice');
                 }
               }}
@@ -1452,7 +1487,10 @@ export default function App() {
                 drawer closed.
                 =============================================================== */}
             {!isGiftView && !isPreviewMode && (
-              <div className="absolute right-3 bottom-3 z-40 flex flex-col items-center gap-2">
+              <div
+                ref={floatingToolStackRef}
+                className="absolute right-3 bottom-3 z-40 flex flex-col items-center gap-2"
+              >
                 {isMobileToolsExpanded && (
                   <div className="flex flex-col items-center gap-2 animate-in fade-in duration-150">
                     <button
@@ -1619,6 +1657,7 @@ export default function App() {
                 =============================================================== */}
             {!isGiftView && !isPreviewMode && (
               <aside
+                ref={slideDrawerRef}
                 aria-label="Slide-in Tool Drawer"
                 aria-hidden={!mobilePopover}
                 className={`absolute left-2.5 sm:left-4 top-2 sm:top-3 ${
@@ -1725,6 +1764,8 @@ export default function App() {
                     <SelectedFlowerToolbar
                       isDrawerOpen={false}
                       mobileSheetMode="stem"
+                      activeColorTarget={activeColorTarget}
+                      onColorTargetChange={setActiveColorTarget}
                       onCloseMobileSheet={() => setMobilePopover(null)}
                     />
                   )}
@@ -2127,18 +2168,17 @@ export default function App() {
                         type="button"
                         onClick={() => {
                           setWrapStyle(ws.id);
-                          setWrapColor(ws.defaultHex);
                           setActiveColorTarget('wrapper');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[64px] sm:w-[72px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                       >
                         <div
-                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-2xl border flex items-center justify-center relative transition-transform group-active:scale-95 ${
+                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                             isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-sm'
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                               : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 hover:border-stone-600'
-                              : 'bg-white border-stone-200/90 shadow-xs hover:border-stone-300'
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                           }`}
                         >
                           <MiniWrapConeSVG
@@ -2170,7 +2210,7 @@ export default function App() {
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-all group-active:scale-95 ${
                         isDarkMode
                           ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
                           : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
@@ -2204,7 +2244,7 @@ export default function App() {
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-all group-active:scale-95 ${
                         isDarkMode
                           ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
                           : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
@@ -2237,15 +2277,15 @@ export default function App() {
                           setRibbonStyle(rs.id);
                           setActiveColorTarget('ribbon');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[64px] sm:w-[72px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                       >
                         <div
-                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-2xl border flex items-center justify-center transition-transform group-active:scale-95 ${
+                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                             isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-sm'
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                               : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 hover:border-stone-600'
-                              : 'bg-white border-stone-200/90 shadow-xs hover:border-stone-300'
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                           }`}
                         >
                           <MiniRibbonBowSVG hex="#B4846C" styleType={rs.id} />
@@ -2264,16 +2304,19 @@ export default function App() {
                 <>
                   <button
                     type="button"
+                    data-drawer-trigger="true"
                     onClick={() => {
+                      selectItem(null);
+                      setActiveColorTarget('card');
                       setIsMobileToolsExpanded(true);
-                      setMobilePopover('card');
+                      setMobilePopover((prev) => (prev === 'card' ? null : 'card'));
                     }}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                         mobilePopover === 'card'
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
+                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                           : isDarkMode
                           ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
                           : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
@@ -2293,26 +2336,29 @@ export default function App() {
                         key={th.id}
                         type="button"
                         onClick={() => {
+                          selectItem(null);
                           updateCard({
                             theme: th.id,
-                            customBg: undefined,
-                            customAccent: undefined,
-                            visibleOnStage: true
+                            visibleOnStage: true,
                           });
                           setActiveColorTarget('card');
                         }}
-                        className="flex flex-col items-center gap-1.5 shrink-0 w-[72px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                       >
                         <div
-                          className={`w-16 h-16 rounded-2xl border flex items-center justify-center transition-transform group-active:scale-95 ${
+                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                             isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                               : isDarkMode
-                              ? 'bg-[#292524] border-stone-700'
-                              : 'bg-stone-50/70 border-stone-200/90'
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                           }`}
                         >
-                          <MiniCardShapeSVG theme={th.id} />
+                          <MiniCardShapeSVG
+                            theme={th.id}
+                            customBg="#FFFDF9"
+                            customAccent="#B4846C"
+                          />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {th.label}
@@ -2324,18 +2370,22 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                         !card.visibleOnStage
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
+                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                           : isDarkMode
-                          ? 'bg-[#292524] border-stone-700'
-                          : 'bg-stone-50/70 border-stone-200/90'
+                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                       }`}
                     >
-                      <Mail className="w-5 h-5 text-stone-500 dark:text-stone-400" />
+                      {card.visibleOnStage ? (
+                        <EyeOff className="w-5 h-5 text-[#B4846C]" />
+                      ) : (
+                        <Eye className="w-5 h-5 text-[#B4846C]" />
+                      )}
                     </div>
                     <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                       {card.visibleOnStage ? 'Hide Tag' : 'Show Tag'}
@@ -2349,22 +2399,25 @@ export default function App() {
                 <>
                   <button
                     type="button"
+                    data-drawer-trigger="true"
                     onClick={() => {
+                      selectItem(null);
+                      setActiveColorTarget('voicePrimary');
                       setIsMobileToolsExpanded(true);
-                      setMobilePopover('voice');
+                      setMobilePopover((prev) => (prev === 'voice' ? null : 'voice'));
                     }}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center relative transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                         mobilePopover === 'voice'
-                          ? 'border-rose-500 ring-2 ring-rose-500/30 bg-rose-50/60 dark:bg-rose-950/30'
+                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                           : isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-rose-400'
-                          : 'bg-rose-50/50 border-rose-200/90 group-hover:border-rose-400'
+                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                       }`}
                     >
-                      <Mic className="w-5 h-5 text-rose-500" />
+                      <Mic className="w-5 h-5 text-[#B4846C]" />
                       {voice.audioDataUrl && (
                         <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
                       )}
@@ -2381,29 +2434,31 @@ export default function App() {
                         key={vk.id}
                         type="button"
                         onClick={() => {
+                          selectItem(null);
+                          const isSwitchingStyle = voice.style !== vk.id;
                           updateVoice({
                             style: vk.id,
-                            primaryColor: vk.defaultPrimary,
-                            accentColor: vk.defaultAccent,
-                            title: vk.defaultTitle,
+                            ...(isSwitchingStyle
+                              ? {
+                                  primaryColor: vk.defaultPrimary,
+                                  accentColor: vk.defaultAccent,
+                                  title: vk.defaultTitle,
+                                }
+                              : {}),
                             visibleOnStage: true,
                           });
                           setActiveColorTarget('voicePrimary');
-                          setIsMobileToolsExpanded(true);
-                          if (!voice.audioDataUrl) {
-                            setMobilePopover('voice');
-                          }
-                          triggerToast(`Added ${vk.label} to bouquet`);
+                          triggerToast(`Selected ${vk.label}`);
                         }}
-                        className="flex flex-col items-center gap-1.5 shrink-0 w-[72px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                       >
                         <div
-                          className={`w-16 h-16 rounded-2xl border flex items-center justify-center transition-transform group-active:scale-95 ${
+                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                             isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-sm'
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                               : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 hover:border-stone-600'
-                              : 'bg-white border-stone-200/90 shadow-xs hover:border-stone-300'
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                           }`}
                         >
                           <MiniVoiceKeepsakeSVG
@@ -2426,21 +2481,21 @@ export default function App() {
                       if (!nextVis) handleStopVoice();
                       updateVoice({ visibleOnStage: nextVis });
                     }}
-                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
                   >
                     <div
-                      className={`w-16 h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
                         !voice.visibleOnStage
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
+                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
                           : isDarkMode
-                          ? 'bg-[#292524] border-stone-700'
-                          : 'bg-stone-50/70 border-stone-200/90'
+                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                       }`}
                     >
                       {voice.visibleOnStage ? (
-                        <EyeOff className="w-5 h-5 text-stone-500 dark:text-stone-400" />
+                        <EyeOff className="w-5 h-5 text-[#B4846C]" />
                       ) : (
-                        <Eye className="w-5 h-5 text-stone-500 dark:text-stone-400" />
+                        <Eye className="w-5 h-5 text-[#B4846C]" />
                       )}
                     </div>
                     <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">

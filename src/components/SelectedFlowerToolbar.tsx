@@ -400,17 +400,208 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     );
   }
 
-  // Dedicated Stem Settings Mode (Stem Length, Size, Tilt & Quick Stem Actions)
+  // Dedicated Stem / Object Adjust Mode (Stem Length, Size, Tilt & Quick Actions for Flowers, Cards & Voice Keepsakes)
   if (mobileSheetMode === 'stem') {
+    const isCardTargetActive =
+      !selected && (effectiveUnifiedTarget === 'card' || effectiveUnifiedTarget === 'cardAccent');
+    const isVoiceTargetActive =
+      !selected &&
+      (effectiveUnifiedTarget === 'voicePrimary' || effectiveUnifiedTarget === 'voiceAccent');
+
+    if (isCardTargetActive && card.visibleOnStage) {
+      const cardScalePct = Math.round((card.scale ?? 1) * 100);
+      const cardTilt = Math.round(card.rotation ?? 0);
+      const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
+      return (
+        <div className="space-y-3" role="region" aria-label="Card Adjust Settings">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-200/80 dark:border-stone-800">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="w-3.5 h-3.5 rounded-full border border-stone-300 dark:border-stone-600 shrink-0"
+                style={{ backgroundColor: cardPalette.seal }}
+              />
+              <span className="text-xs font-semibold text-[#1C1917] dark:text-stone-100 truncate">
+                Greeting Card
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => updateCard({ scale: 1, rotation: 0 })}
+                className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
+                title="Reset Card Size & Tilt"
+                aria-label="Reset Card Size and Tilt"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateCard({ visibleOnStage: false })}
+                className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
+                title="Hide Card Tag"
+                aria-label="Hide Card Tag"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Size</span>
+                <span>{cardScalePct}%</span>
+              </div>
+              <input
+                type="range"
+                min="60"
+                max="175"
+                value={cardScalePct}
+                onChange={(e) => {
+                  if (!isSliderDraggingRef.current) {
+                    commitHistorySnapshot();
+                    isSliderDraggingRef.current = true;
+                  }
+                  updateCard({ scale: Number(e.target.value) / 100 });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Card Size"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Tilt</span>
+                <span>{cardTilt > 0 ? `+${cardTilt}°` : `${cardTilt}°`}</span>
+              </div>
+              <input
+                type="range"
+                min="-140"
+                max="140"
+                value={cardTilt}
+                onChange={(e) => {
+                  if (!isSliderDraggingRef.current) {
+                    commitHistorySnapshot();
+                    isSliderDraggingRef.current = true;
+                  }
+                  updateCard({ rotation: Number(e.target.value) });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Card Rotation"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (isVoiceTargetActive && voice.visibleOnStage) {
+      const voiceScalePct = Math.round((voice.scale ?? 1) * 100);
+      const voiceTilt = Math.round(voice.rotation ?? 0);
+      return (
+        <div className="space-y-3" role="region" aria-label="Voice Keepsake Adjust Settings">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-200/80 dark:border-stone-800">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="w-3.5 h-3.5 rounded-full border border-stone-300 dark:border-stone-600 shrink-0"
+                style={{ backgroundColor: voice.primaryColor }}
+              />
+              <span className="text-xs font-semibold text-[#1C1917] dark:text-stone-100 truncate">
+                Voice Keepsake
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => updateVoice({ scale: 1, rotation: 0 })}
+                className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
+                title="Reset Voice Keepsake Size & Tilt"
+                aria-label="Reset Voice Keepsake Size and Tilt"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateVoice({ visibleOnStage: false })}
+                className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
+                title="Hide Voice Keepsake"
+                aria-label="Hide Voice Keepsake"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Size</span>
+                <span>{voiceScalePct}%</span>
+              </div>
+              <input
+                type="range"
+                min="60"
+                max="175"
+                value={voiceScalePct}
+                onChange={(e) => {
+                  if (!isSliderDraggingRef.current) {
+                    commitHistorySnapshot();
+                    isSliderDraggingRef.current = true;
+                  }
+                  updateVoice({ scale: Number(e.target.value) / 100 });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Voice Keepsake Size"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Tilt</span>
+                <span>{voiceTilt > 0 ? `+${voiceTilt}°` : `${voiceTilt}°`}</span>
+              </div>
+              <input
+                type="range"
+                min="-140"
+                max="140"
+                value={voiceTilt}
+                onChange={(e) => {
+                  if (!isSliderDraggingRef.current) {
+                    commitHistorySnapshot();
+                    isSliderDraggingRef.current = true;
+                  }
+                  updateVoice({ rotation: Number(e.target.value) });
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Voice Keepsake Rotation"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (!selected) {
       return (
         <div className="py-6 text-center space-y-1.5" role="region" aria-label="Stem Settings">
           <Sliders className="w-5 h-5 mx-auto text-[#B4846C]/70" />
           <p className="text-xs font-medium text-stone-700 dark:text-stone-200">
-            No flower selected
+            No item selected
           </p>
           <p className="text-[11px] text-stone-500 dark:text-stone-400 px-2">
-            Tap any flower or foliage on the canvas to adjust its stem length, size, and tilt.
+            Tap any flower, greeting card, or voice keepsake on the canvas to adjust its size and tilt.
           </p>
         </div>
       );

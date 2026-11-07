@@ -11,7 +11,8 @@ import {
   Palette,
   Volume2,
   X,
-  Sparkles,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import {
   VOICE_KEEPSAKE_CATALOG,
@@ -52,6 +53,9 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
   onTriggerToast,
 }) => {
   const [isRecording, setIsRecording] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>(() =>
+    voice.audioDataUrl ? 'saved' : 'idle'
+  );
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
   const [waveBars, setWaveBars] = useState<number[]>(() =>
@@ -65,9 +69,18 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
   const timerIntervalRef = useRef<number | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
 
   const keepsakeMeta =
     VOICE_KEEPSAKE_CATALOG.find((k) => k.id === voice.style) || VOICE_KEEPSAKE_CATALOG[0];
+
+  useEffect(() => {
+    if (!voice.audioDataUrl && saveState === 'saved') {
+      setSaveState('idle');
+    } else if (voice.audioDataUrl && saveState === 'idle') {
+      setSaveState('saved');
+    }
+  }, [voice.audioDataUrl, saveState]);
 
   const cleanupRecordingResources = useCallback(() => {
     if (timerIntervalRef.current !== null) {
@@ -91,6 +104,9 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
   useEffect(() => {
     return () => {
       cleanupRecordingResources();
+      if (saveTimerRef.current !== null) {
+        clearTimeout(saveTimerRef.current);
+      }
     };
   }, [cleanupRecordingResources]);
 
@@ -156,6 +172,7 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
       mediaRecorderRef.current = recorder;
       recordStartMsRef.current = Date.now();
       setRecordSeconds(0);
+      setSaveState('idle');
       setIsRecording(true);
 
       // Live Web Audio Analyser for real-time microphone waveform visualization
@@ -206,6 +223,7 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
         });
         if (blob.size === 0) return;
 
+        setSaveState('saving');
         const reader = new FileReader();
         reader.onloadend = () => {
           const dataUrl = typeof reader.result === 'string' ? reader.result : null;
@@ -215,7 +233,15 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
               durationSec: elapsedSec,
               visibleOnStage: true,
             });
-            onTriggerToast?.(`Saved ${keepsakeMeta.label} voice note (${elapsedSec}s)`);
+            if (saveTimerRef.current !== null) {
+              clearTimeout(saveTimerRef.current);
+            }
+            saveTimerRef.current = window.setTimeout(() => {
+              setSaveState('saved');
+              onTriggerToast?.(`Voice saved automatically (${elapsedSec}s)`);
+            }, 520);
+          } else {
+            setSaveState('idle');
           }
         };
         reader.readAsDataURL(blob);
@@ -254,8 +280,10 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
               {keepsakeMeta.label}
             </div>
             <div className="text-[10px] text-stone-500 dark:text-stone-400 truncate">
-              {voice.audioDataUrl
-                ? `Voice recorded (${formatDuration(voice.durationSec)})`
+              {saveState === 'saving'
+                ? 'Saving voice automatically...'
+                : voice.audioDataUrl
+                ? `Saved (${formatDuration(voice.durationSec)}) · Auto-saved`
                 : 'Record a romantic voice note'}
             </div>
           </div>
@@ -300,12 +328,19 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
       >
         {/* Top Deck Status + Timer */}
         <div className="flex items-center justify-between text-[11px]">
-          <div className="flex items-center gap-1.5 font-medium">
+          <div className="flex items-center gap-1.5 font-medium" aria-live="polite">
             {isRecording ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                 <span className="text-rose-600 dark:text-rose-400 font-semibold">
                   Recording voice...
+                </span>
+              </>
+            ) : saveState === 'saving' ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+                <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                  Saving...
                 </span>
               </>
             ) : isVoicePlaying ? (
@@ -315,8 +350,8 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
               </>
             ) : voice.audioDataUrl ? (
               <>
-                <Sparkles className="w-3.5 h-3.5 text-[#B4846C]" />
-                <span className="text-stone-700 dark:text-stone-300">Ready for recipient</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Saved</span>
               </>
             ) : (
               <span className="text-stone-500 dark:text-stone-400">Up to 30 seconds</span>
@@ -368,7 +403,7 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
             className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm active:scale-98 transition"
           >
             <Square className="w-3.5 h-3.5 fill-current" />
-            <span>Stop &amp; Save Voice</span>
+            <span>Stop Recording</span>
           </button>
         ) : voice.audioDataUrl ? (
           <div className="flex items-center gap-1.5">
