@@ -67,9 +67,9 @@ try {
   // 9. Flower Catalog, Fillers, Ribbons, Cards & Templates Check
   assert(studioMod.FLOWER_CATALOG.length === 24, `Expected 24 botanical entries (15 focal + 9 fillers), got ${studioMod.FLOWER_CATALOG.length}`);
   assert(studioMod.RIBBON_SWATCHES.length === 12, `Expected 12 ribbon swatches, got ${studioMod.RIBBON_SWATCHES.length}`);
-  assert(studioMod.CARD_THEME_CATALOG.length === 7, `Expected 7 greeting card themes, got ${studioMod.CARD_THEME_CATALOG.length}`);
+  assert(studioMod.CARD_THEME_CATALOG.length === 8, `Expected 8 greeting card themes (including default Sealed Letter), got ${studioMod.CARD_THEME_CATALOG.length}`);
   assert(studioMod.STARTER_TEMPLATES.length >= 4, `Expected at least 4 starter templates, got ${studioMod.STARTER_TEMPLATES.length}`);
-  console.log('✓ Botanical flower catalog (24), ribbons (12), cards (7) and starter templates preserved');
+  console.log('✓ Botanical flower catalog (24), ribbons (12), cards (8) and starter templates preserved');
 
   // 10. PNG Export Check
   assert(typeof studioMod.exportSvgElementToPng === 'function', 'High-res PNG export function preserved');
@@ -137,6 +137,7 @@ try {
     'src/components/MiniThumbnails.tsx',
     'src/components/LayerManagerPanel.tsx',
     'src/components/SelectedFlowerToolbar.tsx',
+    'src/components/VoiceRecorderStudio.tsx',
     'src/components/BouquetStudioApp.tsx',
   ];
   const studioSrc = studioFiles.map(f => fs.readFileSync(f, 'utf-8')).join('\n');
@@ -204,7 +205,52 @@ try {
   assert(studioSrc.includes('hidden sm:flex') && studioSrc.includes('Preview bloom'), 'Header controls fit cleanly within 360px/375px mobile viewports with modal bloom preview');
   console.log('✓ Mobile header responsiveness & share modal bloom preview verified');
 
-  console.log('\nAll 25 Verification and Edge Case Checks Passed Successfully! 🎉');
+  // 26. Voice Keepsake Catalog, Store, Draggable Coordinates & Share Payload Round-Trip Verification
+  assert(studioMod.VOICE_KEEPSAKE_CATALOG.length === 5, `Expected 5 romantic voice keepsakes, got ${studioMod.VOICE_KEEPSAKE_CATALOG.length}`);
+  assert(!studioSrc.includes('Upload audio file'), 'Audio file upload removed so all recordings are authentic live microphone voice notes');
+  testStore.updateCard({
+    theme: 'sealed',
+    x: 442,
+    y: 498,
+  });
+  testStore.updateVoice({
+    style: 'vinyl',
+    visibleOnStage: true,
+    title: 'Our Song',
+    primaryColor: '#8B5A2B',
+    accentColor: '#D4AF37',
+    audioDataUrl: 'data:audio/webm;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=',
+    durationSec: 12,
+    x: 164,
+    y: 512,
+  });
+  const voiceState = studioMod.useBouquetStore.getState();
+  assert.strictEqual(voiceState.voice.style, 'vinyl', 'Voice keepsake style updated to vinyl');
+  assert.strictEqual(voiceState.voice.visibleOnStage, true, 'Voice keepsake visible on stage');
+  const encodedWithVoice = studioMod.encodeBouquetToCompactPayload({
+    items: voiceState.items,
+    wrapStyle: voiceState.wrapStyle,
+    wrapColor: voiceState.wrapColor,
+    ribbonColor: voiceState.ribbonColor,
+    ribbonStyle: voiceState.ribbonStyle,
+    card: voiceState.card,
+    voice: voiceState.voice,
+  }, true);
+  assert(encodedWithVoice.includes('&v='), 'Encoded payload includes &v= voice keepsake segment');
+  const decodedWithVoice = studioMod.decodeBouquetFromHash(encodedWithVoice);
+  assert(decodedWithVoice && decodedWithVoice.voice, 'Decoded snapshot includes voice data');
+  assert.strictEqual(decodedWithVoice.card.theme, 'sealed', 'Decoded card theme matches sealed unopened envelope');
+  assert.strictEqual(decodedWithVoice.card.x, 442, 'Decoded draggable card X coordinate matches');
+  assert.strictEqual(decodedWithVoice.card.y, 498, 'Decoded draggable card Y coordinate matches');
+  assert.strictEqual(decodedWithVoice.voice.style, 'vinyl', 'Decoded voice style matches');
+  assert.strictEqual(decodedWithVoice.voice.title, 'Our Song', 'Decoded voice title matches');
+  assert.strictEqual(decodedWithVoice.voice.durationSec, 12, 'Decoded voice duration matches');
+  assert.strictEqual(decodedWithVoice.voice.x, 164, 'Decoded draggable voice X coordinate matches');
+  assert.strictEqual(decodedWithVoice.voice.y, 512, 'Decoded draggable voice Y coordinate matches');
+  assert(decodedWithVoice.voice.audioDataUrl?.startsWith('data:audio/webm;base64,'), 'Decoded voice audioDataUrl matches');
+  console.log('✓ Voice keepsake catalog (5 designs), draggable card/voice positions, and share payload round-trip verified');
+
+  console.log('\nAll 26 Verification and Edge Case Checks Passed Successfully! 🎉');
 } finally {
   await vite.close();
 }

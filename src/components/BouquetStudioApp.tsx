@@ -42,6 +42,8 @@ import {
   Unlock,
   GripVertical,
   RotateCcw,
+  Mic,
+  Pause,
 } from 'lucide-react';
 import {
   FlowerType,
@@ -58,6 +60,7 @@ import {
   RIBBON_SWATCHES,
   CARD_THEME_CATALOG,
   CARD_COLOR_SWATCHES,
+  VOICE_KEEPSAKE_CATALOG,
   ROMANTIC_SWATCHES,
   STARTER_TEMPLATES,
   getCardThemePalette,
@@ -82,15 +85,17 @@ import {
   MiniTemplateBouquetSVG,
   MiniRibbonBowSVG,
   MiniCardShapeSVG,
+  MiniVoiceKeepsakeSVG,
 } from './MiniThumbnails';
 import { LayerManagerPanel } from './LayerManagerPanel';
 import { SelectedFlowerToolbar, UnifiedColorTarget } from './SelectedFlowerToolbar';
+import { VoiceRecorderStudio, VoiceKeepsakePlayerModal } from './VoiceRecorderStudio';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
 // ============================================================================
 
-type MobileCategory = 'templates' | 'wrapping' | 'flowers' | 'fillers' | 'ribbon' | 'card';
+type MobileCategory = 'templates' | 'wrapping' | 'flowers' | 'fillers' | 'ribbon' | 'card' | 'voice';
 
 const PAPER_SWATCHES = [
   { label: 'Warm Kraft', short: 'Kraft', hex: '#d6b38e' },
@@ -109,6 +114,7 @@ export default function App() {
     ribbonColor,
     ribbonStyle,
     card,
+    voice,
     past,
     future,
     addFlower,
@@ -117,6 +123,7 @@ export default function App() {
     setRibbonColor,
     setRibbonStyle,
     updateCard,
+    updateVoice,
     randomizeBouquet,
     clearBouquet,
     undo,
@@ -129,11 +136,13 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'flowers' | 'wrap' | 'card' | 'layers'>('flowers');
   const [mobileCategory, setMobileCategory] = useState<MobileCategory>('wrapping');
-  const [mobilePopover, setMobilePopover] = useState<'color' | 'stem' | 'layers' | 'card' | null>(null);
+  const [mobilePopover, setMobilePopover] = useState<'color' | 'stem' | 'layers' | 'card' | 'voice' | null>(null);
   const [activeColorTarget, setActiveColorTarget] = useState<UnifiedColorTarget>('wrapper');
   const [isMobileToolsExpanded, setIsMobileToolsExpanded] = useState(false);
   const [isDesktopDockCollapsed, setIsDesktopDockCollapsed] = useState(false);
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [drawerState, setDrawerState] = useState<'collapsed' | 'peek' | 'expanded'>('peek');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInspectorSidebarOpen, setIsInspectorSidebarOpen] = useState(true);
@@ -173,6 +182,7 @@ export default function App() {
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const bloomIntervalRef = useRef<number | null>(null);
   const hasHydratedRef = useRef(false);
@@ -310,6 +320,58 @@ export default function App() {
     triggerToast(playing ? 'Playing soft music-box melody ♪' : 'Music paused');
   };
 
+  const handleStopVoice = useCallback(() => {
+    if (voiceAudioRef.current) {
+      voiceAudioRef.current.pause();
+      voiceAudioRef.current.currentTime = 0;
+      voiceAudioRef.current = null;
+    }
+    setIsVoicePlaying(false);
+  }, []);
+
+  const handleTogglePlayVoice = useCallback(() => {
+    if (!voice?.audioDataUrl) {
+      triggerToast('No voice recording yet — tap Record Voice to add one');
+      return;
+    }
+    if (isVoicePlaying && voiceAudioRef.current) {
+      voiceAudioRef.current.pause();
+      setIsVoicePlaying(false);
+      return;
+    }
+    // Pause background music box while playing the personal voice message
+    musicBox.stop();
+    setIsMusicPlaying(false);
+
+    if (voiceAudioRef.current) {
+      voiceAudioRef.current.pause();
+      voiceAudioRef.current = null;
+    }
+
+    const audio = new Audio(voice.audioDataUrl);
+    voiceAudioRef.current = audio;
+    audio.onended = () => {
+      setIsVoicePlaying(false);
+    };
+    audio.onerror = () => {
+      setIsVoicePlaying(false);
+      triggerToast('Could not play voice recording');
+    };
+    setIsVoicePlaying(true);
+    audio.play().catch(() => {
+      setIsVoicePlaying(false);
+    });
+  }, [voice?.audioDataUrl, isVoicePlaying, triggerToast]);
+
+  useEffect(() => {
+    return () => {
+      if (voiceAudioRef.current) {
+        voiceAudioRef.current.pause();
+        voiceAudioRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2800);
@@ -372,12 +434,14 @@ export default function App() {
       clearInterval(bloomIntervalRef.current);
       bloomIntervalRef.current = null;
     }
+    handleStopVoice();
+    setIsVoiceModalOpen(false);
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
-  }, []);
+  }, [handleStopVoice]);
 
   // When a recipient clicks "Create Yours" on a shared bouquet, start a fresh empty bouquet
   // so they can never edit or overwrite the sender's shared arrangement!
@@ -386,6 +450,8 @@ export default function App() {
       clearInterval(bloomIntervalRef.current);
       bloomIntervalRef.current = null;
     }
+    handleStopVoice();
+    setIsVoiceModalOpen(false);
     try {
       window.history.replaceState(null, '', '/');
     } catch {
@@ -399,7 +465,7 @@ export default function App() {
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
     triggerToast('Started a fresh empty bouquet for you to arrange');
-  }, [clearBouquet, selectItem, triggerToast]);
+  }, [clearBouquet, selectItem, triggerToast, handleStopVoice]);
 
   // Autosave to localStorage & Hydrate Shared Links (including first-party /<code> short links)
   useEffect(() => {
@@ -491,7 +557,8 @@ export default function App() {
           wrapColor,
           ribbonColor,
           ribbonStyle,
-          card
+          card,
+          voice
         };
         localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
         setAutosaveStatus('saved');
@@ -500,7 +567,7 @@ export default function App() {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
 
   // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
@@ -578,11 +645,12 @@ export default function App() {
         wrapColor,
         ribbonColor,
         ribbonStyle,
-        card
+        card,
+        voice
       };
       return encodeBouquetToShareUrl(snap, asGift);
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice]
   );
 
   const registerShortCodeOnServer = useCallback(
@@ -593,7 +661,8 @@ export default function App() {
         wrapColor,
         ribbonColor,
         ribbonStyle,
-        card
+        card,
+        voice
       };
       const hashPayload = encodeBouquetToCompactPayload(snap, asGift);
       const code = computeShortCode(hashPayload);
@@ -608,7 +677,7 @@ export default function App() {
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice]
   );
 
   // Immediately generate and register our own first-party short link (e.g. https://[domain]/Vu18KSuusq9133s)
@@ -627,7 +696,7 @@ export default function App() {
     triggerToast('Link copied');
   };
 
-  const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card') => {
+  const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card' | 'voice') => {
     // Clicking the currently active tool icon again ALWAYS collapses the side drawer
     if (mobilePopover === mode) {
       setMobilePopover(null);
@@ -649,6 +718,8 @@ export default function App() {
             ? 'ribbon'
             : mobileCategory === 'card'
             ? 'card'
+            : mobileCategory === 'voice'
+            ? 'voicePrimary'
             : 'wrapper'
         );
       }
@@ -914,6 +985,31 @@ export default function App() {
                   />
                   <span className="truncate">{selectedMeta?.name || selectedItem.type}</span>
                 </button>
+              ) : mobilePopover === 'color' ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 bg-stone-100/80 dark:bg-[#292524] text-stone-700 dark:text-stone-200 select-none">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15"
+                    style={{
+                      backgroundColor:
+                        activeColorTarget === 'ribbon'
+                          ? ribbonColor
+                          : activeColorTarget === 'card' || activeColorTarget === 'cardAccent'
+                          ? card.customBg || getCardThemePalette(card.theme).bg
+                          : activeColorTarget === 'voicePrimary' || activeColorTarget === 'voiceAccent'
+                          ? voice.primaryColor
+                          : wrapColor
+                    }}
+                  />
+                  <span>
+                    {activeColorTarget === 'ribbon'
+                      ? 'Ribbon'
+                      : activeColorTarget === 'card' || activeColorTarget === 'cardAccent'
+                      ? 'Card'
+                      : activeColorTarget === 'voicePrimary' || activeColorTarget === 'voiceAccent'
+                      ? 'Voice'
+                      : 'Wrapper'}
+                  </span>
+                </span>
               ) : (
                 <span className="text-[11px] sm:text-xs text-stone-400 dark:text-stone-500 truncate select-none">
                   Select item to edit
@@ -1250,15 +1346,50 @@ export default function App() {
               isDarkMode={isDarkMode}
               bloomedCount={isGiftView ? bloomedCount : undefined}
               showCardInGiftView={isGiftView ? showGiftCardReveal : true}
+              isVoicePlaying={isVoicePlaying}
+              onWrapperClick={() => {
+                if (isPreviewMode || isGiftView) return;
+                selectItem(null);
+                setActiveColorTarget('wrapper');
+                setIsMobileToolsExpanded(true);
+                setMobilePopover('color');
+              }}
+              onRibbonClick={() => {
+                if (isPreviewMode || isGiftView) return;
+                selectItem(null);
+                setActiveColorTarget('ribbon');
+                setIsMobileToolsExpanded(true);
+                setMobilePopover('color');
+              }}
               onCardTagClick={() => {
                 if (isPreviewMode || isGiftView) {
                   setLetterTypedChars(0);
                   setIsLetterModalOpen(true);
                 } else {
+                  selectItem(null);
+                  setActiveColorTarget('card');
                   setIsMobileToolsExpanded(true);
-                  setMobilePopover('card');
+                  if (mobilePopover !== 'color') {
+                    setMobilePopover('card');
+                  }
                   setMobileCategory('card');
                   setActiveTab('card');
+                }
+              }}
+              onVoiceKeepsakeClick={() => {
+                if (isPreviewMode || isGiftView) {
+                  setIsVoiceModalOpen(true);
+                  if (voice.audioDataUrl && !isVoicePlaying) {
+                    handleTogglePlayVoice();
+                  }
+                } else {
+                  selectItem(null);
+                  setActiveColorTarget('voicePrimary');
+                  setIsMobileToolsExpanded(true);
+                  if (mobilePopover !== 'color') {
+                    setMobilePopover('voice');
+                  }
+                  setMobileCategory('voice');
                 }
               }}
             />
@@ -1278,7 +1409,7 @@ export default function App() {
                       onClick={() => handleMobileFloatingTool('color')}
                       aria-pressed={mobilePopover === 'color'}
                       aria-label="Open Unified Color Picker"
-                      title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon & Card)'}
+                      title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon, Card & Voice)'}
                       className={`w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'color'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
@@ -1349,6 +1480,26 @@ export default function App() {
                         ✦
                       </span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleMobileFloatingTool('voice')}
+                      aria-pressed={mobilePopover === 'voice'}
+                      aria-label="Open Voice Keepsake Recorder"
+                      title={mobilePopover === 'voice' ? 'Hide Voice Recorder Drawer' : 'Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)'}
+                      className={`relative w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                        mobilePopover === 'voice'
+                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                          : isDarkMode
+                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                      }`}
+                    >
+                      <Mic className="w-4 h-4" />
+                      {voice.audioDataUrl && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border border-white" />
+                      )}
+                    </button>
                   </div>
                 )}
 
@@ -1373,9 +1524,9 @@ export default function App() {
                     aria-label={
                       isMobileToolsExpanded
                         ? 'Collapse canvas tools down to eye button'
-                        : 'Expand canvas tools (Colors, Stem, Layers, Card)'
+                        : 'Expand canvas tools (Colors, Stem, Layers, Card, Voice)'
                     }
-                    title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card)'}
+                    title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card, Voice)'}
                     className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${
                       isMobileToolsExpanded
                         ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
@@ -1410,7 +1561,7 @@ export default function App() {
             )}
 
             {/* ===============================================================
-                SLIDE-IN LEFT SIDE DRAWER FOR COLORS, STEM, LAYERS & GREETING CARD
+                SLIDE-IN LEFT SIDE DRAWER FOR COLORS, STEM, LAYERS, CARD & VOICE
                 Slides smoothly from the left edge instead of popping a card over
                 the center canvas. Clicking the active right-side icon again or
                 tapping the side drawer's hide button slides it right back out.
@@ -1421,7 +1572,7 @@ export default function App() {
                 aria-hidden={!mobilePopover}
                 className={`absolute left-2.5 sm:left-4 top-2 sm:top-3 ${
                   mobilePopover === 'layers' ? 'bottom-3 sm:bottom-4' : 'max-h-[calc(100%-1.5rem)]'
-                } z-30 w-[274px] sm:w-[310px] max-w-[calc(100vw-4.5rem)] rounded-2xl border shadow-xl backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
+                } z-30 w-[282px] sm:w-[320px] max-w-[calc(100vw-4.5rem)] rounded-2xl border shadow-xl backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
                   isDarkMode
                     ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
                     : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
@@ -1431,9 +1582,9 @@ export default function App() {
                     : '-translate-x-[calc(100%+1.5rem)] opacity-0 pointer-events-none'
                 }`}
               >
-                {/* Side Drawer Top Bar: Mode Switcher Pills (Color | Stem | Layers | Card) + Slide-Left Collapse Button */}
-                <div className="flex items-center justify-between gap-1 px-2.5 py-2 border-b border-stone-200/80 dark:border-stone-800 shrink-0">
-                  <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto no-scrollbar">
+                {/* Side Drawer Top Bar: Mode Switcher Pills (Color | Stem | Layers | Card | Voice) + Slide-Left Collapse Button */}
+                <div className="flex items-center justify-between gap-1 px-2 py-2 border-b border-stone-200/80 dark:border-stone-800 shrink-0">
+                  <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
                     <button
                       type="button"
                       onClick={() => handleMobileFloatingTool('color')}
@@ -1481,6 +1632,18 @@ export default function App() {
                     >
                       <PenLine className="w-3 h-3" />
                       <span>Card</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMobileFloatingTool('voice')}
+                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
+                        mobilePopover === 'voice'
+                          ? 'bg-[#B4846C] text-white'
+                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
+                      }`}
+                    >
+                      <Mic className="w-3 h-3" />
+                      <span>Voice</span>
                     </button>
                   </div>
 
@@ -1594,6 +1757,22 @@ export default function App() {
                       </div>
                     </div>
                   )}
+
+                  {mobilePopover === 'voice' && (
+                    <VoiceRecorderStudio
+                      voice={voice}
+                      isDarkMode={isDarkMode}
+                      isVoicePlaying={isVoicePlaying}
+                      onTogglePlayVoice={handleTogglePlayVoice}
+                      onStopVoice={handleStopVoice}
+                      onUpdateVoice={updateVoice}
+                      onOpenVoiceColors={() => {
+                        setActiveColorTarget('voicePrimary');
+                        setMobilePopover('color');
+                      }}
+                      onTriggerToast={triggerToast}
+                    />
+                  )}
                 </div>
               </aside>
             )}
@@ -1603,7 +1782,7 @@ export default function App() {
               VIEW-ONLY MODE MINIMAL ACTION PILL (Shared Bouquet Links & Preview)
               Removes all editor sidebars, top navigation, and clutter.
               Focuses purely on the visual bouquet, the clickable wiggling card tag,
-              and a simple 'Save as PNG' / 'Create Yours' (or 'Back to editing') CTA bar.
+              the voice keepsake player, and 'Save as PNG' / 'Create Yours'.
               =================================================================== */}
           {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
             <div
@@ -1635,6 +1814,33 @@ export default function App() {
                 >
                   {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                 </button>
+
+                {/* Recipient Voice Keepsake Play Icon Button (Icon-only, no text label) */}
+                {(voice.visibleOnStage || Boolean(voice.audioDataUrl)) && (
+                  <button
+                    type="button"
+                    aria-label={isVoicePlaying ? 'Pause voice' : 'Play voice'}
+                    title={isVoicePlaying ? 'Pause voice' : 'Play voice'}
+                    onClick={() => {
+                      if (voice.audioDataUrl) {
+                        handleTogglePlayVoice();
+                      } else {
+                        setIsVoiceModalOpen(true);
+                      }
+                    }}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition active:scale-95 ${
+                      isVoicePlaying
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900/70 dark:text-rose-200 dark:border-rose-800'
+                    }`}
+                  >
+                    {isVoicePlaying ? (
+                      <Pause className="w-4 h-4 fill-current" />
+                    ) : (
+                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                    )}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1705,7 +1911,8 @@ export default function App() {
                     { id: 'flowers', label: 'Flowers' },
                     { id: 'fillers', label: 'Fillers' },
                     { id: 'ribbon', label: 'Ribbon' },
-                    { id: 'card', label: 'Card' }
+                    { id: 'card', label: 'Card' },
+                    { id: 'voice', label: 'Voice' }
                   ] as { id: MobileCategory; label: string }[]
                 ).map((cat) => {
                   const isActive = mobileCategory === cat.id;
@@ -1719,6 +1926,7 @@ export default function App() {
                         if (cat.id === 'wrapping') setActiveColorTarget('wrapper');
                         else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
                         else if (cat.id === 'card') setActiveColorTarget('card');
+                        else if (cat.id === 'voice') setActiveColorTarget('voicePrimary');
                         else if (cat.id === 'flowers' || cat.id === 'fillers') setActiveColorTarget('petal');
 
                         if (isActive) {
@@ -1728,7 +1936,7 @@ export default function App() {
                           setIsDesktopDockCollapsed(false);
                         }
                       }}
-                      className={`px-3 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition ${
+                      className={`px-3 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 ${
                         isActive
                           ? 'bg-[#B4846C] text-white shadow-xs border border-[#B4846C]'
                           : isDarkMode
@@ -1736,7 +1944,10 @@ export default function App() {
                           : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
                       }`}
                     >
-                      {cat.label}
+                      <span>{cat.label}</span>
+                      {cat.id === 'voice' && voice.audioDataUrl && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      )}
                     </button>
                   );
                 })}
@@ -1882,7 +2093,7 @@ export default function App() {
                           <MiniWrapConeSVG
                             styleType={ws.id}
                             color={ws.defaultHex}
-                            ribbon={ribbonColor}
+                            ribbon={ws.defaultRibbon}
                           />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
@@ -1986,7 +2197,7 @@ export default function App() {
                               : 'bg-white border-stone-200/90 shadow-xs hover:border-stone-300'
                           }`}
                         >
-                          <MiniRibbonBowSVG hex={ribbonColor} styleType={rs.id} />
+                          <MiniRibbonBowSVG hex="#B4846C" styleType={rs.id} />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {rs.label}
@@ -2030,7 +2241,15 @@ export default function App() {
                       <button
                         key={th.id}
                         type="button"
-                        onClick={() => updateCard({ theme: th.id, visibleOnStage: true })}
+                        onClick={() => {
+                          updateCard({
+                            theme: th.id,
+                            customBg: undefined,
+                            customAccent: undefined,
+                            visibleOnStage: true
+                          });
+                          setActiveColorTarget('card');
+                        }}
                         className="flex flex-col items-center gap-1.5 shrink-0 w-[72px] group"
                       >
                         <div
@@ -2042,7 +2261,7 @@ export default function App() {
                               : 'bg-stone-50/70 border-stone-200/90'
                           }`}
                         >
-                          <MiniCardShapeSVG theme={th.id} customBg={card.customBg} />
+                          <MiniCardShapeSVG theme={th.id} />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {th.label}
@@ -2069,6 +2288,112 @@ export default function App() {
                     </div>
                     <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                       {card.visibleOnStage ? 'Hide Tag' : 'Show Tag'}
+                    </span>
+                  </button>
+                </>
+              )}
+
+              {/* CATEGORY 7: ROMANTIC VOICE KEEPSAKES (Mixtape, Vinyl, Voice Plushie, Music Box, Heart Locket) */}
+              {mobileCategory === 'voice' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileToolsExpanded(true);
+                      setMobilePopover('voice');
+                    }}
+                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                  >
+                    <div
+                      className={`w-16 h-16 rounded-full border flex items-center justify-center relative transition-transform group-active:scale-95 ${
+                        mobilePopover === 'voice'
+                          ? 'border-rose-500 ring-2 ring-rose-500/30 bg-rose-50/60 dark:bg-rose-950/30'
+                          : isDarkMode
+                          ? 'bg-[#292524] border-stone-700 group-hover:border-rose-400'
+                          : 'bg-rose-50/50 border-rose-200/90 group-hover:border-rose-400'
+                      }`}
+                    >
+                      <Mic className="w-5 h-5 text-rose-500" />
+                      {voice.audioDataUrl && (
+                        <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                      {voice.audioDataUrl ? 'Voice Studio' : 'Record Voice'}
+                    </span>
+                  </button>
+
+                  {VOICE_KEEPSAKE_CATALOG.map((vk) => {
+                    const isSelected = voice.style === vk.id && voice.visibleOnStage;
+                    return (
+                      <button
+                        key={vk.id}
+                        type="button"
+                        onClick={() => {
+                          updateVoice({
+                            style: vk.id,
+                            primaryColor: vk.defaultPrimary,
+                            accentColor: vk.defaultAccent,
+                            title: vk.defaultTitle,
+                            visibleOnStage: true,
+                          });
+                          setActiveColorTarget('voicePrimary');
+                          setIsMobileToolsExpanded(true);
+                          if (!voice.audioDataUrl) {
+                            setMobilePopover('voice');
+                          }
+                          triggerToast(`Added ${vk.label} to bouquet`);
+                        }}
+                        className="flex flex-col items-center gap-1.5 shrink-0 w-[72px] group"
+                      >
+                        <div
+                          className={`w-16 h-16 rounded-2xl border flex items-center justify-center transition-transform group-active:scale-95 ${
+                            isSelected
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-sm'
+                              : isDarkMode
+                              ? 'bg-[#292524] border-stone-700 hover:border-stone-600'
+                              : 'bg-white border-stone-200/90 shadow-xs hover:border-stone-300'
+                          }`}
+                        >
+                          <MiniVoiceKeepsakeSVG
+                            styleType={vk.id}
+                            primaryColor={vk.defaultPrimary}
+                            accentColor={vk.defaultAccent}
+                          />
+                        </div>
+                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                          {vk.shortLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextVis = !voice.visibleOnStage;
+                      if (!nextVis) handleStopVoice();
+                      updateVoice({ visibleOnStage: nextVis });
+                    }}
+                    className="flex flex-col items-center gap-1.5 shrink-0 w-[68px] group"
+                  >
+                    <div
+                      className={`w-16 h-16 rounded-full border flex items-center justify-center transition-transform group-active:scale-95 ${
+                        !voice.visibleOnStage
+                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524]'
+                          : isDarkMode
+                          ? 'bg-[#292524] border-stone-700'
+                          : 'bg-stone-50/70 border-stone-200/90'
+                      }`}
+                    >
+                      {voice.visibleOnStage ? (
+                        <EyeOff className="w-5 h-5 text-stone-500 dark:text-stone-400" />
+                      ) : (
+                        <Eye className="w-5 h-5 text-stone-500 dark:text-stone-400" />
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                      {voice.visibleOnStage ? 'Hide Voice' : 'Show Voice'}
                     </span>
                   </button>
                 </>
@@ -2581,7 +2906,7 @@ export default function App() {
           in shared/preview mode.
           ===================================================================== */}
       {isLetterModalOpen && (() => {
-        const cardPalette = getCardThemePalette(card.theme, card.customBg);
+        const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
 
         const toFull = `Dearest ${card.to || 'Someone Special'},`;
         const msgFull = card.message || 'Thinking of you with love and blossoms.';
@@ -3004,6 +3329,17 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* VOICE KEEPSAKE PLAYER MODAL (For Recipient Gift View / Preview) */}
+      {isVoiceModalOpen && (
+        <VoiceKeepsakePlayerModal
+          voice={voice}
+          isDarkMode={isDarkMode}
+          isPlaying={isVoicePlaying}
+          onTogglePlay={handleTogglePlayVoice}
+          onClose={() => setIsVoiceModalOpen(false)}
+        />
       )}
 
       {/* TOAST NOTIFICATION PILL */}

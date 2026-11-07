@@ -120,7 +120,11 @@ export default async function handler(req, res) {
 
       // Persist in background KV slug so cold starts on Vercel never lose the short code
       const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;
-      const vaultUrl = `https://flowers-for-you.local/${normalizedPayload}`;
+      const safeIsGdPayload =
+        normalizedPayload.length > 3200
+          ? normalizedPayload.replace(/&v=[^&]*/, (m) => m.split('~').slice(0, 6).join('~'))
+          : normalizedPayload;
+      const vaultUrl = `https://flowers-for-you.local/${safeIsGdPayload}`;
       const slug = `bq_${code}`;
       try {
         const controller = new AbortController();

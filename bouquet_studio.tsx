@@ -7,3 +7,5 @@ export * from './src/components/BouquetStage';
 export * from './src/components/MiniThumbnails';
 export * from './src/components/LayerManagerPanel';
 export * from './src/components/SelectedFlowerToolbar';
+export * from './src/components/VoiceRecorderStudio';
+

@@ -7,6 +7,8 @@ import {
   WrapStyle,
   BouquetItem,
   GreetingCardData,
+  VoiceKeepsakeData,
+  DEFAULT_VOICE_KEEPSAKE,
   BouquetSnapshot,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
@@ -48,6 +50,8 @@ export interface BouquetStoreState extends BouquetSnapshot {
   setRibbonColor: (color: string) => void;
   setRibbonStyle: (style: RibbonStyle) => void;
   updateCard: (patch: Partial<GreetingCardData>) => void;
+  voice: VoiceKeepsakeData;
+  updateVoice: (patch: Partial<VoiceKeepsakeData>) => void;
   randomizeBouquet: () => void;
   clearBouquet: () => void;
   undo: () => void;
@@ -62,7 +66,8 @@ function takeSnapshot(state: BouquetStoreState): BouquetSnapshot {
     wrapColor: state.wrapColor,
     ribbonColor: state.ribbonColor,
     ribbonStyle: state.ribbonStyle || 'satin',
-    card: { ...state.card }
+    card: { ...state.card },
+    voice: { ...(state.voice || DEFAULT_VOICE_KEEPSAKE) }
   };
 }
 
@@ -89,9 +94,13 @@ function getInitialStoreState() {
               shared.card?.message ??
               'Every petal in this bouquet holds a reason why you make my world brighter.',
             visibleOnStage: shared.card?.visibleOnStage ?? true,
-            theme: shared.card?.theme ?? 'cream',
-            customBg: shared.card?.customBg
+            theme: shared.card?.theme ?? 'sealed',
+            customBg: shared.card?.customBg,
+            customAccent: shared.card?.customAccent,
+            x: shared.card?.x ?? 410,
+            y: shared.card?.y ?? 525
           },
+          voice: shared.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...shared.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
           selectedId: isGiftShareHash(hash)
             ? null
             : shared.items[shared.items.length - 1]?.id || null
@@ -114,8 +123,11 @@ function getInitialStoreState() {
       from: 'Yours Always',
       message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
       visibleOnStage: true,
-      theme: 'cream' as const
+      theme: 'sealed' as const,
+      x: 410,
+      y: 525
     },
+    voice: { ...DEFAULT_VOICE_KEEPSAKE },
     selectedId: isBrowser ? null : ('f-14' as string | null)
   };
 }
@@ -130,6 +142,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   ribbonColor: INITIAL_STORE_STATE.ribbonColor,
   ribbonStyle: INITIAL_STORE_STATE.ribbonStyle,
   card: INITIAL_STORE_STATE.card,
+  voice: INITIAL_STORE_STATE.voice,
   selectedId: INITIAL_STORE_STATE.selectedId,
   past: [],
   future: [],
@@ -456,6 +469,12 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     }));
   },
 
+  updateVoice: (patch) => {
+    set((state) => ({
+      voice: { ...(state.voice || DEFAULT_VOICE_KEEPSAKE), ...patch }
+    }));
+  },
+
   randomizeBouquet: () => {
     const snap = takeSnapshot(get());
     const palettes = [
@@ -585,6 +604,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
       items: [],
+      voice: { ...DEFAULT_VOICE_KEEPSAKE },
       selectedId: null
     }));
   },
@@ -596,6 +616,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     const current = takeSnapshot(get());
     set({
       ...previous,
+      voice: previous.voice ? { ...previous.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       past: past.slice(0, -1),
       future: [current, ...future],
       selectedId: null
@@ -609,6 +630,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     const current = takeSnapshot(get());
     set({
       ...next,
+      voice: next.voice ? { ...next.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       past: [...past, current],
       future: future.slice(1),
       selectedId: null
@@ -618,6 +640,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   loadSnapshot: (snap) => {
     set({
       ...snap,
+      voice: snap.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...snap.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       selectedId: snap.items[0]?.id ?? null,
       past: [],
       future: []

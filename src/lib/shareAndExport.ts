@@ -2,11 +2,15 @@ import {
   FlowerType,
   CardTheme,
   RibbonStyle,
+  VoiceKeepsakeStyle,
+  VoiceKeepsakeData,
   typeWrapStyle,
   BouquetItem,
   BouquetSnapshot,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
+  VOICE_KEEPSAKE_CATALOG,
+  DEFAULT_VOICE_KEEPSAKE,
   STARTER_TEMPLATES,
   INITIAL_ITEMS,
 } from '../types/bouquet';
@@ -71,7 +75,16 @@ const SHARE_CARD_THEMES: CardTheme[] = [
   'sage',
   'sky',
   'midnight',
-  'terracotta'
+  'terracotta',
+  'sealed'
+];
+
+const SHARE_VOICE_STYLES: VoiceKeepsakeStyle[] = [
+  'mixtape',
+  'vinyl',
+  'plushie',
+  'musicbox',
+  'locket'
 ];
 
 const DEFAULT_SHARE_CARD_TO = 'My Dearest';
@@ -187,7 +200,7 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
   const rStyleStr = rStyleIdx === 0 ? '' : rStyleIdx.toString(36);
   const headerPart = `${wIdx}~${wHex}~${rHex}~${rStyleStr}`.replace(/~+$/, '');
 
-  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>~<optCustomBgHex> (trimmed trailing ~!)
+  // 2. Compact Card Section: <themeAndVisibleBase36>~<toB64>~<fromB64>~<msgB64>~<optCustomBgHex>~<optCustomAccHex>~<optCardX>~<optCardY>
   const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
   const cVis = snapshot.card.visibleOnStage ? 1 : 0;
   const cMeta = (cTheme * 2 + cVis).toString(36);
@@ -197,9 +210,21 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
   const cMsg =
     snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
   const cBg = snapshot.card.customBg ? snapshot.card.customBg.replace('#', '').toLowerCase() : '';
-  const cardPart = cBg
-    ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}`
-    : `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
+  const cAcc = snapshot.card.customAccent
+    ? snapshot.card.customAccent.replace('#', '').toLowerCase()
+    : '';
+  const cX =
+    snapshot.card.x !== undefined && Math.round(snapshot.card.x) !== 410
+      ? Math.round(snapshot.card.x).toString(36)
+      : '';
+  const cY =
+    snapshot.card.y !== undefined && Math.round(snapshot.card.y) !== 525
+      ? Math.round(snapshot.card.y).toString(36)
+      : '';
+  const cardPart =
+    cBg || cAcc || cX || cY
+      ? `${cMeta}~${cTo}~${cFrom}~${cMsg}~${cBg}~${cAcc}~${cX}~${cY}`.replace(/~+$/, '')
+      : `${cMeta}~${cTo}~${cFrom}~${cMsg}`.replace(/(?:~!)+$/, '');
 
   // 3. Compact Items Section: 2-char preset token (@0..@7) if stems match a template,
   //    or 8 chars per stem with 1-char type code (0..23 in base36) and flags in extraFlags
@@ -254,7 +279,26 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
   }
 
   const prefix = asGift ? 'g' : 'b';
-  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}`;
+  let voiceSuffix = '';
+  if (snapshot.voice && (snapshot.voice.visibleOnStage || snapshot.voice.audioDataUrl)) {
+    const vIdx = Math.max(0, SHARE_VOICE_STYLES.indexOf(snapshot.voice.style)).toString(36);
+    const vVis = snapshot.voice.visibleOnStage ? '1' : '0';
+    const vPrimaryHex = snapshot.voice.primaryColor.replace('#', '').toLowerCase();
+    const vAccentHex = snapshot.voice.accentColor.replace('#', '').toLowerCase();
+    const vTitleB64 = snapshot.voice.title ? toBase64Url(snapshot.voice.title) : '';
+    const vDur = Math.round(snapshot.voice.durationSec || 0).toString(10);
+    const vAudioB64 = snapshot.voice.audioDataUrl ? toBase64Url(snapshot.voice.audioDataUrl) : '';
+    const vX =
+      snapshot.voice.x !== undefined && Math.round(snapshot.voice.x) !== 185
+        ? Math.round(snapshot.voice.x).toString(36)
+        : '';
+    const vY =
+      snapshot.voice.y !== undefined && Math.round(snapshot.voice.y) !== 525
+        ? Math.round(snapshot.voice.y).toString(36)
+        : '';
+    voiceSuffix = `&v=${vIdx}~${vVis}~${vPrimaryHex}~${vAccentHex}~${vTitleB64}~${vDur}~${vAudioB64}~${vX}~${vY}`.replace(/~+$/, '');
+  }
+  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}`;
 }
 
 export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = false): string {
@@ -331,9 +375,42 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
 
     // FORMAT A: Ultra-compact #g=<payload> or #b=<payload>
     if (hash.startsWith('#g=') || hash.startsWith('#b=')) {
-      const rawPayload = hash.slice(3).split('&')[0].trim();
+      const fullAfterPrefix = hash.slice(3);
+      const querySegments = fullAfterPrefix.split('&');
+      const rawPayload = querySegments[0].trim();
       const parts = rawPayload.split('.');
       if (parts.length < 2) return null;
+
+      let voice: VoiceKeepsakeData = { ...DEFAULT_VOICE_KEEPSAKE };
+      const vSegment = querySegments.find((seg) => seg.startsWith('v='));
+      if (vSegment) {
+        const [
+          vIdxStr = '0',
+          vVisStr = '0',
+          vPrimaryHex = '',
+          vAccentHex = '',
+          vTitleB64 = '',
+          vDurStr = '0',
+          vAudioB64 = '',
+          vXStr = '',
+          vYStr = ''
+        ] = vSegment.slice(2).split('~');
+        const style = SHARE_VOICE_STYLES[parseInt(vIdxStr, 36)] || 'mixtape';
+        const vMeta = VOICE_KEEPSAKE_CATALOG.find((k) => k.id === style) || VOICE_KEEPSAKE_CATALOG[0];
+        const parsedVX = vXStr ? parseInt(vXStr, 36) : 185;
+        const parsedVY = vYStr ? parseInt(vYStr, 36) : 525;
+        voice = {
+          style,
+          visibleOnStage: vVisStr === '1',
+          title: vTitleB64 ? fromBase64Url(vTitleB64) : vMeta.defaultTitle,
+          primaryColor: vPrimaryHex ? `#${vPrimaryHex}` : vMeta.defaultPrimary,
+          accentColor: vAccentHex ? `#${vAccentHex}` : vMeta.defaultAccent,
+          audioDataUrl: vAudioB64 ? fromBase64Url(vAudioB64) : null,
+          durationSec: Number(vDurStr) || 0,
+          x: Number.isFinite(parsedVX) ? parsedVX : 185,
+          y: Number.isFinite(parsedVY) ? parsedVY : 525
+        };
+      }
 
       const [headerPart, cardPart, ...stemParts] = parts;
       const [wIdxStr = '0', wHex = '', rHex = '', rStyleStr = ''] = headerPart.split('~');
@@ -344,15 +421,27 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const ribbonColor = rHex ? `#${rHex}` : '#e11d48';
       const ribbonStyle = rStyleStr ? SHARE_RIBBON_STYLES[parseInt(rStyleStr, 36)] || 'satin' : 'satin';
 
-      const [cMetaStr = '1', cToB64 = '!', cFromB64 = '!', cMsgB64 = '!', cBgHex = ''] = cardPart.split('~');
+      const [
+        cMetaStr = '1',
+        cToB64 = '!',
+        cFromB64 = '!',
+        cMsgB64 = '!',
+        cBgHex = '',
+        cAccHex = '',
+        cXStr = '',
+        cYStr = ''
+      ] = cardPart.split('~');
       const cMeta = parseInt(cMetaStr, 36) || 0;
-      const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'cream';
+      const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'sealed';
       const visibleOnStage = cMeta % 2 === 1;
       const to = !cToB64 || cToB64 === '!' ? DEFAULT_SHARE_CARD_TO : fromBase64Url(cToB64);
       const from = !cFromB64 || cFromB64 === '!' ? DEFAULT_SHARE_CARD_FROM : fromBase64Url(cFromB64);
       const message =
         !cMsgB64 || cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
       const customBg = cBgHex && /^[0-9a-fA-F]{6}$/.test(cBgHex) ? `#${cBgHex}` : undefined;
+      const customAccent = cAccHex && /^[0-9a-fA-F]{6}$/.test(cAccHex) ? `#${cAccHex}` : undefined;
+      const parsedCX = cXStr ? parseInt(cXStr, 36) : 410;
+      const parsedCY = cYStr ? parseInt(cYStr, 36) : 525;
 
       let items: BouquetItem[] = [];
       if (stemParts.length === 1 && stemParts[0].startsWith('@')) {
@@ -410,8 +499,12 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           message,
           visibleOnStage,
           theme,
-          customBg
-        }
+          customBg,
+          customAccent,
+          x: Number.isFinite(parsedCX) ? parsedCX : 410,
+          y: Number.isFinite(parsedCY) ? parsedCY : 525
+        },
+        voice
       };
     }
 

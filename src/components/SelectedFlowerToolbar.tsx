@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Maximize2,
   RotateCw,
+  Plus,
 } from 'lucide-react';
 import {
   BouquetItem,
@@ -29,13 +30,34 @@ import {
   getCardThemePalette,
 } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
+import {
+  MiniWrapConeSVG,
+  MiniRibbonBowSVG,
+  MiniCardShapeSVG,
+  MiniVoiceKeepsakeSVG,
+} from './MiniThumbnails';
 import { useBouquetStore } from '../store/useBouquetStore';
 
 // ============================================================================
 // MODULE 6: components/SelectedFlowerToolbar.tsx — FLOATING INSPECTOR & COLOR PICKER
 // ============================================================================
 
-export type UnifiedColorTarget = 'petal' | 'center' | 'wrapper' | 'ribbon' | 'card';
+export type UnifiedColorTarget =
+  | 'petal'
+  | 'center'
+  | 'wrapper'
+  | 'ribbon'
+  | 'card'
+  | 'cardAccent'
+  | 'voicePrimary'
+  | 'voiceAccent';
+
+const CANVA_PALETTE_SWATCHES: string[] = Array.from(
+  new Set([
+    ...ROMANTIC_SWATCHES.map((h) => h.toLowerCase()),
+    ...CARD_COLOR_SWATCHES.map((h) => h.toLowerCase()),
+  ])
+);
 
 export interface SelectedFlowerToolbarProps {
   isDrawerOpen?: boolean;
@@ -63,11 +85,14 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     lastNonPlainWrapStyle,
     wrapColor,
     ribbonColor,
+    ribbonStyle,
     card,
+    voice,
     setWrapStyle,
     setWrapColor,
     setRibbonColor,
     updateCard,
+    updateVoice,
     updateItem,
     duplicateSelected,
     deleteSelected,
@@ -112,21 +137,30 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
   const selected = items.find((i) => i.id === selectedId);
   const meta = selected ? FLOWER_CATALOG.find((m) => m.type === selected.type) : undefined;
 
-  // Unified Color Editor in One Place (Petals, Center, Wrapper, Ribbon, Card)
+  // Canva-Style Color Editor: Detects colors on active Flower, Card, Voice Keepsake, Wrapper & Ribbon
   if (mobileSheetMode === 'color') {
-    const cardHex = card.customBg || getCardThemePalette(card.theme).bg;
+    const targetFlower =
+      selected || [...items].reverse().find((i) => !i.hidden && !i.locked) || null;
+
+    const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
+    const cardBgHex = cardPalette.bg;
+    const cardAccentHex = cardPalette.seal;
+
     const getActiveColorForTarget = (t: UnifiedColorTarget): string => {
-      if (t === 'petal') return selected?.petalColor || '#f43f5e';
-      if (t === 'center') return selected?.centerColor || '#fbbf24';
+      if (t === 'petal') return targetFlower?.petalColor || '#f43f5e';
+      if (t === 'center') return targetFlower?.centerColor || '#fbbf24';
       if (t === 'wrapper') return wrapColor;
       if (t === 'ribbon') return ribbonColor;
-      return cardHex;
+      if (t === 'cardAccent') return cardAccentHex;
+      if (t === 'voicePrimary') return voice.primaryColor || '#f43f5e';
+      if (t === 'voiceAccent') return voice.accentColor || '#fef3c7';
+      return cardBgHex;
     };
 
     const currentTargetHex = getActiveColorForTarget(effectiveUnifiedTarget);
     const isStemTargetDisabled =
       (effectiveUnifiedTarget === 'petal' || effectiveUnifiedTarget === 'center') &&
-      Boolean(selected?.locked);
+      (!targetFlower || Boolean(targetFlower.locked));
 
     const applyUnifiedColor = (hex: string) => {
       if (effectiveUnifiedTarget === 'wrapper') {
@@ -144,9 +178,19 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
         updateCard({ customBg: hex, visibleOnStage: true });
         return;
       }
-      // Petal or Center
-      const targetFlower =
-        selected || [...items].reverse().find((i) => !i.hidden && !i.locked);
+      if (effectiveUnifiedTarget === 'cardAccent') {
+        updateCard({ customAccent: hex, visibleOnStage: true });
+        return;
+      }
+      if (effectiveUnifiedTarget === 'voicePrimary') {
+        updateVoice({ primaryColor: hex, visibleOnStage: true });
+        return;
+      }
+      if (effectiveUnifiedTarget === 'voiceAccent') {
+        updateVoice({ accentColor: hex, visibleOnStage: true });
+        return;
+      }
+      // Detected Flower Slot 1 (petalColor) or Slot 2 (centerColor)
       if (!targetFlower || targetFlower.locked) return;
       if (!selected) {
         selectItem(targetFlower.id);
@@ -158,83 +202,199 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
       );
     };
 
-    const colorTargets: { id: UnifiedColorTarget; label: string; dotColor: string }[] = [
-      { id: 'petal', label: 'Petals', dotColor: selected?.petalColor || '#f43f5e' },
-      { id: 'center', label: 'Center', dotColor: selected?.centerColor || '#fbbf24' },
-      { id: 'wrapper', label: 'Wrapper', dotColor: wrapColor },
-      { id: 'ribbon', label: 'Ribbon', dotColor: ribbonColor },
-      { id: 'card', label: 'Card', dotColor: cardHex }
-    ];
+    const renderDetectedTile = (
+      targetId: UnifiedColorTarget,
+      hex: string,
+      ariaName: string,
+      onBeforeSelect?: () => void
+    ) => {
+      const isActive = effectiveUnifiedTarget === targetId;
+      return (
+        <button
+          key={targetId}
+          type="button"
+          onClick={() => {
+            onBeforeSelect?.();
+            setEffectiveUnifiedTarget(targetId);
+          }}
+          aria-label={ariaName}
+          aria-pressed={isActive}
+          className={`w-7 h-7 rounded-full border transition-all flex items-center justify-center shrink-0 ${
+            isActive
+              ? 'ring-2 ring-[#1C1917] dark:ring-white ring-offset-2 dark:ring-offset-[#1E1C1A] border-white scale-105 shadow-xs'
+              : 'border-stone-300/90 dark:border-stone-600 hover:scale-105'
+          }`}
+          style={{ backgroundColor: hex }}
+        />
+      );
+    };
+
+    const isFlowerMode =
+      (effectiveUnifiedTarget === 'petal' || effectiveUnifiedTarget === 'center') &&
+      Boolean(targetFlower);
+    const isCardMode =
+      effectiveUnifiedTarget === 'card' || effectiveUnifiedTarget === 'cardAccent';
+    const isVoiceMode =
+      effectiveUnifiedTarget === 'voicePrimary' || effectiveUnifiedTarget === 'voiceAccent';
+    const isRibbonMode = effectiveUnifiedTarget === 'ribbon';
+    // Default / fallback mode when not flower, card, voice, or ribbon is wrapper
+    const isWrapperMode = !isFlowerMode && !isCardMode && !isVoiceMode && !isRibbonMode;
 
     return (
       <div className="space-y-3" role="region" aria-label="Unified Color Picker">
-        <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1 flex-wrap">
-            {colorTargets.map((t) => {
-              const isActive = effectiveUnifiedTarget === t.id;
+        {/* SINGLE DYNAMIC DETECTED-COLOR BAR (Shows just the active item's pic + its detected colors!) */}
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-2xl bg-stone-50/90 dark:bg-stone-800/60 border border-stone-200/80 dark:border-stone-700/80">
+          {/* Left: Just the active item's miniature picture (no long name label) */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-white dark:bg-[#1E1C1A] border border-stone-200/80 dark:border-stone-700 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+              {isFlowerMode && targetFlower ? (
+                <svg viewBox="-55 -62 110 124" className="w-7 h-7">
+                  <FlowerRenderer
+                    type={targetFlower.type}
+                    petalColor={targetFlower.petalColor}
+                    centerColor={targetFlower.centerColor}
+                  />
+                </svg>
+              ) : isCardMode ? (
+                <MiniCardShapeSVG
+                  theme={card.theme}
+                  customBg={card.customBg}
+                  customAccent={card.customAccent}
+                />
+              ) : isVoiceMode ? (
+                <MiniVoiceKeepsakeSVG
+                  styleType={voice.style}
+                  primaryColor={voice.primaryColor}
+                  accentColor={voice.accentColor}
+                />
+              ) : isRibbonMode ? (
+                <MiniRibbonBowSVG
+                  hex={ribbonColor}
+                  styleType={ribbonStyle || 'satin'}
+                />
+              ) : (
+                <MiniWrapConeSVG
+                  styleType={wrapStyle}
+                  color={wrapColor}
+                  ribbon={ribbonColor}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Right: Detected Color Circles for that Active Item */}
+          <div className="flex items-center gap-2 shrink-0">
+            {isFlowerMode && targetFlower && (
+              <>
+                {renderDetectedTile(
+                  'petal',
+                  targetFlower.petalColor,
+                  `Detected flower color 1 (${targetFlower.petalColor})`,
+                  () => {
+                    if (!selected) selectItem(targetFlower.id);
+                  }
+                )}
+                {renderDetectedTile(
+                  'center',
+                  targetFlower.centerColor,
+                  `Detected flower color 2 (${targetFlower.centerColor})`,
+                  () => {
+                    if (!selected) selectItem(targetFlower.id);
+                  }
+                )}
+              </>
+            )}
+
+            {isCardMode && (
+              <>
+                {renderDetectedTile(
+                  'card',
+                  cardBgHex,
+                  `Detected card color 1 (${cardBgHex})`
+                )}
+                {renderDetectedTile(
+                  'cardAccent',
+                  cardAccentHex,
+                  `Detected card color 2 (${cardAccentHex})`
+                )}
+              </>
+            )}
+
+            {isVoiceMode && (
+              <>
+                {renderDetectedTile(
+                  'voicePrimary',
+                  voice.primaryColor,
+                  `Detected voice keepsake color 1 (${voice.primaryColor})`
+                )}
+                {renderDetectedTile(
+                  'voiceAccent',
+                  voice.accentColor,
+                  `Detected voice keepsake color 2 (${voice.accentColor})`
+                )}
+              </>
+            )}
+
+            {isRibbonMode &&
+              renderDetectedTile(
+                'ribbon',
+                ribbonColor,
+                `Detected ribbon color (${ribbonColor})`
+              )}
+
+            {isWrapperMode &&
+              renderDetectedTile(
+                'wrapper',
+                wrapColor,
+                `Detected wrapper color (${wrapColor})`
+              )}
+          </div>
+        </div>
+
+        {/* CANVA-STYLE PALETTE GRID (First tile is the Rainbow '+' Custom Color Picker) */}
+        <div className="pt-2 border-t border-stone-200/80 dark:border-stone-800">
+          <div className="grid grid-cols-5 gap-2.5">
+            {/* Canva-style Rainbow '+' Custom Color Tile */}
+            <label
+              title="Add or pick custom color"
+              className="w-9 h-9 rounded-full mx-auto border border-stone-200 dark:border-stone-700 flex items-center justify-center cursor-pointer relative overflow-hidden shadow-2xs hover:scale-105 transition-transform"
+              style={{
+                background:
+                  'conic-gradient(from 0deg, #f43f5e, #f97316, #eab308, #22c55e, #3b82f6, #a855f7, #ec4899, #f43f5e)'
+              }}
+            >
+              <span className="w-4 h-4 rounded-full bg-white/90 dark:bg-[#1E1C1A]/90 flex items-center justify-center shadow-2xs pointer-events-none">
+                <Plus className="w-3 h-3 text-[#1C1917] dark:text-white" />
+              </span>
+              <input
+                type="color"
+                disabled={isStemTargetDisabled}
+                value={currentTargetHex}
+                onChange={(e) => applyUnifiedColor(e.target.value)}
+                aria-label={`Pick custom ${effectiveUnifiedTarget} color`}
+                className="sr-only"
+              />
+            </label>
+
+            {CANVA_PALETTE_SWATCHES.map((hex) => {
+              const isMatch = currentTargetHex.toLowerCase() === hex.toLowerCase();
               return (
                 <button
-                  key={t.id}
+                  key={hex}
                   type="button"
-                  onClick={() => setEffectiveUnifiedTarget(t.id)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 transition ${
-                    isActive
-                      ? 'bg-[#1C1917] text-white dark:bg-white dark:text-[#1C1917]'
-                      : 'bg-stone-100 hover:bg-stone-200/70 text-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
+                  disabled={isStemTargetDisabled}
+                  onClick={() => applyUnifiedColor(hex)}
+                  aria-label={`Set ${effectiveUnifiedTarget} color ${hex}`}
+                  className={`w-9 h-9 rounded-full mx-auto border transition-transform disabled:opacity-40 ${
+                    isMatch
+                      ? 'scale-110 ring-2 ring-[#B4846C] ring-offset-2 border-white'
+                      : 'border-stone-200 dark:border-stone-700 hover:scale-105'
                   }`}
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full border border-black/15 shadow-2xs shrink-0"
-                    style={{ backgroundColor: t.dotColor }}
-                  />
-                  <span>{t.label}</span>
-                </button>
+                  style={{ backgroundColor: hex }}
+                />
               );
             })}
           </div>
-
-          <label
-            title="Pick any custom color"
-            className="w-8 h-8 rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 flex items-center justify-center cursor-pointer shrink-0 transition"
-          >
-            <input
-              type="color"
-              disabled={isStemTargetDisabled}
-              value={currentTargetHex}
-              onChange={(e) => applyUnifiedColor(e.target.value)}
-              aria-label={`Pick custom ${effectiveUnifiedTarget} color`}
-              className="w-5 h-5 rounded-full border-0 bg-transparent cursor-pointer"
-            />
-          </label>
-        </div>
-
-        {(effectiveUnifiedTarget === 'petal' || effectiveUnifiedTarget === 'center') &&
-          !selected &&
-          items.length === 0 && (
-            <p className="text-[11px] text-stone-500 dark:text-stone-400 text-center py-0.5">
-              Add a flower below to color petals, or select Wrapper, Ribbon, or Card above.
-            </p>
-          )}
-
-        <div className="grid grid-cols-5 gap-2.5 pt-0.5">
-          {ROMANTIC_SWATCHES.map((hex) => {
-            const isMatch = currentTargetHex.toLowerCase() === hex.toLowerCase();
-            return (
-              <button
-                key={hex}
-                type="button"
-                disabled={isStemTargetDisabled}
-                onClick={() => applyUnifiedColor(hex)}
-                aria-label={`Set ${effectiveUnifiedTarget} color ${hex}`}
-                className={`w-9 h-9 rounded-full mx-auto border transition-transform disabled:opacity-40 ${
-                  isMatch
-                    ? 'scale-110 ring-2 ring-[#B4846C] ring-offset-2 border-white'
-                    : 'border-stone-200 dark:border-stone-700 hover:scale-105'
-                }`}
-                style={{ backgroundColor: hex }}
-              />
-            );
-          })}
         </div>
       </div>
     );

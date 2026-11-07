@@ -183,7 +183,11 @@ function handleShortenMiddleware(
         }
 
         const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;
-        const vaultUrl = `https://flowers-for-you.local/${normalizedPayload}`;
+        const safeIsGdPayload =
+          normalizedPayload.length > 3200
+            ? normalizedPayload.replace(/&v=[^&]*/, (m) => m.split('~').slice(0, 6).join('~'))
+            : normalizedPayload;
+        const vaultUrl = `https://flowers-for-you.local/${safeIsGdPayload}`;
         const slug = `bq_${code}`;
         try {
           const controller = new AbortController();

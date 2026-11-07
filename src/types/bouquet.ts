@@ -29,6 +29,7 @@ export type FlowerType =
   | 'monstera';
 
 export type CardTheme =
+  | 'sealed'
   | 'cream'
   | 'blush'
   | 'lavender'
@@ -52,6 +53,19 @@ export interface CardThemePalette {
 }
 
 export const CARD_THEME_CATALOG: CardThemePalette[] = [
+  {
+    id: 'sealed',
+    label: 'Sealed Letter',
+    shapeName: 'Unopened Wax-Sealed Envelope',
+    bg: '#FFFDF7',
+    border: '#D6B38E',
+    inner: '#B4846C',
+    seal: '#E11D48',
+    title: '#1C1917',
+    body: '#292524',
+    sign: '#78716C',
+    rule: 'rgba(180, 132, 108, 0.18)'
+  },
   {
     id: 'cream',
     label: 'Stitched Tag',
@@ -174,42 +188,59 @@ function adjustHexBrightness(hex: string, delta: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-export function getCardThemePalette(theme: CardTheme, customBg?: string): CardThemePalette {
+export function getCardThemePalette(
+  theme: CardTheme,
+  customBg?: string,
+  customAccent?: string
+): CardThemePalette {
   const base = CARD_THEME_CATALOG.find((t) => t.id === theme) || CARD_THEME_CATALOG[0];
-  if (!customBg || !/^#[0-9A-Fa-f]{6}$/.test(customBg.trim())) {
-    return base;
-  }
-  const clean = customBg.trim();
-  const r = parseInt(clean.slice(1, 3), 16);
-  const g = parseInt(clean.slice(3, 5), 16);
-  const b = parseInt(clean.slice(5, 7), 16);
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  let result: CardThemePalette = base;
 
-  if (lum < 0.42) {
-    return {
-      ...base,
-      bg: clean,
-      border: adjustHexBrightness(clean, 65),
-      inner: '#FBBF24',
-      seal: '#D97706',
-      title: '#FEF3C7',
-      body: '#F8FAFC',
-      sign: '#FDE68A',
-      rule: 'rgba(251, 191, 36, 0.2)'
+  if (customBg && /^#[0-9A-Fa-f]{6}$/.test(customBg.trim())) {
+    const clean = customBg.trim();
+    const r = parseInt(clean.slice(1, 3), 16);
+    const g = parseInt(clean.slice(3, 5), 16);
+    const b = parseInt(clean.slice(5, 7), 16);
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    if (lum < 0.42) {
+      result = {
+        ...base,
+        bg: clean,
+        border: adjustHexBrightness(clean, 65),
+        inner: '#FBBF24',
+        seal: '#D97706',
+        title: '#FEF3C7',
+        body: '#F8FAFC',
+        sign: '#FDE68A',
+        rule: 'rgba(251, 191, 36, 0.2)'
+      };
+    } else {
+      result = {
+        ...base,
+        bg: clean,
+        border: adjustHexBrightness(clean, -42),
+        inner: adjustHexBrightness(clean, -78),
+        seal: adjustHexBrightness(clean, -68),
+        title: '#1C1917',
+        body: '#292524',
+        sign: '#57534E',
+        rule: 'rgba(120, 113, 108, 0.16)'
+      };
+    }
+  }
+
+  if (customAccent && /^#[0-9A-Fa-f]{6}$/.test(customAccent.trim())) {
+    const cleanAccent = customAccent.trim();
+    result = {
+      ...result,
+      border: cleanAccent,
+      inner: cleanAccent,
+      seal: cleanAccent
     };
   }
 
-  return {
-    ...base,
-    bg: clean,
-    border: adjustHexBrightness(clean, -42),
-    inner: adjustHexBrightness(clean, -78),
-    seal: adjustHexBrightness(clean, -68),
-    title: '#1C1917',
-    body: '#292524',
-    sign: '#57534E',
-    rule: 'rgba(120, 113, 108, 0.16)'
-  };
+  return result;
 }
 
 export type RibbonStyle =
@@ -286,8 +317,102 @@ export interface GreetingCardData {
   visibleOnStage: boolean;
   theme: CardTheme;
   customBg?: string;
+  customAccent?: string;
+  x?: number;
+  y?: number;
   locked?: boolean;
 }
+
+export type VoiceKeepsakeStyle =
+  | 'mixtape'
+  | 'vinyl'
+  | 'plushie'
+  | 'musicbox'
+  | 'locket';
+
+export interface VoiceKeepsakeMeta {
+  id: VoiceKeepsakeStyle;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+  defaultPrimary: string;
+  defaultAccent: string;
+  defaultTitle: string;
+}
+
+export const VOICE_KEEPSAKE_CATALOG: VoiceKeepsakeMeta[] = [
+  {
+    id: 'mixtape',
+    label: 'Love Mixtape',
+    shortLabel: 'Mixtape',
+    subtitle: 'Retro cassette tape',
+    defaultPrimary: '#F472B6',
+    defaultAccent: '#FFF1F2',
+    defaultTitle: 'Side A ♥'
+  },
+  {
+    id: 'vinyl',
+    label: 'Vintage Vinyl',
+    shortLabel: 'Vinyl',
+    subtitle: 'Antique horn gramophone',
+    defaultPrimary: '#8B5A2B',
+    defaultAccent: '#D4AF37',
+    defaultTitle: 'Our Song'
+  },
+  {
+    id: 'plushie',
+    label: 'Voice Plushie',
+    shortLabel: 'Plushie',
+    subtitle: 'Teddy holding heart',
+    defaultPrimary: '#D6A87C',
+    defaultAccent: '#F43F5E',
+    defaultTitle: 'Press Me ♥'
+  },
+  {
+    id: 'musicbox',
+    label: 'Music Box',
+    shortLabel: 'Music Box',
+    subtitle: 'Ballerina floral keepsake',
+    defaultPrimary: '#93C5FD',
+    defaultAccent: '#FDE68A',
+    defaultTitle: 'Lullaby'
+  },
+  {
+    id: 'locket',
+    label: 'Heart Locket',
+    shortLabel: 'Locket',
+    subtitle: 'Golden voice pendant',
+    defaultPrimary: '#F59E0B',
+    defaultAccent: '#FFE4E6',
+    defaultTitle: 'Always'
+  }
+];
+
+export interface VoiceKeepsakeData {
+  visibleOnStage: boolean;
+  style: VoiceKeepsakeStyle;
+  title: string;
+  primaryColor: string;
+  accentColor: string;
+  audioDataUrl?: string | null;
+  durationSec: number;
+  duration?: number;
+  x?: number;
+  y?: number;
+}
+
+export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
+  visibleOnStage: false,
+  style: 'mixtape',
+  title: 'Side A ♥',
+  primaryColor: '#F472B6',
+  accentColor: '#FFF1F2',
+  audioDataUrl: undefined,
+  durationSec: 0,
+  duration: 0,
+  x: 185,
+  y: 525
+};
 
 export interface BouquetSnapshot {
   items: BouquetItem[];
@@ -296,6 +421,7 @@ export interface BouquetSnapshot {
   ribbonColor: string;
   ribbonStyle?: RibbonStyle;
   card: GreetingCardData;
+  voice?: VoiceKeepsakeData;
 }
 
 export interface FlowerCatalogMeta {

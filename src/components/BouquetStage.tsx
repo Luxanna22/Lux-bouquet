@@ -4,6 +4,7 @@ import {
   CardTheme,
   CardThemePalette,
   RibbonStyle,
+  VoiceKeepsakeData,
   typeWrapStyle,
   BouquetItem,
   GreetingCardData,
@@ -17,6 +18,18 @@ import { useBouquetStore } from '../store/useBouquetStore';
 // MODULE 5: components/BouquetStage.tsx — INTERACTIVE POINTER-EVENTS SVG STAGE
 // ============================================================================
 
+function shadeWrapHex(hex: string, delta: number): string {
+  const clean = hex.replace('#', '').trim();
+  if (clean.length !== 6) return hex;
+  const num = parseInt(clean, 16);
+  if (Number.isNaN(num)) return hex;
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  const r = clamp(((num >> 16) & 0xff) + delta);
+  const g = clamp(((num >> 8) & 0xff) + delta);
+  const b = clamp((num & 0xff) + delta);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
 /**
  * Universal Architectural Ribbon & Lace Renderer — 7 Unique Designs that adapt to every wrapper's waist
  */
@@ -24,7 +37,9 @@ export const BouquetRibbonSVG: React.FC<{
   ribbonStyle: RibbonStyle;
   ribbonColor: string;
   wrapStyle: typeWrapStyle;
-}> = ({ ribbonStyle, ribbonColor, wrapStyle }) => {
+  isPreviewMode?: boolean;
+  onRibbonClick?: () => void;
+}> = ({ ribbonStyle, ribbonColor, wrapStyle, isPreviewMode = false, onRibbonClick }) => {
   // Compute wrapper-specific waist Y and half-width so every ribbon/lace fits every wrapper
   const waistY = wrapStyle === 'basket' ? 436 : wrapStyle === 'vase' ? 442 : 506;
   const halfW =
@@ -40,7 +55,40 @@ export const BouquetRibbonSVG: React.FC<{
   const tailBottomY = wrapStyle === 'basket' ? 536 : wrapStyle === 'vase' ? 534 : 622;
 
   return (
-    <g className="pointer-events-none">
+    <g
+      role={isPreviewMode ? undefined : 'button'}
+      aria-label={isPreviewMode ? undefined : 'Select ribbon to edit color'}
+      onPointerDown={
+        isPreviewMode
+          ? undefined
+          : (e) => {
+              e.stopPropagation();
+            }
+      }
+      onClick={
+        isPreviewMode
+          ? undefined
+          : (e) => {
+              e.stopPropagation();
+              onRibbonClick?.();
+            }
+      }
+      className={
+        isPreviewMode
+          ? 'pointer-events-none'
+          : 'cursor-pointer hover:brightness-[1.03] transition'
+      }
+    >
+      {/* Generous transparent hit area for clicking the ribbon on canvas */}
+      {!isPreviewMode && (
+        <rect
+          x={leftX - 10}
+          y={waistY - 32}
+          width={halfW * 2 + 20}
+          height={Math.max(64, tailBottomY - waistY + 24)}
+          fill="transparent"
+        />
+      )}
       {/* 1. CLASSIC SATIN BOW (Sculpted satin loops, waist sash & dovetail streamers) */}
       {ribbonStyle === 'satin' && (
         <g>
@@ -490,6 +538,84 @@ export const BouquetCardShapeSVG: React.FC<{
   palette: CardThemePalette;
 }> = ({ theme, palette }) => (
   <g>
+    {/* 0. SEALED LETTER (Default Unopened Wax-Sealed Envelope — Message stays hidden inside!) */}
+    {theme === 'sealed' && (
+      <g>
+        {/* Envelope Outer Body */}
+        <rect
+          x="-84"
+          y="-46"
+          width="168"
+          height="110"
+          rx="10"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="2.2"
+        />
+        {/* Subtle Inner Stitched Trim */}
+        <rect
+          x="-78"
+          y="-40"
+          width="156"
+          height="98"
+          rx="7"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="0.9"
+          strokeDasharray="3 3"
+          opacity="0.45"
+        />
+        {/* Side & Bottom Fold Flaps */}
+        <path
+          d="M-82,62 L0,4 L82,62"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M-82,-44 L-22,12 M82,-44 L22,12"
+          fill="none"
+          stroke={palette.border}
+          strokeWidth="1.3"
+          opacity="0.65"
+        />
+        {/* Closed Top Triangular Envelope Flap */}
+        <path
+          d="M-83,-44 L0,18 L83,-44 Z"
+          fill={palette.bg}
+          stroke={palette.border}
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        {/* Inner Flap Crease Highlight */}
+        <path
+          d="M-74,-41 L0,12 L74,-41"
+          fill="none"
+          stroke={palette.inner}
+          strokeWidth="0.9"
+          strokeDasharray="3 2"
+          opacity="0.45"
+        />
+        {/* Central Embossed Wax Seal with Heart */}
+        <circle cx="0" cy="15" r="16" fill={palette.seal} stroke="#ffffff" strokeWidth="1.5" />
+        <circle
+          cx="0"
+          cy="15"
+          r="11.5"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="0.9"
+          strokeDasharray="2.5 2"
+          opacity="0.8"
+        />
+        <path
+          d="M0,11.5 C-4,6.5 -10,10 -6,16.5 L0,22 L6,16.5 C10,10 4,6.5 0,11.5 Z"
+          fill="#ffffff"
+        />
+      </g>
+    )}
+
     {/* 1. STITCHED TAG (Classic rounded rectangle with dashed tailor-stitch frame & wax seal) */}
     {theme === 'cream' && (
       <g>
@@ -688,13 +814,540 @@ export const BouquetCardShapeSVG: React.FC<{
   </g>
 );
 
+/**
+ * 5 Romantic Voice-Emitting Keepsake Objects on BouquetStage (Mixtape, Vinyl, Voice Plushie, Music Box, Heart Locket)
+ */
+export const BouquetVoiceKeepsakeSVG: React.FC<{
+  voice: VoiceKeepsakeData;
+  isPlaying?: boolean;
+}> = ({ voice, isPlaying = false }) => {
+  const { style, primaryColor, accentColor, title } = voice;
+  const displayTitle = (title || 'For You').slice(0, 18);
+
+  return (
+    <g>
+      {/* Emitted Sound Waves & Musical Notes when playing */}
+      {isPlaying && (
+        <g data-export-ignore="true">
+          <circle
+            cx="0"
+            cy="8"
+            r="58"
+            fill="none"
+            stroke={primaryColor}
+            strokeWidth="1.6"
+            strokeDasharray="6 4"
+            opacity="0.55"
+          >
+            <animate attributeName="r" values="46;68;46" dur="1.8s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.65;0.1;0.65" dur="1.8s" repeatCount="indefinite" />
+          </circle>
+          <text x="-48" y="-38" fontSize="14" fill={primaryColor} opacity="0.85">
+            ♪
+            <animate attributeName="y" values="-34;-52;-34" dur="1.5s" repeatCount="indefinite" />
+          </text>
+          <text x="42" y="-34" fontSize="13" fill={primaryColor} opacity="0.85">
+            ♫
+            <animate attributeName="y" values="-30;-48;-30" dur="1.7s" repeatCount="indefinite" />
+          </text>
+        </g>
+      )}
+
+      {/* 1. RETRO LOVE MIXTAPE CASSETTE */}
+      {style === 'mixtape' && (
+        <g>
+          {/* Cassette Outer Shell */}
+          <rect
+            x="-60"
+            y="-34"
+            width="120"
+            height="78"
+            rx="10"
+            fill={primaryColor}
+            stroke="#ffffff"
+            strokeWidth="2"
+          />
+          {/* Inner Sticker Label */}
+          <rect
+            x="-50"
+            y="-25"
+            width="100"
+            height="46"
+            rx="5"
+            fill={accentColor}
+            stroke={shadeWrapHex(primaryColor, -25)}
+            strokeWidth="1"
+          />
+          {/* Stripes on Cassette Sticker */}
+          <line x1="-46" y1="-8" x2="46" y2="-8" stroke={primaryColor} strokeWidth="1.5" opacity="0.45" />
+          {/* Handwritten Mixtape Title */}
+          <text
+            x="0"
+            y="-13"
+            textAnchor="middle"
+            fill="#1C1917"
+            fontSize="10.5"
+            fontWeight="700"
+            style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.03em' }}
+          >
+            {displayTitle}
+          </text>
+          {/* Center Tape Window & Twin Reels */}
+          <rect x="-36" y="-4" width="72" height="20" rx="10" fill="#1e293b" />
+          <rect x="-14" y="0" width="28" height="12" rx="2" fill="#334155" />
+          {/* Left Reel */}
+          <g transform="translate(-23, 6)">
+            {isPlaying && (
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                from="0 0 0"
+                to="360 0 0"
+                dur="2.2s"
+                repeatCount="indefinite"
+                additive="sum"
+              />
+            )}
+            <circle cx="0" cy="0" r="6.5" fill="#f8fafc" />
+            <circle cx="0" cy="0" r="2.5" fill="#1e293b" />
+            <line x1="-6" y1="0" x2="6" y2="0" stroke="#94a3b8" strokeWidth="1.2" />
+            <line x1="0" y1="-6" x2="0" y2="6" stroke="#94a3b8" strokeWidth="1.2" />
+          </g>
+          {/* Right Reel */}
+          <g transform="translate(23, 6)">
+            {isPlaying && (
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                from="0 0 0"
+                to="360 0 0"
+                dur="2.2s"
+                repeatCount="indefinite"
+                additive="sum"
+              />
+            )}
+            <circle cx="0" cy="0" r="6.5" fill="#f8fafc" />
+            <circle cx="0" cy="0" r="2.5" fill="#1e293b" />
+            <line x1="-6" y1="0" x2="6" y2="0" stroke="#94a3b8" strokeWidth="1.2" />
+            <line x1="0" y1="-6" x2="0" y2="6" stroke="#94a3b8" strokeWidth="1.2" />
+          </g>
+          {/* Lower Cassette Trapezoid Bridge */}
+          <path
+            d="M-38,44 L-28,27 L28,27 L38,44 Z"
+            fill={shadeWrapHex(primaryColor, -28)}
+            stroke="#ffffff"
+            strokeWidth="1"
+            strokeOpacity="0.5"
+          />
+          <circle cx="-48" cy="36" r="2.2" fill="#ffffff" opacity="0.75" />
+          <circle cx="48" cy="36" r="2.2" fill="#ffffff" opacity="0.75" />
+          <circle cx="-18" cy="36" r="2.5" fill="#1e293b" opacity="0.6" />
+          <circle cx="18" cy="36" r="2.5" fill="#1e293b" opacity="0.6" />
+        </g>
+      )}
+
+      {/* 2. VINTAGE HORN GRAMOPHONE VINYL PLAYER */}
+      {style === 'vinyl' && (
+        <g>
+          {/* Stepped Antique Wooden Base Molding */}
+          <polygon
+            points="-54,38 -4,54 52,40 46,35 -4,49 -48,34"
+            fill={shadeWrapHex(primaryColor, -38)}
+            stroke="#292524"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <polygon
+            points="-51,35 -4,50 49,36 45,32 -4,46 -46,32"
+            fill={shadeWrapHex(primaryColor, -18)}
+            stroke={accentColor}
+            strokeWidth="0.9"
+            strokeLinejoin="round"
+          />
+          {/* Left Wooden Cabinet Face */}
+          <polygon
+            points="-46,8 -4,20 -4,47 -46,33"
+            fill={shadeWrapHex(primaryColor, -14)}
+            stroke="#292524"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          {/* Right Wooden Cabinet Face */}
+          <polygon
+            points="-4,20 44,8 44,34 -4,47"
+            fill={primaryColor}
+            stroke="#292524"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          {/* Top Cabinet Deck */}
+          <polygon
+            points="-48,8 -4,-2 46,8 -4,20"
+            fill={shadeWrapHex(primaryColor, 18)}
+            stroke={accentColor}
+            strokeWidth="1.1"
+            strokeLinejoin="round"
+          />
+          {/* Left Circular Fretwork Speaker Grille */}
+          <g transform="translate(-25, 27) skewY(16)">
+            <ellipse cx="0" cy="0" rx="10" ry="11" fill="#1c1917" stroke={accentColor} strokeWidth="1.8" />
+            <path
+              d="M0,-10 L0,10 M-9,0 L9,0 M-6,-7 L6,7 M-6,7 L6,-7"
+              stroke={accentColor}
+              strokeWidth="1.2"
+            />
+            <circle cx="0" cy="0" r="3" fill={accentColor} />
+          </g>
+          {/* Right Front Brass Control Plate with Vintage Buttons */}
+          <polygon
+            points="6,23 36,15 36,31 6,39"
+            fill={accentColor}
+            stroke="#78350f"
+            strokeWidth="1"
+            strokeLinejoin="round"
+          />
+          <g fill="#451a03">
+            <circle cx="13" cy="31" r="1.6" />
+            <circle cx="18" cy="29.6" r="1.6" />
+            <circle cx="23" cy="28.2" r="1.6" />
+            <circle cx="28" cy="26.8" r="1.6" />
+            <circle cx="32.5" cy="25.5" r="1.6" />
+          </g>
+          {/* Spinning Vinyl Record Platter on Top of Cabinet */}
+          <g transform="translate(-1, 7)">
+            <ellipse cx="0" cy="0" rx="38" ry="10.5" fill="#18181b" stroke="#52525b" strokeWidth="1.4" />
+            <ellipse
+              cx="0"
+              cy="0"
+              rx="29"
+              ry="7.8"
+              fill="none"
+              stroke="#52525b"
+              strokeWidth="0.9"
+              strokeDasharray="6 4"
+            />
+            <ellipse cx="0" cy="0" rx="15" ry="4.2" fill="#ffffff" stroke={accentColor} strokeWidth="1.2" />
+            <ellipse cx="0" cy="0" rx="5" ry="1.5" fill="#18181b" />
+            <circle cx="0" cy="-1.5" r="1.8" fill={accentColor} />
+          </g>
+          {/* Brass Tonearm & Horn Elbow */}
+          <path
+            d="M-30,4 L-30,-16 Q-30,-28 -16,-24"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
+          <path
+            d="M-30,4 L-30,-16 Q-30,-28 -16,-24"
+            fill="none"
+            stroke="#fef08a"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+          {/* Horizontal Tonearm Reaching Vinyl */}
+          <path
+            d="M-28,-8 L14,-1"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="3.2"
+            strokeLinecap="round"
+          />
+          <circle cx="16" cy="-1" r="4.5" fill={accentColor} stroke="#78350f" strokeWidth="1" />
+          {/* Scalloped Antique Brass Morning-Glory Horn */}
+          <g transform="translate(5, -30)">
+            {isPlaying && (
+              <animateTransform
+                attributeName="transform"
+                type="scale"
+                values="1;1.04;1"
+                dur="1.4s"
+                repeatCount="indefinite"
+                additive="sum"
+              />
+            )}
+            <path
+              d="M-22,6 C-30,-6 -24,-22 -12,-24 C-6,-34 10,-34 18,-24 C32,-22 36,-8 28,4 C34,14 24,26 10,24 C2,30 -12,26 -16,16 C-24,14 -24,10 -22,6 Z"
+              fill={accentColor}
+              stroke={shadeWrapHex(accentColor, -55)}
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+            />
+            {/* Radial Scalloped Brass Horn Flutes */}
+            <path
+              d="M-8,6 L-12,-22 M-8,6 L16,-22 M-8,6 L27,3 M-8,6 L10,23 M-8,6 L-15,15"
+              stroke={shadeWrapHex(accentColor, -42)}
+              strokeWidth="1.3"
+              opacity="0.75"
+            />
+            <path
+              d="M-8,6 L2,-28 M-8,6 L24,-10 M-8,6 L20,14"
+              stroke="#fef9c3"
+              strokeWidth="1.4"
+              opacity="0.65"
+            />
+            {/* Dark Acoustic Horn Throat & Brass Sound Grille */}
+            <circle cx="-8" cy="6" r="7.5" fill="#292524" stroke="#fef08a" strokeWidth="1.3" />
+            <circle cx="-8" cy="6" r="4.5" fill="none" stroke={accentColor} strokeWidth="0.9" strokeDasharray="2 1.5" />
+          </g>
+        </g>
+      )}
+
+      {/* 3. VOICE PLUSHIE (Teddy Bear Holding a Romantic Heart Speaker) */}
+      {style === 'plushie' && (
+        <g>
+          {/* Round Teddy Ears */}
+          <circle cx="-26" cy="-28" r="13" fill={primaryColor} stroke="#ffffff" strokeWidth="1.5" />
+          <circle cx="-26" cy="-28" r="7" fill="#fde68a" opacity="0.75" />
+          <circle cx="26" cy="-28" r="13" fill={primaryColor} stroke="#ffffff" strokeWidth="1.5" />
+          <circle cx="26" cy="-28" r="7" fill="#fde68a" opacity="0.75" />
+          {/* Plushie Body & Foot Pads */}
+          <ellipse cx="0" cy="24" rx="31" ry="26" fill={primaryColor} stroke="#ffffff" strokeWidth="1.6" />
+          <circle cx="-20" cy="44" r="9.5" fill={shadeWrapHex(primaryColor, -18)} stroke="#ffffff" strokeWidth="1.2" />
+          <circle cx="-20" cy="44" r="5" fill="#fffbeb" opacity="0.85" />
+          <circle cx="20" cy="44" r="9.5" fill={shadeWrapHex(primaryColor, -18)} stroke="#ffffff" strokeWidth="1.2" />
+          <circle cx="20" cy="44" r="5" fill="#fffbeb" opacity="0.85" />
+          {/* Plushie Head */}
+          <circle cx="0" cy="-10" r="25" fill={primaryColor} stroke="#ffffff" strokeWidth="1.6" />
+          {/* Rosy Cheeks & Snout */}
+          <ellipse cx="-13" cy="-6" rx="4.5" ry="2.8" fill="#fb7185" opacity="0.55" />
+          <ellipse cx="13" cy="-6" rx="4.5" ry="2.8" fill="#fb7185" opacity="0.55" />
+          <ellipse cx="0" cy="-5" rx="10" ry="7.5" fill="#fffbeb" />
+          <circle cx="-9" cy="-14" r="2.8" fill="#292524" />
+          <circle cx="9" cy="-14" r="2.8" fill="#292524" />
+          <ellipse cx="0" cy="-7.5" rx="3.8" ry="2.6" fill="#451a03" />
+          <path d="M-3.5,-3 Q0,0 3.5,-3" fill="none" stroke="#451a03" strokeWidth="1.4" strokeLinecap="round" />
+          {/* Heart Voice Box Held in Paws */}
+          <path
+            d="M0,12 C-12,-2 -29,6 -19,24 L0,41 L19,24 C29,6 12,-2 0,12 Z"
+            fill={accentColor}
+            stroke="#ffffff"
+            strokeWidth="1.8"
+          />
+          {/* Teddy Paws Hugging the Heart */}
+          <ellipse cx="-21" cy="20" rx="8" ry="6" transform="rotate(20 -21 20)" fill={shadeWrapHex(primaryColor, -12)} stroke="#ffffff" strokeWidth="1.2" />
+          <ellipse cx="21" cy="20" rx="8" ry="6" transform="rotate(-20 21 20)" fill={shadeWrapHex(primaryColor, -12)} stroke="#ffffff" strokeWidth="1.2" />
+          <text
+            x="0"
+            y="24"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="8.5"
+            fontWeight="700"
+            style={{ fontFamily: "'Inter', sans-serif" }}
+          >
+            {displayTitle.slice(0, 11)}
+          </text>
+        </g>
+      )}
+
+      {/* 4. VINTAGE BALLERINA FLORAL MUSIC BOX */}
+      {style === 'musicbox' && (
+        <g>
+          {/* Open Hinged Rococo Mirror Lid on Top Right */}
+          <g>
+            <polygon
+              points="2,2 16,-42 52,-36 38,6"
+              fill={primaryColor}
+              stroke="#d97706"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+            <polygon
+              points="7,-1 19,-37 46,-32 34,3"
+              fill="#fef9c3"
+              stroke={accentColor}
+              strokeWidth="1.2"
+              strokeLinejoin="round"
+            />
+            {/* Mirror Shimmer Lines */}
+            <line x1="18" y1="-28" x2="28" y2="-8" stroke="#ffffff" strokeWidth="1.5" opacity="0.75" />
+            <line x1="25" y1="-30" x2="33" y2="-14" stroke="#ffffff" strokeWidth="1.1" opacity="0.6" />
+          </g>
+
+          {/* Isometric Rococo Music Box Cabinet Base */}
+          {/* Top Lid Deck */}
+          <polygon
+            points="-48,4 -4,-6 44,4 -4,16"
+            fill={shadeWrapHex(primaryColor, 14)}
+            stroke="#d97706"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          {/* Left Front Floral Cabinet Face */}
+          <polygon
+            points="-46,5 -4,16 -4,44 -46,32"
+            fill={primaryColor}
+            stroke="#d97706"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          {/* Right Side Floral Cabinet Face */}
+          <polygon
+            points="-4,16 42,5 42,32 -4,44"
+            fill={shadeWrapHex(primaryColor, -12)}
+            stroke="#d97706"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          {/* Left Cream Panel with Hand-Painted Vintage Roses */}
+          <polygon
+            points="-41,10 -9,19 -9,39 -41,29"
+            fill="#fffbeb"
+            stroke={accentColor}
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <g>
+            {/* Leaves */}
+            <path d="M-31,24 L-36,21 M-20,27 L-15,25 M-25,31 L-25,35" stroke="#16a34a" strokeWidth="1.5" strokeLinecap="round" />
+            {/* Painted Pink Roses Trio */}
+            <circle cx="-28" cy="23" r="4.2" fill="#fda4af" />
+            <circle cx="-28" cy="23" r="2.3" fill="#f43f5e" />
+            <circle cx="-21" cy="26" r="4.5" fill="#fb7185" />
+            <circle cx="-21" cy="26" r="2.4" fill="#e11d48" />
+            <circle cx="-26" cy="29" r="3.6" fill="#fecdd3" />
+            <circle cx="-26" cy="29" r="1.8" fill="#fb7185" />
+          </g>
+          {/* Right Cream Cartouche Panel with Painted Rose */}
+          <polygon
+            points="2,19 36,10 36,29 2,39"
+            fill="#fffbeb"
+            stroke={accentColor}
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <g>
+            <path d="M15,25 L11,23 M23,25 L27,22" stroke="#16a34a" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="19" cy="24" r="4.5" fill="#fb7185" />
+            <circle cx="19" cy="24" r="2.4" fill="#e11d48" />
+            <circle cx="14" cy="27" r="3.2" fill="#fda4af" />
+          </g>
+          {/* Scalloped Cabriole Legs & Gilded Apron Base */}
+          <path
+            d="M-48,32 L-4,44 L44,32 L47,42 Q40,45 35,38 Q15,43 -4,55 Q-23,43 -39,38 Q-44,45 -50,42 Z"
+            fill={accentColor}
+            stroke="#b45309"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
+          {/* Tiny Rose Garland Along Cabriole Base */}
+          <circle cx="-24" cy="41" r="2" fill="#fb7185" />
+          <circle cx="-4" cy="48" r="2.2" fill="#f43f5e" />
+          <circle cx="16" cy="41" r="2" fill="#fb7185" />
+
+          {/* Golden Pedestal & Graceful Ballerina Figurine on Top */}
+          <ellipse cx="-6" cy="4" rx="14" ry="4.5" fill={accentColor} stroke="#b45309" strokeWidth="1.2" />
+          <ellipse cx="-6" cy="2.8" rx="10" ry="3" fill="#fef08a" stroke="#d97706" strokeWidth="0.9" />
+          <g transform="translate(-6, 2)">
+            {isPlaying && (
+              <animateTransform
+                attributeName="transform"
+                type="scale"
+                values="1,1; -1,1; 1,1"
+                dur="2.8s"
+                repeatCount="indefinite"
+                additive="sum"
+              />
+            )}
+            {/* Ballerina Pointe Legs */}
+            <line x1="-1.5" y1="-12" x2="-1" y2="1" stroke="#fdba74" strokeWidth="2.2" strokeLinecap="round" />
+            <line x1="1.5" y1="-12" x2="3" y2="0" stroke="#fdba74" strokeWidth="2" strokeLinecap="round" />
+            {/* Ruffled Ballerina Tutu */}
+            <ellipse
+              cx="0"
+              cy="-13"
+              rx="13"
+              ry="4.8"
+              fill={primaryColor}
+              stroke="#ffffff"
+              strokeWidth="1.1"
+            />
+            <path
+              d="M-12,-13 Q-6,-9 0,-13 Q6,-9 12,-13"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="1"
+              opacity="0.8"
+            />
+            {/* Fitted Corset Bodice */}
+            <path
+              d="M-3.5,-23 L3.5,-23 L2,-13 L-2,-13 Z"
+              fill={primaryColor}
+              stroke="#ffffff"
+              strokeWidth="0.8"
+            />
+            {/* Raised Ballet Arms */}
+            <path
+              d="M-3,-22 C-9,-28 -8,-37 -2,-40 M3,-22 L13,-17"
+              fill="none"
+              stroke="#fdba74"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+            />
+            {/* Head & Blonde Ballet Bun */}
+            <circle cx="0" cy="-28.5" r="3.8" fill="#fed7aa" />
+            <path d="M-3.5,-29.5 Q0,-33 3.5,-29.5" fill="#eab308" />
+            <circle cx="2" cy="-32.5" r="2.2" fill="#eab308" />
+          </g>
+        </g>
+      )}
+
+      {/* 5. GOLDEN HEART VOICE LOCKET */}
+      {style === 'locket' && (
+        <g>
+          {/* Gold Chain Loop at Top */}
+          <circle cx="0" cy="-34" r="6" fill="none" stroke="#d97706" strokeWidth="2.5" />
+          {/* Outer Sculpted Heart Locket */}
+          <path
+            d="M0,-14 C-22,-38 -54,-18 -36,14 L0,46 L36,14 C54,-18 22,-38 0,-14 Z"
+            fill={primaryColor}
+            stroke="#ffffff"
+            strokeWidth="2.2"
+          />
+          {/* Inner Enamel Heart Face */}
+          <path
+            d="M0,-6 C-16,-24 -40,-9 -26,14 L0,37 L26,14 C40,-9 16,-24 0,-6 Z"
+            fill={accentColor}
+            stroke={shadeWrapHex(primaryColor, -25)}
+            strokeWidth="1.2"
+          />
+          {/* Engraved Soundwave Bars Inside Locket */}
+          <g stroke={primaryColor} strokeWidth="2.2" strokeLinecap="round">
+            <line x1="-14" y1="8" x2="-14" y2="14" />
+            <line x1="-7" y1="3" x2="-7" y2="19" />
+            <line x1="0" y1="-1" x2="0" y2="22" />
+            <line x1="7" y1="3" x2="7" y2="19" />
+            <line x1="14" y1="8" x2="14" y2="14" />
+          </g>
+          <text
+            x="0"
+            y="31"
+            textAnchor="middle"
+            fill="#1C1917"
+            fontSize="8.5"
+            fontWeight="700"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            {displayTitle.slice(0, 12)}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+};
+
 export interface BouquetStageProps {
   svgRef: React.RefObject<SVGSVGElement | null> | React.RefObject<SVGSVGElement> | any;
   isPreviewMode: boolean;
   isDarkMode?: boolean;
   bloomedCount?: number;
   showCardInGiftView?: boolean;
+  isVoicePlaying?: boolean;
   onCardTagClick?: () => void;
+  onVoiceKeepsakeClick?: () => void;
+  onWrapperClick?: () => void;
+  onRibbonClick?: () => void;
 }
 
 export const BouquetStage: React.FC<BouquetStageProps> = ({
@@ -703,7 +1356,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   isDarkMode = false,
   bloomedCount,
   showCardInGiftView = true,
-  onCardTagClick
+  isVoicePlaying = false,
+  onCardTagClick,
+  onVoiceKeepsakeClick,
+  onWrapperClick,
+  onRibbonClick
 }) => {
   const {
     items,
@@ -713,8 +1370,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     ribbonColor,
     ribbonStyle,
     card,
+    voice,
     selectItem,
     updateItem,
+    updateCard,
+    updateVoice,
     deleteSelected,
     flipSelected,
     toggleItemLock,
@@ -722,7 +1382,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   } = useBouquetStore();
 
   const [interaction, setInteraction] = useState<{
-    mode: 'move' | 'transform';
+    mode: 'move' | 'transform' | 'move-card' | 'move-voice';
     itemId: string;
     startPointerX: number;
     startPointerY: number;
@@ -733,6 +1393,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   } | null>(null);
 
   const hasCommittedDragHistoryRef = useRef(false);
+  const hasDraggedSpecialRef = useRef(false);
 
   // Convert client pointer coordinates to SVG viewBox (600x680) coordinates
   const clientToSvgCoords = useCallback(
@@ -765,6 +1426,46 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       startItemY: item.y,
       startScale: item.scale,
       startRotation: item.rotation
+    });
+  };
+
+  const handleCardPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (isPreviewMode) return;
+    selectItem(null);
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    hasCommittedDragHistoryRef.current = false;
+    hasDraggedSpecialRef.current = false;
+    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    setInteraction({
+      mode: 'move-card',
+      itemId: 'card',
+      startPointerX: pt.x,
+      startPointerY: pt.y,
+      startItemX: card.x ?? 410,
+      startItemY: card.y ?? 525,
+      startScale: 1,
+      startRotation: 0
+    });
+  };
+
+  const handleVoicePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (isPreviewMode) return;
+    selectItem(null);
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    hasCommittedDragHistoryRef.current = false;
+    hasDraggedSpecialRef.current = false;
+    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    setInteraction({
+      mode: 'move-voice',
+      itemId: 'voice',
+      startPointerX: pt.x,
+      startPointerY: pt.y,
+      startItemX: voice?.x ?? 185,
+      startItemY: voice?.y ?? 525,
+      startScale: 1,
+      startRotation: 0
     });
   };
 
@@ -802,6 +1503,32 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         const nx = Math.max(70, Math.min(530, Math.round(interaction.startItemX + dx)));
         const ny = Math.max(95, Math.min(520, Math.round(interaction.startItemY + dy)));
         updateItem(interaction.itemId, { x: nx, y: ny }, false);
+      }
+    } else if (interaction.mode === 'move-card') {
+      const dx = pt.x - interaction.startPointerX;
+      const dy = pt.y - interaction.startPointerY;
+      if (Math.hypot(dx, dy) > 2.5) {
+        hasDraggedSpecialRef.current = true;
+        if (!hasCommittedDragHistoryRef.current) {
+          commitHistorySnapshot();
+          hasCommittedDragHistoryRef.current = true;
+        }
+        const nx = Math.max(65, Math.min(535, Math.round(interaction.startItemX + dx)));
+        const ny = Math.max(65, Math.min(625, Math.round(interaction.startItemY + dy)));
+        updateCard({ x: nx, y: ny });
+      }
+    } else if (interaction.mode === 'move-voice') {
+      const dx = pt.x - interaction.startPointerX;
+      const dy = pt.y - interaction.startPointerY;
+      if (Math.hypot(dx, dy) > 2.5) {
+        hasDraggedSpecialRef.current = true;
+        if (!hasCommittedDragHistoryRef.current) {
+          commitHistorySnapshot();
+          hasCommittedDragHistoryRef.current = true;
+        }
+        const nx = Math.max(65, Math.min(535, Math.round(interaction.startItemX + dx)));
+        const ny = Math.max(65, Math.min(625, Math.round(interaction.startItemY + dy)));
+        updateVoice({ x: nx, y: ny });
       }
     } else if (interaction.mode === 'transform') {
       const startAngle = Math.atan2(
@@ -942,82 +1669,102 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           strokeDasharray="6 6"
         />
 
-        {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers) */}
+        {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable to edit wrapper color, not moveable) */}
         {wrapStyle !== 'plain' && (
-          <g filter="url(#softShadow)" className="pointer-events-none">
-            {/* STYLE 1: ORIGAMI KRAFT (Layered geometric sleeve + faceted side pleats, inspired by ref #1) */}
+          <g
+            filter="url(#softShadow)"
+            role={isPreviewMode ? undefined : 'button'}
+            aria-label={isPreviewMode ? undefined : 'Select bouquet wrapper to edit color'}
+            onPointerDown={
+              isPreviewMode
+                ? undefined
+                : (e) => {
+                    e.stopPropagation();
+                  }
+            }
+            onClick={
+              isPreviewMode
+                ? undefined
+                : (e) => {
+                    e.stopPropagation();
+                    onWrapperClick?.();
+                  }
+            }
+            className={isPreviewMode ? 'pointer-events-none' : 'cursor-pointer'}
+          >
+            {/* STYLE 1: ORIGAMI KRAFT (Layered geometric sleeve + faceted side pleats) */}
             {wrapStyle === 'kraft' && (
               <g>
                 {/* Main Upper Trapezoid Back Sheet with subtle concave top curve */}
                 <path
                   d="M115,235 Q300,268 485,235 L430,455 L170,455 Z"
-                  fill="#C8B9AE"
+                  fill={wrapColor}
                 />
                 {/* Left & Right Angled Origami Side Wings (darker shaded fold) */}
-                <path d="M90,260 L115,235 L185,445 L152,445 Z" fill="#B3A296" />
-                <path d="M510,260 L485,235 L415,445 L448,445 Z" fill="#B3A296" />
+                <path d="M90,260 L115,235 L185,445 L152,445 Z" fill={shadeWrapHex(wrapColor, -22)} />
+                <path d="M510,260 L485,235 L415,445 L448,445 Z" fill={shadeWrapHex(wrapColor, -22)} />
                 {/* Inner Crisp Parchment Liner */}
                 <path
                   d="M145,252 Q300,280 455,252 L405,445 L195,445 Z"
-                  fill="#EFECE8"
+                  fill={shadeWrapHex(wrapColor, 38)}
                   opacity="0.65"
                 />
               </g>
             )}
 
-            {/* STYLE 2: BUTTERFLY PETAL (Split V-notched dual wings in soft blush pink, inspired by ref #2) */}
+            {/* STYLE 2: BUTTERFLY PETAL (Split V-notched dual wings) */}
             {wrapStyle === 'tissue' && (
               <g>
                 {/* Left Outer Wing */}
                 <path
                   d="M300,480 L102,225 Q195,215 300,325 Z"
-                  fill="#FFC4D0"
+                  fill={shadeWrapHex(wrapColor, -10)}
                 />
                 {/* Left Inner Fold Bevel */}
                 <path
                   d="M300,480 L102,225 L155,230 L300,420 Z"
-                  fill="#F7A8B8"
+                  fill={shadeWrapHex(wrapColor, -28)}
                   opacity="0.78"
                 />
                 {/* Right Outer Wing */}
                 <path
                   d="M300,480 L498,225 Q405,215 300,325 Z"
-                  fill="#FFD6DF"
+                  fill={wrapColor}
                 />
                 {/* Right Inner Fold Bevel */}
                 <path
                   d="M300,480 L498,225 L445,230 L300,420 Z"
-                  fill="#FFC4D0"
+                  fill={shadeWrapHex(wrapColor, -10)}
                   opacity="0.65"
                 />
               </g>
             )}
 
-            {/* STYLE 3: TULIP ORGANZA (Concave chalice lilac veil with sweeping inner curves, inspired by ref #3) */}
+            {/* STYLE 3: TULIP ORGANZA (Concave chalice veil with sweeping inner curves) */}
             {wrapStyle === 'chalice' && (
               <g>
                 {/* Outer Translucent Chalice Bell */}
                 <path
                   d="M105,215 Q300,262 495,215 Q455,390 385,500 L215,500 Q145,390 105,215 Z"
-                  fill="#EFE3F6"
+                  fill={shadeWrapHex(wrapColor, 10)}
                 />
                 {/* Left Parabolic Sheer Fold */}
                 <path
                   d="M105,215 Q245,275 278,490 L215,500 Q145,390 105,215 Z"
-                  fill="#E2CEF0"
+                  fill={shadeWrapHex(wrapColor, -14)}
                   opacity="0.72"
                 />
                 {/* Right Parabolic Sheer Fold */}
                 <path
                   d="M495,215 Q355,275 322,490 L385,500 Q455,390 495,215 Z"
-                  fill="#E2CEF0"
+                  fill={shadeWrapHex(wrapColor, -14)}
                   opacity="0.72"
                 />
                 {/* Delicate Inner Parabolic Contour Lines */}
                 <path
                   d="M125,225 Q245,295 270,460 M475,225 Q355,295 330,460"
                   fill="none"
-                  stroke="#D5B8EA"
+                  stroke={shadeWrapHex(wrapColor, -28)}
                   strokeWidth="1.6"
                   opacity="0.75"
                 />
@@ -1031,21 +1778,21 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 <path
                   d="M168,425 C168,115 432,115 432,425"
                   fill="none"
-                  stroke="#A47549"
+                  stroke={shadeWrapHex(wrapColor, -34)}
                   strokeWidth="16"
                   strokeLinecap="round"
                 />
                 <path
                   d="M168,425 C168,115 432,115 432,425"
                   fill="none"
-                  stroke="#D3A77A"
+                  stroke={shadeWrapHex(wrapColor, 14)}
                   strokeWidth="8"
                   strokeLinecap="round"
                   strokeDasharray="10 8"
                 />
                 {/* Deep Shaded Basket Rim Interior Behind Stems */}
-                <ellipse cx="300" cy="422" rx="146" ry="32" fill="#6E4726" />
-                <ellipse cx="300" cy="422" rx="136" ry="24" fill="#4A2E16" />
+                <ellipse cx="300" cy="422" rx="146" ry="32" fill={shadeWrapHex(wrapColor, -85)} />
+                <ellipse cx="300" cy="422" rx="136" ry="24" fill={shadeWrapHex(wrapColor, -110)} />
               </g>
             )}
 
@@ -1055,17 +1802,17 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 {/* High Asymmetric Crown Back Sheet */}
                 <path
                   d="M300,520 L108,265 Q185,165 318,162 Q435,160 492,250 Z"
-                  fill="#EBE0CE"
-                  stroke="#D5C5AE"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  stroke={shadeWrapHex(wrapColor, -28)}
                   strokeWidth="1.5"
                 />
                 {/* Inner Angled Parchment Sheet */}
                 <path
                   d="M300,505 L138,245 L335,178 L468,262 Z"
-                  fill="#F7F2E7"
+                  fill={shadeWrapHex(wrapColor, 18)}
                 />
                 {/* Subtle Editorial Newsprint Lines on Upper Crown */}
-                <g stroke="#B8A992" strokeWidth="1.3" opacity="0.55">
+                <g stroke={shadeWrapHex(wrapColor, -52)} strokeWidth="1.3" opacity="0.55">
                   <line x1="255" y1="202" x2="355" y2="202" />
                   <line x1="235" y1="214" x2="375" y2="214" />
                   <line x1="215" y1="226" x2="395" y2="226" />
@@ -1081,17 +1828,17 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 {/* Outer Scalloped Bridal Lace Fan */}
                 <path
                   d="M300,520 L96,265 Q122,222 156,245 Q188,204 224,232 Q262,192 300,222 Q338,192 376,232 Q412,204 444,245 Q478,222 504,265 Z"
-                  fill="#FFF9FB"
-                  stroke="#F3D1DC"
+                  fill={shadeWrapHex(wrapColor, 20)}
+                  stroke={shadeWrapHex(wrapColor, -24)}
                   strokeWidth="1.8"
                 />
                 {/* Inner Blush Plissé Fan */}
                 <path
                   d="M300,505 L128,275 Q214,225 300,248 Q386,225 472,275 Z"
-                  fill="#FCE7F3"
+                  fill={wrapColor}
                 />
                 {/* Pierced Eyelet Lace Dots along the Scallop Rim */}
-                <g fill="#F4B8CA" opacity="0.75">
+                <g fill={shadeWrapHex(wrapColor, -35)} opacity="0.75">
                   <circle cx="132" cy="248" r="4.5" />
                   <circle cx="168" cy="236" r="4" />
                   <circle cx="204" cy="225" r="4.5" />
@@ -1106,20 +1853,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 7: STARLIT NOIR (Midnight navy-charcoal couture wrap with gold-foil trim) */}
+            {/* STYLE 7: STARLIT NOIR (Couture wrap with gold-foil trim) */}
             {wrapStyle === 'celestial' && (
               <g>
                 {/* High-Fashion Multi-Pointed Midnight Back Crown */}
                 <path
                   d="M300,525 L95,250 L168,202 L242,226 L300,180 L358,226 L432,202 L505,250 Z"
-                  fill="#1E293B"
+                  fill={wrapColor}
                   stroke="#F59E0B"
                   strokeWidth="2"
                 />
                 {/* Inner Gold-Trimmed Velvet Liner */}
                 <path
                   d="M300,505 L122,260 L176,220 L245,240 L300,202 L355,240 L424,220 L478,260 Z"
-                  fill="#0F172A"
+                  fill={shadeWrapHex(wrapColor, -18)}
                   stroke="#FBBF24"
                   strokeWidth="1"
                   strokeDasharray="5 4"
@@ -1130,8 +1877,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             {/* STYLE 8: CERAMIC VASE (Dark inner mouth of sculptural amphora behind stems) */}
             {wrapStyle === 'vase' && (
               <g>
-                <ellipse cx="300" cy="408" rx="96" ry="22" fill="#B5A495" stroke="#E7DCD1" strokeWidth="4" />
-                <ellipse cx="300" cy="408" rx="84" ry="15" fill="#574C43" />
+                <ellipse cx="300" cy="408" rx="96" ry="22" fill={shadeWrapHex(wrapColor, -42)} stroke={wrapColor} strokeWidth="4" />
+                <ellipse cx="300" cy="408" rx="84" ry="15" fill={shadeWrapHex(wrapColor, -110)} />
               </g>
             )}
           </g>
@@ -1186,310 +1933,332 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           })}
         </g>
 
-        {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems) */}
-        <g filter="url(#softShadow)" className="pointer-events-none">
-          {/* STYLE 1 FRONT: ORIGAMI KRAFT */}
-          {wrapStyle === 'kraft' && (
-            <g>
-              <path d="M168,390 L265,455 L242,518 L195,512 Z" fill="#B3A296" />
-              <path d="M432,390 L335,455 L358,518 L405,512 Z" fill="#B3A296" />
-              <path
-                d="M174,394 Q300,418 426,394 L388,512 L212,512 Z"
-                fill="#CEC0B5"
-                stroke="#DFD5CD"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M224,508 L376,508 L360,625 L240,625 Z"
-                fill="#C4B4A8"
-              />
-              <path d="M258,510 L248,625 L270,625 L276,510 Z" fill="#AE9D90" opacity="0.85" />
-              <path d="M342,510 L352,625 L330,625 L324,510 Z" fill="#AE9D90" opacity="0.85" />
-              <line x1="300" y1="510" x2="300" y2="625" stroke="#B3A296" strokeWidth="1.5" />
-            </g>
-          )}
-
-          {/* STYLE 2 FRONT: BUTTERFLY PETAL */}
-          {wrapStyle === 'tissue' && (
-            <g>
-              <path
-                d="M225,512 L375,512 L362,625 Q300,632 238,625 Z"
-                fill="#FFE0E7"
-              />
-              <path
-                d="M258,515 L248,625 M342,515 L352,625 M300,518 L300,627"
-                stroke="#F9B8C6"
-                strokeWidth="1.5"
-                opacity="0.65"
-              />
-              <path
-                d="M150,362 Q232,415 318,518 L222,520 Q180,445 150,362 Z"
-                fill="#FFC6D3"
-                stroke="#FFE8EE"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M450,362 Q368,415 282,518 L378,520 Q420,445 450,362 Z"
-                fill="#FFD4DF"
-                stroke="#FFF0F4"
-                strokeWidth="1.2"
-              />
-            </g>
-          )}
-
-          {/* STYLE 3 FRONT: TULIP ORGANZA */}
-          {wrapStyle === 'chalice' && (
-            <g>
-              <path
-                d="M218,505 L382,505 L370,625 Q300,632 230,625 Z"
-                fill="#E8D7F3"
-              />
-              <path
-                d="M155,375 Q245,425 345,495 L218,508 Q182,445 155,375 Z"
-                fill="#DFC9EE"
-                opacity="0.92"
-              />
-              <path
-                d="M445,375 Q355,425 255,495 L382,508 Q418,445 445,375 Z"
-                fill="#EADEF6"
-                opacity="0.92"
-              />
-              <path
-                d="M182,415 Q300,455 418,415 L380,508 L220,508 Z"
-                fill="#F3E9FA"
-                opacity="0.78"
-              />
-            </g>
-          )}
-
-          {/* STYLE 4 FRONT: WICKER BASKET */}
-          {wrapStyle === 'basket' && (
-            <g>
-              <path
-                d="M158,422 L442,422 L392,598 Q300,616 208,598 Z"
-                fill="#C89B6E"
-                stroke="#9C6F44"
-                strokeWidth="2.5"
-              />
-              <path
-                d="M168,456 Q300,472 432,456 M178,490 Q300,506 422,490 M188,524 Q300,540 412,524 M198,558 Q300,574 402,558"
-                fill="none"
-                stroke="#9C6F44"
-                strokeWidth="3"
-                opacity="0.65"
-              />
-              <path
-                d="M195,428 L225,598 M235,430 L255,602 M275,432 L285,604 M325,432 L315,604 M365,430 L345,602 M405,428 L375,598"
-                fill="none"
-                stroke="#DFB78C"
-                strokeWidth="3.5"
-                strokeDasharray="9 7"
-                opacity="0.75"
-              />
-              <path
-                d="M202,594 Q300,612 398,594 L392,614 Q300,630 208,614 Z"
-                fill="#8B5E34"
-              />
-              <path
-                d="M146,416 Q300,444 454,416 L450,438 Q300,466 150,438 Z"
-                fill="#B08257"
-                stroke="#7C512B"
-                strokeWidth="2"
-              />
-              <path
-                d="M154,426 Q300,454 446,426"
-                fill="none"
-                stroke="#E6C39C"
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray="12 8"
-              />
-            </g>
-          )}
-
-          {/* STYLE 5 FRONT: PARISIAN SCRIPT */}
-          {wrapStyle === 'vintage' && (
-            <g>
-              <path
-                d="M126,282 L310,475 L252,618 L194,492 Z"
-                fill="#E5D7C3"
-                stroke="#CBB99F"
-                strokeWidth="1.5"
-              />
-              <path
-                d="M474,272 L288,482 L348,618 L408,485 Z"
-                fill="#F3ECE0"
-                stroke="#D5C5AE"
-                strokeWidth="1.5"
-              />
-              <path
-                d="M214,432 L300,486 L388,426 L346,618 Q300,628 254,618 Z"
-                fill="#EFE6D5"
-                stroke="#D5C5AE"
-                strokeWidth="1.2"
-              />
-              <g stroke="#9E8C74" strokeWidth="1.4" opacity="0.6">
-                <line x1="335" y1="382" x2="412" y2="352" />
-                <line x1="328" y1="396" x2="405" y2="366" />
-                <line x1="320" y1="410" x2="395" y2="380" />
-                <line x1="255" y1="535" x2="345" y2="535" />
-                <line x1="262" y1="548" x2="338" y2="548" />
-                <line x1="268" y1="561" x2="332" y2="561" />
-                <line x1="274" y1="574" x2="326" y2="574" />
+        {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems — Clickable, not moveable) */}
+        <g filter="url(#softShadow)">
+          <g
+            role={isPreviewMode ? undefined : 'button'}
+            aria-label={isPreviewMode ? undefined : 'Select bouquet wrapper to edit color'}
+            onPointerDown={
+              isPreviewMode
+                ? undefined
+                : (e) => {
+                    e.stopPropagation();
+                  }
+            }
+            onClick={
+              isPreviewMode
+                ? undefined
+                : (e) => {
+                    e.stopPropagation();
+                    onWrapperClick?.();
+                  }
+            }
+            className={isPreviewMode ? 'pointer-events-none' : 'cursor-pointer'}
+          >
+            {/* STYLE 1 FRONT: ORIGAMI KRAFT */}
+            {wrapStyle === 'kraft' && (
+              <g>
+                <path d="M168,390 L265,455 L242,518 L195,512 Z" fill={shadeWrapHex(wrapColor, -22)} />
+                <path d="M432,390 L335,455 L358,518 L405,512 Z" fill={shadeWrapHex(wrapColor, -22)} />
+                <path
+                  d="M174,394 Q300,418 426,394 L388,512 L212,512 Z"
+                  fill={shadeWrapHex(wrapColor, 6)}
+                  stroke={shadeWrapHex(wrapColor, 24)}
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M224,508 L376,508 L360,625 L240,625 Z"
+                  fill={wrapColor}
+                />
+                <path d="M258,510 L248,625 L270,625 L276,510 Z" fill={shadeWrapHex(wrapColor, -26)} opacity="0.85" />
+                <path d="M342,510 L352,625 L330,625 L324,510 Z" fill={shadeWrapHex(wrapColor, -26)} opacity="0.85" />
+                <line x1="300" y1="510" x2="300" y2="625" stroke={shadeWrapHex(wrapColor, -22)} strokeWidth="1.5" />
               </g>
-              <circle cx="356" cy="436" r="14" fill="none" stroke="#B4846C" strokeWidth="1.4" strokeDasharray="3 2" opacity="0.75" />
-              <circle cx="356" cy="436" r="9" fill="#B4846C" opacity="0.2" />
-            </g>
-          )}
+            )}
 
-          {/* STYLE 6 FRONT: EYELET LACE */}
-          {wrapStyle === 'lace' && (
-            <g>
-              <path
-                d="M172,380 L300,468 L428,380 L356,618 Q300,630 244,618 Z"
-                fill="#FCE7F3"
-                stroke="#F9A8D4"
-                strokeWidth="1.2"
-              />
-              <g stroke="#F472B6" strokeWidth="1.2" opacity="0.35">
-                <line x1="205" y1="405" x2="256" y2="618" />
-                <line x1="238" y1="428" x2="274" y2="620" />
-                <line x1="270" y1="448" x2="290" y2="622" />
-                <line x1="300" y1="468" x2="300" y2="624" />
-                <line x1="330" y1="448" x2="310" y2="622" />
-                <line x1="362" y1="428" x2="326" y2="620" />
-                <line x1="395" y1="405" x2="344" y2="618" />
+            {/* STYLE 2 FRONT: BUTTERFLY PETAL */}
+            {wrapStyle === 'tissue' && (
+              <g>
+                <path
+                  d="M225,512 L375,512 L362,625 Q300,632 238,625 Z"
+                  fill={shadeWrapHex(wrapColor, 14)}
+                />
+                <path
+                  d="M258,515 L248,625 M342,515 L352,625 M300,518 L300,627"
+                  stroke={shadeWrapHex(wrapColor, -25)}
+                  strokeWidth="1.5"
+                  opacity="0.65"
+                />
+                <path
+                  d="M150,362 Q232,415 318,518 L222,520 Q180,445 150,362 Z"
+                  fill={shadeWrapHex(wrapColor, -8)}
+                  stroke={shadeWrapHex(wrapColor, 22)}
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M450,362 Q368,415 282,518 L378,520 Q420,445 450,362 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, 28)}
+                  strokeWidth="1.2"
+                />
               </g>
-              <path
-                d="M168,376 Q192,402 216,386 Q240,414 266,398 Q284,424 300,408 Q316,424 334,398 Q360,414 384,386 Q408,402 432,376 L402,458 Q350,482 300,472 Q250,482 198,458 Z"
-                fill="#FFFFFF"
-                stroke="#F9A8D4"
-                strokeWidth="1.5"
-              />
-            </g>
-          )}
+            )}
 
-          {/* STYLE 7 FRONT: STARLIT NOIR */}
-          {wrapStyle === 'celestial' && (
-            <g>
-              <path
-                d="M118,272 L300,472 L250,618 L190,488 Z"
-                fill="#1E293B"
-                stroke="#F59E0B"
-                strokeWidth="2"
-              />
-              <path
-                d="M482,272 L300,472 L350,618 L410,488 Z"
-                fill="#0F172A"
-                stroke="#FBBF24"
-                strokeWidth="2"
-              />
-              <path
-                d="M210,432 L300,482 L390,432 L346,616 Q300,628 254,616 Z"
-                fill="#1E293B"
-                stroke="#F59E0B"
-                strokeWidth="1.8"
-              />
-              <path
-                d="M245,485 L275,525 L262,568 M355,475 L328,532 L342,575"
-                fill="none"
-                stroke="#FDE68A"
-                strokeWidth="1"
-                strokeDasharray="3 3"
-                opacity="0.75"
-              />
-              <g fill="#FBBF24">
-                <path d="M335,420 L338,428 L346,431 L338,434 L335,442 L332,434 L324,431 L332,428 Z" />
-                <path d="M262,515 L264,521 L270,523 L264,525 L262,531 L260,525 L254,523 L260,521 Z" />
-                <circle cx="245" cy="485" r="2.5" />
-                <circle cx="262" cy="568" r="2.8" />
-                <circle cx="328" cy="532" r="3" />
-                <circle cx="342" cy="575" r="2.2" />
-                <circle cx="215" cy="395" r="2.5" />
+            {/* STYLE 3 FRONT: TULIP ORGANZA */}
+            {wrapStyle === 'chalice' && (
+              <g>
+                <path
+                  d="M218,505 L382,505 L370,625 Q300,632 230,625 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                />
+                <path
+                  d="M155,375 Q245,425 345,495 L218,508 Q182,445 155,375 Z"
+                  fill={shadeWrapHex(wrapColor, -18)}
+                  opacity="0.92"
+                />
+                <path
+                  d="M445,375 Q355,425 255,495 L382,508 Q418,445 445,375 Z"
+                  fill={wrapColor}
+                  opacity="0.92"
+                />
+                <path
+                  d="M182,415 Q300,455 418,415 L380,508 L220,508 Z"
+                  fill={shadeWrapHex(wrapColor, 16)}
+                  opacity="0.78"
+                />
               </g>
-            </g>
-          )}
+            )}
 
-          {/* STYLE 8 FRONT: CERAMIC VASE */}
-          {wrapStyle === 'vase' && (
-            <g>
-              <path
-                d="M214,442 C152,432 152,522 204,528"
-                fill="none"
-                stroke="#D5C5B5"
-                strokeWidth="14"
-                strokeLinecap="round"
-              />
-              <path
-                d="M214,442 C152,432 152,522 204,528"
-                fill="none"
-                stroke="#EFE6DD"
-                strokeWidth="5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M386,442 C448,432 448,522 396,528"
-                fill="none"
-                stroke="#C4B2A0"
-                strokeWidth="14"
-                strokeLinecap="round"
-              />
-              <path
-                d="M206,408 L394,408 C382,446 426,505 384,598 L368,622 L232,622 L216,598 C174,505 218,446 206,408 Z"
-                fill="#EAE0D5"
-                stroke="#CBB9A8"
-                strokeWidth="2"
-              />
-              <path
-                d="M300,408 L394,408 C382,446 426,505 384,598 L368,622 L300,622 Z"
-                fill="#D8C8B8"
-                opacity="0.45"
-              />
-              <g stroke="#C4B2A0" strokeWidth="2" fill="none" opacity="0.72">
-                <path d="M236,422 C215,485 222,555 246,612" />
-                <path d="M266,424 C254,485 258,555 272,614" />
-                <path d="M300,425 L300,615" />
-                <path d="M334,424 C346,485 342,555 328,614" />
-                <path d="M364,422 C385,485 378,555 354,612" />
+            {/* STYLE 4 FRONT: WICKER BASKET */}
+            {wrapStyle === 'basket' && (
+              <g>
+                <path
+                  d="M158,422 L442,422 L392,598 Q300,616 208,598 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -42)}
+                  strokeWidth="2.5"
+                />
+                <path
+                  d="M168,456 Q300,472 432,456 M178,490 Q300,506 422,490 M188,524 Q300,540 412,524 M198,558 Q300,574 402,558"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, -42)}
+                  strokeWidth="3"
+                  opacity="0.65"
+                />
+                <path
+                  d="M195,428 L225,598 M235,430 L255,602 M275,432 L285,604 M325,432 L315,604 M365,430 L345,602 M405,428 L375,598"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, 24)}
+                  strokeWidth="3.5"
+                  strokeDasharray="9 7"
+                  opacity="0.75"
+                />
+                <path
+                  d="M202,594 Q300,612 398,594 L392,614 Q300,630 208,614 Z"
+                  fill={shadeWrapHex(wrapColor, -58)}
+                />
+                <path
+                  d="M146,416 Q300,444 454,416 L450,438 Q300,466 150,438 Z"
+                  fill={shadeWrapHex(wrapColor, -22)}
+                  stroke={shadeWrapHex(wrapColor, -72)}
+                  strokeWidth="2"
+                />
+                <path
+                  d="M154,426 Q300,454 446,426"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, 32)}
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  strokeDasharray="12 8"
+                />
               </g>
-              <rect x="198" y="398" width="204" height="16" rx="8" fill="#F4EDE6" stroke="#CBB9A8" strokeWidth="1.8" />
-              <rect x="226" y="612" width="148" height="14" rx="6" fill="#B4846C" />
-            </g>
-          )}
+            )}
 
-          {/* UNIVERSAL RIBBON / LACE DESIGN (Fits every wrapper!) */}
+            {/* STYLE 5 FRONT: PARISIAN SCRIPT */}
+            {wrapStyle === 'vintage' && (
+              <g>
+                <path
+                  d="M126,282 L310,475 L252,618 L194,492 Z"
+                  fill={shadeWrapHex(wrapColor, -12)}
+                  stroke={shadeWrapHex(wrapColor, -34)}
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M474,272 L288,482 L348,618 L408,485 Z"
+                  fill={shadeWrapHex(wrapColor, 10)}
+                  stroke={shadeWrapHex(wrapColor, -26)}
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M214,432 L300,486 L388,426 L346,618 Q300,628 254,618 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -26)}
+                  strokeWidth="1.2"
+                />
+                <g stroke={shadeWrapHex(wrapColor, -78)} strokeWidth="1.4" opacity="0.6">
+                  <line x1="335" y1="382" x2="412" y2="352" />
+                  <line x1="328" y1="396" x2="405" y2="366" />
+                  <line x1="320" y1="410" x2="395" y2="380" />
+                  <line x1="255" y1="535" x2="345" y2="535" />
+                  <line x1="262" y1="548" x2="338" y2="548" />
+                  <line x1="268" y1="561" x2="332" y2="561" />
+                  <line x1="274" y1="574" x2="326" y2="574" />
+                </g>
+                <circle cx="356" cy="436" r="14" fill="none" stroke="#B4846C" strokeWidth="1.4" strokeDasharray="3 2" opacity="0.75" />
+                <circle cx="356" cy="436" r="9" fill="#B4846C" opacity="0.2" />
+              </g>
+            )}
+
+            {/* STYLE 6 FRONT: EYELET LACE */}
+            {wrapStyle === 'lace' && (
+              <g>
+                <path
+                  d="M172,380 L300,468 L428,380 L356,618 Q300,630 244,618 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -35)}
+                  strokeWidth="1.2"
+                />
+                <g stroke={shadeWrapHex(wrapColor, -55)} strokeWidth="1.2" opacity="0.35">
+                  <line x1="205" y1="405" x2="256" y2="618" />
+                  <line x1="238" y1="428" x2="274" y2="620" />
+                  <line x1="270" y1="448" x2="290" y2="622" />
+                  <line x1="300" y1="468" x2="300" y2="624" />
+                  <line x1="330" y1="448" x2="310" y2="622" />
+                  <line x1="362" y1="428" x2="326" y2="620" />
+                  <line x1="395" y1="405" x2="344" y2="618" />
+                </g>
+                <path
+                  d="M168,376 Q192,402 216,386 Q240,414 266,398 Q284,424 300,408 Q316,424 334,398 Q360,414 384,386 Q408,402 432,376 L402,458 Q350,482 300,472 Q250,482 198,458 Z"
+                  fill="#FFFFFF"
+                  stroke={shadeWrapHex(wrapColor, -35)}
+                  strokeWidth="1.5"
+                />
+              </g>
+            )}
+
+            {/* STYLE 7 FRONT: STARLIT NOIR */}
+            {wrapStyle === 'celestial' && (
+              <g>
+                <path
+                  d="M118,272 L300,472 L250,618 L190,488 Z"
+                  fill={wrapColor}
+                  stroke="#F59E0B"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M482,272 L300,472 L350,618 L410,488 Z"
+                  fill={shadeWrapHex(wrapColor, -18)}
+                  stroke="#FBBF24"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M210,432 L300,482 L390,432 L346,616 Q300,628 254,616 Z"
+                  fill={wrapColor}
+                  stroke="#F59E0B"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M245,485 L275,525 L262,568 M355,475 L328,532 L342,575"
+                  fill="none"
+                  stroke="#FDE68A"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                  opacity="0.75"
+                />
+                <g fill="#FBBF24">
+                  <path d="M335,420 L338,428 L346,431 L338,434 L335,442 L332,434 L324,431 L332,428 Z" />
+                  <path d="M262,515 L264,521 L270,523 L264,525 L262,531 L260,525 L254,523 L260,521 Z" />
+                  <circle cx="245" cy="485" r="2.5" />
+                  <circle cx="262" cy="568" r="2.8" />
+                  <circle cx="328" cy="532" r="3" />
+                  <circle cx="342" cy="575" r="2.2" />
+                  <circle cx="215" cy="395" r="2.5" />
+                </g>
+              </g>
+            )}
+
+            {/* STYLE 8 FRONT: CERAMIC VASE */}
+            {wrapStyle === 'vase' && (
+              <g>
+                <path
+                  d="M214,442 C152,432 152,522 204,528"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, -20)}
+                  strokeWidth="14"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M214,442 C152,432 152,522 204,528"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, 14)}
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M386,442 C448,432 448,522 396,528"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, -34)}
+                  strokeWidth="14"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M206,408 L394,408 C382,446 426,505 384,598 L368,622 L232,622 L216,598 C174,505 218,446 206,408 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -28)}
+                  strokeWidth="2"
+                />
+                <path
+                  d="M300,408 L394,408 C382,446 426,505 384,598 L368,622 L300,622 Z"
+                  fill={shadeWrapHex(wrapColor, -18)}
+                  opacity="0.45"
+                />
+                <g stroke={shadeWrapHex(wrapColor, -34)} strokeWidth="2" fill="none" opacity="0.72">
+                  <path d="M236,422 C215,485 222,555 246,612" />
+                  <path d="M266,424 C254,485 258,555 272,614" />
+                  <path d="M300,425 L300,615" />
+                  <path d="M334,424 C346,485 342,555 328,614" />
+                  <path d="M364,422 C385,485 378,555 354,612" />
+                </g>
+                <rect x="198" y="398" width="204" height="16" rx="8" fill={shadeWrapHex(wrapColor, 16)} stroke={shadeWrapHex(wrapColor, -28)} strokeWidth="1.8" />
+                <rect x="226" y="612" width="148" height="14" rx="6" fill="#B4846C" />
+              </g>
+            )}
+          </g>
+
+          {/* UNIVERSAL RIBBON / LACE DESIGN (Fits every wrapper — Clickable, not moveable!) */}
           <BouquetRibbonSVG
             ribbonStyle={ribbonStyle || 'satin'}
             ribbonColor={ribbonColor}
             wrapStyle={wrapStyle}
+            isPreviewMode={isPreviewMode}
+            onRibbonClick={onRibbonClick}
           />
         </g>
 
-        {/* 5. PINNED GREETING CARD TAG ON BOUQUET (Clickable in editor to open Card Editor; wiggles & opens letter modal in preview/gift mode) */}
+        {/* 5. DRAGGABLE & COMPACT GREETING CARD ON BOUQUET (Unopened 'sealed' envelope by default, or open note tag) */}
         {card.visibleOnStage && showCardInGiftView && (() => {
-          const cardPalette = getCardThemePalette(card.theme, card.customBg);
+          const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
+          const cardX = card.x ?? 410;
+          const cardY = card.y ?? 525;
+          const isUnopenedEnvelope = card.theme === 'sealed';
           return (
-            <g transform="translate(425, 520) rotate(-6)" filter="url(#softShadow)">
-              {/* Fastener cord pinned to bouquet */}
-              <path
-                d="M-115,-18 Q-55,-25 -10,-32"
-                stroke={cardPalette.inner}
-                strokeWidth="1.6"
-                fill="none"
-                opacity="0.85"
-                className={isPreviewMode ? 'pointer-events-none bouquet-cord-bloom' : 'pointer-events-none'}
-              />
-              {/* Card Group: Clickable in BOTH editor mode (opens card editor) and preview/shared mode (opens letter modal) */}
+            <g
+              transform={`translate(${cardX}, ${cardY}) scale(0.72)`}
+              filter="url(#softShadow)"
+            >
+              {/* Card Group: Freely draggable anywhere in editor mode; clicks open Card Editor or Recipient Letter Modal */}
               <g
                 role="button"
                 tabIndex={0}
-                aria-label={isPreviewMode ? 'Open greeting card letter' : 'Edit greeting card'}
+                aria-label={isPreviewMode ? 'Open greeting card letter' : 'Drag or edit greeting card'}
+                onPointerDown={handleCardPointerDown}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (hasDraggedSpecialRef.current) {
+                    hasDraggedSpecialRef.current = false;
+                    return;
+                  }
                   onCardTagClick?.();
-                }}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -1501,72 +2270,79 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 className={
                   isPreviewMode
                     ? 'bouquet-card-wiggle cursor-pointer'
-                    : 'cursor-pointer hover:brightness-[0.98] transition'
+                    : 'cursor-grab active:cursor-grabbing hover:brightness-[0.98] transition'
                 }
               >
                 <BouquetCardShapeSVG theme={card.theme} palette={cardPalette} />
 
-                <text
-                  x="-46"
-                  y="-18"
-                  fill={cardPalette.title}
-                  fontSize="12"
-                  fontWeight="600"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  {card.to.slice(0, 22)}
-                </text>
+                {/* Only render open message text when NOT using the unopened 'sealed' envelope style */}
+                {!isUnopenedEnvelope && (
+                  <>
+                    <text
+                      x="-46"
+                      y="-18"
+                      fill={cardPalette.title}
+                      fontSize="12"
+                      fontWeight="600"
+                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                    >
+                      {card.to.slice(0, 22)}
+                    </text>
 
-                {/* Scrollable Message Area inside Fixed Card Dimensions (Preserves card design & length) */}
-                <foreignObject
-                  x="-71"
-                  y="-12"
-                  width="148"
-                  height="56"
-                  data-text-color={cardPalette.body}
-                >
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCardTagClick?.();
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onWheel={(e) => e.stopPropagation()}
-                    className="w-full h-full overflow-y-auto pr-1 select-none cursor-pointer"
-                    style={{
-                      color: cardPalette.body,
-                      fontFamily: "'Cormorant Garamond', serif",
-                      fontSize: '12.5px',
-                      lineHeight: '14px',
-                      wordBreak: 'break-word',
-                      scrollbarWidth: 'thin',
-                      touchAction: 'pan-y'
-                    }}
-                  >
-                    {card.message}
-                  </div>
-                </foreignObject>
+                    <foreignObject
+                      x="-71"
+                      y="-12"
+                      width="148"
+                      height="56"
+                      data-text-color={cardPalette.body}
+                    >
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasDraggedSpecialRef.current) {
+                            hasDraggedSpecialRef.current = false;
+                            return;
+                          }
+                          onCardTagClick?.();
+                        }}
+                        onWheel={(e) => e.stopPropagation()}
+                        className="w-full h-full overflow-y-auto pr-1 select-none"
+                        style={{
+                          color: cardPalette.body,
+                          fontFamily: "'Cormorant Garamond', serif",
+                          fontSize: '12.5px',
+                          lineHeight: '14px',
+                          wordBreak: 'break-word',
+                          scrollbarWidth: 'thin',
+                          touchAction: 'pan-y'
+                        }}
+                      >
+                        {card.message}
+                      </div>
+                    </foreignObject>
 
-                <text
-                  x="72"
-                  y="58"
-                  textAnchor="end"
-                  fill={cardPalette.sign}
-                  fontSize="11"
-                  fontWeight="500"
-                  fontStyle="italic"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  {card.from ? `— ${card.from.slice(0, 20)}` : ''}
-                </text>
+                    <text
+                      x="72"
+                      y="58"
+                      textAnchor="end"
+                      fill={cardPalette.sign}
+                      fontSize="11"
+                      fontWeight="500"
+                      fontStyle="italic"
+                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                    >
+                      {card.from ? `— ${card.from.slice(0, 20)}` : ''}
+                    </text>
+                  </>
+                )}
 
                 {/* Subtle Floating "Tap to open" Hint Badge — Shown ONLY in Shared/Preview Mode (Ignored on PNG export) */}
                 {isPreviewMode && (
-                  <g data-export-ignore="true" transform="translate(36, -44)">
+                  <g data-export-ignore="true" transform="translate(0, -60)">
                     <rect
-                      x="-36"
+                      x="-38"
                       y="-11"
-                      width="72"
+                      width="76"
                       height="20"
                       rx="10"
                       fill={cardPalette.seal}
@@ -1588,6 +2364,99 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             </g>
           );
         })()}
+
+        {/* 5B. DRAGGABLE & UPRIGHT ROMANTIC VOICE KEEPSAKE ON BOUQUET (Mixtape, Vintage Vinyl, Plushie, Ballerina Music Box, Heart Locket) */}
+        {voice?.visibleOnStage && (
+          <g
+            transform={`translate(${voice.x ?? 185}, ${voice.y ?? 525}) scale(0.84)`}
+            filter="url(#softShadow)"
+          >
+            <g
+              role="button"
+              tabIndex={0}
+              aria-label={
+                isPreviewMode
+                  ? isVoicePlaying
+                    ? 'Pause voice keepsake'
+                    : 'Play voice keepsake'
+                  : 'Drag or edit voice keepsake'
+              }
+              onPointerDown={handleVoicePointerDown}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hasDraggedSpecialRef.current) {
+                  hasDraggedSpecialRef.current = false;
+                  return;
+                }
+                onVoiceKeepsakeClick?.();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onVoiceKeepsakeClick?.();
+                }
+              }}
+              className={
+                isPreviewMode
+                  ? 'bouquet-card-wiggle cursor-pointer'
+                  : 'cursor-grab active:cursor-grabbing hover:brightness-[1.02] transition'
+              }
+            >
+              <BouquetVoiceKeepsakeSVG voice={voice} isPlaying={isVoicePlaying} />
+
+              {/* Icon-Only Play/Pause Badge for Recipient in Preview/Gift Mode; Status Pill in Editor Mode (Ignored on PNG export) */}
+              {isPreviewMode ? (
+                <g data-export-ignore="true" transform="translate(0, -52)">
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="12"
+                    fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
+                    stroke="#ffffff"
+                    strokeWidth="1.4"
+                  />
+                  {isVoicePlaying ? (
+                    <g fill="#ffffff">
+                      <rect x="-3.5" y="-4.5" width="2.4" height="9" rx="0.8" />
+                      <rect x="1.1" y="-4.5" width="2.4" height="9" rx="0.8" />
+                    </g>
+                  ) : (
+                    <polygon points="-2.5,-4.8 5.2,0 -2.5,4.8" fill="#ffffff" />
+                  )}
+                </g>
+              ) : (
+                <g data-export-ignore="true" transform="translate(0, -52)">
+                  <rect
+                    x="-46"
+                    y="-11"
+                    width="92"
+                    height="20"
+                    rx="10"
+                    fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
+                    stroke="#ffffff"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x="0"
+                    y="2.5"
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="9.2"
+                    fontWeight="600"
+                    style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                  >
+                    {isVoicePlaying
+                      ? '⏸ Playing...'
+                      : voice.audioDataUrl
+                      ? '🎙️ Voice ready'
+                      : '🎙️ Tap to record'}
+                  </text>
+                </g>
+              )}
+            </g>
+          </g>
+        )}
 
         {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE */}
         {!isPreviewMode && selectedItem && !selectedItem.hidden && (

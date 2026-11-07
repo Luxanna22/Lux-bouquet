@@ -2,6 +2,7 @@ import React from 'react';
 import {
   CardTheme,
   RibbonStyle,
+  VoiceKeepsakeStyle,
   typeWrapStyle,
   StarterTemplate,
   getCardThemePalette,
@@ -284,8 +285,48 @@ export const MiniRibbonBowSVG: React.FC<{ hex: string; styleType?: RibbonStyle }
 export const MiniCardShapeSVG: React.FC<{
   theme: CardTheme;
   customBg?: string;
-}> = ({ theme, customBg }) => {
-  const pal = getCardThemePalette(theme, customBg);
+  customAccent?: string;
+}> = ({ theme, customBg, customAccent }) => {
+  const pal = getCardThemePalette(theme, customBg, customAccent);
+  if (theme === 'sealed') {
+    return (
+      <svg viewBox="0 0 64 48" className="w-11 h-8">
+        {/* Unopened Wax-Sealed Envelope */}
+        <rect
+          x="8"
+          y="9"
+          width="48"
+          height="31"
+          rx="4"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.6"
+        />
+        {/* Bottom & Side Envelope Folds */}
+        <path
+          d="M9,39 L32,24 L55,39"
+          fill="none"
+          stroke={pal.border}
+          strokeWidth="1.1"
+          opacity="0.55"
+        />
+        {/* Top Closed Triangular Flap */}
+        <path
+          d="M8,10 L32,27 L56,10 Z"
+          fill={pal.bg}
+          stroke={pal.border}
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        {/* Embossed Heart Wax Seal in Center */}
+        <circle cx="32" cy="26" r="5.5" fill={pal.seal} stroke="#ffffff" strokeWidth="0.9" />
+        <path
+          d="M32,24.5 C30.5,22.8 28.2,24 29.5,26.2 L32,28.5 L34.5,26.2 C35.8,24 33.5,22.8 32,24.5 Z"
+          fill="#ffffff"
+        />
+      </svg>
+    );
+  }
   return (
     <svg viewBox="0 0 64 48" className="w-11 h-8">
       {theme === 'blush' ? (
@@ -349,4 +390,170 @@ export const MiniCardShapeSVG: React.FC<{
     </svg>
   );
 };
+
+export const MiniVoiceKeepsakeSVG: React.FC<{
+  styleType: VoiceKeepsakeStyle;
+  primaryColor?: string;
+  accentColor?: string;
+}> = ({ styleType, primaryColor = '#f43f5e', accentColor = '#fef3c7' }) => {
+  if (styleType === 'vinyl') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Vintage Horn Gramophone Vinyl Player */}
+        {/* Curved Brass Horn Support Arm */}
+        <path
+          d="M21,36 Q18,22 28,17"
+          fill="none"
+          stroke={accentColor}
+          strokeWidth="3.2"
+          strokeLinecap="round"
+        />
+        {/* Scalloped Antique Brass Morning-Glory Horn */}
+        <path
+          d="M26,18 C22,9 32,3 38,8 C44,4 52,11 48,18 C53,23 47,31 39,28 C33,31 25,25 26,18 Z"
+          fill={accentColor}
+          stroke="#92400e"
+          strokeWidth="1.2"
+        />
+        <circle cx="34" cy="19" r="3.8" fill="#451a03" stroke="#fef08a" strokeWidth="0.9" />
+        {/* Turntable Vinyl Platter */}
+        <ellipse cx="32" cy="37" rx="18" ry="4.5" fill="#18181b" stroke="#52525b" strokeWidth="1" />
+        <ellipse cx="32" cy="37" rx="7" ry="1.8" fill="#ffffff" />
+        {/* Wooden Gramophone Cabinet Base */}
+        <polygon
+          points="14,39 30,42 30,55 14,51"
+          fill={primaryColor}
+          stroke="#451a03"
+          strokeWidth="1"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points="30,42 50,39 50,52 30,55"
+          fill={primaryColor}
+          stroke="#451a03"
+          strokeWidth="1"
+          strokeLinejoin="round"
+        />
+        {/* Side Rosette Grille & Front Brass Plaque */}
+        <circle cx="22" cy="47" r="4" fill="none" stroke={accentColor} strokeWidth="1.1" />
+        <rect x="34" y="44" width="12" height="6" rx="1" fill={accentColor} />
+        {/* Stepped Base Molding */}
+        <path d="M12,51 L30,56 L52,52" fill="none" stroke={accentColor} strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'plushie') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Cute Teddy Plushie holding a Voice Heart */}
+        <circle cx="20" cy="18" r="6.5" fill={primaryColor} />
+        <circle cx="20" cy="18" r="3.5" fill="#fde68a" opacity="0.7" />
+        <circle cx="44" cy="18" r="6.5" fill={primaryColor} />
+        <circle cx="44" cy="18" r="3.5" fill="#fde68a" opacity="0.7" />
+        <ellipse cx="32" cy="44" rx="14" ry="12" fill={primaryColor} />
+        <circle cx="32" cy="27" r="12.5" fill={primaryColor} />
+        <ellipse cx="32" cy="30" rx="5.5" ry="4" fill="#fffbeb" />
+        <circle cx="27.5" cy="25" r="1.6" fill="#292524" />
+        <circle cx="36.5" cy="25" r="1.6" fill="#292524" />
+        <ellipse cx="32" cy="28.8" rx="2" ry="1.4" fill="#451a03" />
+        {/* Heart speaker badge */}
+        <path
+          d="M32,40 C28,35 21,38 25,45 L32,51 L39,45 C43,38 36,35 32,40 Z"
+          fill={accentColor}
+          stroke="#ffffff"
+          strokeWidth="1.2"
+        />
+      </svg>
+    );
+  }
+
+  if (styleType === 'musicbox') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Vintage Ballerina Floral Music Box */}
+        {/* Open Hinged Mirror Lid on Top Right */}
+        <polygon
+          points="33,30 40,10 56,12 49,31"
+          fill={primaryColor}
+          stroke="#d97706"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+        <polygon points="36,28 41.5,13 52.5,14.5 47,29" fill="#fef9c3" />
+        {/* Ballerina Figurine & Tutu on Golden Pedestal */}
+        <ellipse cx="29" cy="31" rx="6.5" ry="2" fill="#f59e0b" stroke="#b45309" strokeWidth="0.8" />
+        <line x1="29" y1="22" x2="29" y2="30" stroke="#fdba74" strokeWidth="1.8" strokeLinecap="round" />
+        <ellipse cx="29" cy="24" rx="6" ry="2.4" fill={primaryColor} stroke="#ffffff" strokeWidth="0.7" />
+        <circle cx="29" cy="16.5" r="2.5" fill="#fde68a" />
+        <path d="M29,19 C25,16 25,12 28,11 M29,19 L35,21" fill="none" stroke="#fdba74" strokeWidth="1.3" strokeLinecap="round" />
+        {/* Rococo Music Box Cabinet & Floral Panels */}
+        <polygon
+          points="10,33 32,37 32,53 10,48"
+          fill={primaryColor}
+          stroke="#d97706"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points="32,37 52,33 52,48 32,53"
+          fill={primaryColor}
+          stroke="#d97706"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+        <polygon points="13,36 29,39 29,49 13,45" fill="#fffbeb" />
+        <polygon points="35,39 49,36 49,45 35,49" fill="#fffbeb" />
+        {/* Tiny Painted Pink Roses on Panels */}
+        <circle cx="20" cy="42" r="2.2" fill="#fb7185" />
+        <circle cx="23" cy="44" r="1.8" fill="#f43f5e" />
+        <circle cx="42" cy="42" r="2.2" fill="#fb7185" />
+        {/* Cabriole Scalloped Gold Base */}
+        <path
+          d="M9,48 Q20,52 32,56 Q43,52 53,48"
+          fill="none"
+          stroke={accentColor}
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+
+  if (styleType === 'locket') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Golden Heart Voice Locket */}
+        <path d="M24,10 Q32,20 40,10" fill="none" stroke="#d97706" strokeWidth="1.8" strokeDasharray="2 1.5" />
+        <circle cx="32" cy="17" r="3" fill="none" stroke="#d97706" strokeWidth="1.8" />
+        <path
+          d="M32,25 C22,14 9,23 17,37 L32,51 L47,37 C55,23 42,14 32,25 Z"
+          fill={primaryColor}
+          stroke="#ffffff"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M32,29 C26,22 18,27 23,36 L32,44 L41,36 C46,27 38,22 32,29 Z"
+          fill={accentColor}
+        />
+        <line x1="27" y1="35" x2="27" y2="39" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+        <line x1="32" y1="32" x2="32" y2="41" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+        <line x1="37" y1="35" x2="37" y2="39" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  // Default: 'mixtape' (Retro Love Mixtape Cassette)
+  return (
+    <svg viewBox="0 0 64 64" className="w-11 h-11">
+      <rect x="8" y="16" width="48" height="32" rx="5" fill={primaryColor} stroke="#ffffff" strokeWidth="1.2" />
+      <rect x="13" y="20" width="38" height="17" rx="2.5" fill={accentColor} />
+      <rect x="18" y="24" width="28" height="9" rx="4.5" fill="#1e293b" />
+      <circle cx="23.5" cy="28.5" r="3" fill="#f8fafc" />
+      <circle cx="40.5" cy="28.5" r="3" fill="#f8fafc" />
+      <path d="M18,48 L22,41 L42,41 L46,48 Z" fill="#0f172a" opacity="0.35" />
+    </svg>
+  );
+};
+
 
