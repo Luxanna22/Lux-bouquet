@@ -780,18 +780,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     const rootEl = bloomRootRef.current;
     if (!rootEl) return;
 
-    // Blooms from scrollTop 0 -> 350px, and completely vanishes before reaching "Couture Wraps & Keepsakes"
-    const maxScroll = 350;
+    // Blooms from scrollTop 0 -> 420px across the Hero
+    const maxScroll = 420;
     const rawP = Math.min(1, Math.max(0, scrollTop / maxScroll));
     // Smooth cubic ease-out for organic petal unfurling
     const bloomEase = 1 - Math.pow(1 - rawP, 2.2);
 
-    const baseOpacity = isDarkModeRef.current ? 0.68 : 0.92;
-    // Holds gentle presence behind the title from 0..24% scroll, then dissolves to 0 by 100%
+    const baseOpacity = isDarkModeRef.current ? 0.76 : 0.94;
+    // Holds gentle presence behind the title from 0..28% scroll, then dissolves smoothly by 100%
     const fadeFactor =
-      rawP <= 0.24
+      rawP <= 0.28
         ? 1
-        : Math.max(0, Math.pow(1 - (rawP - 0.24) / 0.76, 1.55));
+        : Math.max(0, Math.pow(1 - (rawP - 0.28) / 0.72, 1.55));
     const finalOpacity = baseOpacity * fadeFactor;
 
     if (finalOpacity <= 0.008) {
@@ -803,13 +803,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     rootEl.style.visibility = 'visible';
     rootEl.style.opacity = finalOpacity.toFixed(3);
 
-    // Overall flower expands from a soft morning blossom (0.76) to full wide bloom (1.46) while drifting slightly down
-    const rootScale = 0.76 + bloomEase * 0.7;
-    const driftY = rawP * 40;
-    rootEl.style.transform = `translate3d(-50%, ${driftY.toFixed(1)}px, 0) scale(${rootScale.toFixed(3)})`;
+    // Overall flower starts as a generous, lush couture blossom (1.02) and expands to full wide bloom (1.48) on scroll
+    const rootScale = 1.02 + bloomEase * 0.46;
+    const driftY = rawP * 36;
+    rootEl.style.transform = `translate3d(-50%, calc(-63% + ${driftY.toFixed(1)}px), 0) scale(${rootScale.toFixed(3)})`;
 
     if (bloomOuterRingRef.current) {
-      const outerScale = 0.8 + bloomEase * 0.38;
+      const outerScale = 0.94 + bloomEase * 0.34;
       const outerRot = bloomEase * 24;
       bloomOuterRingRef.current.setAttribute(
         'transform',
@@ -817,7 +817,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       );
     }
     if (bloomMidRingRef.current) {
-      const midScale = 0.72 + bloomEase * 0.44;
+      const midScale = 0.86 + bloomEase * 0.38;
       const midRot = -bloomEase * 18;
       bloomMidRingRef.current.setAttribute(
         'transform',
@@ -825,7 +825,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       );
     }
     if (bloomInnerCorollaRef.current) {
-      const innerScale = 0.68 + bloomEase * 0.48;
+      const innerScale = 0.82 + bloomEase * 0.42;
       const innerRot = bloomEase * 32;
       bloomInnerCorollaRef.current.setAttribute(
         'transform',
@@ -833,8 +833,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       );
     }
     if (bloomBotanicalLeavesRef.current) {
-      const spreadX = 0.84 + bloomEase * 0.42;
-      const spreadY = 0.88 + bloomEase * 0.25;
+      const spreadX = 0.96 + bloomEase * 0.36;
+      const spreadY = 0.96 + bloomEase * 0.22;
       bloomBotanicalLeavesRef.current.setAttribute(
         'transform',
         `translate(260, 170) scale(${spreadX.toFixed(3)}, ${spreadY.toFixed(3)})`
@@ -1081,17 +1081,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div className="flex items-center gap-1 sm:gap-5 shrink-0">
             <button
               type="button"
-              onClick={() => scrollToSection('collections')}
-              className={`hidden md:inline text-xs font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap ${
-                isDarkMode
-                  ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
-                  : 'text-stone-600 hover:text-[#7A4B3A]'
-              }`}
-            >
-              Collections
-            </button>
-            <button
-              type="button"
               onClick={() => scrollToSection('how-it-works')}
               className={`hidden md:inline text-xs font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap ${
                 isDarkMode
@@ -1166,28 +1155,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
       <div ref={scrollContentRef} className="w-full">
-        {/* 2. CENTERED HERO (BALANCED MOBILE SPACING + PULLED-DOWN DESKTOP SPACING + SCROLL-BLOOMING FLOWER) */}
-        <section className="relative pt-10 sm:pt-24 lg:pt-32 pb-8 sm:pb-14 px-3.5 sm:px-8">
-          {/* Seamless GPU Radial Aura Extending Above Navbar — Eliminates Any Horizontal Color Cut */}
+        {/* 2. FULL-SCREEN LUXURY HERO — Grand Background Bloom, Editorial Serif Tagline + Roman/Italic Headline */}
+        <section className="relative min-h-[calc(100svh-5.25rem)] sm:min-h-[calc(100svh-6rem)] flex flex-col items-center justify-center px-4 sm:px-8 py-8 sm:py-12 overflow-hidden">
+          {/* Seamless GPU Radial Aura Centered Behind the Bloom */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 -top-28 sm:-top-36 -translate-x-1/2 w-[520px] sm:w-[980px] h-[520px] sm:h-[680px] rounded-full"
+            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] sm:w-[1180px] h-[620px] sm:h-[820px] rounded-full"
             style={{
               background: isDarkMode
-                ? 'radial-gradient(closest-side at 50% 50%, rgba(154, 92, 110, 0.25) 0%, rgba(104, 78, 118, 0.12) 48%, rgba(43, 35, 33, 0) 100%)'
-                : 'radial-gradient(closest-side at 50% 50%, rgba(249, 216, 228, 0.56) 0%, rgba(232, 220, 248, 0.30) 48%, rgba(253, 249, 245, 0) 100%)',
+                ? 'radial-gradient(closest-side at 50% 46%, rgba(164, 96, 116, 0.28) 0%, rgba(112, 82, 126, 0.13) 52%, rgba(43, 35, 33, 0) 100%)'
+                : 'radial-gradient(closest-side at 50% 46%, rgba(250, 210, 225, 0.68) 0%, rgba(235, 220, 250, 0.34) 52%, rgba(253, 249, 245, 0) 100%)',
             }}
           />
 
-          {/* SCROLL-LINKED WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING FLOWER BEHIND TITLE
-              Unfurls its petals as you scroll down and vanishes completely as scroll reaches "Couture Wraps & Keepsakes" */}
+          {/* SCROLL-LINKED WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING FLOWER
+              Generously scaled so the bloom has true viewport presence behind the typography */}
           <div
             ref={bloomRootRef}
             aria-hidden="true"
-            className="pointer-events-none select-none absolute left-1/2 top-3 sm:top-10 lg:top-12 z-0 w-[300px] sm:w-[520px] h-[210px] sm:h-[340px]"
+            className="pointer-events-none select-none absolute left-1/2 top-1/2 z-0 w-[450px] sm:w-[760px] md:w-[880px] h-[310px] sm:h-[500px] md:h-[580px]"
             style={{
-              opacity: isDarkMode ? 0.68 : 0.92,
-              transform: 'translate3d(-50%, 0px, 0) scale(0.76)',
+              opacity: isDarkMode ? 0.76 : 0.94,
+              transform: 'translate3d(-50%, -63%, 0) scale(1.02)',
               willChange: 'transform, opacity',
             }}
           >
@@ -1198,60 +1187,60 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <defs>
                 {/* Soft Watercolor Wash Gradients */}
                 <radialGradient id="wc-petal-blush" cx="50%" cy="35%" r="65%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.68'} />
+                  <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.34' : '0.70'} />
                   <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.22' : '0.42'} />
                   <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
                 </radialGradient>
                 <radialGradient id="wc-petal-peach" cx="50%" cy="30%" r="65%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.34' : '0.72'} />
+                  <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.36' : '0.72'} />
                   <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.20' : '0.44'} />
                   <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
                 </radialGradient>
                 <radialGradient id="wc-leaf-sage" cx="50%" cy="50%" r="60%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.62'} />
-                  <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.32'} />
+                  <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.28' : '0.64'} />
+                  <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.15' : '0.32'} />
                   <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
                 </radialGradient>
                 <radialGradient id="wc-center-gold" cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.45' : '0.75'} />
-                  <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.18' : '0.28'} />
+                  <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.46' : '0.76'} />
+                  <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.18' : '0.26'} />
                   <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
                 </radialGradient>
               </defs>
 
               {/* 1. Botanical Leaf Sprigs & Delicate Colored Lineart Tendrils (Spreads outward on scroll) */}
-              <g ref={bloomBotanicalLeavesRef} transform="translate(260, 170) scale(0.84, 0.88)">
+              <g ref={bloomBotanicalLeavesRef} transform="translate(260, 170) scale(0.96, 0.96)">
                 {/* Left Watercolor Leaf & Lineart Veins */}
                 <path
                   d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
                   fill="url(#wc-leaf-sage)"
                   stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
-                  strokeWidth="1.25"
+                  strokeWidth="1.2"
                   strokeOpacity={isDarkMode ? '0.55' : '0.65'}
                 />
                 <path
                   d="M -60,10 Q -135,4 -198,17 M -115,7 L -138,-6 M -145,10 L -168,0 M -125,11 L -148,24"
                   fill="none"
                   stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
-                  strokeWidth="0.95"
+                  strokeWidth="0.9"
                   strokeLinecap="round"
-                  strokeOpacity={isDarkMode ? '0.5' : '0.58'}
+                  strokeOpacity={isDarkMode ? '0.48' : '0.56'}
                 />
                 {/* Left Upper Bud & Thin Rope Tendril */}
                 <path
                   d="M -75,-18 C -128,-58 -168,-54 -194,-32"
                   fill="none"
                   stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
-                  strokeWidth="1.1"
+                  strokeWidth="1.05"
                   strokeDasharray="3 3"
                   strokeLinecap="round"
-                  strokeOpacity="0.6"
+                  strokeOpacity="0.58"
                 />
                 <path
                   d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
                   fill="url(#wc-petal-blush)"
                   stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
-                  strokeWidth="1.15"
+                  strokeWidth="1.1"
                 />
 
                 {/* Right Watercolor Leaf & Lineart Veins */}
@@ -1259,85 +1248,83 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   d="M 55,10 C 115,-28 175,-18 212,18 C 170,48 110,44 55,10 Z"
                   fill="url(#wc-leaf-sage)"
                   stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
-                  strokeWidth="1.25"
+                  strokeWidth="1.2"
                   strokeOpacity={isDarkMode ? '0.55' : '0.65'}
                 />
                 <path
                   d="M 60,10 Q 135,4 198,17 M 115,7 L 138,-6 M 145,10 L 168,0 M 125,11 L 148,24"
                   fill="none"
                   stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
-                  strokeWidth="0.95"
+                  strokeWidth="0.9"
                   strokeLinecap="round"
-                  strokeOpacity={isDarkMode ? '0.5' : '0.58'}
+                  strokeOpacity={isDarkMode ? '0.48' : '0.56'}
                 />
                 {/* Right Upper Bud & Thin Rope Tendril */}
                 <path
                   d="M 75,-18 C 128,-58 168,-54 194,-32"
                   fill="none"
                   stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
-                  strokeWidth="1.1"
+                  strokeWidth="1.05"
                   strokeDasharray="3 3"
                   strokeLinecap="round"
-                  strokeOpacity="0.6"
+                  strokeOpacity="0.58"
                 />
                 <path
                   d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
                   fill="url(#wc-petal-blush)"
                   stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
-                  strokeWidth="1.15"
+                  strokeWidth="1.1"
                 />
               </g>
 
               {/* 2. Outer Ring of 8 Watercolor + Colored Lineart Peony Petals */}
-              <g ref={bloomOuterRingRef} transform="translate(260, 170) rotate(0) scale(0.8)">
+              <g ref={bloomOuterRingRef} transform="translate(260, 170) rotate(0) scale(0.94)">
                 {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
                   <g key={`outer-petal-${angle}`} transform={`rotate(${angle})`}>
-                    {/* Soft Watercolor Wash Petal */}
                     <path
                       d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
                       fill="url(#wc-petal-blush)"
                       stroke={isDarkMode ? '#E5A3B7' : '#CD7E95'}
-                      strokeWidth="1.3"
-                      strokeOpacity={isDarkMode ? '0.58' : '0.68'}
+                      strokeWidth="1.2"
+                      strokeOpacity={isDarkMode ? '0.56' : '0.66'}
                     />
-                    {/* Delicate Botanical Lineart Vein Curves Inside Each Petal */}
                     <path
                       d="M 0,-14 Q -12,-62 -6,-106 M 0,-18 Q 12,-62 6,-106 M 0,-10 L 0,-114"
                       fill="none"
                       stroke={isDarkMode ? '#DF9BB0' : '#C67B91'}
-                      strokeWidth="0.75"
+                      strokeWidth="0.7"
                       strokeLinecap="round"
-                      strokeOpacity={isDarkMode ? '0.4' : '0.45'}
+                      strokeOpacity={isDarkMode ? '0.38' : '0.44'}
                     />
                   </g>
                 ))}
               </g>
 
               {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals (Counter-rotates & unfolds on scroll) */}
-              <g ref={bloomMidRingRef} transform="translate(260, 170) rotate(0) scale(0.72)">
+              <g ref={bloomMidRingRef} transform="translate(260, 170) rotate(0) scale(0.86)">
                 {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
                   <g key={`mid-petal-${angle}`} transform={`rotate(${angle})`}>
                     <path
                       d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
                       fill="url(#wc-petal-peach)"
                       stroke={isDarkMode ? '#E8B298' : '#C88A74'}
-                      strokeWidth="1.2"
-                      strokeOpacity={isDarkMode ? '0.62' : '0.72'}
+                      strokeWidth="1.1"
+                      strokeOpacity={isDarkMode ? '0.58' : '0.68'}
                     />
                     <path
                       d="M 0,-12 Q -8,-48 -3,-78 M 0,-12 Q 8,-48 3,-78"
                       fill="none"
                       stroke={isDarkMode ? '#E2A88B' : '#B87B65'}
-                      strokeWidth="0.7"
+                      strokeWidth="0.65"
                       strokeLinecap="round"
-                      strokeOpacity="0.45"
+                      strokeOpacity="0.42"
                     />
                   </g>
                 ))}
               </g>
 
               {/* 4. Inner Corolla & Golden Botanical Stamens */}
-              <g ref={bloomInnerCorollaRef} transform="translate(260, 170) rotate(0) scale(0.68)">
+              <g ref={bloomInnerCorollaRef} transform="translate(260, 170) rotate(0) scale(0.82)">
                 {[0, 60, 120, 180, 240, 300].map((angle) => (
                   <path
                     key={`inner-petal-${angle}`}
@@ -1345,8 +1332,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
                     fill="url(#wc-petal-blush)"
                     stroke={isDarkMode ? '#F0B6C8' : '#C4748B'}
-                    strokeWidth="1.15"
-                    strokeOpacity="0.7"
+                    strokeWidth="1.05"
+                    strokeOpacity="0.62"
                   />
                 ))}
                 <circle cx="0" cy="0" r="24" fill="url(#wc-center-gold)" />
@@ -1359,7 +1346,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       y2="-20"
                       stroke={isDarkMode ? '#FCD34D' : '#D97706'}
                       strokeWidth="1"
-                      strokeOpacity="0.65"
+                      strokeOpacity="0.58"
                       strokeLinecap="round"
                     />
                     <circle
@@ -1367,7 +1354,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       cy="-21.5"
                       r="2"
                       fill={isDarkMode ? '#FDE68A' : '#F59E0B'}
-                      fillOpacity="0.8"
+                      fillOpacity="0.72"
                     />
                   </g>
                 ))}
@@ -1377,359 +1364,71 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   r="6.5"
                   fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
                   stroke={isDarkMode ? '#F59E0B' : '#D97706'}
-                  strokeWidth="1.1"
-                  strokeOpacity="0.75"
+                  strokeWidth="1.05"
+                  strokeOpacity="0.68"
                 />
               </g>
             </svg>
           </div>
 
-          <div className="relative z-10 max-w-5xl mx-auto text-center">
-            {/* Desktop Floating Notification Card — Top-Right Position with Clear Breathing Space Below Navbar */}
-            <div
-              className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute -top-6 xl:-top-8 -right-2 xl:-right-12 text-left select-none z-10 animate-fluid-badge-right transition-colors ${
-                isDarkMode
-                  ? 'bg-[#362D2A]/95 border-[#4E423E]'
-                  : 'bg-white/95 border-[#F0E4DC]'
-              }`}
+          {/* Centered Editorial Focal Block — Roman + Italic Headline & Tagline (Zero Eyebrow Clutter) */}
+          <div className="relative z-10 max-w-5xl mx-auto text-center animate-hero-entrance px-2 mt-2 sm:mt-8">
+            {/* Main Serif Display Headline — Wide Sweep on Desktop, Balanced 2-Line Lockup on Mobile */}
+            <h1
+              className="mx-auto select-none"
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              <div
-                className={`w-9 h-9 rounded-full border flex items-center justify-center shrink-0 overflow-hidden ${
-                  isDarkMode
-                    ? 'bg-[#48383B] border-[#61494E]'
-                    : 'bg-[#FFF0F5] border-[#F9D5E2]'
-                }`}
-              >
-                <svg viewBox="-55 -55 110 110" className="w-7 h-7">
-                  <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" hideStem />
-                </svg>
-              </div>
-              <div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className={`text-xs font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'}`}>
-                    Send A Bouquet
-                  </span>
-                  <span className={`text-[10px] ${isDarkMode ? 'text-[#B8A59C]' : 'text-stone-400'}`}>now</span>
-                </div>
-                <p className={`text-[11px] ${isDarkMode ? 'text-[#D5C3B9]' : 'text-stone-500'}`}>
-                  Someone sent you a bouquet!
-                </p>
-              </div>
-            </div>
-
-            {/* Desktop Floating Live Stat Card — Generous Space Above Showcase Card */}
-            <div
-              className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute top-40 left-0 xl:-left-8 text-left select-none z-10 animate-fluid-badge-left transition-colors ${
-                isDarkMode
-                  ? 'bg-[#362D2A]/95 border-[#4E423E]'
-                  : 'bg-white/95 border-[#F0E4DC]'
-              }`}
-            >
-              <div
-                className={`w-9 h-9 rounded-full border flex items-center justify-center text-[#F43F5E] shrink-0 ${
-                  isDarkMode
-                    ? 'bg-[#48383B] border-[#61494E]'
-                    : 'bg-[#FFF0F3] border-[#F9D5E2]'
-                }`}
-              >
-                <Heart className="w-4 h-4 fill-current" />
-              </div>
-              <div>
-                <div className={`text-[10px] uppercase tracking-wider font-semibold ${isDarkMode ? 'text-[#C4B0A6]' : 'text-stone-400'}`}>
-                  Loved by Many
-                </div>
-                <div className={`text-xs font-semibold tabular-nums ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'}`}>
-                  Over {stats.bouquetsCreated.toLocaleString()}+ sent
-                </div>
-              </div>
-            </div>
-
-            {/* Upsized Main Centered Serif Headline & Single-Line Subtitle */}
-            <div className="animate-hero-entrance">
-              <h1
-                className={`text-[42px] sm:text-6xl md:text-[72px] font-semibold tracking-tight leading-[1.04] sm:leading-[1.06] max-w-4xl mx-auto px-1 transition-colors ${
+              <span
+                className={`block sm:inline text-[52px] sm:text-[74px] md:text-[88px] lg:text-[98px] font-semibold tracking-[-0.02em] leading-[0.98] transition-colors ${
                   isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                 }`}
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               >
-                Send Love in Every Bloom.
-              </h1>
-
-              {/* Single Concise Subtitle Line */}
-              <p
-                className={`mt-3.5 sm:mt-4 text-[13.5px] sm:text-base max-w-sm sm:max-w-xl mx-auto leading-relaxed px-2 transition-colors ${
-                  isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                Send Love in{' '}
+              </span>
+              <span
+                className={`block sm:inline text-[56px] sm:text-[78px] md:text-[92px] lg:text-[102px] italic font-normal tracking-[-0.015em] leading-[0.98] transition-colors ${
+                  isDarkMode ? 'text-[#F0C2AE]' : 'text-[#8A4B38]'
                 }`}
               >
-                Pick your flowers, wrap with love, attach a little voice note or letter.
-              </p>
+                Every Bloom.
+              </span>
+            </h1>
 
-              {/* Dual Centered Pill Buttons — Side-by-Side on Mobile & Desktop, Zero Emojis/Icons */}
-              <div className="mt-6 sm:mt-7 flex items-center justify-center gap-2.5 sm:gap-3.5">
-                <button
-                  type="button"
-                  onClick={onStartCrafting}
-                  className={`px-6 sm:px-8 py-3 sm:py-3.5 rounded-full text-white text-xs sm:text-sm font-medium shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
-                    isDarkMode
-                      ? 'bg-[#9A6550] hover:bg-[#875642]'
-                      : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                  }`}
-                >
-                  Craft a Bouquet
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => scrollToSection('how-it-works')}
-                  className={`px-5 sm:px-7 py-3 sm:py-3.5 rounded-full border text-xs sm:text-sm font-medium shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
-                    isDarkMode
-                      ? 'bg-[#362D2A] border-[#524540] text-[#F5ECE6] hover:bg-[#423734]'
-                      : 'bg-white border-[#EFE6DD] text-[#231C18] hover:bg-[#FAF5F0]'
-                  }`}
-                >
-                  See How It Works
-                </button>
-              </div>
-
-              {/* Mobile-Only Compact Social Proof Pill (No extra symbols or clutter) */}
-              <div className="mt-5 flex lg:hidden items-center justify-center">
-                <div
-                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-[11px] shadow-2xs select-none transition-colors ${
-                    isDarkMode
-                      ? 'bg-[#362D2A]/90 border-[#4E423E] text-[#E8D9D0]'
-                      : 'bg-white/90 border-[#EFE4DC] text-[#5C4940]'
-                  }`}
-                >
-                  <span
-                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[#F43F5E] shrink-0 ${
-                      isDarkMode ? 'bg-[#48383B]' : 'bg-[#FFF0F3]'
-                    }`}
-                  >
-                    <Heart className="w-2.5 h-2.5 fill-current" />
-                  </span>
-                  <span className="font-medium tabular-nums">
-                    Over {stats.bouquetsCreated.toLocaleString()}+ bouquets sent
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Visual Bouquet Showcase Container — Balanced on Mobile, Pulled Down on Desktop for Floating Tags */}
-            <div
-              id="collections"
-              className={`scroll-mt-24 animate-hero-entrance-delayed mt-8 sm:mt-16 lg:mt-28 max-w-4xl mx-auto rounded-[24px] sm:rounded-[30px] border border-dashed p-3.5 sm:p-7 shadow-[0_12px_40px_rgba(122,75,58,0.06)] relative transition-colors ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#5E4E49]'
-                  : 'bg-white border-[#DECBB9]'
+            {/* Tagline — Editorial Serif & Italic Rhythm, Single Line on Desktop & Balanced 2-Line on Mobile */}
+            <p
+              className={`mt-5 sm:mt-7 text-[19px] sm:text-[23px] md:text-[25px] max-w-[300px] sm:max-w-3xl mx-auto leading-[1.45] font-normal px-2 transition-colors ${
+                isDarkMode ? 'text-[#E5D6CE]' : 'text-[#4A3B33]'
               }`}
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 items-center">
-                  {/* Left: Full-Proportioned Architectural Bouquet Stage Preview */}
-                  <div
-                    onClick={handleCustomizePresetInStudio}
-                    title="Click to arrange this style in the studio"
-                    className={`md:col-span-6 relative h-[235px] sm:h-[320px] rounded-2xl border flex items-center justify-center overflow-hidden cursor-pointer group transition-colors ${
-                      isDarkMode
-                        ? 'bg-[#423734] border-[#594A45]'
-                        : 'bg-[#FCF8F4] border-[#F2E8DF]'
-                    }`}
-                  >
-                    {/* Soft radial spotlight behind bouquet (Warm Blush Glow in both Light & Soft Dark Mode) */}
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 transition-opacity duration-300"
-                      style={{
-                        opacity: isDarkMode ? 0.48 : 0.68,
-                        background: isDarkMode
-                          ? 'radial-gradient(circle at 50% 48%, rgba(253, 216, 228, 0.42) 0%, rgba(66, 55, 52, 0) 72%)'
-                          : 'radial-gradient(circle at 50% 48%, #FDE8EF 0%, rgba(252,248,244,0) 72%)',
-                      }}
-                    />
+              Pick your flowers, <span className="italic">wrap with love</span>, and attach a little voice note or letter.
+            </p>
 
-                    {/* Properly Proportioned Full Bouquet with Uncut Flower Heads */}
-                    <div
-                      key={preset.id}
-                      className="relative z-10 w-full h-full flex items-center justify-center px-5 py-5 sm:px-8 sm:py-7 animate-fluid-bouquet group-hover:scale-[1.03] transition-transform duration-300"
-                    >
-                      <HeroBouquetIllustrationSVG preset={preset} />
-                    </div>
+            {/* Dual Centered Pill Buttons — Pure Typography, Zero Emojis/Icons */}
+            <div className="mt-8 sm:mt-10 flex items-center justify-center gap-3 sm:gap-4">
+              <button
+                type="button"
+                onClick={onStartCrafting}
+                className={`px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-white text-xs sm:text-sm font-medium shadow-[0_10px_26px_rgba(122,75,58,0.22)] hover:shadow-[0_14px_32px_rgba(122,75,58,0.3)] transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
+                  isDarkMode
+                    ? 'bg-[#9A6550] hover:bg-[#875642]'
+                    : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                }`}
+              >
+                Craft a Bouquet
+              </button>
 
-                    {/* Top-Left Handwritten Note Tag Pill */}
-                    <div
-                      className={`absolute top-3 left-3 sm:top-3.5 sm:left-3.5 z-20 px-3 sm:px-3.5 py-1 sm:py-1.5 rounded-full border text-[11px] sm:text-xs italic shadow-2xs transition-colors ${
-                        isDarkMode
-                          ? 'bg-[#332A27]/95 border-[#574944] text-[#F5ECE6]'
-                          : 'bg-white/95 border-[#EFE6DD] text-[#5C4940]'
-                      }`}
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                    >
-                      {preset.notePreview}
-                    </div>
-
-                    {/* Bottom-Right Voice Keepsake Badge */}
-                    <div
-                      className={`absolute bottom-3 right-3 sm:bottom-3.5 sm:right-3.5 z-20 pl-1.5 pr-3 sm:pl-2 sm:pr-3.5 py-1 rounded-full border text-[10px] sm:text-[11px] font-medium inline-flex items-center gap-1.5 sm:gap-2 shadow-2xs transition-colors ${
-                        isDarkMode
-                          ? 'bg-[#332A27]/95 border-[#574944] text-[#F5ECE6]'
-                          : 'bg-white/95 border-[#EFE6DD] text-[#5C4940]'
-                      }`}
-                    >
-                      <div
-                        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center overflow-hidden shrink-0 [&>svg]:w-4 [&>svg]:h-4 sm:[&>svg]:w-5 sm:[&>svg]:h-5 ${
-                          isDarkMode ? 'bg-[#463A36]' : 'bg-[#FAF4F0]'
-                        }`}
-                      >
-                        <MiniVoiceKeepsakeSVG
-                          styleType={preset.voiceStyle}
-                          primaryColor={preset.voicePrimary}
-                          accentColor={preset.voiceAccent}
-                        />
-                      </div>
-                      <span className="whitespace-nowrap">{preset.voiceLabel}</span>
-                    </div>
-                  </div>
-
-                  {/* Right: Clean Editorial Header + Subtitle + 2x2 Selector Grid */}
-                  <div className="md:col-span-6 flex flex-col items-center md:items-start text-center md:text-left space-y-3.5 sm:space-y-4">
-                    <div className="w-full flex flex-col items-center md:items-start">
-                      <h2
-                        className={`text-2xl sm:text-3xl font-semibold tracking-tight ${
-                          isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                        }`}
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                      >
-                        Couture Wraps &amp; Keepsakes
-                      </h2>
-                      <p
-                        className={`mt-1 text-xs sm:text-[13px] ${
-                          isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                        }`}
-                      >
-                        Choose a signature presentation to preview or customize in the studio.
-                      </p>
-                    </div>
-
-                    {/* 2x2 Visual Thumbnail Selector Grid */}
-                    <div className="grid grid-cols-2 gap-2 sm:gap-2.5 w-full">
-                      {SHOWCASE_PRESETS.map((p, i) => {
-                        const active = i === activePresetIdx;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => handleSelectPreset(i)}
-                            className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border flex items-center gap-2 sm:gap-2.5 text-left transition-all cursor-pointer ${
-                              active
-                                ? isDarkMode
-                                  ? 'border-[#D4A383] bg-[#483B37] shadow-xs ring-1 ring-[#D4A383]/35'
-                                  : 'border-[#C8A996] bg-[#F5EBE2] shadow-xs'
-                                : isDarkMode
-                                ? 'border-[#4D403C] bg-[#2E2624] hover:bg-[#3B312E] hover:border-[#63524D]'
-                                : 'border-[#EFE6DD] bg-[#FAF6F2] hover:bg-[#F5EFE8]'
-                            }`}
-                          >
-                            <div
-                              className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full border flex items-center justify-center shrink-0 overflow-hidden [&>svg]:w-6 [&>svg]:h-6 sm:[&>svg]:w-8 sm:[&>svg]:h-8 ${
-                                isDarkMode
-                                  ? 'bg-[#3C322F] border-[#594B46]'
-                                  : 'bg-white border-[#EFE6DD]'
-                              }`}
-                            >
-                              <MiniWrapConeSVG
-                                styleType={p.wrapStyle}
-                                color={p.wrapColor}
-                                ribbon={p.ribbonColor}
-                              />
-                            </div>
-                            <div className="min-w-0">
-                              <div
-                                className={`text-[11px] sm:text-xs font-semibold truncate ${
-                                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                                }`}
-                              >
-                                {p.label}
-                              </div>
-                              <div
-                                className={`hidden sm:block text-[10px] truncate ${
-                                  isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                                }`}
-                              >
-                                {p.subtitle}
-                              </div>
-                              <div
-                                className={`block sm:hidden text-[9.5px] truncate ${
-                                  isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                                }`}
-                              >
-                                {p.mobileSubtitle}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Bottom Bar: Opens Selected Preset Directly in Studio */}
-                    <button
-                      type="button"
-                      onClick={handleCustomizePresetInStudio}
-                      className={`w-full px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border flex items-center justify-between gap-2 sm:gap-3 cursor-pointer transition-colors ${
-                        isDarkMode
-                          ? 'bg-[#2E2624] border-[#4D403C] hover:bg-[#3B312E] hover:border-[#63524D]'
-                          : 'bg-[#FAF6F2] border-[#EFE6DD] hover:bg-[#F3ECE3]'
-                      }`}
-                    >
-                      <div className="flex items-center -space-x-1.5 shrink-0">
-                        <div
-                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center overflow-hidden ${
-                            isDarkMode ? 'bg-[#3C322F] border-[#594B46]' : 'bg-white border-[#E8DDD3]'
-                          }`}
-                        >
-                          <svg viewBox="-55 -55 110 110" className="w-5 h-5 sm:w-6 sm:h-6">
-                            <FlowerRenderer
-                              type={preset.stems[preset.stems.length - 1]?.type || 'peony'}
-                              petalColor={preset.stems[preset.stems.length - 1]?.petal || '#F472B6'}
-                              centerColor={preset.stems[preset.stems.length - 1]?.center || '#FEF08A'}
-                              hideStem
-                            />
-                          </svg>
-                        </div>
-                        <div
-                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center overflow-hidden [&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-6 sm:[&>svg]:h-6 ${
-                            isDarkMode ? 'bg-[#3C322F] border-[#594B46]' : 'bg-white border-[#E8DDD3]'
-                          }`}
-                        >
-                          <MiniRibbonBowSVG hex={preset.ribbonColor} styleType={preset.ribbonStyle} />
-                        </div>
-                        <div
-                          className={`hidden xs:flex sm:flex w-7 h-7 sm:w-8 sm:h-8 rounded-full border items-center justify-center overflow-hidden [&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-6 sm:[&>svg]:h-6 ${
-                            isDarkMode ? 'bg-[#3C322F] border-[#594B46]' : 'bg-white border-[#E8DDD3]'
-                          }`}
-                        >
-                          <MiniCardShapeSVG theme="sealed" customBg="#FFFDF9" customAccent="#B4846C" />
-                        </div>
-                        <div
-                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center overflow-hidden [&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-6 sm:[&>svg]:h-6 ${
-                            isDarkMode ? 'bg-[#3C322F] border-[#594B46]' : 'bg-white border-[#E8DDD3]'
-                          }`}
-                        >
-                          <MiniVoiceKeepsakeSVG
-                            styleType={preset.voiceStyle}
-                            primaryColor={preset.voicePrimary}
-                            accentColor={preset.voiceAccent}
-                          />
-                        </div>
-                      </div>
-                      <span
-                        className={`text-[11px] sm:text-xs font-semibold whitespace-nowrap ${
-                          isDarkMode ? 'text-[#EABCA0]' : 'text-[#7A4B3A]'
-                        }`}
-                      >
-                        Customize {preset.label}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+              <button
+                type="button"
+                onClick={() => scrollToSection('how-it-works')}
+                className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-full border border-dashed text-xs sm:text-sm font-medium transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
+                  isDarkMode
+                    ? 'bg-[#362D2A]/90 border-[#66554F] text-[#F5ECE6] hover:bg-[#423734]'
+                    : 'bg-white/90 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF5F0]'
+                }`}
+              >
+                See How It Works
+              </button>
             </div>
           </div>
         </section>
