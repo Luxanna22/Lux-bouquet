@@ -8,15 +8,20 @@ import { FlowerType } from '../../types/bouquet';
 export interface FlowerSVGProps {
   petalColor: string;
   centerColor: string;
+  hideStem?: boolean;
 }
 
 /** 1. Rose SVG Component */
-export const RoseSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const RoseSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
     {/* Stem & Leaves */}
-    <path d="M0,18 Q-4,85 0,155" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
-    <path d="M-2,75 C-28,65 -34,42 -12,48 C-4,52 -2,66 -2,75 Z" fill="#22c55e" />
-    <path d="M2,95 C28,85 34,62 12,68 C4,72 2,86 2,95 Z" fill="#16a34a" />
+    {!hideStem && (
+      <>
+        <path d="M0,18 Q-4,85 0,155" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+        <path d="M-2,75 C-28,65 -34,42 -12,48 C-4,52 -2,66 -2,75 Z" fill="#22c55e" />
+        <path d="M2,95 C28,85 34,62 12,68 C4,72 2,86 2,95 Z" fill="#16a34a" />
+      </>
+    )}
     {/* Outer Petals */}
     <circle cx="-18" cy="-8" r="24" fill={petalColor} opacity="0.92" />
     <circle cx="18" cy="-8" r="24" fill={petalColor} opacity="0.92" />
@@ -49,12 +54,16 @@ export const RoseSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) =
 );
 
 /** 2. Tulip SVG Component */
-export const TulipSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const TulipSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
     {/* Stem & Long Clasping Leaf */}
-    <path d="M0,22 Q3,90 0,160" stroke="#16a34a" strokeWidth="6.5" fill="none" strokeLinecap="round" />
-    <path d="M-2,135 C-32,85 -26,35 -8,18 C-12,62 -8,100 -2,135 Z" fill="#22c55e" />
-    <path d="M2,140 C30,90 28,42 10,24 C12,65 8,105 2,140 Z" fill="#15803d" />
+    {!hideStem && (
+      <>
+        <path d="M0,22 Q3,90 0,160" stroke="#16a34a" strokeWidth="6.5" fill="none" strokeLinecap="round" />
+        <path d="M-2,135 C-32,85 -26,35 -8,18 C-12,62 -8,100 -2,135 Z" fill="#22c55e" />
+        <path d="M2,140 C30,90 28,42 10,24 C12,65 8,105 2,140 Z" fill="#15803d" />
+      </>
+    )}
     {/* Back Center Petal & Peek of Golden Stamen */}
     <ellipse cx="0" cy="-18" rx="18" ry="30" fill={centerColor} opacity="0.85" />
     <ellipse cx="0" cy="-14" rx="20" ry="32" fill={petalColor} opacity="0.9" />
@@ -162,11 +171,13 @@ export const DaisySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) 
 };
 
 /** 5. Stargazer Lily SVG Component */
-export const LilySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const LilySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const angles = [0, 60, 120, 180, 240, 300];
   return (
     <g>
-      <path d="M0,22 Q-3,90 0,160" stroke="#15803d" strokeWidth="5.5" fill="none" strokeLinecap="round" />
+      {!hideStem && (
+        <path d="M0,22 Q-3,90 0,160" stroke="#15803d" strokeWidth="5.5" fill="none" strokeLinecap="round" />
+      )}
       {angles.map((deg) => (
         <g key={deg} transform={`rotate(${deg})`}>
           <path
@@ -195,9 +206,11 @@ export const LilySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) =
 };
 
 /** 6. Lush Peony SVG Component */
-export const PeonySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const PeonySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
-    <path d="M0,25 Q2,90 0,155" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+    {!hideStem && (
+      <path d="M0,25 Q2,90 0,155" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+    )}
     {/* Outer Ruffled Cloud */}
     {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
       <circle
@@ -241,12 +254,12 @@ export const PeonySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) 
 );
 
 /** 7. French Lavender Sprig SVG Component */
-export const LavenderSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const LavenderSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
     {/* 3 Graceful Stems */}
-    <path d="M0,150 Q-12,60 -18,-55" stroke="#4d7c0f" strokeWidth="3.5" fill="none" strokeLinecap="round" />
-    <path d="M0,150 Q0,50 0,-70" stroke="#65a30d" strokeWidth="4" fill="none" strokeLinecap="round" />
-    <path d="M0,150 Q12,60 18,-50" stroke="#4d7c0f" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+    <path d={hideStem ? 'M0,26 Q-10,-10 -18,-55' : 'M0,150 Q-12,60 -18,-55'} stroke="#4d7c0f" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+    <path d={hideStem ? 'M0,26 L0,-70' : 'M0,150 Q0,50 0,-70'} stroke="#65a30d" strokeWidth="4" fill="none" strokeLinecap="round" />
+    <path d={hideStem ? 'M0,26 Q10,-10 18,-50' : 'M0,150 Q12,60 18,-50'} stroke="#4d7c0f" strokeWidth="3.5" fill="none" strokeLinecap="round" />
     {/* Center Spike Florets */}
     {[-68, -54, -40, -26, -12, 2, 16].map((y, idx) => (
       <g key={`c-${idx}`} transform={`translate(0, ${y})`}>
@@ -273,7 +286,7 @@ export const LavenderSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor 
 );
 
 /** 8. Hydrangea Cluster SVG Component */
-export const HydrangeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const HydrangeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const florets = [
     { x: 0, y: -26 },
     { x: -24, y: -14 },
@@ -287,7 +300,9 @@ export const HydrangeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor
   ];
   return (
     <g>
-      <path d="M0,25 Q0,95 0,160" stroke="#15803d" strokeWidth="6.5" fill="none" strokeLinecap="round" />
+      {!hideStem && (
+        <path d="M0,25 Q0,95 0,160" stroke="#15803d" strokeWidth="6.5" fill="none" strokeLinecap="round" />
+      )}
       <ellipse cx="-26" cy="36" rx="22" ry="12" fill="#16a34a" transform="rotate(-25 -26 36)" />
       <ellipse cx="26" cy="36" rx="22" ry="12" fill="#16a34a" transform="rotate(25 26 36)" />
       {florets.map((pos, idx) => (
@@ -304,7 +319,7 @@ export const HydrangeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor
 };
 
 /** 9. Baby's Breath Cloud Spray SVG Component */
-export const BabysBreathSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const BabysBreathSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const blossoms = [
     { x: -34, y: -42, r: 7 },
     { x: -18, y: -58, r: 6.5 },
@@ -322,13 +337,13 @@ export const BabysBreathSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerCol
     <g>
       {/* Delicate Branching Stems */}
       <g stroke="#65a30d" strokeWidth="2" fill="none" strokeLinecap="round">
-        <path d="M0,150 L0,-62" />
-        <path d="M0,65 Q-18,10 -34,-42" />
-        <path d="M0,65 Q18,10 35,-40" />
+        <path d={hideStem ? 'M0,32 L0,-62' : 'M0,150 L0,-62'} />
+        <path d={hideStem ? 'M0,32 Q-18,0 -34,-42' : 'M0,65 Q-18,10 -34,-42'} />
+        <path d={hideStem ? 'M0,32 Q18,0 35,-40' : 'M0,65 Q18,10 35,-40'} />
         <path d="M0,25 Q-14,-20 -18,-58" />
         <path d="M0,25 Q14,-20 20,-56" />
-        <path d="M0,45 Q-18,15 -26,-20" />
-        <path d="M0,45 Q18,15 28,-14" />
+        <path d="M0,28 Q-18,8 -26,-20" />
+        <path d="M0,28 Q18,8 28,-14" />
       </g>
       {blossoms.map((b, i) => (
         <g key={i} transform={`translate(${b.x}, ${b.y})`}>
@@ -344,7 +359,7 @@ export const BabysBreathSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerCol
 };
 
 /** 10. Silver Dollar Eucalyptus SVG Component */
-export const EucalyptusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const EucalyptusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const leaves = [
     { x: -18, y: 35, rx: 16, ry: 14, rot: -35 },
     { x: 18, y: 24, rx: 16, ry: 14, rot: 35 },
@@ -356,7 +371,7 @@ export const EucalyptusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColo
   ];
   return (
     <g>
-      <path d="M0,150 Q-4,45 0,-60" stroke={centerColor} strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      <path d={hideStem ? 'M0,42 Q-2,0 0,-60' : 'M0,150 Q-4,45 0,-60'} stroke={centerColor} strokeWidth="3.5" fill="none" strokeLinecap="round" />
       {leaves.map((lf, i) => (
         <g key={i} transform={`translate(${lf.x}, ${lf.y}) rotate(${lf.rot})`}>
           <ellipse
@@ -410,10 +425,10 @@ export const FernSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) =
 };
 
 /** 12. Phalaenopsis Orchid SVG Component */
-export const OrchidSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const OrchidSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
     {/* Graceful arching orchid stem & aerial bud */}
-    <path d="M0,155 C-6,85 -10,10 6,-62" stroke="#15803d" strokeWidth="4.8" fill="none" strokeLinecap="round" />
+    <path d={hideStem ? 'M0,22 C-4,-5 -6,-25 6,-62' : 'M0,155 C-6,85 -10,10 6,-62'} stroke="#15803d" strokeWidth="4.8" fill="none" strokeLinecap="round" />
     <ellipse cx="6" cy="-64" rx="6" ry="9" fill={petalColor} stroke={centerColor} strokeWidth="1" />
     {/* Upper secondary bloom */}
     <g transform="translate(3, -38) scale(0.72) rotate(12)">
@@ -513,15 +528,19 @@ export const CarnationSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor
 };
 
 /** 14. Persian Ranunculus SVG Component */
-export const RanunculusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const RanunculusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const ring1 = [0, 40, 80, 120, 160, 200, 240, 280, 320];
   const ring2 = [20, 65, 110, 155, 200, 245, 290, 335];
   const ring3 = [0, 51, 102, 153, 204, 255, 306];
   const ring4 = [25, 85, 145, 205, 265, 325];
   return (
     <g>
-      <path d="M0,22 Q-3,88 0,155" stroke="#16a34a" strokeWidth="5.8" fill="none" strokeLinecap="round" />
-      <path d="M-2,82 C-28,70 -30,48 -10,54 Z" fill="#22c55e" />
+      {!hideStem && (
+        <>
+          <path d="M0,22 Q-3,88 0,155" stroke="#16a34a" strokeWidth="5.8" fill="none" strokeLinecap="round" />
+          <path d="M-2,82 C-28,70 -30,48 -10,54 Z" fill="#22c55e" />
+        </>
+      )}
       {/* Outer Paper-Thin Cupped Whorl */}
       {ring1.map((deg) => (
         <ellipse
@@ -598,13 +617,17 @@ export const RanunculusSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColo
 };
 
 /** 15. Poppy Anemone SVG Component */
-export const AnemoneSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const AnemoneSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const petals = [0, 45, 90, 135, 180, 225, 270, 315];
   const stamens = Array.from({ length: 16 }, (_, i) => i * 22.5);
   return (
     <g>
-      <path d="M0,22 Q3,90 0,156" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
-      <path d="M-2,65 C-28,55 -30,36 -10,44 Z" fill="#16a34a" />
+      {!hideStem && (
+        <>
+          <path d="M0,22 Q3,90 0,156" stroke="#15803d" strokeWidth="6" fill="none" strokeLinecap="round" />
+          <path d="M-2,65 C-28,55 -30,36 -10,44 Z" fill="#16a34a" />
+        </>
+      )}
       {/* 8 Overlapping Rounded Velvet Petals */}
       {petals.map((deg, idx) => (
         <ellipse
@@ -910,7 +933,7 @@ export const CherryBlossomSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerC
 };
 
 /** 21. Sweet Waxflower Spray (Filler) SVG Component */
-export const WaxflowerSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const WaxflowerSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const florets = [
     { x: -26, y: -38, s: 0.9 },
     { x: 0, y: -56, s: 1 },
@@ -923,11 +946,11 @@ export const WaxflowerSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor
     <g>
       {/* Woody Needle-Leaved Spray Stems */}
       <g stroke="#4d7c0f" strokeWidth="2.6" fill="none" strokeLinecap="round">
-        <path d="M0,150 L0,-56" />
-        <path d="M0,45 Q-16,0 -26,-38" />
-        <path d="M0,45 Q16,0 26,-34" />
-        <path d="M0,65 Q-12,25 -16,-12" />
-        <path d="M0,65 Q12,25 18,-8" />
+        <path d={hideStem ? 'M0,28 L0,-56' : 'M0,150 L0,-56'} />
+        <path d={hideStem ? 'M0,26 Q-14,-4 -26,-38' : 'M0,45 Q-16,0 -26,-38'} />
+        <path d={hideStem ? 'M0,26 Q14,-4 26,-34' : 'M0,45 Q16,0 26,-34'} />
+        <path d={hideStem ? 'M0,28 Q-10,10 -16,-12' : 'M0,65 Q-12,25 -16,-12'} />
+        <path d={hideStem ? 'M0,28 Q10,10 18,-8' : 'M0,65 Q12,25 18,-8'} />
         {/* Fine Pine-like Needles */}
         <path d="M-2,24 L-12,12 M2,20 L12,8 M-2,0 L-10,-12 M2,-4 L10,-16" strokeWidth="1.8" />
       </g>
@@ -1061,10 +1084,14 @@ export const MonsteraSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor 
 );
 
 /** 25. Sculptural Calla Lily SVG Component */
-export const CallaLilySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const CallaLilySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
-    <path d="M0,28 Q-3,92 0,160" stroke="#15803d" strokeWidth="6.5" fill="none" strokeLinecap="round" />
-    <path d="M-2,115 C-28,78 -24,38 -8,22 C-10,58 -6,88 -2,115 Z" fill="#16a34a" />
+    {!hideStem && (
+      <>
+        <path d="M0,28 Q-3,92 0,160" stroke="#15803d" strokeWidth="6.5" fill="none" strokeLinecap="round" />
+        <path d="M-2,115 C-28,78 -24,38 -8,22 C-10,58 -6,88 -2,115 Z" fill="#16a34a" />
+      </>
+    )}
     {/* Outer Sculptural Trumpet Spathe */}
     <path
       d="M0,32 C-28,16 -38,-22 -18,-48 C-6,-62 4,-66 8,-54 C24,-36 32,-8 16,18 C8,28 3,32 0,32 Z"
@@ -1088,9 +1115,11 @@ export const CallaLilySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor
 );
 
 /** 26. Icelandic Silk Poppy SVG Component */
-export const PoppySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const PoppySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
-    <path d="M0,22 C-8,72 6,115 0,158" stroke="#4d7c0f" strokeWidth="5" fill="none" strokeLinecap="round" />
+    {!hideStem && (
+      <path d="M0,22 C-8,72 6,115 0,158" stroke="#4d7c0f" strokeWidth="5" fill="none" strokeLinecap="round" />
+    )}
     {/* Back Crinkled Silk Petals */}
     <path
       d="M-6,-4 C-46,-28 -44,-54 -14,-48 C-4,-46 0,-28 -6,-4 Z"
@@ -1128,9 +1157,9 @@ export const PoppySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) 
 );
 
 /** 27. Fragrant Sweet Pea SVG Component */
-export const SweetPeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const SweetPeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
-    <path d="M0,155 Q-6,65 0,-52" stroke="#16a34a" strokeWidth="4.2" fill="none" strokeLinecap="round" />
+    <path d={hideStem ? 'M0,24 Q-4,-10 0,-52' : 'M0,155 Q-6,65 0,-52'} stroke="#16a34a" strokeWidth="4.2" fill="none" strokeLinecap="round" />
     {/* Curling Botanical Tendril */}
     <path d="M2,28 C18,18 26,28 18,36 C12,42 8,32 14,28" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
     {[
@@ -1157,11 +1186,13 @@ export const SweetPeaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor 
 );
 
 /** 28. Bell Freesia Spray SVG Component */
-export const FreesiaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const FreesiaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
     {/* Arching Freesia Stem */}
-    <path d="M0,155 C-8,75 -12,5 28,-42" stroke="#15803d" strokeWidth="4.5" fill="none" strokeLinecap="round" />
-    <path d="M-2,120 C-24,78 -22,42 -8,25" stroke="#22c55e" strokeWidth="4" fill="none" strokeLinecap="round" />
+    <path d={hideStem ? 'M-4,14 C-8,-6 4,-22 28,-42' : 'M0,155 C-8,75 -12,5 28,-42'} stroke="#15803d" strokeWidth="4.5" fill="none" strokeLinecap="round" />
+    {!hideStem && (
+      <path d="M-2,120 C-24,78 -22,42 -8,25" stroke="#22c55e" strokeWidth="4" fill="none" strokeLinecap="round" />
+    )}
     {[
       { x: -6, y: -6, s: 1.05, r: -28 },
       { x: 6, y: -20, s: 0.95, r: -18 },
@@ -1180,9 +1211,11 @@ export const FreesiaSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }
 );
 
 /** 29. Velvet Pampas Grass Plume (Filler) SVG Component */
-export const PampasSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const PampasSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
-    <path d="M0,155 L0,10" stroke={centerColor} strokeWidth="3.8" strokeLinecap="round" />
+    {!hideStem && (
+      <path d="M0,155 L0,10" stroke={centerColor} strokeWidth="3.8" strokeLinecap="round" />
+    )}
     {/* Feathery Layered Plume */}
     <ellipse cx="0" cy="-32" rx="18" ry="48" fill={petalColor} opacity="0.55" />
     <ellipse cx="-5" cy="-28" rx="12" ry="42" fill={petalColor} opacity="0.75" transform="rotate(-6 -5 -28)" />
@@ -1206,11 +1239,13 @@ export const PampasSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor })
 );
 
 /** 30. Queen Anne's Lace Umbel (Filler) SVG Component */
-export const QueenAnnesLaceSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => {
+export const QueenAnnesLaceSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => {
   const spokes = [-36, -22, -8, 8, 22, 36];
   return (
     <g>
-      <path d="M0,152 Q-3,65 0,4" stroke="#16a34a" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      {!hideStem && (
+        <path d="M0,152 Q-3,65 0,4" stroke="#16a34a" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      )}
       {spokes.map((x, idx) => {
         const y = -28 - (2.5 - Math.abs(idx - 2.5)) * 8;
         return (
@@ -1230,9 +1265,9 @@ export const QueenAnnesLaceSVG: React.FC<FlowerSVGProps> = ({ petalColor, center
 };
 
 /** 31. Feathered Astilbe Plume (Filler) SVG Component */
-export const AstilbeSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+export const AstilbeSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
   <g>
-    <path d="M0,152 L0,-68" stroke={centerColor} strokeWidth="3" strokeLinecap="round" />
+    <path d={hideStem ? 'M0,12 L0,-68' : 'M0,152 L0,-68'} stroke={centerColor} strokeWidth="3" strokeLinecap="round" />
     {[
       { x: -16, y: -10, h: 28, a: -28 },
       { x: 16, y: -14, h: 28, a: 28 },
@@ -1253,71 +1288,72 @@ export const AstilbeSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }
 export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = ({
   type,
   petalColor,
-  centerColor
+  centerColor,
+  hideStem
 }) => {
   switch (type) {
     case 'rose':
-      return <RoseSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <RoseSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'tulip':
-      return <TulipSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <TulipSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'sunflower':
-      return <SunflowerSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <SunflowerSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'daisy':
-      return <DaisySVG petalColor={petalColor} centerColor={centerColor} />;
+      return <DaisySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'lily':
-      return <LilySVG petalColor={petalColor} centerColor={centerColor} />;
+      return <LilySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'peony':
-      return <PeonySVG petalColor={petalColor} centerColor={centerColor} />;
+      return <PeonySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'orchid':
-      return <OrchidSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <OrchidSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'carnation':
-      return <CarnationSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <CarnationSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'ranunculus':
-      return <RanunculusSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <RanunculusSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'anemone':
-      return <AnemoneSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <AnemoneSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'dahlia':
-      return <DahliaSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <DahliaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'iris':
-      return <IrisSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <IrisSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'camellia':
-      return <CamelliaSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <CamelliaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'lotus':
-      return <LotusSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <LotusSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'callalily':
-      return <CallaLilySVG petalColor={petalColor} centerColor={centerColor} />;
+      return <CallaLilySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'poppy':
-      return <PoppySVG petalColor={petalColor} centerColor={centerColor} />;
+      return <PoppySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'sweetpea':
-      return <SweetPeaSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <SweetPeaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'freesia':
-      return <FreesiaSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <FreesiaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'lavender':
-      return <LavenderSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <LavenderSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'hydrangea':
-      return <HydrangeaSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <HydrangeaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'babysBreath':
-      return <BabysBreathSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <BabysBreathSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'eucalyptus':
-      return <EucalyptusSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <EucalyptusSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'fern':
-      return <FernSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <FernSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'cherryBlossom':
-      return <CherryBlossomSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <CherryBlossomSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'waxflower':
-      return <WaxflowerSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <WaxflowerSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'billyButtons':
-      return <BillyButtonsSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <BillyButtonsSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'oliveBranch':
-      return <OliveBranchSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <OliveBranchSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'monstera':
-      return <MonsteraSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <MonsteraSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'pampas':
-      return <PampasSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <PampasSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'queenanneslace':
-      return <QueenAnnesLaceSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <QueenAnnesLaceSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'astilbe':
-      return <AstilbeSVG petalColor={petalColor} centerColor={centerColor} />;
+      return <AstilbeSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
   }
 };
 

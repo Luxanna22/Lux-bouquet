@@ -1237,8 +1237,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowLandingPage(true)}
-                title="Back to Send A Boquet Home"
-                aria-label="Open Send A Boquet Home Page"
+                title="Back to Send A Bouquet Home"
+                aria-label="Open Send A Bouquet Home Page"
                 className="flex items-center gap-2 pl-1 pr-2 sm:pr-3 mr-0.5 sm:mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none hover:opacity-85 transition cursor-pointer"
               >
                 <BrandLogoMark className="w-7 h-7 sm:w-8 sm:h-8" isDarkMode={isDarkMode} />
@@ -1246,7 +1246,7 @@ export default function App() {
                   className="hidden lg:inline text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  Send A Boquet
+                  Send A Bouquet
                 </span>
               </button>
 

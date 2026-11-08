@@ -219,19 +219,14 @@ function applyShowcasePresetToStudio(preset: ShowcasePreset) {
 /** Full-Proportioned Architectural Bouquet Illustration for the Hero Vitrine (Memoized for instant theme switches) */
 const HeroBouquetIllustrationSVG: React.FC<{ preset: ShowcasePreset }> = React.memo(({ preset }) => {
   const { wrapStyle, wrapColor, wrapShadow, ribbonColor, stems } = preset;
-  const headClipId = `hero-bloom-head-${preset.id}`;
   const domeClipId = `hero-cloche-dome-${preset.id}`;
 
   return (
     <svg
-      viewBox="55 32 290 282"
-      className="w-full h-full max-w-[235px] sm:max-w-[275px] max-h-[205px] sm:max-h-[245px] overflow-visible select-none drop-shadow-[0_8px_16px_rgba(122,75,58,0.14)]"
+      viewBox="48 26 304 274"
+      className="w-full h-full max-w-[215px] sm:max-w-[250px] max-h-[195px] sm:max-h-[228px] overflow-visible select-none drop-shadow-[0_8px_16px_rgba(122,75,58,0.14)]"
     >
       <defs>
-        {/* Clips each FlowerRenderer's built-in straight lower stick so only the curved gathered bouquet stems show */}
-        <clipPath id={headClipId}>
-          <rect x="-110" y="-140" width="220" height="162" />
-        </clipPath>
         {/* Strict interior contour of the Glass Dome bell jar so no bloom or stem ever passes through the glass walls */}
         <clipPath id={domeClipId}>
           <path d="M 129,246 L 129,130 A 71,71 0 0 1 271,130 L 271,246 Z" />
@@ -316,12 +311,12 @@ const HeroBouquetIllustrationSVG: React.FC<{ preset: ShowcasePreset }> = React.m
             <g
               key={`bloom-${idx}`}
               transform={`translate(${st.x}, ${st.y}) rotate(${st.rot}) scale(${st.scale})`}
-              clipPath={`url(#${headClipId})`}
             >
               <FlowerRenderer
                 type={st.type}
                 petalColor={st.petal}
                 centerColor={st.center}
+                hideStem
               />
             </g>
           ))}
@@ -520,13 +515,13 @@ const StepOneSceneSVG: React.FC = React.memo(() => (
       <path d="M 120,52 L 120,116" stroke="#4D7C5D" strokeWidth="3" fill="none" strokeLinecap="round" />
 
       <g transform="translate(92, 62) rotate(-16) scale(0.46)">
-        <FlowerRenderer type="peony" petalColor="#F472B6" centerColor="#FEF08A" />
+        <FlowerRenderer type="peony" petalColor="#F472B6" centerColor="#FEF08A" hideStem />
       </g>
       <g transform="translate(148, 64) rotate(16) scale(0.46)">
-        <FlowerRenderer type="callalily" petalColor="#FFFBEB" centerColor="#F59E0B" />
+        <FlowerRenderer type="callalily" petalColor="#FFFBEB" centerColor="#F59E0B" hideStem />
       </g>
       <g transform="translate(120, 50) scale(0.52)">
-        <FlowerRenderer type="ranunculus" petalColor="#FB7185" centerColor="#FEF3C7" />
+        <FlowerRenderer type="ranunculus" petalColor="#FB7185" centerColor="#FEF3C7" hideStem />
       </g>
 
       <path d="M 100,112 L 140,112 L 134,140 Q 120,144 106,140 Z" fill="#FFD6E0" />
@@ -573,8 +568,7 @@ const StepTwoSceneSVG: React.FC = React.memo(() => (
 
     <g>
       <g transform="translate(42, 24) rotate(-6)">
-        <rect x="0" y="0" width="84" height="66" rx="8" fill="#FFFDF9" stroke="#E5D6C8" strokeWidth="1.4" />
-        <rect x="5" y="5" width="74" height="56" rx="5" fill="none" stroke="#F0E4D8" strokeWidth="0.9" strokeDasharray="2.5 2" />
+        <rect x="0" y="0" width="84" height="66" rx="8" fill="#FFFDF9" stroke="#DFCFC2" strokeWidth="1.4" strokeDasharray="3.5 2.5" />
         <path
           d="M 42,18 C 42,18 38,15 38,12.8 C 38,11.5 39,10.6 40.3,10.6 C 41.1,10.6 41.7,11.1 42,11.7 C 42.3,11.1 42.9,10.6 43.7,10.6 C 45,10.6 46,11.5 46,12.8 C 46,15 42,18 42,18 Z"
           fill="#E11D48"
@@ -786,18 +780,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     const rootEl = bloomRootRef.current;
     if (!rootEl) return;
 
-    // Blooms from scrollTop 0 -> 300px, and completely vanishes as scroll reaches "Couture Wraps & Keepsakes" (~290px)
-    const maxScroll = 295;
+    // Blooms from scrollTop 0 -> 350px, and completely vanishes before reaching "Couture Wraps & Keepsakes"
+    const maxScroll = 350;
     const rawP = Math.min(1, Math.max(0, scrollTop / maxScroll));
     // Smooth cubic ease-out for organic petal unfurling
     const bloomEase = 1 - Math.pow(1 - rawP, 2.2);
 
     const baseOpacity = isDarkModeRef.current ? 0.68 : 0.92;
-    // Holds gentle presence behind the title from 0..22% scroll, then dissolves to 0 by 100% ("Couture Wraps & Keepsakes")
+    // Holds gentle presence behind the title from 0..24% scroll, then dissolves to 0 by 100%
     const fadeFactor =
-      rawP <= 0.22
+      rawP <= 0.24
         ? 1
-        : Math.max(0, Math.pow(1 - (rawP - 0.22) / 0.78, 1.55));
+        : Math.max(0, Math.pow(1 - (rawP - 0.24) / 0.76, 1.55));
     const finalOpacity = baseOpacity * fadeFactor;
 
     if (finalOpacity <= 0.008) {
@@ -811,7 +805,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
     // Overall flower expands from a soft morning blossom (0.76) to full wide bloom (1.46) while drifting slightly down
     const rootScale = 0.76 + bloomEase * 0.7;
-    const driftY = rawP * 36;
+    const driftY = rawP * 40;
     rootEl.style.transform = `translate3d(-50%, ${driftY.toFixed(1)}px, 0) scale(${rootScale.toFixed(3)})`;
 
     if (bloomOuterRingRef.current) {
@@ -955,7 +949,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
   const handleCopyStudioEmail = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText('hello@sendaboquet.com').catch(() => {});
+      navigator.clipboard.writeText('hello@sendabouquet.com').catch(() => {});
     }
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2200);
@@ -1057,9 +1051,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       `}</style>
 
       {/* STICKY FLOATING TOP NAVBAR — Soft Cashmere-Cocoa in Dark Mode */}
-      <div className="sticky top-2.5 sm:top-3 z-40 px-3 sm:px-6 pt-1.5 sm:pt-2 pointer-events-none">
+      <div className="sticky top-2 sm:top-3 z-40 px-3 sm:px-6 pt-1 sm:pt-2 pointer-events-none">
         <header
-          className={`pointer-events-auto max-w-5xl mx-auto h-12 sm:h-14 px-3 sm:px-6 rounded-full border shadow-[0_8px_28px_rgba(35,28,24,0.06)] backdrop-blur-md flex items-center justify-between gap-2 sm:gap-3 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`pointer-events-auto max-w-5xl mx-auto h-11 sm:h-14 px-3 sm:px-6 rounded-full border shadow-[0_8px_28px_rgba(35,28,24,0.06)] backdrop-blur-md flex items-center justify-between gap-2 sm:gap-3 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             isDarkMode
               ? 'bg-[#362D2A]/92 border-[#4E423E] text-[#FBF6F1]'
               : 'bg-white/92 border-[#EFE6DD] text-[#231C18]'
@@ -1069,26 +1063,37 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <button
             type="button"
             onClick={onStartCrafting}
-            className="flex items-center gap-2 sm:gap-2.5 text-left cursor-pointer group min-w-0"
+            className="flex items-center gap-1.5 sm:gap-2.5 text-left cursor-pointer group shrink-0"
           >
             <BrandLogoMark
-              className="w-7 h-7 sm:w-8 sm:h-8 group-hover:scale-105 transition-transform duration-300"
+              className="w-6 h-6 sm:w-8 sm:h-8 group-hover:scale-105 transition-transform duration-300"
               isDarkMode={isDarkMode}
             />
             <span
-              className="text-lg sm:text-2xl font-semibold tracking-tight truncate"
+              className="text-[17px] sm:text-2xl font-semibold tracking-tight whitespace-nowrap shrink-0"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              Send A Boquet
+              Send A Bouquet
             </span>
           </button>
 
           {/* Minimal Nav Actions */}
-          <div className="flex items-center gap-1.5 sm:gap-5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-5 shrink-0">
+            <button
+              type="button"
+              onClick={() => scrollToSection('collections')}
+              className={`hidden md:inline text-xs font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap ${
+                isDarkMode
+                  ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
+                  : 'text-stone-600 hover:text-[#7A4B3A]'
+              }`}
+            >
+              Collections
+            </button>
             <button
               type="button"
               onClick={() => scrollToSection('how-it-works')}
-              className={`hidden md:inline text-xs font-medium transition-colors duration-300 cursor-pointer ${
+              className={`hidden md:inline text-xs font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap ${
                 isDarkMode
                   ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
                   : 'text-stone-600 hover:text-[#7A4B3A]'
@@ -1099,7 +1104,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('faq')}
-              className={`hidden md:inline text-xs font-medium transition-colors duration-200 cursor-pointer ${
+              className={`hidden md:inline text-xs font-medium transition-colors duration-200 cursor-pointer whitespace-nowrap ${
                 isDarkMode
                   ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
                   : 'text-stone-600 hover:text-[#7A4B3A]'
@@ -1110,35 +1115,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('contact')}
-              className={`hidden md:inline text-xs font-medium transition-colors duration-200 cursor-pointer ${
+              className={`hidden md:inline text-xs font-medium transition-colors duration-200 cursor-pointer whitespace-nowrap ${
                 isDarkMode
                   ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
                   : 'text-stone-600 hover:text-[#7A4B3A]'
               }`}
             >
               Contact
-            </button>
-            <button
-              type="button"
-              onClick={onOpenVault}
-              className={`px-2 sm:px-0 py-1 text-xs font-medium transition-colors duration-200 inline-flex items-center gap-1 cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
-                  : 'text-stone-600 hover:text-[#7A4B3A]'
-              }`}
-            >
-              <span>History</span>
-              {vaultCount > 0 && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold transition-colors duration-500 ${
-                    isDarkMode
-                      ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
-                      : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
-                  }`}
-                >
-                  {vaultCount}
-                </span>
-              )}
             </button>
             <button
               type="button"
@@ -1157,14 +1140,25 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
             <button
               type="button"
-              onClick={onStartCrafting}
-              className={`px-3.5 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-[11px] sm:text-xs font-medium shadow-xs transition-all duration-500 active:scale-95 cursor-pointer whitespace-nowrap ${
+              onClick={onOpenVault}
+              className={`px-3 sm:px-4 py-1 sm:py-2 rounded-full border border-dashed text-[11px] sm:text-xs font-medium inline-flex items-center gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
                 isDarkMode
-                  ? 'bg-[#9A6550] hover:bg-[#875642]'
-                  : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              Start Crafting
+              <span>Saved Bouquets</span>
+              {vaultCount > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                    isDarkMode
+                      ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
+                      : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                  }`}
+                >
+                  {vaultCount}
+                </span>
+              )}
             </button>
           </div>
         </header>
@@ -1172,16 +1166,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
       <div ref={scrollContentRef} className="w-full">
-        {/* 2. CENTERED HERO (GENEROUS TOP SPACING ABOVE TITLE + UPSIZED HEADLINE + SCROLL-BLOOMING WATERCOLOR FLOWER) */}
-        <section className="relative overflow-hidden pt-16 sm:pt-24 md:pt-28 pb-9 sm:pb-11 px-4 sm:px-8">
-          {/* Zero-Blur GPU Radial Aura Behind Headline (No CSS blur-3xl filter so theme toggles & scrolling run at 120fps on any PC) */}
+        {/* 2. CENTERED HERO (BALANCED MOBILE SPACING + PULLED-DOWN DESKTOP SPACING + SCROLL-BLOOMING FLOWER) */}
+        <section className="relative pt-10 sm:pt-24 lg:pt-32 pb-8 sm:pb-14 px-3.5 sm:px-8">
+          {/* Seamless GPU Radial Aura Extending Above Navbar — Eliminates Any Horizontal Color Cut */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-2 sm:top-6 -translate-x-1/2 w-[360px] sm:w-[820px] h-[300px] sm:h-[400px] rounded-full"
+            className="pointer-events-none absolute left-1/2 -top-28 sm:-top-36 -translate-x-1/2 w-[520px] sm:w-[980px] h-[520px] sm:h-[680px] rounded-full"
             style={{
               background: isDarkMode
-                ? 'radial-gradient(circle at 50% 44%, rgba(154, 92, 110, 0.28) 0%, rgba(104, 78, 118, 0.16) 38%, rgba(43, 35, 33, 0) 72%)'
-                : 'radial-gradient(circle at 50% 44%, rgba(249, 216, 228, 0.62) 0%, rgba(232, 220, 248, 0.38) 42%, rgba(253, 249, 245, 0) 72%)',
+                ? 'radial-gradient(closest-side at 50% 50%, rgba(154, 92, 110, 0.25) 0%, rgba(104, 78, 118, 0.12) 48%, rgba(43, 35, 33, 0) 100%)'
+                : 'radial-gradient(closest-side at 50% 50%, rgba(249, 216, 228, 0.56) 0%, rgba(232, 220, 248, 0.30) 48%, rgba(253, 249, 245, 0) 100%)',
             }}
           />
 
@@ -1190,7 +1184,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div
             ref={bloomRootRef}
             aria-hidden="true"
-            className="pointer-events-none select-none absolute left-1/2 top-5 sm:top-8 z-0 w-[330px] sm:w-[520px] h-[230px] sm:h-[340px]"
+            className="pointer-events-none select-none absolute left-1/2 top-3 sm:top-10 lg:top-12 z-0 w-[300px] sm:w-[520px] h-[210px] sm:h-[340px]"
             style={{
               opacity: isDarkMode ? 0.68 : 0.92,
               transform: 'translate3d(-50%, 0px, 0) scale(0.76)',
@@ -1391,9 +1385,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
 
           <div className="relative z-10 max-w-5xl mx-auto text-center">
-            {/* Desktop Floating Notification Card — Reverted Top-Right Position, Clear of Upsized Title */}
+            {/* Desktop Floating Notification Card — Top-Right Position with Clear Breathing Space Below Navbar */}
             <div
-              className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute -top-11 -right-4 xl:-right-16 text-left select-none z-10 animate-fluid-badge-right transition-colors ${
+              className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute -top-6 xl:-top-8 -right-2 xl:-right-12 text-left select-none z-10 animate-fluid-badge-right transition-colors ${
                 isDarkMode
                   ? 'bg-[#362D2A]/95 border-[#4E423E]'
                   : 'bg-white/95 border-[#F0E4DC]'
@@ -1407,13 +1401,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 }`}
               >
                 <svg viewBox="-55 -55 110 110" className="w-7 h-7">
-                  <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" />
+                  <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" hideStem />
                 </svg>
               </div>
               <div>
                 <div className="flex items-center justify-between gap-4">
                   <span className={`text-xs font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'}`}>
-                    Send A Boquet
+                    Send A Bouquet
                   </span>
                   <span className={`text-[10px] ${isDarkMode ? 'text-[#B8A59C]' : 'text-stone-400'}`}>now</span>
                 </div>
@@ -1423,9 +1417,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </div>
             </div>
 
-            {/* Desktop Floating Live Stat Card — Reverted Bottom-Left Position */}
+            {/* Desktop Floating Live Stat Card — Generous Space Above Showcase Card */}
             <div
-              className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute top-36 left-0 xl:-left-8 text-left select-none z-10 animate-fluid-badge-left transition-colors ${
+              className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute top-40 left-0 xl:-left-8 text-left select-none z-10 animate-fluid-badge-left transition-colors ${
                 isDarkMode
                   ? 'bg-[#362D2A]/95 border-[#4E423E]'
                   : 'bg-white/95 border-[#F0E4DC]'
@@ -1520,26 +1514,21 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </div>
             </div>
 
-            {/* Visual Bouquet Showcase Container — Always Visible Across Theme Toggles & Soft Warm Dusk Surface */}
+            {/* Visual Bouquet Showcase Container — Balanced on Mobile, Pulled Down on Desktop for Floating Tags */}
             <div
-              className={`animate-hero-entrance-delayed mt-7 sm:mt-11 max-w-4xl mx-auto rounded-[24px] sm:rounded-[30px] border p-2.5 sm:p-6 shadow-[0_12px_40px_rgba(122,75,58,0.08)] relative transition-colors ${
+              id="collections"
+              className={`scroll-mt-24 animate-hero-entrance-delayed mt-8 sm:mt-16 lg:mt-28 max-w-4xl mx-auto rounded-[24px] sm:rounded-[30px] border border-dashed p-3.5 sm:p-7 shadow-[0_12px_40px_rgba(122,75,58,0.06)] relative transition-colors ${
                 isDarkMode
-                  ? 'bg-[#352C29] border-[#4D403C]'
-                  : 'bg-white border-[#EFE6DD]'
+                  ? 'bg-[#352C29] border-[#5E4E49]'
+                  : 'bg-white border-[#DECBB9]'
               }`}
             >
-              {/* Delicate Inner Stitch / Thin Rope Lace Border */}
-              <div
-                className={`rounded-[18px] sm:rounded-[22px] border border-dashed p-3 sm:p-6 transition-colors ${
-                  isDarkMode ? 'border-[#574944]' : 'border-[#E6D7C9]'
-                }`}
-              >
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 items-center">
                   {/* Left: Full-Proportioned Architectural Bouquet Stage Preview */}
                   <div
                     onClick={handleCustomizePresetInStudio}
                     title="Click to arrange this style in the studio"
-                    className={`md:col-span-6 relative h-[235px] sm:h-[315px] rounded-2xl border flex items-center justify-center overflow-hidden cursor-pointer group transition-colors ${
+                    className={`md:col-span-6 relative h-[235px] sm:h-[320px] rounded-2xl border flex items-center justify-center overflow-hidden cursor-pointer group transition-colors ${
                       isDarkMode
                         ? 'bg-[#423734] border-[#594A45]'
                         : 'bg-[#FCF8F4] border-[#F2E8DF]'
@@ -1557,17 +1546,17 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       }}
                     />
 
-                    {/* Properly Proportioned Full Bouquet */}
+                    {/* Properly Proportioned Full Bouquet with Uncut Flower Heads */}
                     <div
                       key={preset.id}
-                      className="relative z-10 w-full h-full flex items-center justify-center px-4 py-3 sm:px-6 sm:py-5 animate-fluid-bouquet group-hover:scale-[1.03] transition-transform duration-300"
+                      className="relative z-10 w-full h-full flex items-center justify-center px-5 py-5 sm:px-8 sm:py-7 animate-fluid-bouquet group-hover:scale-[1.03] transition-transform duration-300"
                     >
                       <HeroBouquetIllustrationSVG preset={preset} />
                     </div>
 
                     {/* Top-Left Handwritten Note Tag Pill */}
                     <div
-                      className={`absolute top-2.5 left-2.5 sm:top-3.5 sm:left-3.5 z-20 px-3 sm:px-3.5 py-1 sm:py-1.5 rounded-full border text-[11px] sm:text-xs italic shadow-2xs transition-colors ${
+                      className={`absolute top-3 left-3 sm:top-3.5 sm:left-3.5 z-20 px-3 sm:px-3.5 py-1 sm:py-1.5 rounded-full border text-[11px] sm:text-xs italic shadow-2xs transition-colors ${
                         isDarkMode
                           ? 'bg-[#332A27]/95 border-[#574944] text-[#F5ECE6]'
                           : 'bg-white/95 border-[#EFE6DD] text-[#5C4940]'
@@ -1579,7 +1568,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                     {/* Bottom-Right Voice Keepsake Badge */}
                     <div
-                      className={`absolute bottom-2.5 right-2.5 sm:bottom-3.5 sm:right-3.5 z-20 pl-1.5 pr-3 sm:pl-2 sm:pr-3.5 py-1 rounded-full border text-[10px] sm:text-[11px] font-medium inline-flex items-center gap-1.5 sm:gap-2 shadow-2xs transition-colors ${
+                      className={`absolute bottom-3 right-3 sm:bottom-3.5 sm:right-3.5 z-20 pl-1.5 pr-3 sm:pl-2 sm:pr-3.5 py-1 rounded-full border text-[10px] sm:text-[11px] font-medium inline-flex items-center gap-1.5 sm:gap-2 shadow-2xs transition-colors ${
                         isDarkMode
                           ? 'bg-[#332A27]/95 border-[#574944] text-[#F5ECE6]'
                           : 'bg-white/95 border-[#EFE6DD] text-[#5C4940]'
@@ -1600,43 +1589,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: Pulled Down & Balanced with Delicate Botanical Lace Graphic Filler */}
-                  <div className="md:col-span-6 flex flex-col items-center md:items-start text-center md:text-left pt-1 sm:pt-3 space-y-3 sm:space-y-4">
-                    {/* Delicate Botanical & Thin Rope Lace Graphic Header (Zero Eyebrow Text) */}
+                  {/* Right: Clean Editorial Header + Subtitle + 2x2 Selector Grid */}
+                  <div className="md:col-span-6 flex flex-col items-center md:items-start text-center md:text-left space-y-3.5 sm:space-y-4">
                     <div className="w-full flex flex-col items-center md:items-start">
-                      <div className="inline-flex items-center gap-2 sm:gap-2.5 mb-2 select-none" aria-hidden="true">
-                        <span
-                          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border flex items-center justify-center overflow-hidden shrink-0 ${
-                            isDarkMode
-                              ? 'bg-[#48383B] border-[#61494E]'
-                              : 'bg-[#FFF0F5] border-[#F5DCE6]'
-                          }`}
-                        >
-                          <svg viewBox="-55 -55 110 110" className="w-3.5 h-3.5 sm:w-4 sm:h-4">
-                            <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" />
-                          </svg>
-                        </span>
-                        <svg viewBox="0 0 96 16" className="w-16 sm:w-24 h-3 sm:h-3.5 overflow-visible">
-                          <path
-                            d="M 2,8 Q 24,2 48,8 T 94,8"
-                            fill="none"
-                            stroke={isDarkMode ? '#75625A' : '#D5C2B4'}
-                            strokeWidth="1.1"
-                            strokeDasharray="2.5 2.5"
-                            strokeLinecap="round"
-                          />
-                          <circle cx="48" cy="8" r="2.2" fill={isDarkMode ? '#E0B298' : '#B4846C'} />
-                        </svg>
-                      </div>
-
                       <h2
-                        className={`text-xl sm:text-3xl font-semibold ${
+                        className={`text-2xl sm:text-3xl font-semibold tracking-tight ${
                           isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                         }`}
                         style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                       >
                         Couture Wraps &amp; Keepsakes
                       </h2>
+                      <p
+                        className={`mt-1 text-xs sm:text-[13px] ${
+                          isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                        }`}
+                      >
+                        Choose a signature presentation to preview or customize in the studio.
+                      </p>
                     </div>
 
                     {/* 2x2 Visual Thumbnail Selector Grid */}
@@ -1720,6 +1690,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                               type={preset.stems[preset.stems.length - 1]?.type || 'peony'}
                               petalColor={preset.stems[preset.stems.length - 1]?.petal || '#F472B6'}
                               centerColor={preset.stems[preset.stems.length - 1]?.center || '#FEF08A'}
+                              hideStem
                             />
                           </svg>
                         </div>
@@ -1759,7 +1730,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </button>
                   </div>
                 </div>
-              </div>
             </div>
           </div>
         </section>
@@ -2004,12 +1974,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </section>
 
         {/* 5. UNIFIED WARM BEIGE / SOFT COCOA "MAKE SOMEONE SMILE TODAY" BOTTOM CTA CONTAINER */}
-        <section className="max-w-4xl mx-auto px-4 sm:px-6 pt-2 sm:pt-4 pb-14 sm:pb-16">
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 pt-2 sm:pt-4 pb-12 sm:pb-14">
           <div
-            className={`fluid-scroll-item rounded-[24px] sm:rounded-[28px] border py-9 sm:py-14 px-5 sm:px-6 text-center transition-colors ${
+            className={`fluid-scroll-item rounded-[24px] sm:rounded-[28px] border border-dashed py-9 sm:py-14 px-5 sm:px-6 text-center transition-colors ${
               isDarkMode
-                ? 'bg-[#382F2C] border-[#524540]'
-                : 'bg-[#F3ECE3] border-[#E5D8C9]'
+                ? 'bg-[#382F2C] border-[#5E4E49]'
+                : 'bg-[#F3ECE3] border-[#DAC7B6]'
             }`}
           >
             {/* Custom SVG Trio (Cherry Blossom + Voice Plushie Bear + Tulip) */}
@@ -2020,7 +1990,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 }`}
               >
                 <svg viewBox="-58 -58 116 116" className="w-7 h-7 sm:w-8 sm:h-8">
-                  <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" />
+                  <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" hideStem />
                 </svg>
               </div>
               <div
@@ -2040,7 +2010,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 }`}
               >
                 <svg viewBox="-58 -58 116 116" className="w-7 h-7 sm:w-8 sm:h-8">
-                  <FlowerRenderer type="tulip" petalColor="#FB7185" centerColor="#FEF08A" />
+                  <FlowerRenderer type="tulip" petalColor="#FB7185" centerColor="#FEF08A" hideStem />
                 </svg>
               </div>
             </div>
@@ -2079,34 +2049,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {/* DELICATE THIN ROPE LACE DIVIDER BEFORE CONTACT */}
         <ThinRopeLaceDivider isDarkMode={isDarkMode} />
 
-        {/* 6. BREATHABLE, MINIMAL & CUTE CONTACT SECTION (Zero Eyebrows, Zero Clutter) */}
-        <section id="contact" className="scroll-mt-24 max-w-xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-          <div
-            className={`fluid-scroll-item rounded-[24px] sm:rounded-[30px] border p-2.5 sm:p-4 shadow-[0_10px_32px_rgba(122,75,58,0.04)] ${
-              isDarkMode
-                ? 'bg-[#352C29] border-[#4D403C]'
-                : 'bg-white border-[#EFE6DD]'
-            }`}
-          >
-            {/* Delicate Inner Stitch Border */}
-            <div
-              className={`rounded-[18px] sm:rounded-[22px] border border-dashed px-5 py-7 sm:px-10 sm:py-9 text-center ${
-                isDarkMode ? 'border-[#574944]' : 'border-[#E6D7C9]'
-              }`}
-            >
-              {/* Single Soft Blossom Emblem */}
-              <div className="flex items-center justify-center mb-3 select-none" aria-hidden="true">
-                <div
-                  className={`w-10 h-10 rounded-full border flex items-center justify-center overflow-hidden ${
-                    isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-[#FCF8F4] border-[#EDE2D8]'
-                  }`}
-                >
-                  <svg viewBox="-58 -58 116 116" className="w-7 h-7">
-                    <FlowerRenderer type="peony" petalColor="#F472B6" centerColor="#FEF08A" />
-                  </svg>
-                </div>
-              </div>
-
+        {/* 6. 2-COLUMN DESKTOP & MOBILE-OPTIMIZED CONTACT SECTION
+            On Mobile: 1) Get in Touch & Email -> 2) Stationery Paper Form -> 3) Support the Developer & Socials
+            On Desktop (md:grid-cols-12): Left Column (Get in Touch + Support the Developer) | Right Column (Stationery Paper Form) */}
+        <section id="contact" className="scroll-mt-24 max-w-4xl mx-auto px-3.5 sm:px-8 pt-6 sm:pt-10 pb-12 sm:pb-20">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-y-6 md:gap-y-0 md:gap-x-10 items-start">
+            {/* BLOCK 1 (Desktop Top-Left, Mobile 1st): Unboxed Get in Touch + Feedback/Support Gmail */}
+            <div className="fluid-scroll-item md:col-span-5 md:col-start-1 md:row-start-1 text-center md:text-left flex flex-col items-center md:items-start">
               <h2
                 className={`text-3xl sm:text-4xl font-semibold tracking-tight ${
                   isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
@@ -2117,114 +2066,417 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </h2>
 
               <p
-                className={`mt-1.5 text-xs sm:text-sm max-w-xs mx-auto ${
+                className={`mt-1.5 sm:mt-2 text-xs sm:text-[13.5px] max-w-xs sm:max-w-sm leading-relaxed ${
                   isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                 }`}
               >
-                Questions, flower wishes, or a little note.
+                Have feedback, a custom flower wish, or need help with a bouquet? Reach out directly or send a note on the stationery sheet.
               </p>
 
-              {isContactSent ? (
-                <div className="mt-6 py-6 px-4 rounded-2xl border border-dashed border-[#DFCFC2]/60 dark:border-[#574944] space-y-2.5">
-                  <div
-                    className={`text-xl font-semibold ${
-                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+              {/* Direct Support / Gmail Detail */}
+              <div className="mt-4 sm:mt-5 flex flex-col items-center md:items-start gap-1">
+                <span
+                  className={`text-[11px] font-medium ${
+                    isDarkMode ? 'text-[#B8A59C]' : 'text-[#8C7A70]'
+                  }`}
+                >
+                  Contact &amp; Support
+                </span>
+                <div className="inline-flex items-center gap-2">
+                  <a
+                    href="mailto:hello@sendabouquet.com"
+                    className={`text-sm sm:text-[15px] font-medium underline decoration-dashed underline-offset-4 transition-colors ${
+                      isDarkMode
+                        ? 'text-[#FBF6F1] decoration-[#75625A] hover:text-[#E6B89C]'
+                        : 'text-[#231C18] decoration-[#C8B5A6] hover:text-[#7A4B3A]'
                     }`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                   >
-                    Note Sent
-                  </div>
-                  <p
-                    className={`text-xs ${
-                      isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                    }`}
-                  >
-                    Thank you for writing to us{contactName ? `, ${contactName}` : ''}.
-                  </p>
+                    hello@sendabouquet.com
+                  </a>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsContactSent(false);
-                      setContactMessage('');
-                    }}
-                    className={`mt-1 inline-block px-5 py-2 rounded-full border text-xs font-medium transition cursor-pointer ${
+                    onClick={handleCopyStudioEmail}
+                    className={`px-2 py-0.5 rounded-full border border-dashed text-[10px] font-medium transition-colors cursor-pointer ${
                       isDarkMode
-                        ? 'bg-[#423734] border-[#594A45] text-[#FBF6F1] hover:bg-[#4C403C]'
-                        : 'bg-[#FCF8F4] border-[#E5D8C9] text-[#231C18] hover:bg-[#F5ECE3]'
+                        ? 'bg-[#352C29] border-[#5E4E49] text-[#D8C7BE] hover:text-[#FBF6F1]'
+                        : 'bg-[#FAF5EF] border-[#D8C4B4] text-[#6E5D54] hover:text-[#231C18]'
                     }`}
                   >
-                    Send another note
+                    {copiedEmail ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-              ) : (
-                <form onSubmit={handleContactSubmit} className="mt-6 space-y-3 text-left">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      aria-label="Name"
-                      value={contactName}
-                      onChange={(e) => setContactName(e.target.value)}
-                      placeholder="Name"
-                      className={`w-full px-4 py-2.5 rounded-xl border text-xs focus:outline-none transition ${
-                        isDarkMode
-                          ? 'bg-[#423734] border-[#564843] text-[#FBF6F1] placeholder-[#9E8C83] focus:border-[#DEB399]'
-                          : 'bg-[#FCF8F4] border-[#EAE0D5] text-[#231C18] placeholder-[#9A897E] focus:border-[#7A4B3A]'
-                      }`}
+              </div>
+            </div>
+
+            {/* BLOCK 2 (Desktop Right Column Spanning Both Rows, Mobile 2nd Immediately Under Email): Stationery Paper Form */}
+            <div className="fluid-scroll-item fluid-delay-1 md:col-span-7 md:col-start-6 md:row-start-1 md:row-span-2 relative mt-1 md:mt-0">
+              {/* 1. Tilted Back Stationery Sheet Contour (Subtle on Mobile so it never clips horizontally) */}
+              <div
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-0 rounded-[22px] sm:rounded-[28px] border border-dashed -rotate-[0.7deg] sm:-rotate-[1.35deg] scale-[0.995] transition-colors ${
+                  isDarkMode ? 'border-[#524440] bg-[#312825]/40' : 'border-[#E2D2C3] bg-[#FAF4EE]/55'
+                }`}
+              />
+
+              {/* 2. Top-Left Pressed Botanical Blossom Lineart Sprig Overlapping Paper Corner */}
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 130 95"
+                className="pointer-events-none select-none absolute -top-3.5 -left-1.5 sm:-top-6 sm:-left-5 w-16 sm:w-28 h-13 sm:h-20 overflow-visible z-20"
+              >
+                <path
+                  d="M 42,46 C 24,34 14,38 18,50 C 22,60 36,56 42,46 Z"
+                  fill={isDarkMode ? 'rgba(134, 184, 152, 0.22)' : 'rgba(226, 242, 232, 0.78)'}
+                  stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 52,38 C 66,22 84,22 86,34 C 86,44 68,46 52,38 Z"
+                  fill={isDarkMode ? 'rgba(134, 184, 152, 0.22)' : 'rgba(226, 242, 232, 0.78)'}
+                  stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 45,44 Q 68,54 96,46"
+                  fill="none"
+                  stroke={isDarkMode ? '#D8A48F' : '#B4846C'}
+                  strokeWidth="1.1"
+                  strokeDasharray="2.5 2.5"
+                  strokeLinecap="round"
+                />
+                <g transform="translate(46, 42) scale(0.72)">
+                  {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+                    <path
+                      key={a}
+                      transform={`rotate(${a})`}
+                      d="M 0,0 C -8,-7 -11,-20 0,-25 C 11,-20 8,-7 0,0 Z"
+                      fill={isDarkMode ? 'rgba(244, 166, 190, 0.28)' : 'rgba(252, 228, 236, 0.85)'}
+                      stroke={isDarkMode ? '#E5A3B7' : '#C87A90'}
+                      strokeWidth="1.35"
                     />
-                    <input
-                      type="email"
-                      aria-label="Email"
-                      value={contactEmail}
-                      onChange={(e) => setContactEmail(e.target.value)}
-                      placeholder="Email"
-                      className={`w-full px-4 py-2.5 rounded-xl border text-xs focus:outline-none transition ${
-                        isDarkMode
-                          ? 'bg-[#423734] border-[#564843] text-[#FBF6F1] placeholder-[#9E8C83] focus:border-[#DEB399]'
-                          : 'bg-[#FCF8F4] border-[#EAE0D5] text-[#231C18] placeholder-[#9A897E] focus:border-[#7A4B3A]'
+                  ))}
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="4"
+                    fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
+                    stroke={isDarkMode ? '#F59E0B' : '#D97706'}
+                    strokeWidth="1.2"
+                  />
+                </g>
+              </svg>
+
+              {/* 3. Main Stationery Paper Container (Matches Primary Dashed Surface & Fonts Across the App) */}
+              <div
+                className={`relative z-10 rounded-[22px] sm:rounded-[28px] border border-dashed p-4 sm:p-8 shadow-[0_12px_36px_rgba(122,75,58,0.05)] text-left transition-colors ${
+                  isDarkMode
+                    ? 'bg-[#352C29] border-[#5E4E49]'
+                    : 'bg-white border-[#DECBB9]'
+                }`}
+              >
+                {/* Header Row: Upright Cormorant Garamond Heading + Floral Postage Stamp & Wavy Postmark Lineart */}
+                <div className="flex items-start justify-between gap-2.5 sm:gap-4 mb-4 sm:mb-5">
+                  <div className="pl-2 sm:pl-0">
+                    <h3
+                      className={`text-xl sm:text-3xl font-semibold tracking-tight ${
+                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                       }`}
-                    />
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      Write a Little Note
+                    </h3>
+                    <p
+                      className={`mt-0.5 text-[11.5px] sm:text-xs ${
+                        isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                      }`}
+                    >
+                      We read every message and flower request.
+                    </p>
                   </div>
 
-                  <textarea
-                    rows={3}
-                    required
-                    aria-label="Message"
-                    value={contactMessage}
-                    onChange={(e) => setContactMessage(e.target.value)}
-                    placeholder="Write your note..."
-                    className={`w-full px-4 py-3 rounded-xl border text-xs leading-relaxed resize-none focus:outline-none transition ${
-                      isDarkMode
-                        ? 'bg-[#423734] border-[#564843] text-[#FBF6F1] placeholder-[#9E8C83] focus:border-[#DEB399]'
-                        : 'bg-[#FCF8F4] border-[#EAE0D5] text-[#231C18] placeholder-[#9A897E] focus:border-[#7A4B3A]'
-                    }`}
-                  />
+                  {/* Botanical Postage Stamp & Wavy Postmark Cancellation Lineart */}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 128 54"
+                    className="w-20 sm:w-28 h-9 sm:h-11 shrink-0 select-none overflow-visible opacity-85"
+                  >
+                    <path
+                      d="M 4,18 Q 16,13 28,18 T 52,18 T 74,18"
+                      fill="none"
+                      stroke={isDarkMode ? '#8C766C' : '#C5B2A5'}
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M 4,26 Q 16,21 28,26 T 52,26 T 74,26"
+                      fill="none"
+                      stroke={isDarkMode ? '#8C766C' : '#C5B2A5'}
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M 4,34 Q 16,29 28,34 T 52,34 T 74,34"
+                      fill="none"
+                      stroke={isDarkMode ? '#8C766C' : '#C5B2A5'}
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                    />
+                    <circle
+                      cx="68"
+                      cy="26"
+                      r="13"
+                      fill="none"
+                      stroke={isDarkMode ? '#9E857A' : '#B8A093'}
+                      strokeWidth="1"
+                      strokeDasharray="2.5 2"
+                    />
+                    <g transform="translate(82, 4) rotate(3)">
+                      <rect
+                        x="0"
+                        y="0"
+                        width="38"
+                        height="44"
+                        rx="4"
+                        fill={isDarkMode ? '#3E3330' : '#FAF6F2'}
+                        stroke={isDarkMode ? '#9E857A' : '#C8B5A6'}
+                        strokeWidth="1.2"
+                        strokeDasharray="2.5 2"
+                      />
+                      <rect
+                        x="4"
+                        y="4"
+                        width="30"
+                        height="36"
+                        rx="2"
+                        fill="none"
+                        stroke={isDarkMode ? '#6E5A52' : '#E2D4C8'}
+                        strokeWidth="0.8"
+                      />
+                      <g transform="translate(19, 22) scale(0.42)">
+                        {[0, 60, 120, 180, 240, 300].map((deg) => (
+                          <path
+                            key={deg}
+                            transform={`rotate(${deg})`}
+                            d="M 0,0 C -7,-6 -9,-18 0,-22 C 9,-18 7,-6 0,0 Z"
+                            fill={isDarkMode ? 'rgba(244, 166, 190, 0.3)' : 'rgba(252, 228, 236, 0.85)'}
+                            stroke={isDarkMode ? '#E5A3B7' : '#C87A90'}
+                            strokeWidth="1.8"
+                          />
+                        ))}
+                        <circle cx="0" cy="0" r="3.5" fill="#F59E0B" />
+                      </g>
+                    </g>
+                  </svg>
+                </div>
 
-                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                {isContactSent ? (
+                  <div className="py-7 sm:py-8 text-center space-y-2.5">
+                    <div
+                      className={`text-2xl sm:text-3xl font-semibold ${
+                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                      }`}
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      Your Note Is on Its Way
+                    </div>
+                    <p
+                      className={`text-xs sm:text-sm ${
+                        isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                      }`}
+                    >
+                      Thank you for writing to us{contactName ? `, ${contactName}` : ''}. We’ll reply soon.
+                    </p>
                     <button
                       type="button"
-                      onClick={handleCopyStudioEmail}
-                      className={`text-xs transition cursor-pointer ${
+                      onClick={() => {
+                        setIsContactSent(false);
+                        setContactMessage('');
+                      }}
+                      className={`mt-2 inline-block px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
                         isDarkMode
-                          ? 'text-[#C9B6AC] hover:text-[#FBF6F1]'
-                          : 'text-[#8C7365] hover:text-[#231C18]'
+                          ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                          : 'bg-[#FAF4EE] border-[#D5C2B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                       }`}
                     >
-                      {copiedEmail ? 'Copied hello@sendaboquet.com' : 'hello@sendaboquet.com'}
-                    </button>
-
-                    <button
-                      type="submit"
-                      className={`w-full sm:w-auto px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer ${
-                        isDarkMode
-                          ? 'bg-[#9A6550] hover:bg-[#875642]'
-                          : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                      }`}
-                    >
-                      Send Note
+                      Write another note
                     </button>
                   </div>
-                </form>
-              )}
+                ) : (
+                  <form onSubmit={handleContactSubmit} className="space-y-3 sm:space-y-3.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                      <input
+                        type="text"
+                        aria-label="Your name"
+                        value={contactName}
+                        onChange={(e) => setContactName(e.target.value)}
+                        placeholder="Your name"
+                        className={`w-full h-10 px-3.5 rounded-xl border text-xs sm:text-[13px] leading-normal focus:outline-none transition-colors ${
+                          isDarkMode
+                            ? 'bg-[#2E2624] border-[#4D403C] text-[#FBF6F1] placeholder:text-[#9E8C83] focus:border-[#D4A383]'
+                            : 'bg-[#FAF6F2] border-[#EFE6DD] text-[#231C18] placeholder:text-[#9A897E] focus:border-[#C8A996]'
+                        }`}
+                      />
+                      <input
+                        type="email"
+                        aria-label="Your email"
+                        value={contactEmail}
+                        onChange={(e) => setContactEmail(e.target.value)}
+                        placeholder="Your email"
+                        className={`w-full h-10 px-3.5 rounded-xl border text-xs sm:text-[13px] leading-normal focus:outline-none transition-colors ${
+                          isDarkMode
+                            ? 'bg-[#2E2624] border-[#4D403C] text-[#FBF6F1] placeholder:text-[#9E8C83] focus:border-[#D4A383]'
+                            : 'bg-[#FAF6F2] border-[#EFE6DD] text-[#231C18] placeholder:text-[#9A897E] focus:border-[#C8A996]'
+                        }`}
+                      />
+                    </div>
+
+                    <div className="relative">
+                      <textarea
+                        rows={4}
+                        required
+                        aria-label="Write your note"
+                        value={contactMessage}
+                        onChange={(e) => setContactMessage(e.target.value)}
+                        placeholder="Share feedback, ask a question, or request a flower..."
+                        className={`w-full px-3.5 py-2.5 sm:py-3 rounded-xl border text-xs sm:text-[13px] leading-relaxed resize-none focus:outline-none transition-colors ${
+                          isDarkMode
+                            ? 'bg-[#2E2624] border-[#4D403C] text-[#FBF6F1] placeholder:text-[#9E8C83] focus:border-[#D4A383]'
+                            : 'bg-[#FAF6F2] border-[#EFE6DD] text-[#231C18] placeholder:text-[#9A897E] focus:border-[#C8A996]'
+                        }`}
+                      />
+                    </div>
+
+                    {/* Bottom Stationery Flourish & Send Button */}
+                    <div className="pt-1 flex items-center justify-between gap-3 sm:gap-4">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 140 20"
+                        className="w-20 sm:w-28 h-4 overflow-visible select-none opacity-80"
+                      >
+                        <path
+                          d="M 2,10 Q 35,3 70,10 T 136,10"
+                          fill="none"
+                          stroke={isDarkMode ? '#75625A' : '#D5C2B4'}
+                          strokeWidth="1"
+                          strokeDasharray="2.5 2.5"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M 70,10 C 63,3 57,7 61,11 C 64,13 68,11 70,10 Z M 70,10 C 77,3 83,7 79,11 C 76,13 72,11 70,10 Z"
+                          fill="none"
+                          stroke={isDarkMode ? '#D8A88E' : '#B0826C'}
+                          strokeWidth="1.1"
+                        />
+                        <circle cx="70" cy="10" r="1.6" fill={isDarkMode ? '#D8A88E' : '#B0826C'} />
+                      </svg>
+
+                      <button
+                        type="submit"
+                        className={`px-6 sm:px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap ${
+                          isDarkMode
+                            ? 'bg-[#9A6550] hover:bg-[#875642]'
+                            : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                        }`}
+                      >
+                        Send Note
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            {/* BLOCK 3 (Desktop Bottom-Left Under Email, Mobile 3rd Under Form): Support the Developer + Socials */}
+            <div className="fluid-scroll-item md:col-span-5 md:col-start-1 md:row-start-2 text-center md:text-left flex flex-col items-center md:items-start pt-2 md:pt-0">
+              <div
+                className={`w-full max-w-[260px] mb-5 md:my-6 border-t border-dashed ${
+                  isDarkMode ? 'border-[#4E413D]' : 'border-[#E6D7C9]'
+                }`}
+              />
+
+              <h3
+                className={`text-xl sm:text-2xl font-semibold tracking-tight ${
+                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                }`}
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                Support the Developer
+              </h3>
+              <p
+                className={`mt-1 text-xs leading-relaxed max-w-xs ${
+                  isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                }`}
+              >
+                If Send A Bouquet made someone smile, you can support indie development or follow along on socials.
+              </p>
+
+              <div className="mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2.5">
+                <a
+                  href="#contact"
+                  onClick={(e) => {
+                    e.preventDefault();
+                  }}
+                  className={`px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                      : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                  }`}
+                >
+                  Support / Donate
+                </a>
+              </div>
+
+              {/* Developer Socials Placeholder List */}
+              <div
+                className={`mt-3.5 flex flex-wrap items-center justify-center md:justify-start gap-x-2.5 gap-y-1 text-xs font-medium ${
+                  isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                }`}
+              >
+                <a
+                  href="https://instagram.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`transition-colors hover:underline underline-offset-4 ${
+                    isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                  }`}
+                >
+                  Instagram
+                </a>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                <a
+                  href="https://x.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`transition-colors hover:underline underline-offset-4 ${
+                    isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                  }`}
+                >
+                  X / Twitter
+                </a>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                <a
+                  href="https://github.com/Luxanna22"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`transition-colors hover:underline underline-offset-4 ${
+                    isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                  }`}
+                >
+                  GitHub
+                </a>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                <a
+                  href="#contact"
+                  onClick={(e) => e.preventDefault()}
+                  className={`transition-colors hover:underline underline-offset-4 ${
+                    isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                  }`}
+                >
+                  Portfolio
+                </a>
+              </div>
             </div>
           </div>
         </section>
@@ -2239,18 +2491,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         >
           <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-8">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-8 border-b border-dashed border-[#DFCFC2]/50 dark:border-[#4D403C]">
-              {/* Brand Signature Column */}
-              <div className="md:col-span-5 space-y-2.5 text-left">
-                <div className="flex items-center gap-2.5">
-                  <BrandLogoMark className="w-8 h-8" isDarkMode={isDarkMode} />
-                  <span
-                    className={`text-2xl font-semibold tracking-tight ${
-                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                    }`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    Send A Boquet
-                  </span>
+              {/* Brand Signature Column (Pure Serif Wordmark — No Icon Before Label) */}
+              <div className="md:col-span-5 space-y-2 text-left">
+                <div
+                  className={`text-2xl font-semibold tracking-tight ${
+                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                  }`}
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  Send A Bouquet
                 </div>
                 <p className="text-xs leading-relaxed max-w-xs">
                   Handcrafted digital bouquets, wraps, and voice keepsakes.
@@ -2292,7 +2541,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         onClick={onOpenVault}
                         className="hover:underline cursor-pointer"
                       >
-                        History
+                        Saved Bouquets
                       </button>
                     </li>
                   </ul>
@@ -2371,7 +2620,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
             {/* Bottom Copyright Bar */}
             <div className="pt-6 flex items-center justify-between gap-3 text-[11px] opacity-75">
-              <div>© {new Date().getFullYear()} Send A Boquet</div>
+              <div>© {new Date().getFullYear()} Send A Bouquet</div>
               <button
                 type="button"
                 onClick={scrollToTop}
@@ -2393,10 +2642,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className={`w-full max-w-md rounded-[24px] border p-6 shadow-xl relative text-left space-y-3 ${
+              className={`w-full max-w-md rounded-[24px] border border-dashed p-6 shadow-xl relative text-left space-y-3 ${
                 isDarkMode
-                  ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
-                  : 'bg-white border-[#EFE6DD] text-[#231C18]'
+                  ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
+                  : 'bg-white border-[#DECBB9] text-[#231C18]'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -2423,7 +2672,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 }`}
               >
                 {legalModal === 'terms'
-                  ? 'Send A Boquet is a free digital floral studio for creating and sharing personal flower arrangements, notes, and voice keepsakes with loved ones. Shared links are intended for personal, non-commercial gifting.'
+                  ? 'Send A Bouquet is a free digital floral studio for creating and sharing personal flower arrangements, notes, and voice keepsakes with loved ones. Shared links are intended for personal, non-commercial gifting.'
                   : 'We respect your privacy. No account or login is required. Your saved history is stored locally on your device, and shared bouquets or voice notes are only accessible via the private gift link you share.'}
               </p>
             </div>

@@ -6,132 +6,93 @@ interface BrandLogoMarkProps {
 }
 
 /**
- * Official "Send A Boquet" Luxury Minimal & Cute Emblem Logo
- * Matches /public/favicon.svg and adapts softly for light and warm dusk modes.
+ * Official "Send A Bouquet" Minimal Blooming Botanical Lineart Logo
+ * Inspired by the hero blooming flower lineart, simplified for crisp clarity at small sizes.
  */
 export const BrandLogoMark: React.FC<BrandLogoMarkProps> = React.memo(
   ({ className = 'w-8 h-8', isDarkMode = false }) => {
+    const outerStroke = isDarkMode ? '#E5A3B7' : '#C87A90';
+    const innerStroke = isDarkMode ? '#E8B298' : '#C88A74';
+    const outerFill = isDarkMode ? 'rgba(244, 166, 190, 0.26)' : 'rgba(252, 228, 236, 0.78)';
+    const innerFill = isDarkMode ? 'rgba(247, 197, 168, 0.32)' : 'rgba(255, 240, 230, 0.9)';
+    const leafStroke = isDarkMode ? '#8AB89A' : '#6A9478';
+    const leafFill = isDarkMode ? 'rgba(134, 184, 152, 0.22)' : 'rgba(226, 242, 232, 0.65)';
+
     return (
       <svg
         viewBox="0 0 64 64"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className={`shrink-0 select-none ${className}`}
+        className={`shrink-0 select-none overflow-visible ${className}`}
         aria-hidden="true"
       >
-        {/* Soft Cashmere-Blush Squircle Emblem */}
-        <rect
-          x="2"
-          y="2"
-          width="60"
-          height="60"
-          rx="18"
-          fill={isDarkMode ? '#463935' : '#FAF2EC'}
-          stroke={isDarkMode ? '#614F49' : '#E5D3C5'}
-          strokeWidth="2"
-        />
-        <rect
-          x="6"
-          y="6"
-          width="52"
-          height="52"
-          rx="14"
-          stroke={isDarkMode ? '#745E57' : '#DCC6B6'}
-          strokeWidth="1"
-          strokeDasharray="2.5 2.5"
-        />
-
-        {/* Soft Watercolor Glow Behind Blooms */}
-        <circle
-          cx="32"
-          cy="24"
-          r="14"
-          fill={isDarkMode ? '#7E4D5B' : '#FCE4EC'}
-          opacity={isDarkMode ? '0.45' : '0.78'}
-        />
-
-        {/* Left & Right Sage Botanical Leaves */}
+        {/* Minimal Side Botanical Leaf Sprigs */}
         <path
-          d="M26 30C20 26 16 28 18 33C20 36 24 34 26 30Z"
-          fill={isDarkMode ? '#7BA38A' : '#CFE3D4'}
-          stroke={isDarkMode ? '#A3C9B0' : '#6B9078'}
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M38 30C44 26 48 28 46 33C44 36 40 34 38 30Z"
-          fill={isDarkMode ? '#7BA38A' : '#CFE3D4'}
-          stroke={isDarkMode ? '#A3C9B0' : '#6B9078'}
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* Left & Right Soft Peach Side Buds */}
-        <circle
-          cx="23"
-          cy="23"
-          r="5.5"
-          fill="#FCD5CE"
-          stroke={isDarkMode ? '#E2A695' : '#B87A68'}
-          strokeWidth="1.4"
-        />
-        <circle
-          cx="41"
-          cy="23"
-          r="5.5"
-          fill="#FCD5CE"
-          stroke={isDarkMode ? '#E2A695' : '#B87A68'}
-          strokeWidth="1.4"
-        />
-
-        {/* Center Blush Peony / Rose Bloom */}
-        <circle
-          cx="32"
-          cy="19"
-          r="7.5"
-          fill="#F8BBD0"
-          stroke={isDarkMode ? '#E495AE' : '#9E586A'}
-          strokeWidth="1.5"
-        />
-        <path
-          d="M29 18.5C29 16.8 30.3 15.5 32 15.5C33.7 15.5 35 16.8 35 18.5C35 20.5 32 22 32 22C32 22 29 20.5 29 18.5Z"
-          fill="#FFFDF9"
-          opacity="0.88"
-        />
-        <circle cx="32" cy="18.5" r="1.8" fill="#F6C868" />
-
-        {/* Minimalist Couture Paper Wrap Cone */}
-        <path
-          d="M19 29L32 50L45 29Q38.5 32.5 32 32.5Q25.5 32.5 19 29Z"
-          fill="#FFFDF9"
-          stroke={isDarkMode ? '#C99B84' : '#7A4B3A'}
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-        <path d="M23 31.5L32 47L41 31.5" fill="#F5E6DC" opacity="0.75" />
-
-        {/* Dainty Terracotta-Rose Ribbon Bow at Waist */}
-        <path
-          d="M26.5 39.5Q32 41.2 37.5 39.5"
-          stroke="#C85A6E"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M32 40.2C27.5 36.8 25.8 41.8 31.2 40.8M32 40.2C36.5 36.8 38.2 41.8 32.8 40.8"
-          stroke="#C85A6E"
+          d="M 18,35 C 9,30 6,22 13,19 C 19,17 23,24 24,31"
+          fill={leafFill}
+          stroke={leafStroke}
           strokeWidth="1.5"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
         <path
-          d="M31.2 40.8Q29.5 45.5 28 48.5M32.8 40.8Q34.5 45.5 36 48.5"
-          stroke="#C85A6E"
-          strokeWidth="1.4"
+          d="M 46,35 C 55,30 58,22 51,19 C 45,17 41,24 40,31"
+          fill={leafFill}
+          stroke={leafStroke}
+          strokeWidth="1.5"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
-        <circle cx="32" cy="40.2" r="1.7" fill="#C85A6E" />
+
+        {/* Simplified Blooming Botanical Lineart Rosette */}
+        <g transform="translate(32, 32)">
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+            <g key={`outer-${angle}`} transform={`rotate(${angle})`}>
+              <path
+                d="M 0,0 C -8.5,-7.5 -11.5,-21.5 0,-26.5 C 11.5,-21.5 8.5,-7.5 0,0 Z"
+                fill={outerFill}
+                stroke={outerStroke}
+                strokeWidth="1.45"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M 0,-5 L 0,-20"
+                stroke={outerStroke}
+                strokeWidth="0.85"
+                strokeLinecap="round"
+                strokeOpacity="0.5"
+              />
+            </g>
+          ))}
+
+          {[22.5, 112.5, 202.5, 292.5].map((angle) => (
+            <g key={`inner-${angle}`} transform={`rotate(${angle})`}>
+              <path
+                d="M 0,0 C -6,-5 -8,-14.5 0,-17.5 C 8,-14.5 6,-5 0,0 Z"
+                fill={innerFill}
+                stroke={innerStroke}
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
+            </g>
+          ))}
+
+          {/* Warm Golden Stamen Center */}
+          <circle
+            cx="0"
+            cy="0"
+            r="4.5"
+            fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
+            stroke={isDarkMode ? '#F59E0B' : '#D97706'}
+            strokeWidth="1.35"
+          />
+          <circle
+            cx="0"
+            cy="0"
+            r="1.7"
+            fill={isDarkMode ? '#F59E0B' : '#D97706'}
+          />
+        </g>
       </svg>
     );
   }
