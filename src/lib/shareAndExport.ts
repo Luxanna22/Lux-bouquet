@@ -4,6 +4,9 @@ import {
   RibbonStyle,
   VoiceKeepsakeStyle,
   VoiceKeepsakeData,
+  BouquetLockConfig,
+  BouquetLockMode,
+  DEFAULT_BOUQUET_LOCK,
   typeWrapStyle,
   BouquetItem,
   BouquetSnapshot,
@@ -43,7 +46,14 @@ const SHARE_FLOWER_TYPES: FlowerType[] = [
   'waxflower',
   'billyButtons',
   'oliveBranch',
-  'monstera'
+  'monstera',
+  'callalily',
+  'poppy',
+  'sweetpea',
+  'freesia',
+  'pampas',
+  'queenanneslace',
+  'astilbe'
 ];
 
 const SHARE_WRAP_STYLES: typeWrapStyle[] = [
@@ -55,7 +65,10 @@ const SHARE_WRAP_STYLES: typeWrapStyle[] = [
   'lace',
   'celestial',
   'vase',
-  'plain'
+  'plain',
+  'hatbox',
+  'cloche',
+  'koreanmesh'
 ];
 
 const SHARE_RIBBON_STYLES: RibbonStyle[] = [
@@ -65,7 +78,10 @@ const SHARE_RIBBON_STYLES: RibbonStyle[] = [
   'double',
   'waxCord',
   'organza',
-  'velvet'
+  'velvet',
+  'chiffon',
+  'goldchain',
+  'raffia'
 ];
 
 const SHARE_CARD_THEMES: CardTheme[] = [
@@ -314,7 +330,15 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
         : '';
     voiceSuffix = `&v=${vIdx}~${vVis}~${vPrimaryHex}~${vAccentHex}~${vTitleB64}~${vDur}~${vAudioB64}~${vX}~${vY}~${vScale}~${vRot}`.replace(/~+$/, '');
   }
-  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}`;
+  let lockSuffix = '';
+  if (snapshot.lock && snapshot.lock.mode !== 'none') {
+    const modeCode = snapshot.lock.mode === 'countdown' ? 'c' : snapshot.lock.mode === 'passcode' ? 'p' : 'n';
+    const unlockAtB64 = snapshot.lock.unlockAtIso ? toBase64Url(snapshot.lock.unlockAtIso) : '';
+    const qB64 = snapshot.lock.questionPrompt ? toBase64Url(snapshot.lock.questionPrompt) : '';
+    const aB64 = snapshot.lock.passcodeAnswer ? toBase64Url(snapshot.lock.passcodeAnswer) : '';
+    lockSuffix = `&l=${modeCode}~${unlockAtB64}~${qB64}~${aB64}`.replace(/~+$/, '');
+  }
+  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}${lockSuffix}`;
 }
 
 export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = false): string {
@@ -440,6 +464,20 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         };
       }
 
+      let lock: BouquetLockConfig = { ...DEFAULT_BOUQUET_LOCK };
+      const lSegment = querySegments.find((seg) => seg.startsWith('l='));
+      if (lSegment) {
+        const [modeCode = 'n', unlockAtB64 = '', qB64 = '', aB64 = ''] = lSegment.slice(2).split('~');
+        const mode: BouquetLockMode =
+          modeCode === 'c' ? 'countdown' : modeCode === 'p' ? 'passcode' : 'none';
+        lock = {
+          mode,
+          unlockAtIso: unlockAtB64 ? fromBase64Url(unlockAtB64) : '',
+          questionPrompt: qB64 ? fromBase64Url(qB64) : DEFAULT_BOUQUET_LOCK.questionPrompt,
+          passcodeAnswer: aB64 ? fromBase64Url(aB64) : ''
+        };
+      }
+
       const [headerPart, cardPart, ...stemParts] = parts;
       const [wIdxStr = '0', wHex = '', rHex = '', rStyleStr = ''] = headerPart.split('~');
       const wrapStyle = SHARE_WRAP_STYLES[parseInt(wIdxStr, 36)] || 'kraft';
@@ -544,7 +582,8 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               ? Math.round(parsedCRot)
               : 0
         },
-        voice
+        voice,
+        lock
       };
     }
 

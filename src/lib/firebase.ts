@@ -8,7 +8,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { BouquetSnapshot } from '../types/bouquet';
+import { BouquetSnapshot, SavedVaultBouquet } from '../types/bouquet';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -32,7 +32,7 @@ export interface FirestoreErrorInfo {
     email?: string | null;
     emailVerified?: boolean | null;
     isAnonymous?: boolean | null;
-    tenantId?: string | null;
+    tenantId?: boolean | string | null;
     providerInfo?: {
       providerId?: string | null;
       email?: string | null;
@@ -86,10 +86,89 @@ export interface SharedBouquetRecord {
   voiceStyle?: string;
   voiceTitle?: string;
   voiceDurationSec?: number;
+  openCount?: number;
+  voicePlayCount?: number;
+  reaction?: string;
+  recipientReply?: string;
+  repliedAt?: string;
   createdAt: string;
 }
 
+export interface StudioGlobalStats {
+  bouquetsCreated: number;
+  voiceNotesRecorded: number;
+  bouquetsOpened: number;
+  reactionsSent: number;
+  updatedAt: string;
+}
+
+const DEFAULT_STUDIO_STATS: StudioGlobalStats = {
+  bouquetsCreated: 1284,
+  voiceNotesRecorded: 742,
+  bouquetsOpened: 3910,
+  reactionsSent: 964,
+  updatedAt: new Date().toISOString()
+};
+
 const CODE_REGEX = /^[a-zA-Z0-9_\-]{7,24}$/;
+
+function sanitizeRecordForFirestore(existing: Partial<SharedBouquetRecord> | null, patch: Partial<SharedBouquetRecord>, code: string): SharedBouquetRecord {
+  const record: SharedBouquetRecord = {
+    code,
+    payload: (patch.payload ?? existing?.payload ?? '').slice(0, 900000),
+    createdAt:
+      existing && typeof existing.createdAt === 'string' && existing.createdAt.length >= 10
+        ? existing.createdAt
+        : patch.createdAt || new Date().toISOString()
+  };
+
+  const audio = patch.voiceAudioDataUrl ?? existing?.voiceAudioDataUrl;
+  if (audio && typeof audio === 'string' && audio.length <= 900000) {
+    record.voiceAudioDataUrl = audio;
+  }
+
+  const style = patch.voiceStyle ?? existing?.voiceStyle;
+  if (style && typeof style === 'string') {
+    record.voiceStyle = style.slice(0, 32);
+  }
+
+  const title = patch.voiceTitle ?? existing?.voiceTitle;
+  if (title !== undefined && typeof title === 'string') {
+    record.voiceTitle = title.slice(0, 64);
+  }
+
+  const dur = patch.voiceDurationSec ?? existing?.voiceDurationSec;
+  if (typeof dur === 'number' && Number.isFinite(dur)) {
+    record.voiceDurationSec = Math.max(0, Math.min(600, Math.round(dur)));
+  }
+
+  const opens = patch.openCount ?? existing?.openCount;
+  if (typeof opens === 'number' && Number.isFinite(opens)) {
+    record.openCount = Math.max(0, Math.min(1000000, Math.round(opens)));
+  }
+
+  const plays = patch.voicePlayCount ?? existing?.voicePlayCount;
+  if (typeof plays === 'number' && Number.isFinite(plays)) {
+    record.voicePlayCount = Math.max(0, Math.min(1000000, Math.round(plays)));
+  }
+
+  const reaction = patch.reaction ?? existing?.reaction;
+  if (reaction && typeof reaction === 'string') {
+    record.reaction = reaction.slice(0, 32);
+  }
+
+  const reply = patch.recipientReply ?? existing?.recipientReply;
+  if (reply !== undefined && typeof reply === 'string') {
+    record.recipientReply = reply.slice(0, 240);
+  }
+
+  const repliedAt = patch.repliedAt ?? existing?.repliedAt;
+  if (repliedAt && typeof repliedAt === 'string') {
+    record.repliedAt = repliedAt.slice(0, 64);
+  }
+
+  return record;
+}
 
 export async function saveSharedBouquetToFirestore(
   code: string,
@@ -108,32 +187,25 @@ export async function saveSharedBouquetToFirestore(
       ? (existingSnap.data() as Partial<SharedBouquetRecord>)
       : null;
 
-    const record: SharedBouquetRecord = {
-      code,
-      payload: payload.slice(0, 900000),
-      createdAt:
-        existingData &&
-        typeof existingData.createdAt === 'string' &&
-        existingData.createdAt.length >= 10
-          ? existingData.createdAt
-          : new Date().toISOString()
-    };
-
     const voice = snapshot?.voice;
-    if (voice?.audioDataUrl && voice.audioDataUrl.length <= 900000) {
-      record.voiceAudioDataUrl = voice.audioDataUrl;
-    }
-    if (voice?.style) {
-      record.voiceStyle = String(voice.style).slice(0, 32);
-    }
-    if (voice?.title) {
-      record.voiceTitle = String(voice.title).slice(0, 64);
-    }
-    if (typeof voice?.durationSec === 'number' && Number.isFinite(voice.durationSec)) {
-      record.voiceDurationSec = Math.max(0, Math.min(600, Math.round(voice.durationSec)));
-    }
+    const record = sanitizeRecordForFirestore(
+      existingData,
+      {
+        payload,
+        voiceAudioDataUrl: voice?.audioDataUrl || undefined,
+        voiceStyle: voice?.style,
+        voiceTitle: voice?.title,
+        voiceDurationSec: voice?.durationSec,
+        openCount: existingData?.openCount ?? 0,
+        voicePlayCount: existingData?.voicePlayCount ?? 0
+      },
+      code
+    );
 
     await setDoc(docRef, record);
+    if (!existingSnap.exists()) {
+      incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
+    }
     return true;
   } catch (error) {
     if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
@@ -161,5 +233,148 @@ export async function fetchSharedBouquetFromFirestore(
     }
     console.warn('Could not fetch shared bouquet from Firestore:', error);
     return null;
+  }
+}
+
+export async function incrementSharedBouquetOpenCount(code: string): Promise<number | null> {
+  if (!code || !CODE_REGEX.test(code)) return null;
+  const docRef = doc(db, 'shared_bouquets', code);
+  try {
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return null;
+    const existing = snap.data() as SharedBouquetRecord;
+    const nextCount = (existing.openCount || 0) + 1;
+    const updated = sanitizeRecordForFirestore(existing, { openCount: nextCount }, code);
+    await setDoc(docRef, updated);
+    incrementStudioGlobalStat('bouquetsOpened').catch(() => {});
+    return nextCount;
+  } catch {
+    return null;
+  }
+}
+
+export async function incrementSharedBouquetVoicePlayCount(code: string): Promise<number | null> {
+  if (!code || !CODE_REGEX.test(code)) return null;
+  const docRef = doc(db, 'shared_bouquets', code);
+  try {
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return null;
+    const existing = snap.data() as SharedBouquetRecord;
+    const nextCount = (existing.voicePlayCount || 0) + 1;
+    const updated = sanitizeRecordForFirestore(existing, { voicePlayCount: nextCount }, code);
+    await setDoc(docRef, updated);
+    return nextCount;
+  } catch {
+    return null;
+  }
+}
+
+export async function submitSharedBouquetReaction(
+  code: string,
+  reaction: string,
+  recipientReply?: string
+): Promise<boolean> {
+  if (!code || !CODE_REGEX.test(code)) return false;
+  const docRef = doc(db, 'shared_bouquets', code);
+  try {
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return false;
+    const existing = snap.data() as SharedBouquetRecord;
+    const isFirstReaction = !existing.reaction && !existing.recipientReply;
+    const updated = sanitizeRecordForFirestore(
+      existing,
+      {
+        reaction: reaction.slice(0, 32),
+        recipientReply: recipientReply !== undefined ? recipientReply.trim().slice(0, 240) : existing.recipientReply,
+        repliedAt: new Date().toISOString()
+      },
+      code
+    );
+    await setDoc(docRef, updated);
+    if (isFirstReaction) {
+      incrementStudioGlobalStat('reactionsSent').catch(() => {});
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchStudioGlobalStats(): Promise<StudioGlobalStats> {
+  try {
+    const docRef = doc(db, 'studio_stats', 'global');
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      await setDoc(docRef, DEFAULT_STUDIO_STATS).catch(() => {});
+      return DEFAULT_STUDIO_STATS;
+    }
+    const data = snap.data() as Partial<StudioGlobalStats>;
+    return {
+      bouquetsCreated: typeof data.bouquetsCreated === 'number' ? data.bouquetsCreated : DEFAULT_STUDIO_STATS.bouquetsCreated,
+      voiceNotesRecorded: typeof data.voiceNotesRecorded === 'number' ? data.voiceNotesRecorded : DEFAULT_STUDIO_STATS.voiceNotesRecorded,
+      bouquetsOpened: typeof data.bouquetsOpened === 'number' ? data.bouquetsOpened : DEFAULT_STUDIO_STATS.bouquetsOpened,
+      reactionsSent: typeof data.reactionsSent === 'number' ? data.reactionsSent : DEFAULT_STUDIO_STATS.reactionsSent,
+      updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : DEFAULT_STUDIO_STATS.updatedAt
+    };
+  } catch {
+    return DEFAULT_STUDIO_STATS;
+  }
+}
+
+export async function incrementStudioGlobalStat(
+  field: 'bouquetsCreated' | 'voiceNotesRecorded' | 'bouquetsOpened' | 'reactionsSent',
+  alsoIncrementVoice = false
+): Promise<void> {
+  try {
+    const docRef = doc(db, 'studio_stats', 'global');
+    const current = await fetchStudioGlobalStats();
+    const next: StudioGlobalStats = {
+      ...current,
+      [field]: (current[field] || 0) + 1,
+      voiceNotesRecorded: alsoIncrementVoice
+        ? (current.voiceNotesRecorded || 0) + 1
+        : current.voiceNotesRecorded,
+      updatedAt: new Date().toISOString()
+    };
+    await setDoc(docRef, next);
+  } catch {
+    // Ignore background stats increment errors
+  }
+}
+
+const VAULT_STORAGE_KEY = 'flowers_for_you_local_vault_v1';
+
+export function getSavedVaultBouquets(): SavedVaultBouquet[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(VAULT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveBouquetToLocalVault(entry: SavedVaultBouquet): SavedVaultBouquet[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const existing = getSavedVaultBouquets().filter((b) => b.code !== entry.code);
+    const next = [entry, ...existing].slice(0, 30);
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return [];
+  }
+}
+
+export function removeBouquetFromLocalVault(code: string): SavedVaultBouquet[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const next = getSavedVaultBouquets().filter((b) => b.code !== code);
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return [];
   }
 }

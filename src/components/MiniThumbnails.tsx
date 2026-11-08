@@ -143,6 +143,49 @@ export const MiniWrapConeSVG: React.FC<{
         <path d="M30,36 L24,46 M34,36 L40,46" stroke={ribbon} strokeWidth="2.5" strokeLinecap="round" />
       </g>
     )}
+
+    {/* 10. VELVET HATBOX (Cylindrical Parisian velvet box with gold foil rim & floral dome) */}
+    {styleType === 'hatbox' && (
+      <g>
+        <circle cx="23" cy="20" r="6.5" fill="#fbcfe8" />
+        <circle cx="41" cy="20" r="6.5" fill="#fda4af" />
+        <circle cx="32" cy="17" r="7.5" fill="#f43f5e" />
+        <rect x="17" y="25" width="30" height="28" rx="3" fill="#9F1239" stroke="#F59E0B" strokeWidth="1.2" />
+        <rect x="16" y="25" width="32" height="5" rx="1.5" fill="#881337" stroke="#FBBF24" strokeWidth="1" />
+        <rect x="23" y="35" width="18" height="10" rx="2" fill="#FFFDF9" stroke="#F59E0B" strokeWidth="0.9" />
+        <line x1="27" y1="40" x2="37" y2="40" stroke="#9F1239" strokeWidth="1.2" />
+      </g>
+    )}
+
+    {/* 11. GLASS CLOCHE (Botanical glass bell dome on walnut pedestal) */}
+    {styleType === 'cloche' && (
+      <g>
+        <circle cx="32" cy="11" r="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1" />
+        <path
+          d="M17,48 L17,28 C17,16 47,16 47,28 L47,48 Z"
+          fill="#E0F2FE"
+          fillOpacity="0.45"
+          stroke="#94A3B8"
+          strokeWidth="1.4"
+        />
+        <circle cx="26" cy="29" r="5.5" fill="#fda4af" />
+        <circle cx="38" cy="29" r="5.5" fill="#fbcfe8" />
+        <circle cx="32" cy="25" r="6.5" fill="#e11d48" />
+        <path d="M28,33 L26,47 M32,31 L32,47 M36,33 L38,47" stroke="#15803d" strokeWidth="2" strokeLinecap="round" />
+        <rect x="14" y="48" width="36" height="5" rx="2.5" fill="#78350F" stroke="#451A03" strokeWidth="1" />
+      </g>
+    )}
+
+    {/* 12. KOREAN MESH (Layered frosted tulle mesh wrap with architectural pleats) */}
+    {styleType === 'koreanmesh' && (
+      <g>
+        <path d="M32,46 L10,16 Q22,10 32,20 Q42,10 54,16 Z" fill="#F3E8FF" stroke="#C084FC" strokeWidth="1" strokeDasharray="2 1.5" />
+        <path d="M14,22 L32,43 L24,55 L18,41 Z" fill="#E9D5FF" opacity="0.85" />
+        <path d="M50,22 L32,43 L40,55 L46,41 Z" fill="#E9D5FF" opacity="0.85" />
+        <path d="M22,38 L42,38 L39,55 L25,55 Z" fill="#FAF5FF" stroke="#D8B4FE" strokeWidth="1" />
+        <path d="M22,42 Q32,45 42,42" fill="none" stroke={ribbon} strokeWidth="2.5" strokeLinecap="round" />
+      </g>
+    )}
   </svg>
 );
 
@@ -257,6 +300,43 @@ export const MiniRibbonBowSVG: React.FC<{ hex: string; styleType?: RibbonStyle }
         <ellipse cx="32" cy="31" rx="6.5" ry="7.5" fill="#fde68a" stroke="#b45309" strokeWidth="1" />
         <ellipse cx="32" cy="31" rx="4.5" ry="5.5" fill="#fffdf9" />
         <circle cx="32" cy="42" r="2.2" fill="#fffdf9" stroke="#cbd5e1" strokeWidth="0.7" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'chiffon') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Raw-edge frayed silk chiffon drape */}
+        <path d="M16,28 Q32,33 48,28" fill="none" stroke={hex} strokeWidth="5" strokeLinecap="round" opacity="0.75" />
+        <path d="M29,31 C22,42 18,52 24,56 C28,51 30,40 32,32 Z" fill={hex} fillOpacity="0.65" stroke={strokeCol} strokeWidth="0.8" strokeDasharray="2 1" />
+        <path d="M35,31 C42,42 46,52 40,56 C36,51 34,40 32,32 Z" fill={hex} fillOpacity="0.65" stroke={strokeCol} strokeWidth="0.8" strokeDasharray="2 1" />
+        <ellipse cx="32" cy="30" rx="5.5" ry="4" fill={hex} stroke={strokeCol} strokeWidth="0.9" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'goldchain') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Golden link chain & hanging heart charm */}
+        <path d="M15,27 Q32,34 49,27" fill="none" stroke="#F59E0B" strokeWidth="2.8" strokeDasharray="4 2" strokeLinecap="round" />
+        <path d="M17,31 Q32,39 47,31" fill="none" stroke="#FBBF24" strokeWidth="2" strokeDasharray="3 2" strokeLinecap="round" />
+        <line x1="32" y1="33" x2="32" y2="41" stroke="#F59E0B" strokeWidth="1.8" />
+        <path d="M32,50 C25,45 25,39 29,39 C31,39 32,41 32,41 C32,41 33,39 35,39 C39,39 39,45 32,50 Z" fill={hex} stroke="#FDE68A" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'raffia') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Woven natural raffia knot & dried sprig */}
+        <path d="M15,29 Q32,32 49,29 M16,32 Q32,35 48,32" fill="none" stroke="#D6B38E" strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M31,32 L18,50 M31,32 L23,53 M33,32 L46,50 M33,32 L41,53" stroke="#C89B6E" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="32" cy="31" r="4.5" fill={hex} stroke="#FFFDF9" strokeWidth="1" />
+        <circle cx="28" cy="24" r="1.8" fill="#FFFDF9" />
+        <circle cx="36" cy="23" r="1.8" fill="#FFFDF9" />
       </svg>
     );
   }

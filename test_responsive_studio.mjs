@@ -64,12 +64,14 @@ try {
   assert(typeof studioMod.musicBox.toggle === 'function', 'musicBox toggle function present');
   console.log('✓ Procedural music box audio system preserved');
 
-  // 9. Flower Catalog, Fillers, Ribbons, Cards & Templates Check
-  assert(studioMod.FLOWER_CATALOG.length === 24, `Expected 24 botanical entries (15 focal + 9 fillers), got ${studioMod.FLOWER_CATALOG.length}`);
+  // 9. Flower Catalog, Fillers, Wrappers, Ribbons, Cards & Templates Check
+  assert(studioMod.FLOWER_CATALOG.length === 31, `Expected 31 botanical entries (19 focal + 12 fillers), got ${studioMod.FLOWER_CATALOG.length}`);
+  assert(studioMod.WRAPPER_CATALOG.length === 12, `Expected 12 wrapper designs (including Velvet Hatbox, Glass Cloche, Korean Mesh), got ${studioMod.WRAPPER_CATALOG.length}`);
+  assert(studioMod.RIBBON_STYLE_CATALOG.length === 10, `Expected 10 ribbon styles (including Chiffon Fringe, Gold Chain, Botanical Raffia), got ${studioMod.RIBBON_STYLE_CATALOG.length}`);
   assert(studioMod.RIBBON_SWATCHES.length === 12, `Expected 12 ribbon swatches, got ${studioMod.RIBBON_SWATCHES.length}`);
   assert(studioMod.CARD_THEME_CATALOG.length === 8, `Expected 8 greeting card themes (including default Sealed Letter), got ${studioMod.CARD_THEME_CATALOG.length}`);
   assert(studioMod.STARTER_TEMPLATES.length >= 4, `Expected at least 4 starter templates, got ${studioMod.STARTER_TEMPLATES.length}`);
-  console.log('✓ Botanical flower catalog (24), ribbons (12), cards (8) and starter templates preserved');
+  console.log('✓ Botanical flower catalog (31), wrappers (12), ribbon styles (10), swatches (12), cards (8) and starter templates verified');
 
   // 10. PNG Export Check
   assert(typeof studioMod.exportSvgElementToPng === 'function', 'High-res PNG export function preserved');
@@ -286,12 +288,95 @@ try {
   assert(studioSrc.includes('outline: none !important'), 'SVG focus outline and tap highlight suppressed');
   const gitignoreSrc = fs.readFileSync('.gitignore', 'utf-8');
   assert(gitignoreSrc.includes('.env') && gitignoreSrc.includes('.aistudio') && gitignoreSrc.includes('*service-account*.json'), '.gitignore protects against pushing sensitive or temporary files');
-  assert(!fs.existsSync('DRAFT_firestore.rules') && !fs.existsSync('security_spec.md'), 'Temporary Firebase draft files cleaned up');
+  assert(!fs.existsSync('DRAFT_firestore.rules') && !fs.existsSync('security_spec.md') && !fs.existsSync('.env.example'), 'Temporary draft and empty env files cleaned up');
   console.log('✓ Voice wiggle removal, focus line removal, top-right play icon, centered card rotation, and .gitignore safety verified');
 
-  console.log('\nAll 29 Verification and Edge Case Checks Passed Successfully! 🎉');
+  // 30. Editorial Landing Page, Time-Capsule & Secret Question Locks, Couture Catalogs & Account-Free Bouquet Vault Verification
+  assert(studioMod.LandingPageView, 'LandingPageView exported');
+  const landingHtml = renderToString(
+    React.createElement(studioMod.LandingPageView, {
+      onStartCrafting: () => {},
+      onOpenVault: () => {},
+      vaultCount: 2,
+      isDarkMode: false,
+      onToggleDarkMode: () => {},
+    })
+  );
+  assert(landingHtml.includes('Flowers For You') && landingHtml.includes('Send Love in Every Bloom.') && landingHtml.includes('Start Crafting Your Bouquet'), 'Minimal Landing Page renders brand title, Send Love in Every Bloom headline, and Start Crafting CTA');
+  assert(landingHtml.includes('How It Works') && landingHtml.includes('Frequently Asked Questions') && landingHtml.includes('Make someone smile today'), 'Landing Page includes concise How It Works, Gentle Answers FAQ cards, and Make someone smile today CTA container');
+
+  // Verify new botanicals, wrappers, and ribbons render cleanly
+  const newFlowers = ['callalily', 'poppy', 'sweetpea', 'freesia', 'pampas', 'queenanneslace', 'astilbe'];
+  for (const ft of newFlowers) {
+    testStore.addFlower(ft);
+  }
+  testStore.setWrapStyle('hatbox');
+  testStore.setRibbonStyle('goldchain');
+  const coutureHtml = renderToString(React.createElement(App));
+  assert(coutureHtml.length > 50000, 'Couture flowers, Velvet Hatbox wrapper, and Gold Chain ribbon render cleanly');
+
+  // Verify Time-Capsule Countdown Lock & Secret Question Lock round-trip in share payload
+  testStore.updateLock({
+    mode: 'countdown',
+    unlockAtIso: '2027-02-14T09:00',
+    questionPrompt: '',
+    passcodeAnswer: '',
+  });
+  let lockState = studioMod.useBouquetStore.getState();
+  const countdownPayload = studioMod.encodeBouquetToCompactPayload(
+    {
+      items: lockState.items,
+      wrapStyle: 'cloche',
+      wrapColor: lockState.wrapColor,
+      ribbonColor: lockState.ribbonColor,
+      ribbonStyle: 'chiffon',
+      card: lockState.card,
+      voice: lockState.voice,
+      lock: lockState.lock,
+    },
+    true
+  );
+  assert(countdownPayload.includes('&l=c~'), 'Encoded payload includes &l=c~ Time-Capsule Countdown Lock segment');
+  const decodedCountdown = studioMod.decodeBouquetFromHash(countdownPayload);
+  assert.strictEqual(decodedCountdown.wrapStyle, 'cloche', 'Decoded wrapStyle matches Glass Cloche');
+  assert.strictEqual(decodedCountdown.ribbonStyle, 'chiffon', 'Decoded ribbonStyle matches Chiffon Fringe');
+  assert.strictEqual(decodedCountdown.lock.mode, 'countdown', 'Decoded lock mode matches countdown');
+  assert.strictEqual(decodedCountdown.lock.unlockAtIso, '2027-02-14T09:00', 'Decoded unlockAtIso matches');
+
+  testStore.updateLock({
+    mode: 'passcode',
+    unlockAtIso: '',
+    questionPrompt: 'The special date we first met',
+    passcodeAnswer: 'October 14',
+  });
+  lockState = studioMod.useBouquetStore.getState();
+  const passcodePayload = studioMod.encodeBouquetToCompactPayload(
+    {
+      items: lockState.items,
+      wrapStyle: 'koreanmesh',
+      wrapColor: lockState.wrapColor,
+      ribbonColor: lockState.ribbonColor,
+      ribbonStyle: 'raffia',
+      card: lockState.card,
+      voice: lockState.voice,
+      lock: lockState.lock,
+    },
+    true
+  );
+  assert(passcodePayload.includes('&l=p~'), 'Encoded payload includes &l=p~ Secret Question Lock segment');
+  const decodedPasscode = studioMod.decodeBouquetFromHash(passcodePayload);
+  assert.strictEqual(decodedPasscode.wrapStyle, 'koreanmesh', 'Decoded wrapStyle matches Korean Mesh');
+  assert.strictEqual(decodedPasscode.ribbonStyle, 'raffia', 'Decoded ribbonStyle matches Botanical Raffia');
+  assert.strictEqual(decodedPasscode.lock.mode, 'passcode', 'Decoded lock mode matches passcode');
+  assert.strictEqual(decodedPasscode.lock.questionPrompt, 'The special date we first met', 'Decoded questionPrompt matches');
+  assert.strictEqual(decodedPasscode.lock.passcodeAnswer, 'October 14', 'Decoded passcodeAnswer matches');
+  assert(studioMod.RECIPIENT_REACTIONS.length === 4, '4 recipient reaction presets exported');
+  console.log('✓ Editorial Landing Page, Time-Capsule & Secret Question Locks, Couture Catalogs, and Recipient Reactions / Bouquet Vault verified');
+
+  console.log('\nAll 30 Verification and Edge Case Checks Passed Successfully! 🎉');
 } finally {
   await vite.close();
 }
+
 
 

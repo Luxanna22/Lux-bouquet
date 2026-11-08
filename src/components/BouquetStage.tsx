@@ -526,6 +526,137 @@ export const BouquetRibbonSVG: React.FC<{
           <circle cx="298" cy={waistY - 2} r="2.8" fill="#FFFFFF" />
         </g>
       )}
+
+      {/* 8. CHIFFON FRINGE (Raw-edge frayed silk chiffon drape with soft organic knot) */}
+      {ribbonStyle === 'chiffon' && (
+        <g>
+          {/* Long Flowing Frayed Chiffon Tails */}
+          <path
+            d={`M294,${waistY + 4} C262,${waistY + 55} 238,${tailBottomY - 12} 262,${tailBottomY + 8} C278,${tailBottomY - 10} 292,${waistY + 46} 300,${waistY + 8} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.68"
+            stroke="#FFFFFF"
+            strokeWidth="1.3"
+            strokeDasharray="4 2"
+          />
+          <path
+            d={`M306,${waistY + 4} C338,${waistY + 55} 362,${tailBottomY - 12} 338,${tailBottomY + 8} C322,${tailBottomY - 10} 308,${waistY + 46} 300,${waistY + 8} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.68"
+            stroke="#FFFFFF"
+            strokeWidth="1.3"
+            strokeDasharray="4 2"
+          />
+          {/* Gathered Chiffon Waist Sash */}
+          <path
+            d={`M${leftX},${waistY - 7} Q300,${waistY + 8} ${rightX},${waistY - 7} L${rightX - 3},${waistY + 9} Q300,${waistY + 22} ${leftX + 3},${waistY + 9} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.78"
+            stroke="#FFFFFF"
+            strokeWidth="1.2"
+            strokeDasharray="5 2"
+          />
+          {/* Billowy Frayed Chiffon Loops */}
+          <path
+            d={`M295,${waistY} C228,${waistY - 38} 222,${waistY + 28} 290,${waistY + 10} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.72"
+            stroke="#FFFFFF"
+            strokeWidth="1.4"
+            strokeDasharray="4 2"
+          />
+          <path
+            d={`M305,${waistY} C372,${waistY - 38} 378,${waistY + 28} 310,${waistY + 10} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.72"
+            stroke="#FFFFFF"
+            strokeWidth="1.4"
+            strokeDasharray="4 2"
+          />
+          <ellipse cx="300" cy={waistY + 2} rx="14" ry="10" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.3" />
+        </g>
+      )}
+
+      {/* 9. GOLD CHAIN (Atelier golden link chain with hanging heart & pearl charms) */}
+      {ribbonStyle === 'goldchain' && (
+        <g>
+          {/* Twin Draped Golden Curb Chains */}
+          <path
+            d={`M${leftX},${waistY - 4} Q300,${waistY + 18} ${rightX},${waistY - 4}`}
+            fill="none"
+            stroke="#D97706"
+            strokeWidth="6"
+            strokeDasharray="8 4"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${leftX},${waistY - 4} Q300,${waistY + 18} ${rightX},${waistY - 4}`}
+            fill="none"
+            stroke="#FDE047"
+            strokeWidth="2.6"
+            strokeDasharray="8 4"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${leftX + 6},${waistY + 4} Q300,${waistY + 34} ${rightX - 6},${waistY + 4}`}
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="4.2"
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+          />
+          {/* Hanging Drop Chains */}
+          <line x1="286" y1={waistY + 14} x2="286" y2={waistY + 48} stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="3 2" />
+          <line x1="314" y1={waistY + 14} x2="314" y2={waistY + 42} stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="3 2" />
+          {/* Pearl Drop & Enamel Heart Charm */}
+          <circle cx="314" cy={waistY + 46} r="6.5" fill="#FFFDF9" stroke="#F59E0B" strokeWidth="1.5" />
+          <g transform={`translate(286, ${waistY + 54})`}>
+            <path
+              d="M0,10 C-12,2 -12,-8 -5,-8 C-2,-8 0,-4 0,-4 C0,-4 2,-8 5,-8 C12,-8 12,2 0,10 Z"
+              fill={ribbonColor}
+              stroke="#FDE047"
+              strokeWidth="1.8"
+            />
+          </g>
+          {/* Center Golden Clasp */}
+          <circle cx="300" cy={waistY + 8} r="9" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.8" />
+          <circle cx="300" cy={waistY + 8} r="4" fill={ribbonColor} />
+        </g>
+      )}
+
+      {/* 10. BOTANICAL RAFFIA (Woven natural palm raffia bow with dried baby's breath sprig) */}
+      {ribbonStyle === 'raffia' && (
+        <g>
+          {/* Multi-Strand Natural Palm Raffia Waist Wrap */}
+          <path
+            d={`M${leftX},${waistY - 5} Q300,${waistY + 7} ${rightX},${waistY - 5} M${leftX + 2},${waistY} Q300,${waistY + 12} ${rightX - 2},${waistY} M${leftX + 3},${waistY + 5} Q300,${waistY + 17} ${rightX - 3},${waistY + 5}`}
+            fill="none"
+            stroke="#C89B6E"
+            strokeWidth="3.2"
+            strokeLinecap="round"
+          />
+          {/* Frayed Raffia Straw Loops & Whiskers */}
+          <path
+            d={`M296,${waistY + 2} C235,${waistY - 26} 232,${waistY + 22} 294,${waistY + 8} M304,${waistY + 2} C365,${waistY - 26} 368,${waistY + 22} 306,${waistY + 8}`}
+            fill="none"
+            stroke="#DFB78C"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M296,${waistY + 6} L248,${tailBottomY - 12} M298,${waistY + 6} L264,${tailBottomY - 4} M304,${waistY + 6} L352,${tailBottomY - 12} M302,${waistY + 6} L336,${tailBottomY - 4}`}
+            stroke="#C89B6E"
+            strokeWidth="2.8"
+            strokeLinecap="round"
+          />
+          {/* Tucked Dried Botanical Sprig & Wax Knot */}
+          <path d={`M300,${waistY + 2} L288,${waistY - 24} M300,${waistY + 2} L312,${waistY - 26}`} stroke="#65A30D" strokeWidth="1.8" />
+          <circle cx="288" cy={waistY - 25} r="4" fill="#FFFDF9" />
+          <circle cx="312" cy={waistY - 27} r="4" fill="#FFFDF9" />
+          <circle cx="300" cy={waistY - 30} r="4.5" fill={ribbonColor} />
+          <ellipse cx="300" cy={waistY + 4} rx="11" ry="8" fill="#B4846C" stroke="#DFB78C" strokeWidth="1.5" />
+        </g>
+      )}
     </g>
   );
 };
@@ -2112,11 +2243,53 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 <ellipse cx="300" cy="408" rx="84" ry="15" fill={shadeWrapHex(wrapColor, -110)} />
               </g>
             )}
+
+            {/* STYLE 10: VELVET HATBOX (Deep cylindrical interior rim behind flowers) */}
+            {wrapStyle === 'hatbox' && (
+              <g>
+                <ellipse cx="300" cy="405" rx="124" ry="26" fill={shadeWrapHex(wrapColor, -65)} stroke="#F59E0B" strokeWidth="2.5" />
+                <ellipse cx="300" cy="405" rx="112" ry="18" fill={shadeWrapHex(wrapColor, -110)} />
+              </g>
+            )}
+
+            {/* STYLE 11: GLASS CLOCHE (Back glass bell dome & inner shadow behind flowers) */}
+            {wrapStyle === 'cloche' && (
+              <g>
+                <circle cx="300" cy="112" r="18" fill="#E2E8F0" fillOpacity="0.65" stroke="#94A3B8" strokeWidth="2" />
+                <path
+                  d="M148,568 L148,295 C148,118 452,118 452,295 L452,568 Z"
+                  fill="#E0F2FE"
+                  fillOpacity="0.22"
+                  stroke="#94A3B8"
+                  strokeWidth="2.2"
+                />
+                <ellipse cx="300" cy="568" rx="162" ry="24" fill="#5C3A1E" />
+              </g>
+            )}
+
+            {/* STYLE 12: KOREAN MESH (High airy frosted tulle mesh crown behind flowers) */}
+            {wrapStyle === 'koreanmesh' && (
+              <g>
+                <path
+                  d="M300,520 L88,245 Q165,165 300,195 Q435,165 512,245 Z"
+                  fill={shadeWrapHex(wrapColor, 12)}
+                  fillOpacity="0.82"
+                  stroke={shadeWrapHex(wrapColor, -28)}
+                  strokeWidth="1.6"
+                  strokeDasharray="5 3"
+                />
+                <path
+                  d="M300,505 L124,262 Q220,210 300,235 Q380,210 476,262 Z"
+                  fill={wrapColor}
+                  fillOpacity="0.88"
+                />
+              </g>
+            )}
           </g>
         )}
 
         {/* Gather Stems at the Bouquet Tie Point (Only shown for hand-tied or open-bottom sleeves) */}
-        {wrapStyle !== 'basket' && wrapStyle !== 'vase' && (
+        {wrapStyle !== 'basket' && wrapStyle !== 'vase' && wrapStyle !== 'hatbox' && (
           <g opacity="0.85" clipPath="url(#bouquetWrapperBoundsClip)">
             <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
             <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
@@ -2454,6 +2627,161 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 </g>
                 <rect x="198" y="398" width="204" height="16" rx="8" fill={shadeWrapHex(wrapColor, 16)} stroke={shadeWrapHex(wrapColor, -28)} strokeWidth="1.8" />
                 <rect x="226" y="612" width="148" height="14" rx="6" fill="#B4846C" />
+              </g>
+            )}
+
+            {/* STYLE 10 FRONT: VELVET HATBOX (Parisian cylindrical velvet hatbox with gold foil label) */}
+            {wrapStyle === 'hatbox' && (
+              <g>
+                <path
+                  d="M178,405 L422,405 L412,616 Q300,636 188,616 Z"
+                  fill={wrapColor}
+                  stroke="#F59E0B"
+                  strokeWidth="2.2"
+                />
+                <path
+                  d="M300,405 L422,405 L412,616 Q356,626 300,626 Z"
+                  fill={shadeWrapHex(wrapColor, -18)}
+                  opacity="0.45"
+                />
+                {/* Box Lid Collar Rim */}
+                <rect
+                  x="170"
+                  y="394"
+                  width="260"
+                  height="26"
+                  rx="8"
+                  fill={shadeWrapHex(wrapColor, -12)}
+                  stroke="#FBBF24"
+                  strokeWidth="2"
+                />
+                {/* Gold Foil Framed Atelier Plaque */}
+                <rect
+                  x="236"
+                  y="486"
+                  width="128"
+                  height="64"
+                  rx="8"
+                  fill="#FFFDF9"
+                  stroke="#F59E0B"
+                  strokeWidth="2"
+                />
+                <rect
+                  x="242"
+                  y="492"
+                  width="116"
+                  height="52"
+                  rx="5"
+                  fill="none"
+                  stroke="#D97706"
+                  strokeWidth="0.9"
+                  strokeDasharray="3 2"
+                />
+                <text
+                  x="300"
+                  y="518"
+                  textAnchor="middle"
+                  fill="#1C1917"
+                  fontSize="12"
+                  fontWeight="700"
+                  style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.12em' }}
+                >
+                  L&apos;ATELIER FLORAL
+                </text>
+                <text
+                  x="300"
+                  y="533"
+                  textAnchor="middle"
+                  fill="#78716C"
+                  fontSize="8.5"
+                  style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.18em' }}
+                >
+                  PARIS · FLEURS
+                </text>
+              </g>
+            )}
+
+            {/* STYLE 11 FRONT: GLASS CLOCHE (Specular glass highlights & sculpted walnut pedestal base) */}
+            {wrapStyle === 'cloche' && (
+              <g>
+                {/* Glass Bell Dome Specular Highlights Over Flowers */}
+                <path
+                  d="M168,548 L168,300 C168,175 235,142 275,136"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  opacity="0.55"
+                />
+                <path
+                  d="M432,548 L432,310 C432,210 390,165 348,148"
+                  fill="none"
+                  stroke="#E0F2FE"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  opacity="0.45"
+                />
+                {/* Sculpted Walnut Pedestal Base */}
+                <ellipse
+                  cx="300"
+                  cy="568"
+                  rx="168"
+                  ry="22"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -45)}
+                  strokeWidth="2.2"
+                />
+                <path
+                  d="M132,568 L468,568 L454,606 Q300,628 146,606 Z"
+                  fill={shadeWrapHex(wrapColor, -28)}
+                  stroke={shadeWrapHex(wrapColor, -55)}
+                  strokeWidth="2"
+                />
+                <rect
+                  x="252"
+                  y="580"
+                  width="96"
+                  height="20"
+                  rx="4"
+                  fill="#FEF3C7"
+                  stroke="#D97706"
+                  strokeWidth="1.2"
+                />
+              </g>
+            )}
+
+            {/* STYLE 12 FRONT: KOREAN MESH (Architectural pleated frosted tulle wrap) */}
+            {wrapStyle === 'koreanmesh' && (
+              <g>
+                <path
+                  d="M135,345 L286,478 L236,618 L178,495 Z"
+                  fill={shadeWrapHex(wrapColor, -10)}
+                  fillOpacity="0.82"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.4"
+                  strokeDasharray="4 2"
+                />
+                <path
+                  d="M465,345 L314,478 L364,618 L422,495 Z"
+                  fill={shadeWrapHex(wrapColor, -10)}
+                  fillOpacity="0.82"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.4"
+                  strokeDasharray="4 2"
+                />
+                <path
+                  d="M196,422 Q300,458 404,422 L358,620 Q300,632 242,620 Z"
+                  fill={wrapColor}
+                  fillOpacity="0.9"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                />
+                <g stroke="#FFFFFF" strokeWidth="1.1" opacity="0.6" strokeDasharray="3 3">
+                  <line x1="235" y1="438" x2="262" y2="618" />
+                  <line x1="278" y1="448" x2="286" y2="622" />
+                  <line x1="322" y1="448" x2="314" y2="622" />
+                  <line x1="365" y1="438" x2="338" y2="618" />
+                </g>
               </g>
             )}
           </g>

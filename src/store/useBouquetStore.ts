@@ -9,6 +9,8 @@ import {
   GreetingCardData,
   VoiceKeepsakeData,
   DEFAULT_VOICE_KEEPSAKE,
+  BouquetLockConfig,
+  DEFAULT_BOUQUET_LOCK,
   BouquetSnapshot,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
@@ -52,6 +54,8 @@ export interface BouquetStoreState extends BouquetSnapshot {
   updateCard: (patch: Partial<GreetingCardData>) => void;
   voice: VoiceKeepsakeData;
   updateVoice: (patch: Partial<VoiceKeepsakeData>) => void;
+  lock: BouquetLockConfig;
+  updateLock: (patch: Partial<BouquetLockConfig>) => void;
   randomizeBouquet: () => void;
   clearBouquet: () => void;
   undo: () => void;
@@ -67,7 +71,8 @@ function takeSnapshot(state: BouquetStoreState): BouquetSnapshot {
     ribbonColor: state.ribbonColor,
     ribbonStyle: state.ribbonStyle || 'satin',
     card: { ...state.card },
-    voice: { ...(state.voice || DEFAULT_VOICE_KEEPSAKE) }
+    voice: { ...(state.voice || DEFAULT_VOICE_KEEPSAKE) },
+    lock: { ...(state.lock || DEFAULT_BOUQUET_LOCK) }
   };
 }
 
@@ -103,6 +108,7 @@ function getInitialStoreState() {
             rotation: shared.card?.rotation ?? 0
           },
           voice: shared.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...shared.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
+          lock: shared.lock ? { ...DEFAULT_BOUQUET_LOCK, ...shared.lock } : { ...DEFAULT_BOUQUET_LOCK },
           selectedId: isGiftShareHash(hash)
             ? null
             : shared.items[shared.items.length - 1]?.id || null
@@ -132,6 +138,7 @@ function getInitialStoreState() {
       rotation: 0
     },
     voice: { ...DEFAULT_VOICE_KEEPSAKE },
+    lock: { ...DEFAULT_BOUQUET_LOCK },
     selectedId: isBrowser ? null : ('f-14' as string | null)
   };
 }
@@ -147,6 +154,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   ribbonStyle: INITIAL_STORE_STATE.ribbonStyle,
   card: INITIAL_STORE_STATE.card,
   voice: INITIAL_STORE_STATE.voice,
+  lock: INITIAL_STORE_STATE.lock,
   selectedId: INITIAL_STORE_STATE.selectedId,
   past: [],
   future: [],
@@ -479,6 +487,12 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     }));
   },
 
+  updateLock: (patch) => {
+    set((state) => ({
+      lock: { ...(state.lock || DEFAULT_BOUQUET_LOCK), ...patch }
+    }));
+  },
+
   randomizeBouquet: () => {
     const snap = takeSnapshot(get());
     const palettes = [
@@ -609,6 +623,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       future: [],
       items: [],
       voice: { ...DEFAULT_VOICE_KEEPSAKE },
+      lock: { ...DEFAULT_BOUQUET_LOCK },
       selectedId: null
     }));
   },
@@ -621,6 +636,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     set({
       ...previous,
       voice: previous.voice ? { ...previous.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
+      lock: previous.lock ? { ...previous.lock } : { ...DEFAULT_BOUQUET_LOCK },
       past: past.slice(0, -1),
       future: [current, ...future],
       selectedId: null
@@ -635,6 +651,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     set({
       ...next,
       voice: next.voice ? { ...next.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
+      lock: next.lock ? { ...next.lock } : { ...DEFAULT_BOUQUET_LOCK },
       past: [...past, current],
       future: future.slice(1),
       selectedId: null
@@ -645,6 +662,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     set({
       ...snap,
       voice: snap.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...snap.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
+      lock: snap.lock ? { ...DEFAULT_BOUQUET_LOCK, ...snap.lock } : { ...DEFAULT_BOUQUET_LOCK },
       selectedId: snap.items[0]?.id ?? null,
       past: [],
       future: []

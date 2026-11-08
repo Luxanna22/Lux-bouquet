@@ -2,7 +2,7 @@
   "entities": {
     "SharedBouquet": {
       "title": "SharedBouquet",
-      "description": "A shared bouquet arrangement including floral items, greeting card, and optional recorded voice keepsake.",
+      "description": "A shared bouquet arrangement including floral items, greeting card, optional recorded voice keepsake, unlock ritual config, and recipient reactions.",
       "type": "object",
       "properties": {
         "code": {
@@ -14,7 +14,7 @@
         },
         "payload": {
           "type": "string",
-          "description": "Compact serialized bouquet snapshot string.",
+          "description": "Compact serialized bouquet snapshot string (including optional lock config).",
           "minLength": 3,
           "maxLength": 900000
         },
@@ -40,6 +40,32 @@
           "type": "number",
           "description": "Duration of the recorded voice note in seconds."
         },
+        "openCount": {
+          "type": "number",
+          "description": "Number of times the recipient opened and unwrapped the bouquet."
+        },
+        "voicePlayCount": {
+          "type": "number",
+          "description": "Number of times the recipient played the voice keepsake."
+        },
+        "reaction": {
+          "type": "string",
+          "description": "Recipient reaction key (e.g., loved, touched, made_my_day, sweet).",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "recipientReply": {
+          "type": "string",
+          "description": "Short thank-you reply note left by the recipient.",
+          "minLength": 0,
+          "maxLength": 240
+        },
+        "repliedAt": {
+          "type": "string",
+          "description": "ISO timestamp when the recipient sent a reaction or reply.",
+          "minLength": 0,
+          "maxLength": 64
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -47,12 +73,44 @@
         }
       },
       "required": ["code", "payload", "createdAt"]
+    },
+    "StudioStats": {
+      "title": "StudioStats",
+      "description": "Aggregated public community counters displayed on the Landing Page.",
+      "type": "object",
+      "properties": {
+        "bouquetsCreated": {
+          "type": "number",
+          "description": "Total bouquets crafted and shared."
+        },
+        "voiceNotesRecorded": {
+          "type": "number",
+          "description": "Total romantic voice keepsakes recorded."
+        },
+        "bouquetsOpened": {
+          "type": "number",
+          "description": "Total bouquets unwrapped by recipients."
+        },
+        "reactionsSent": {
+          "type": "number",
+          "description": "Total recipient reactions and thank-you replies sent."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last stats update."
+        }
+      },
+      "required": ["bouquetsCreated", "voiceNotesRecorded", "bouquetsOpened", "reactionsSent", "updatedAt"]
     }
   },
   "firestore": {
     "/shared_bouquets/{code}": {
       "schema": "SharedBouquet",
-      "description": "Stores shared bouquet arrangements and recorded voice keepsakes indexed by short code."
+      "description": "Stores shared bouquet arrangements, recorded voice keepsakes, open/play receipts, and recipient reactions indexed by short code."
+    },
+    "/studio_stats/{statId}": {
+      "schema": "StudioStats",
+      "description": "Stores global community counters for the landing page analytics section."
     }
   }
 }

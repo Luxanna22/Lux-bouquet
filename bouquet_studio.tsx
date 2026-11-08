@@ -8,4 +8,7 @@ export * from './src/components/MiniThumbnails';
 export * from './src/components/LayerManagerPanel';
 export * from './src/components/SelectedFlowerToolbar';
 export * from './src/components/VoiceRecorderStudio';
+export * from './src/components/LandingPageView';
+export * from './src/components/BouquetVaultModal';
+
 

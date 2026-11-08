@@ -17,6 +17,10 @@ export type FlowerType =
   | 'iris'
   | 'camellia'
   | 'lotus'
+  | 'callalily'
+  | 'poppy'
+  | 'sweetpea'
+  | 'freesia'
   | 'lavender'
   | 'hydrangea'
   | 'babysBreath'
@@ -26,7 +30,10 @@ export type FlowerType =
   | 'waxflower'
   | 'billyButtons'
   | 'oliveBranch'
-  | 'monstera';
+  | 'monstera'
+  | 'pampas'
+  | 'queenanneslace'
+  | 'astilbe';
 
 export type CardTheme =
   | 'sealed'
@@ -250,7 +257,10 @@ export type RibbonStyle =
   | 'double'
   | 'waxCord'
   | 'organza'
-  | 'velvet';
+  | 'velvet'
+  | 'chiffon'
+  | 'goldchain'
+  | 'raffia';
 
 export const RIBBON_STYLE_CATALOG: {
   id: RibbonStyle;
@@ -263,7 +273,10 @@ export const RIBBON_STYLE_CATALOG: {
   { id: 'double', label: 'Couture Rosette', subtitle: 'Multi-loop Parisian bow' },
   { id: 'waxCord', label: 'Twine & Seal', subtitle: 'Artisan cord & wax emblem' },
   { id: 'organza', label: 'Sheer Chiffon', subtitle: 'Billowy translucent veil' },
-  { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp' }
+  { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp' },
+  { id: 'chiffon', label: 'Chiffon Fringe', subtitle: 'Frayed raw-edge silk drape' },
+  { id: 'goldchain', label: 'Gold Chain', subtitle: 'Golden links & heart charm' },
+  { id: 'raffia', label: 'Botanical Raffia', subtitle: 'Woven palm knot & dried sprig' }
 ];
 
 export type typeWrapStyle =
@@ -275,7 +288,10 @@ export type typeWrapStyle =
   | 'lace'
   | 'celestial'
   | 'vase'
-  | 'plain';
+  | 'plain'
+  | 'hatbox'
+  | 'cloche'
+  | 'koreanmesh';
 export type WrapStyle = typeWrapStyle;
 
 export const WRAPPER_CATALOG: {
@@ -292,6 +308,9 @@ export const WRAPPER_CATALOG: {
   { id: 'lace', label: 'Eyelet Lace', defaultHex: '#FFF5F7', defaultRibbon: '#F472B6' },
   { id: 'celestial', label: 'Starlit Noir', defaultHex: '#1E293B', defaultRibbon: '#F59E0B' },
   { id: 'vase', label: 'Ceramic Vase', defaultHex: '#E7DCD1', defaultRibbon: '#B4846C' },
+  { id: 'hatbox', label: 'Velvet Hatbox', defaultHex: '#9F1239', defaultRibbon: '#F59E0B' },
+  { id: 'cloche', label: 'Glass Cloche', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' },
+  { id: 'koreanmesh', label: 'Korean Mesh', defaultHex: '#F3E8FF', defaultRibbon: '#EC4899' },
   { id: 'plain', label: 'Hand-Tied', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' }
 ];
 
@@ -420,6 +439,48 @@ export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
   rotation: 0
 };
 
+export type BouquetLockMode = 'none' | 'countdown' | 'passcode';
+
+export interface BouquetLockConfig {
+  mode: BouquetLockMode;
+  unlockAtIso?: string;
+  questionPrompt?: string;
+  passcodeAnswer?: string;
+}
+
+export const DEFAULT_BOUQUET_LOCK: BouquetLockConfig = {
+  mode: 'none',
+  unlockAtIso: '',
+  questionPrompt: 'The special date we first met',
+  passcodeAnswer: ''
+};
+
+export interface RecipientReactionOption {
+  id: string;
+  label: string;
+  symbol: string;
+}
+
+export const RECIPIENT_REACTIONS: RecipientReactionOption[] = [
+  { id: 'loved', label: 'Loved every petal', symbol: '♥' },
+  { id: 'touched', label: 'Touched my heart', symbol: '✦' },
+  { id: 'made_my_day', label: 'Made my whole day', symbol: '☀' },
+  { id: 'sweet', label: 'So deeply sweet', symbol: '✿' }
+];
+
+export interface SavedVaultBouquet {
+  code: string;
+  to: string;
+  from: string;
+  createdAt: string;
+  shareUrl: string;
+  lockMode?: BouquetLockMode;
+  hasVoice?: boolean;
+  recipientName?: string;
+  senderName?: string;
+  flowerCount?: number;
+}
+
 export interface BouquetSnapshot {
   items: BouquetItem[];
   wrapStyle: typeWrapStyle;
@@ -428,6 +489,7 @@ export interface BouquetSnapshot {
   ribbonStyle?: RibbonStyle;
   card: GreetingCardData;
   voice?: VoiceKeepsakeData;
+  lock?: BouquetLockConfig;
 }
 
 export interface FlowerCatalogMeta {
@@ -579,7 +641,43 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultCenterColor: '#f59e0b',
     defaultScale: 1.14
   },
-  // --- 9 FILLERS & FOLIAGE ---
+  {
+    type: 'callalily',
+    name: 'Sculptural Calla Lily',
+    shortName: 'Calla Lily',
+    subtitle: 'Architectural trumpet spathe',
+    defaultPetalColor: '#fffdf9',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.12
+  },
+  {
+    type: 'poppy',
+    name: 'Icelandic Silk Poppy',
+    shortName: 'Poppy',
+    subtitle: 'Crinkled tissue-silk cup',
+    defaultPetalColor: '#fb7185',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.08
+  },
+  {
+    type: 'sweetpea',
+    name: 'Fragrant Sweet Pea',
+    shortName: 'Sweet Pea',
+    subtitle: 'Fluttering butterfly petals',
+    defaultPetalColor: '#e879f9',
+    defaultCenterColor: '#fdf4ff',
+    defaultScale: 1.04
+  },
+  {
+    type: 'freesia',
+    name: 'Bell Freesia Spray',
+    shortName: 'Freesia',
+    subtitle: 'Arching scented trumpets',
+    defaultPetalColor: '#fde047',
+    defaultCenterColor: '#f97316',
+    defaultScale: 1.06
+  },
+  // --- 12 FILLERS & FOLIAGE ---
   {
     type: 'lavender',
     name: 'French Lavender',
@@ -672,6 +770,37 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultCenterColor: '#14532d',
     defaultScale: 1.14,
     isFoliage: true,
+    isFiller: true
+  },
+  {
+    type: 'pampas',
+    name: 'Velvet Pampas Plume',
+    shortName: 'Pampas',
+    subtitle: 'Feathery champagne grass',
+    defaultPetalColor: '#fde68a',
+    defaultCenterColor: '#d97706',
+    defaultScale: 1.15,
+    isFoliage: true,
+    isFiller: true
+  },
+  {
+    type: 'queenanneslace',
+    name: "Queen Anne's Lace",
+    shortName: 'Lace Umbel',
+    subtitle: 'Starry filigree canopy',
+    defaultPetalColor: '#ffffff',
+    defaultCenterColor: '#86efac',
+    defaultScale: 1.08,
+    isFiller: true
+  },
+  {
+    type: 'astilbe',
+    name: 'Feathered Astilbe',
+    shortName: 'Astilbe',
+    subtitle: 'Blush gossamer spire',
+    defaultPetalColor: '#fda4af',
+    defaultCenterColor: '#e11d48',
+    defaultScale: 1.1,
     isFiller: true
   }
 ];

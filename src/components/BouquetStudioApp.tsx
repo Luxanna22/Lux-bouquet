@@ -44,6 +44,13 @@ import {
   RotateCcw,
   Mic,
   Pause,
+  Clock,
+  KeyRound,
+  Heart,
+  Sparkles,
+  MessageSquareHeart,
+  Home,
+  BookOpen,
 } from 'lucide-react';
 import {
   FlowerType,
@@ -54,6 +61,9 @@ import {
   BouquetItem,
   GreetingCardData,
   BouquetSnapshot,
+  BouquetLockMode,
+  DEFAULT_BOUQUET_LOCK,
+  RECIPIENT_REACTIONS,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
   RIBBON_STYLE_CATALOG,
@@ -82,6 +92,12 @@ import {
 import {
   saveSharedBouquetToFirestore,
   fetchSharedBouquetFromFirestore,
+  incrementSharedBouquetOpenCount,
+  incrementSharedBouquetVoicePlayCount,
+  submitSharedBouquetReaction,
+  incrementStudioGlobalStat,
+  getSavedVaultBouquets,
+  saveBouquetToLocalVault,
 } from '../lib/firebase';
 import { useBouquetStore } from '../store/useBouquetStore';
 import { BouquetStage, FallingPetalsOverlay } from './BouquetStage';
@@ -95,6 +111,8 @@ import {
 import { LayerManagerPanel } from './LayerManagerPanel';
 import { SelectedFlowerToolbar, UnifiedColorTarget } from './SelectedFlowerToolbar';
 import { VoiceRecorderStudio, VoiceKeepsakePlayerModal } from './VoiceRecorderStudio';
+import { LandingPageView } from './LandingPageView';
+import { BouquetVaultModal } from './BouquetVaultModal';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -120,6 +138,7 @@ export default function App() {
     ribbonStyle,
     card,
     voice,
+    lock,
     past,
     future,
     addFlower,
@@ -129,6 +148,7 @@ export default function App() {
     setRibbonStyle,
     updateCard,
     updateVoice,
+    updateLock,
     randomizeBouquet,
     clearBouquet,
     undo,
@@ -160,6 +180,27 @@ export default function App() {
       !localShortCodeCache.has(initialPathShortCode) &&
       !localStorage.getItem(`bq_short_${initialPathShortCode}`)
   );
+  const [showLandingPage, setShowLandingPage] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (isGiftShareHash()) return false;
+    if (getShortCodeFromPathname(window.location.pathname)) return false;
+    if (window.location.search.includes('studio=1')) return false;
+    return true;
+  });
+  const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
+  const [vaultCount, setVaultCount] = useState<number>(() =>
+    typeof window !== 'undefined' ? getSavedVaultBouquets().length : 0
+  );
+  const [activeShortCode, setActiveShortCode] = useState<string | null>(initialPathShortCode);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [isPasscodeUnlocked, setIsPasscodeUnlocked] = useState(false);
+  const [passcodeAttempt, setPasscodeAttempt] = useState('');
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
+  const [isReactionPopoverOpen, setIsReactionPopoverOpen] = useState(false);
+  const [selectedReactionId, setSelectedReactionId] = useState<string>('');
+  const [recipientReplyText, setRecipientReplyText] = useState<string>('');
+  const [hasSubmittedReaction, setHasSubmittedReaction] = useState(false);
+  const [isSubmittingReaction, setIsSubmittingReaction] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isGiftView, setIsGiftView] = useState<boolean>(initialGiftMode);
   const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState<boolean>(initialGiftMode);
@@ -193,6 +234,8 @@ export default function App() {
   const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const bloomIntervalRef = useRef<number | null>(null);
   const hasHydratedRef = useRef(false);
+  const countedOpenCodeRef = useRef<string | null>(null);
+  const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
 
   // Close the Slide-in Tool Drawer (Colors, Stem, Layers, Edit Note / Card, Voice) when clicking anywhere outside it
   useEffect(() => {
@@ -364,7 +407,45 @@ export default function App() {
     setIsVoicePlaying(false);
   }, []);
 
+  // Unlock Ritual calculations (Time-Capsule Date & Time Countdown Lock + Secret Question Lock)
+  const countdownTargetMs = useMemo(() => {
+    if (lock?.mode !== 'countdown' || !lock.unlockAtIso) return null;
+    const parsed = new Date(lock.unlockAtIso).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [lock?.mode, lock?.unlockAtIso]);
+
+  const countdownRemainingMs =
+    countdownTargetMs !== null ? Math.max(0, countdownTargetMs - nowMs) : 0;
+
+  const isCountdownLocked =
+    lock?.mode === 'countdown' && countdownTargetMs !== null && countdownRemainingMs > 0;
+
+  const isPasscodeLocked =
+    lock?.mode === 'passcode' &&
+    Boolean(lock.passcodeAnswer && lock.passcodeAnswer.trim().length > 0) &&
+    !isPasscodeUnlocked;
+
+  const isGiftCurrentlyLocked = isCountdownLocked || isPasscodeLocked;
+
+  const countdownParts = useMemo(() => {
+    const totalSec = Math.max(0, Math.ceil(countdownRemainingMs / 1000));
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    return {
+      days: String(days).padStart(2, '0'),
+      hours: String(hours).padStart(2, '0'),
+      minutes: String(minutes).padStart(2, '0'),
+      seconds: String(seconds).padStart(2, '0'),
+    };
+  }, [countdownRemainingMs]);
+
   const handleTogglePlayVoice = useCallback(() => {
+    if ((isGiftView || isPreviewMode) && (isGiftEntranceOpen || isGiftCurrentlyLocked)) {
+      triggerToast('Unlock and unwrap the bouquet first to listen to the voice keepsake');
+      return;
+    }
     if (!voice?.audioDataUrl) {
       triggerToast('No voice recording yet — tap Record Voice to add one');
       return;
@@ -393,10 +474,22 @@ export default function App() {
       triggerToast('Could not play voice recording');
     };
     setIsVoicePlaying(true);
+    if (isGiftView && !isPreviewMode && activeShortCode) {
+      incrementSharedBouquetVoicePlayCount(activeShortCode).catch(() => {});
+    }
     audio.play().catch(() => {
       setIsVoicePlaying(false);
     });
-  }, [voice?.audioDataUrl, isVoicePlaying, triggerToast]);
+  }, [
+    voice?.audioDataUrl,
+    isVoicePlaying,
+    triggerToast,
+    isGiftView,
+    isPreviewMode,
+    isGiftEntranceOpen,
+    isGiftCurrentlyLocked,
+    activeShortCode,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -445,6 +538,11 @@ export default function App() {
     }
     selectItem(null);
     setMobilePopover(null);
+    setNowMs(Date.now());
+    setIsPasscodeUnlocked(false);
+    setPasscodeAttempt('');
+    setPasscodeError(null);
+    setIsReactionPopoverOpen(false);
     setIsPreviewMode(fromEditorPreview);
     setIsGiftView(true);
     setIsGiftEntranceOpen(true);
@@ -456,13 +554,122 @@ export default function App() {
     setIsMusicPlaying(true);
   }, [selectItem]);
 
-  const handleUnwrapGiftEntrance = useCallback(() => {
-    musicBox.start();
-    musicBox.resumeIfBlocked();
-    setIsMusicPlaying(true);
-    setIsGiftEntranceOpen(false);
-    runStemBloomSequence(items.length);
-  }, [items.length, runStemBloomSequence]);
+  const handleUnwrapGiftEntrance = useCallback(
+    (forceBypassLock = false) => {
+      if (!forceBypassLock && isGiftCurrentlyLocked) {
+        return;
+      }
+      if (forceBypassLock) {
+        setIsPasscodeUnlocked(true);
+      }
+      musicBox.start();
+      musicBox.resumeIfBlocked();
+      setIsMusicPlaying(true);
+      setIsGiftEntranceOpen(false);
+      runStemBloomSequence(items.length);
+
+      if (!isPreviewMode && activeShortCode && countedOpenCodeRef.current !== activeShortCode) {
+        countedOpenCodeRef.current = activeShortCode;
+        incrementSharedBouquetOpenCount(activeShortCode).catch(() => {});
+      }
+    },
+    [items.length, runStemBloomSequence, isGiftCurrentlyLocked, isPreviewMode, activeShortCode]
+  );
+
+  // Live 1-second tick for Time-Capsule Countdown Lock & automatic unwrap when timer reaches zero
+  const wasCountdownLockedRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!(isGiftView || isPreviewMode) || !isGiftEntranceOpen || lock?.mode !== 'countdown') {
+      wasCountdownLockedRef.current = false;
+      return;
+    }
+    wasCountdownLockedRef.current = isCountdownLocked;
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      setNowMs(current);
+      if (countdownTargetMs !== null && current >= countdownTargetMs && wasCountdownLockedRef.current) {
+        wasCountdownLockedRef.current = false;
+        handleUnwrapGiftEntrance(true);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [
+    isGiftView,
+    isPreviewMode,
+    isGiftEntranceOpen,
+    lock?.mode,
+    countdownTargetMs,
+    isCountdownLocked,
+    handleUnwrapGiftEntrance,
+  ]);
+
+  const handleAttemptPasscodeUnlock = useCallback(
+    (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      const expected = (lock?.passcodeAnswer || '').trim().toLowerCase();
+      const actual = passcodeAttempt.trim().toLowerCase();
+      if (!expected || actual === expected) {
+        setIsPasscodeUnlocked(true);
+        setPasscodeError(null);
+        handleUnwrapGiftEntrance(true);
+      } else {
+        setPasscodeError('That answer doesn’t match yet — try again ♥');
+      }
+    },
+    [lock?.passcodeAnswer, passcodeAttempt, handleUnwrapGiftEntrance]
+  );
+
+  const handleSubmitRecipientReaction = useCallback(async () => {
+    if (!selectedReactionId && !recipientReplyText.trim()) {
+      triggerToast('Choose a reaction or write a short note first');
+      return;
+    }
+    setIsSubmittingReaction(true);
+    try {
+      const codeToSave =
+        activeShortCode ||
+        computeShortCode(
+          encodeBouquetToCompactPayload(
+            {
+              items,
+              wrapStyle,
+              wrapColor,
+              ribbonColor,
+              ribbonStyle,
+              card,
+              voice,
+              lock,
+            },
+            true
+          )
+        );
+      await submitSharedBouquetReaction(
+        codeToSave,
+        selectedReactionId || 'loved',
+        recipientReplyText.trim()
+      );
+      setHasSubmittedReaction(true);
+      setIsReactionPopoverOpen(false);
+      triggerToast('Reaction & note sent to sender ♥');
+    } catch {
+      triggerToast('Saved reaction ♥');
+    } finally {
+      setIsSubmittingReaction(false);
+    }
+  }, [
+    selectedReactionId,
+    recipientReplyText,
+    activeShortCode,
+    items,
+    wrapStyle,
+    wrapColor,
+    ribbonColor,
+    ribbonStyle,
+    card,
+    voice,
+    lock,
+    triggerToast,
+  ]);
 
   const handleExitGiftViewToEditor = useCallback(() => {
     if (bloomIntervalRef.current !== null) {
@@ -471,6 +678,7 @@ export default function App() {
     }
     handleStopVoice();
     setIsVoiceModalOpen(false);
+    setIsReactionPopoverOpen(false);
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
@@ -509,8 +717,12 @@ export default function App() {
       try {
         const hash = window.location.hash;
         const pathCode = getShortCodeFromPathname(window.location.pathname);
+        if (pathCode) {
+          setActiveShortCode(pathCode);
+        }
         const giftMode = isGiftShareHash();
         if (giftMode) {
+          setShowLandingPage(false);
           setIsGiftView(true);
           setIsPreviewMode(false);
           setIsGiftEntranceOpen(true);
@@ -518,9 +730,14 @@ export default function App() {
 
         const shared = decodeBouquetFromHash();
         if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
+          if (!pathCode) {
+            const derivedCode = computeShortCode(encodeBouquetToCompactPayload(shared, true));
+            setActiveShortCode(derivedCode);
+          }
           loadSnapshot(shared);
           selectItem(null);
           setIsResolvingShortCode(false);
+          setShowLandingPage(false);
           if (giftMode) {
             startGiftBloomAnimation(shared.items.length, false);
           } else {
@@ -549,6 +766,7 @@ export default function App() {
         // If opened via a first-party short link (e.g. https://[domain]/Vu18KSuusq9133s) on a new device,
         // fetch the bouquet payload and voice recording from Firebase Firestore first, with fallback to /api/shorten?c=<code>
         if (pathCode) {
+          setShowLandingPage(false);
           setIsResolvingShortCode(true);
           (async () => {
             try {
@@ -627,7 +845,8 @@ export default function App() {
           ribbonColor,
           ribbonStyle,
           card,
-          voice
+          voice,
+          lock,
         };
         localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
         setAutosaveStatus('saved');
@@ -636,7 +855,7 @@ export default function App() {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
 
   // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
@@ -715,11 +934,12 @@ export default function App() {
         ribbonColor,
         ribbonStyle,
         card,
-        voice
+        voice,
+        lock,
       };
       return encodeBouquetToShareUrl(snap, asGift);
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]
   );
 
   const registerShortCodeOnServer = useCallback(
@@ -731,7 +951,8 @@ export default function App() {
         ribbonColor,
         ribbonStyle,
         card,
-        voice
+        voice,
+        lock,
       };
       const hashPayload = encodeBouquetToCompactPayload(snap, asGift);
       const code = computeShortCode(hashPayload);
@@ -740,6 +961,26 @@ export default function App() {
 
       // Persist directly to Firebase Firestore for instant cross-device & Vercel persistence
       saveSharedBouquetToFirestore(code, hashPayload, snap).catch(() => {});
+
+      // Save to local account-free Bouquet Vault so the sender can check open receipts & reactions anytime
+      const updatedVault = saveBouquetToLocalVault({
+        code,
+        to: card.to || 'Someone Special',
+        from: card.from || 'Yours',
+        recipientName: card.to || 'Someone Special',
+        senderName: card.from || 'Yours',
+        createdAt: new Date().toISOString(),
+        shareUrl: firstPartyUrl,
+        lockMode: lock?.mode || 'none',
+        hasVoice: Boolean(voice?.audioDataUrl),
+        flowerCount: items.length,
+      });
+      setVaultCount(updatedVault.length);
+
+      if (!countedCreatedCodeSetRef.current.has(code)) {
+        countedCreatedCodeSetRef.current.add(code);
+        incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
+      }
 
       // Also register via /api/shorten serverless endpoint (which also writes to Firestore REST API)
       fetch('/api/shorten', {
@@ -758,7 +999,7 @@ export default function App() {
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]
   );
 
   // Immediately generate and register our own first-party short link (e.g. https://[domain]/Vu18KSuusq9133s)
@@ -774,7 +1015,7 @@ export default function App() {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
-    triggerToast('Link copied');
+    triggerToast('Link copied & saved to My Bouquets ♥');
   };
 
   const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card' | 'voice') => {
@@ -921,6 +1162,21 @@ export default function App() {
         }
       `}</style>
 
+      {/* =====================================================================
+          EDITORIAL LANDING PAGE OVERLAY (Shown first when visiting `/`)
+          100% Free & Account-Free — includes About, How It Works, Live Analytics,
+          and Interactive FAQs, with instant transition into the Bouquet Studio.
+          ===================================================================== */}
+      {showLandingPage && !isGiftView && !isPreviewMode && (
+        <LandingPageView
+          onStartCrafting={() => setShowLandingPage(false)}
+          onOpenVault={() => setIsVaultModalOpen(true)}
+          vaultCount={vaultCount}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
+        />
+      )}
+
       {/* CORRUPTED LINK BANNER (IF APPLICABLE) */}
       {corruptedLinkAlert && (
         <div
@@ -955,19 +1211,45 @@ export default function App() {
                 : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
             }`}
           >
-            {/* Left Brand Logo (Desktop lg+ only) + Compact Utility Icon Cluster */}
+            {/* Left Brand Logo + Home & My Bouquets Vault + Compact Utility Icon Cluster */}
             <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-              <div className="hidden lg:flex items-center gap-2 pl-1 pr-3 mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none">
+              <button
+                type="button"
+                onClick={() => setShowLandingPage(true)}
+                title="Back to Flowers For You Home & About"
+                aria-label="Open Flowers For You Home Page"
+                className="flex items-center gap-1.5 pl-1 pr-2 sm:pr-3 mr-0.5 sm:mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none hover:opacity-80 transition cursor-pointer"
+              >
                 <div className="w-7 h-7 rounded-full bg-[#B4846C]/15 text-[#B4846C] flex items-center justify-center shrink-0">
                   <Flower2 className="w-4 h-4" />
                 </div>
                 <span
-                  className="text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
+                  className="hidden lg:inline text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
                   Flowers For You
                 </span>
-              </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsVaultModalOpen(true)}
+                aria-label="Open My Sent Bouquets and Open Receipts"
+                title="My Sent Bouquets & Open Receipts"
+                className={`h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 border shrink-0 active:scale-95 transition cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-[#292524] border-stone-700 text-stone-200 hover:border-[#B4846C]'
+                    : 'bg-stone-100/90 border-stone-200/90 text-stone-700 hover:border-[#B4846C]'
+                }`}
+              >
+                <BookOpen className="w-3 h-3 text-[#B4846C]" />
+                <span className="hidden md:inline">My Bouquets</span>
+                {vaultCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-[#B4846C] text-white text-[10px] font-semibold">
+                    {vaultCount}
+                  </span>
+                )}
+              </button>
 
               <button
                 type="button"
@@ -1321,9 +1603,11 @@ export default function App() {
           {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
 
           {/* ===================================================================
-              GIFT ENTRANCE OVERLAY
-              Minimal editorial keepsake card with clear hierarchy and zero clutter.
-              Opaque background prevents any glimpse of the stage before opening.
+              GIFT ENTRANCE OVERLAY (Supports Immediate Unwrap, Time-Capsule
+              Date & Time Countdown Lock, and Secret Question Lock!)
+              While locked, the bouquet unwrap, greeting card, and voice keepsake
+              remain completely sealed until the countdown finishes or the secret
+              answer is entered.
               =================================================================== */}
           {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
             <div
@@ -1331,26 +1615,30 @@ export default function App() {
               aria-modal="true"
               aria-label="Bouquet Gift Entrance"
               onClick={() => {
-                if (!isResolvingShortCode) handleUnwrapGiftEntrance();
+                if (!isResolvingShortCode && !isGiftCurrentlyLocked) {
+                  handleUnwrapGiftEntrance();
+                }
               }}
-              className={`absolute inset-0 z-40 flex items-center justify-center p-4 transition-opacity duration-300 cursor-pointer ${
-                isDarkMode ? 'bg-[#141211]' : 'bg-[#FAFAF8]'
-              }`}
+              className={`absolute inset-0 z-40 flex items-center justify-center p-4 transition-opacity duration-300 ${
+                isGiftCurrentlyLocked ? 'cursor-default' : 'cursor-pointer'
+              } ${isDarkMode ? 'bg-[#141211]' : 'bg-[#FAFAF8]'}`}
             >
               {!isResolvingShortCode && (
                 <div
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleUnwrapGiftEntrance();
+                    if (!isGiftCurrentlyLocked) {
+                      handleUnwrapGiftEntrance();
+                    }
                   }}
-                  className={`card-zoom-modal w-full max-w-[320px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
+                  className={`card-zoom-modal w-full max-w-[360px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
                     isDarkMode
                       ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
                       : 'bg-white border-stone-200/90 text-[#1C1917]'
                   }`}
                 >
                   {/* Minimal Wax-Sealed Envelope Icon */}
-                  <div className="float-keepsake-envelope mx-auto mb-5 w-20 h-16 flex items-center justify-center">
+                  <div className="float-keepsake-envelope mx-auto mb-4 w-20 h-16 flex items-center justify-center">
                     <svg viewBox="0 0 120 92" className="w-full h-full">
                       <rect
                         x="10"
@@ -1386,17 +1674,152 @@ export default function App() {
                   >
                     For {card.to || 'You'}
                   </h2>
+                  {card.from && (
+                    <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                      Sent with love by <span className="font-medium text-[#B4846C]">{card.from}</span>
+                    </p>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleUnwrapGiftEntrance();
-                    }}
-                    className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98"
-                  >
-                    Open Bouquet
-                  </button>
+                  {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK */}
+                  {isCountdownLocked ? (
+                    <div className="mt-5 space-y-4">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/70 text-[11px] font-medium text-rose-700 dark:text-rose-300">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Time-Capsule Bouquet Lock</span>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { label: 'Days', val: countdownParts.days },
+                          { label: 'Hours', val: countdownParts.hours },
+                          { label: 'Mins', val: countdownParts.minutes },
+                          { label: 'Secs', val: countdownParts.seconds },
+                        ].map((unit) => (
+                          <div
+                            key={unit.label}
+                            className={`rounded-xl py-2.5 px-1 border ${
+                              isDarkMode
+                                ? 'bg-[#141211] border-stone-800'
+                                : 'bg-stone-50 border-stone-200/80'
+                            }`}
+                          >
+                            <div
+                              className="text-xl sm:text-2xl font-semibold tracking-tight text-[#B4846C] tabular-nums"
+                              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                            >
+                              {unit.val}
+                            </div>
+                            <div className="text-[10px] uppercase tracking-wider text-stone-400 dark:text-stone-500 mt-0.5">
+                              {unit.label}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <p className="text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
+                        Your bouquet, handwritten greeting card, and voice keepsake are sealed until{' '}
+                        <strong className="text-stone-700 dark:text-stone-200">
+                          {countdownTargetMs
+                            ? new Date(countdownTargetMs).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })
+                            : 'the unlock date'}
+                        </strong>
+                        . It will unwrap automatically when the timer reaches zero!
+                      </p>
+
+                      {isPreviewMode && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUnwrapGiftEntrance(true);
+                          }}
+                          className="w-full py-2 px-4 rounded-xl border border-stone-300 dark:border-stone-700 text-[11px] font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                        >
+                          Sender Preview: Test Unwrap Now
+                        </button>
+                      )}
+                    </div>
+                  ) : isPasscodeLocked ? (
+                    /* MODE 2: SECRET QUESTION / PASSCODE LOCK */
+                    <form
+                      onSubmit={handleAttemptPasscodeUnlock}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-5 space-y-3 text-left"
+                    >
+                      <div className="text-center">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                          <KeyRound className="w-3.5 h-3.5" />
+                          <span>Sealed with a Secret Question</span>
+                        </div>
+                        <p
+                          className="mt-2.5 text-base font-medium text-[#1C1917] dark:text-stone-100"
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                        >
+                          “{lock?.questionPrompt || 'Enter our special secret or date to unlock'}”
+                        </p>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+                          Answer to unwrap the bouquet, greeting card, and voice keepsake.
+                        </p>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={passcodeAttempt}
+                        onChange={(e) => {
+                          setPasscodeAttempt(e.target.value);
+                          if (passcodeError) setPasscodeError(null);
+                        }}
+                        placeholder="Type your answer..."
+                        aria-label="Secret answer to unlock bouquet"
+                        className={`w-full px-3.5 py-2 rounded-xl border text-xs text-center focus:outline-none focus:border-[#B4846C] ${
+                          isDarkMode
+                            ? 'bg-[#141211] border-stone-700 text-stone-100'
+                            : 'bg-stone-50 border-stone-200 text-[#1C1917]'
+                        }`}
+                      />
+
+                      {passcodeError && (
+                        <p className="text-[11px] text-rose-600 dark:text-rose-400 text-center font-medium">
+                          {passcodeError}
+                        </p>
+                      )}
+
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98 cursor-pointer"
+                      >
+                        Unlock &amp; Open Bouquet
+                      </button>
+
+                      {isPreviewMode && (
+                        <button
+                          type="button"
+                          onClick={() => handleUnwrapGiftEntrance(true)}
+                          className="w-full py-1.5 px-3 rounded-xl text-[11px] text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 text-center transition cursor-pointer"
+                        >
+                          Sender Preview: Skip Lock &amp; Test Bloom
+                        </button>
+                      )}
+                    </form>
+                  ) : (
+                    /* MODE 3: READY TO OPEN IMMEDIATELY */
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUnwrapGiftEntrance();
+                      }}
+                      className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98 cursor-pointer"
+                    >
+                      Open Bouquet
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1455,6 +1878,7 @@ export default function App() {
               }}
               onCardTagClick={() => {
                 if (isPreviewMode || isGiftView) {
+                  if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
                   setLetterTypedChars(0);
                   setIsLetterModalOpen(true);
                 } else {
@@ -1474,6 +1898,7 @@ export default function App() {
               }}
               onVoiceKeepsakeClick={() => {
                 if (isPreviewMode || isGiftView) {
+                  if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
                   setIsVoiceModalOpen(true);
                   if (voice.audioDataUrl && !isVoicePlaying) {
                     handleTogglePlayVoice();
@@ -1494,7 +1919,7 @@ export default function App() {
                 Clicking an active tool icon again immediately slides the side
                 drawer closed.
                 =============================================================== */}
-            {!isGiftView && !isPreviewMode && (
+            {!isGiftView && !isPreviewMode && !showLandingPage && (
               <div
                 ref={floatingToolStackRef}
                 className="absolute right-3 bottom-3 z-40 flex flex-col items-center gap-2"
@@ -1889,6 +2314,78 @@ export default function App() {
               className="w-full px-4 z-20 absolute bottom-4 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2"
               style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
+              {/* Expandable Recipient Reaction & Reply Note Card */}
+              {isReactionPopoverOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className={`pointer-events-auto w-full max-w-sm rounded-2xl p-4 border shadow-xl backdrop-blur-md animate-in fade-in duration-150 ${
+                    isDarkMode
+                      ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
+                      : 'bg-white/95 border-stone-200 text-[#1C1917]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-xs font-semibold flex items-center gap-1.5">
+                      <MessageSquareHeart className="w-3.5 h-3.5 text-[#B4846C]" />
+                      <span>Send a Reaction to {card.from || 'Sender'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsReactionPopoverOpen(false)}
+                      className="p-1 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400"
+                      aria-label="Close reaction card"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+                    {RECIPIENT_REACTIONS.map((rx) => {
+                      const active = selectedReactionId === rx.id;
+                      return (
+                        <button
+                          key={rx.id}
+                          type="button"
+                          onClick={() => setSelectedReactionId(rx.id)}
+                          className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer ${
+                            active
+                              ? 'border-[#B4846C] bg-[#B4846C]/15 text-[#1C1917] dark:text-white'
+                              : isDarkMode
+                              ? 'border-stone-800 bg-[#141211] text-stone-300 hover:border-stone-700'
+                              : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300'
+                          }`}
+                        >
+                          <span className="text-sm">{rx.symbol}</span>
+                          <span className="truncate">{rx.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <textarea
+                    rows={2}
+                    maxLength={200}
+                    value={recipientReplyText}
+                    onChange={(e) => setRecipientReplyText(e.target.value)}
+                    placeholder={`Write a sweet thank-you note to ${card.from || 'the sender'} (optional)...`}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs resize-none focus:outline-none focus:border-[#B4846C] ${
+                      isDarkMode
+                        ? 'bg-[#141211] border-stone-800 text-stone-100'
+                        : 'bg-stone-50 border-stone-200 text-[#1C1917]'
+                    }`}
+                  />
+
+                  <button
+                    type="button"
+                    disabled={isSubmittingReaction}
+                    onClick={handleSubmitRecipientReaction}
+                    className="mt-2.5 w-full py-2 px-4 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] text-xs font-medium transition cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmittingReaction ? 'Sending...' : 'Send Reaction & Note ♥'}
+                  </button>
+                </div>
+              )}
+
               <div
                 className={`pointer-events-auto inline-flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-full border shadow-lg backdrop-blur-md transition-all duration-500 ${
                   isDarkMode
@@ -1942,17 +2439,34 @@ export default function App() {
                   </button>
                 )}
 
+                {/* Recipient Reaction / Thank-You Reply Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
+                  className={`px-3 sm:px-3.5 py-2 rounded-full border text-xs font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                    hasSubmittedReaction
+                      ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-300'
+                      : isDarkMode
+                      ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-100'
+                      : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
+                  }`}
+                >
+                  <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
+                  <span>{hasSubmittedReaction ? 'Sent ♥' : 'React / Reply'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleExportPng}
-                  className={`px-3.5 sm:px-4 py-2 rounded-full border text-xs font-medium flex items-center gap-1.5 transition active:scale-95 ${
+                  className={`px-3 sm:px-3.5 py-2 rounded-full border text-xs font-medium flex items-center gap-1.5 transition active:scale-95 ${
                     isDarkMode
                       ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-100'
                       : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
                   }`}
                 >
                   <Download className="w-3.5 h-3.5 text-[#B4846C]" />
-                  <span>Save as PNG</span>
+                  <span className="hidden sm:inline">Save as PNG</span>
+                  <span className="sm:hidden">PNG</span>
                 </button>
 
                 <button
@@ -3257,7 +3771,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SHARE / SEND MODAL DIALOG (Simplified Short Link UI) */}
+      {/* SHARE / SEND MODAL DIALOG (Includes Unwrap Lock Rituals & Short Link UI) */}
       {isShareModalOpen && (
         <div
           role="dialog"
@@ -3267,7 +3781,7 @@ export default function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-2xl p-5 shadow-xl border border-stone-200 dark:border-stone-800 relative ${
+            className={`w-full max-w-md rounded-2xl p-5 shadow-xl border border-stone-200 dark:border-stone-800 relative max-h-[90vh] overflow-y-auto ${
               isDarkMode
                 ? 'bg-[#1E1C1A] text-stone-100'
                 : 'bg-white text-[#1C1917]'
@@ -3286,11 +3800,131 @@ export default function App() {
               className="text-xl font-medium tracking-tight"
               style={{ fontFamily: "'Cormorant Garamond', serif" }}
             >
-              Share Bouquet
+              Save &amp; Send Bouquet
             </h3>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 mb-4">
-              Send a short view-only gift link
+              100% free &amp; account-free gift link — choose when your recipient can unwrap it
             </p>
+
+            {/* UNWRAP LOCK RITUAL SELECTOR */}
+            <div
+              className={`p-3 rounded-xl border mb-4 space-y-3 ${
+                isDarkMode
+                  ? 'bg-[#141211] border-stone-800'
+                  : 'bg-stone-50/80 border-stone-200/80'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-[#B4846C]" />
+                  <span>Unwrap Lock (Card, Voice &amp; Bouquet)</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: 'none', label: 'Open Anytime', icon: Unlock },
+                    { id: 'countdown', label: 'Time-Capsule', icon: Clock },
+                    { id: 'passcode', label: 'Secret Question', icon: KeyRound },
+                  ] as { id: BouquetLockMode; label: string; icon: React.ElementType }[]
+                ).map((tab) => {
+                  const Icon = tab.icon;
+                  const active = (lock?.mode || 'none') === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        if (tab.id === 'countdown' && !lock?.unlockAtIso) {
+                          const tomorrow = new Date(Date.now() + 86400000);
+                          tomorrow.setMinutes(tomorrow.getMinutes() - tomorrow.getTimezoneOffset());
+                          updateLock({
+                            mode: 'countdown',
+                            unlockAtIso: tomorrow.toISOString().slice(0, 16),
+                          });
+                        } else if (tab.id === 'passcode' && !lock?.questionPrompt) {
+                          updateLock({
+                            mode: 'passcode',
+                            questionPrompt: 'The special date we first met',
+                          });
+                        } else {
+                          updateLock({ mode: tab.id });
+                        }
+                      }}
+                      className={`py-2 px-2 rounded-lg border text-[11px] font-medium flex flex-col items-center gap-1 transition cursor-pointer ${
+                        active
+                          ? 'border-[#B4846C] bg-[#B4846C] text-white shadow-xs'
+                          : isDarkMode
+                          ? 'border-stone-800 bg-[#1E1C1A] text-stone-300 hover:border-stone-700'
+                          : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      <span className="truncate w-full text-center">{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {lock?.mode === 'countdown' && (
+                <div className="space-y-2 pt-1 animate-in fade-in duration-150">
+                  <label className="block text-[11px] text-stone-500 dark:text-stone-400">
+                    Unwraps automatically on this date &amp; time (locks bouquet, card &amp; voice until then):
+                  </label>
+                  <input
+                    type="datetime-local"
+                    aria-label="Unlock date and time"
+                    value={lock.unlockAtIso ? lock.unlockAtIso.slice(0, 16) : ''}
+                    onChange={(e) => updateLock({ unlockAtIso: e.target.value })}
+                    className={`w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-[#B4846C] ${
+                      isDarkMode
+                        ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
+                        : 'bg-white border-stone-200 text-[#1C1917]'
+                    }`}
+                  />
+                </div>
+              )}
+
+              {lock?.mode === 'passcode' && (
+                <div className="space-y-2 pt-1 animate-in fade-in duration-150">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 dark:text-stone-400 mb-1">
+                      Question or romantic hint for recipient:
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={80}
+                      placeholder="e.g. The special date we first met"
+                      value={lock.questionPrompt || ''}
+                      onChange={(e) => updateLock({ questionPrompt: e.target.value })}
+                      className={`w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-[#B4846C] ${
+                        isDarkMode
+                          ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
+                          : 'bg-white border-stone-200 text-[#1C1917]'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-stone-500 dark:text-stone-400 mb-1">
+                      Secret answer required to unlock (case-insensitive):
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={40}
+                      placeholder="e.g. October 14"
+                      value={lock.passcodeAnswer || ''}
+                      onChange={(e) => updateLock({ passcodeAnswer: e.target.value })}
+                      className={`w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-[#B4846C] ${
+                        isDarkMode
+                          ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
+                          : 'bg-white border-stone-200 text-[#1C1917]'
+                      }`}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Shortened URL Input Bar + Copy Button */}
             <div
@@ -3315,22 +3949,22 @@ export default function App() {
                   handleShareLink(true);
                   setIsShareModalOpen(false);
                 }}
-                className="px-3.5 py-2 rounded-lg bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center gap-1.5 transition shrink-0 disabled:opacity-50"
+                className="px-3.5 py-2 rounded-lg bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center gap-1.5 transition shrink-0 disabled:opacity-50 cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span>Copy Link</span>
               </button>
             </div>
 
-            {/* Secondary Actions: Preview Bloom & Save PNG */}
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            {/* Secondary Actions: Preview Bloom, Save PNG & View Open Receipts */}
+            <div className="mt-3 grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setIsShareModalOpen(false);
                   startGiftBloomAnimation(items.length, true);
                 }}
-                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                className={`py-2 px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   isDarkMode
                     ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
                     : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
@@ -3346,7 +3980,7 @@ export default function App() {
                   handleExportPng();
                   setIsShareModalOpen(false);
                 }}
-                className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                className={`py-2 px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   isDarkMode
                     ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
                     : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
@@ -3354,6 +3988,22 @@ export default function App() {
               >
                 <Download className="w-3.5 h-3.5 text-[#B4846C]" />
                 <span>Save PNG</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsShareModalOpen(false);
+                  setIsVaultModalOpen(true);
+                }}
+                className={`py-2 px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  isDarkMode
+                    ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5 text-[#B4846C]" />
+                <span>My Bouquets</span>
               </button>
             </div>
           </div>
@@ -3455,6 +4105,15 @@ export default function App() {
           onClose={() => setIsVoiceModalOpen(false)}
         />
       )}
+
+      {/* ACCOUNT-FREE MY BOUQUETS & OPEN RECEIPTS VAULT MODAL */}
+      <BouquetVaultModal
+        isOpen={isVaultModalOpen}
+        onClose={() => {
+          setIsVaultModalOpen(false);
+          setVaultCount(getSavedVaultBouquets().length);
+        }}
+      />
 
       {/* TOAST NOTIFICATION PILL */}
       {toast && (

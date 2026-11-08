@@ -27,6 +27,11 @@ service cloud.firestore {
           'voiceStyle',
           'voiceTitle',
           'voiceDurationSec',
+          'openCount',
+          'voicePlayCount',
+          'reaction',
+          'recipientReply',
+          'repliedAt',
           'createdAt'
         ]) &&
         data.code is string &&
@@ -41,9 +46,36 @@ service cloud.firestore {
         (!('voiceStyle' in data) || (data.voiceStyle is string && data.voiceStyle.size() >= 1 && data.voiceStyle.size() <= 32)) &&
         (!('voiceTitle' in data) || (data.voiceTitle is string && data.voiceTitle.size() <= 64)) &&
         (!('voiceDurationSec' in data) || (data.voiceDurationSec is number && data.voiceDurationSec >= 0 && data.voiceDurationSec <= 600)) &&
+        (!('openCount' in data) || (data.openCount is number && data.openCount >= 0 && data.openCount <= 1000000)) &&
+        (!('voicePlayCount' in data) || (data.voicePlayCount is number && data.voicePlayCount >= 0 && data.voicePlayCount <= 1000000)) &&
+        (!('reaction' in data) || (data.reaction is string && data.reaction.size() <= 32)) &&
+        (!('recipientReply' in data) || (data.recipientReply is string && data.recipientReply.size() <= 240)) &&
+        (!('repliedAt' in data) || (data.repliedAt is string && data.repliedAt.size() <= 64)) &&
         data.createdAt is string &&
         data.createdAt.size() >= 10 &&
         data.createdAt.size() <= 64;
+    }
+
+    function isValidStudioStats(data) {
+      return data.keys().hasAll([
+          'bouquetsCreated',
+          'voiceNotesRecorded',
+          'bouquetsOpened',
+          'reactionsSent',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'bouquetsCreated',
+          'voiceNotesRecorded',
+          'bouquetsOpened',
+          'reactionsSent',
+          'updatedAt'
+        ]) &&
+        data.bouquetsCreated is number && data.bouquetsCreated >= 0 && data.bouquetsCreated <= 100000000 &&
+        data.voiceNotesRecorded is number && data.voiceNotesRecorded >= 0 && data.voiceNotesRecorded <= 100000000 &&
+        data.bouquetsOpened is number && data.bouquetsOpened >= 0 && data.bouquetsOpened <= 100000000 &&
+        data.reactionsSent is number && data.reactionsSent >= 0 && data.reactionsSent <= 100000000 &&
+        data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
 
     match /shared_bouquets/{code} {
@@ -59,8 +91,20 @@ service cloud.firestore {
           'voiceAudioDataUrl',
           'voiceStyle',
           'voiceTitle',
-          'voiceDurationSec'
+          'voiceDurationSec',
+          'openCount',
+          'voicePlayCount',
+          'reaction',
+          'recipientReply',
+          'repliedAt'
         ]);
+      allow delete: if false;
+    }
+
+    match /studio_stats/{statId} {
+      allow get: if statId == 'global';
+      allow list: if false;
+      allow create, update: if statId == 'global' && isValidStudioStats(incoming());
       allow delete: if false;
     }
   }

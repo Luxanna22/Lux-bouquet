@@ -88,7 +88,18 @@ async function fetchFromFirestoreRest(code) {
           ? Number(fields.voiceDurationSec.integerValue)
           : fields.voiceDurationSec?.doubleValue !== undefined
           ? Number(fields.voiceDurationSec.doubleValue)
-          : null
+          : null,
+      openCount:
+        fields.openCount?.integerValue !== undefined
+          ? Number(fields.openCount.integerValue)
+          : 0,
+      voicePlayCount:
+        fields.voicePlayCount?.integerValue !== undefined
+          ? Number(fields.voicePlayCount.integerValue)
+          : 0,
+      reaction: fields.reaction?.stringValue || null,
+      recipientReply: fields.recipientReply?.stringValue || null,
+      repliedAt: fields.repliedAt?.stringValue || null
     };
   } catch {
     return null;
@@ -121,15 +132,31 @@ async function saveToFirestoreRest(code, payload, extra = {}) {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
-    // Check if document already exists so we preserve immutable createdAt if updating
+    // Check if document already exists so we preserve immutable createdAt and recipient engagement fields if updating
     const existingResp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
       method: 'GET',
       signal: controller.signal
     });
     if (existingResp.ok) {
       const existingDoc = await existingResp.json();
-      if (existingDoc?.fields?.createdAt?.stringValue) {
-        fields.createdAt = { stringValue: existingDoc.fields.createdAt.stringValue };
+      const exFields = existingDoc?.fields;
+      if (exFields?.createdAt?.stringValue) {
+        fields.createdAt = { stringValue: exFields.createdAt.stringValue };
+      }
+      if (exFields?.openCount?.integerValue !== undefined) {
+        fields.openCount = { integerValue: String(exFields.openCount.integerValue) };
+      }
+      if (exFields?.voicePlayCount?.integerValue !== undefined) {
+        fields.voicePlayCount = { integerValue: String(exFields.voicePlayCount.integerValue) };
+      }
+      if (exFields?.reaction?.stringValue !== undefined) {
+        fields.reaction = { stringValue: exFields.reaction.stringValue };
+      }
+      if (exFields?.recipientReply?.stringValue !== undefined) {
+        fields.recipientReply = { stringValue: exFields.recipientReply.stringValue };
+      }
+      if (exFields?.repliedAt?.stringValue !== undefined) {
+        fields.repliedAt = { stringValue: exFields.repliedAt.stringValue };
       }
     }
     const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
