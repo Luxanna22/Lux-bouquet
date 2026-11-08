@@ -69,6 +69,28 @@
   :root.dark ::-webkit-scrollbar-thumb:hover {
     background-color: rgba(168, 162, 158, 0.75);
   }
+
+  /* Smooth Theme Transition for Light / Soft Dark Mode Switching */
+  body,
+  #root,
+  header,
+  section,
+  aside,
+  nav,
+  footer,
+  div,
+  button,
+  span,
+  p,
+  h1,
+  h2,
+  h3,
+  input,
+  textarea {
+    transition-property: background-color, border-color, color, box-shadow;
+    transition-duration: 450ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
 }
 
 @layer utilities {
@@ -80,3 +102,4 @@
     scrollbar-width: none !important;
   }
 }
+

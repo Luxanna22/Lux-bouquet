@@ -187,6 +187,7 @@ export default function App() {
     if (window.location.search.includes('studio=1')) return false;
     return true;
   });
+  const [studioEntranceKey, setStudioEntranceKey] = useState<number>(0);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
   const [vaultCount, setVaultCount] = useState<number>(() =>
     typeof window !== 'undefined' ? getSavedVaultBouquets().length : 0
@@ -1060,9 +1061,9 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-300 ${
+      className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
         isDarkMode
-          ? 'dark bg-[#141211] text-stone-100'
+          ? 'dark bg-[#2B2321] text-[#FBF6F1]'
           : 'bg-[#FAFAF8] text-[#1C1917]'
       }`}
       style={{
@@ -1160,16 +1161,33 @@ export default function App() {
         .float-keepsake-envelope {
           animation: floatKeepsakeEnvelope 3.6s ease-in-out infinite;
         }
+        @keyframes studioWorkspaceEnter {
+          0% { opacity: 0; transform: scale(0.986) translate3d(0, 8px, 0); }
+          100% { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+        }
+        .studio-workspace-enter {
+          animation: studioWorkspaceEnter 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        @keyframes studioThemeIconPop {
+          0% { opacity: 0.4; transform: rotate(-75deg) scale(0.65); }
+          100% { opacity: 1; transform: rotate(0deg) scale(1); }
+        }
+        .studio-theme-icon-pop {
+          animation: studioThemeIconPop 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
       `}</style>
 
       {/* =====================================================================
           EDITORIAL LANDING PAGE OVERLAY (Shown first when visiting `/`)
           100% Free & Account-Free — includes About, How It Works, Live Analytics,
-          and Interactive FAQs, with instant transition into the Bouquet Studio.
+          and Interactive FAQs, with smooth transition into the Bouquet Studio.
           ===================================================================== */}
       {showLandingPage && !isGiftView && !isPreviewMode && (
         <LandingPageView
-          onStartCrafting={() => setShowLandingPage(false)}
+          onStartCrafting={() => {
+            setStudioEntranceKey((k) => k + 1);
+            setShowLandingPage(false);
+          }}
           onOpenVault={() => setIsVaultModalOpen(true)}
           vaultCount={vaultCount}
           isDarkMode={isDarkMode}
@@ -1207,7 +1225,7 @@ export default function App() {
           <div
             className={`h-11 sm:h-12 px-2.5 sm:px-3.5 rounded-full border shadow-sm flex items-center justify-between gap-1.5 transition-colors ${
               isDarkMode
-                ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
+                ? 'bg-[#352C29]/95 border-[#4E423E] text-[#FBF6F1]'
                 : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
             }`}
           >
@@ -1281,7 +1299,9 @@ export default function App() {
                 title="Toggle theme"
                 className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
               >
-                {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
+                <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
+                  {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
+                </span>
               </button>
             </div>
 
@@ -1596,7 +1616,12 @@ export default function App() {
       </header>
 
       {/* MAIN RESPONSIVE WORKSPACE (Unified Clean Layout across Phone & Desktop) */}
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div
+        key={`studio-workspace-${studioEntranceKey}`}
+        className={`flex-1 flex flex-col overflow-hidden relative ${
+          studioEntranceKey > 0 ? 'studio-workspace-enter' : ''
+        }`}
+      >
         {/* CENTER MAIN STAGE AREA (Never resizes when selecting stems) */}
         <main className="flex-1 min-h-0 min-w-0 relative flex flex-col items-center justify-center overflow-hidden order-1">
           {/* Gentle Falling Petals Animation in Read-Only Gift View */}
@@ -1621,7 +1646,7 @@ export default function App() {
               }}
               className={`absolute inset-0 z-40 flex items-center justify-center p-4 transition-opacity duration-300 ${
                 isGiftCurrentlyLocked ? 'cursor-default' : 'cursor-pointer'
-              } ${isDarkMode ? 'bg-[#141211]' : 'bg-[#FAFAF8]'}`}
+              } ${isDarkMode ? 'bg-[#2B2321]' : 'bg-[#FAFAF8]'}`}
             >
               {!isResolvingShortCode && (
                 <div
@@ -1633,7 +1658,7 @@ export default function App() {
                   }}
                   className={`card-zoom-modal w-full max-w-[360px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
                     isDarkMode
-                      ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+                      ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
                       : 'bg-white border-stone-200/90 text-[#1C1917]'
                   }`}
                 >
@@ -2504,7 +2529,7 @@ export default function App() {
             aria-label="Mobile Studio Dock"
             className={`w-full shrink-0 border-t px-2.5 sm:px-5 pt-2 pb-[max(0.85rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-3 order-2 z-20 select-none transition-all duration-200 ${
               isDarkMode
-                ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+                ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
                 : 'bg-white border-stone-200/80 text-[#1C1917]'
             }`}
           >

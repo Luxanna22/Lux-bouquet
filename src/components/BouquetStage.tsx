@@ -30,8 +30,47 @@ function shadeWrapHex(hex: string, delta: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
+const WRAPPER_RIBBON_GEOMETRY: Record<
+  typeWrapStyle,
+  { waistY: number; halfW: number; tailBottomY: number; bowScale: number }
+> = {
+  kraft:      { waistY: 508, halfW: 76,  tailBottomY: 618, bowScale: 1.0 },
+  tissue:     { waistY: 514, halfW: 76,  tailBottomY: 618, bowScale: 1.0 },
+  chalice:    { waistY: 506, halfW: 82,  tailBottomY: 618, bowScale: 1.0 },
+  basket:     { waistY: 436, halfW: 144, tailBottomY: 538, bowScale: 1.04 },
+  vintage:    { waistY: 486, halfW: 104, tailBottomY: 608, bowScale: 1.0 },
+  lace:       { waistY: 468, halfW: 100, tailBottomY: 606, bowScale: 1.0 },
+  celestial:  { waistY: 486, halfW: 108, tailBottomY: 608, bowScale: 1.0 },
+  vase:       { waistY: 422, halfW: 93,  tailBottomY: 530, bowScale: 0.96 },
+  plain:      { waistY: 504, halfW: 34,  tailBottomY: 598, bowScale: 0.8 },
+  hatbox:     { waistY: 428, halfW: 121, tailBottomY: 480, bowScale: 0.88 },
+  cloche:     { waistY: 484, halfW: 34,  tailBottomY: 546, bowScale: 0.78 },
+  koreanmesh: { waistY: 488, halfW: 94,  tailBottomY: 610, bowScale: 1.0 },
+};
+
+function getStageItemDisplayTransform(item: BouquetItem, wrap: typeWrapStyle) {
+  if (wrap !== 'cloche') {
+    return {
+      x: item.x,
+      y: item.y,
+      scale: item.scale,
+      rotation: item.rotation,
+    };
+  }
+  // When placed inside the Glass Cloche (bell jar), softly gather the arrangement
+  // into the crystal dome interior so blooms never collide with or pass through the glass walls
+  const dx = item.x - 300;
+  const dy = item.y - 295;
+  return {
+    x: Math.round(300 + dx * 0.64),
+    y: Math.round(Math.max(198, Math.min(392, 295 + dy * 0.7))),
+    scale: Number((item.scale * 0.82).toFixed(3)),
+    rotation: Math.round(item.rotation * 0.72),
+  };
+}
+
 /**
- * Universal Architectural Ribbon & Lace Renderer — 7 Unique Designs that adapt to every wrapper's waist
+ * Universal Architectural Ribbon & Lace Renderer — 10 Unique Designs that adapt to every wrapper's exact waist
  */
 export const BouquetRibbonSVG: React.FC<{
   ribbonStyle: RibbonStyle;
@@ -40,19 +79,15 @@ export const BouquetRibbonSVG: React.FC<{
   isPreviewMode?: boolean;
   onRibbonClick?: () => void;
 }> = ({ ribbonStyle, ribbonColor, wrapStyle, isPreviewMode = false, onRibbonClick }) => {
-  // Compute wrapper-specific waist Y and half-width so every ribbon/lace fits every wrapper
-  const waistY = wrapStyle === 'basket' ? 436 : wrapStyle === 'vase' ? 442 : 506;
-  const halfW =
-    wrapStyle === 'basket'
-      ? 144
-      : wrapStyle === 'vase'
-      ? 92
-      : wrapStyle === 'plain'
-      ? 36
-      : 80;
+  // Compute wrapper-specific waist Y, half-width, tail length, and bow proportion so every ribbon fits every wrapper seamlessly
+  const geom = WRAPPER_RIBBON_GEOMETRY[wrapStyle] || WRAPPER_RIBBON_GEOMETRY.kraft;
+  const { waistY, halfW, tailBottomY, bowScale } = geom;
   const leftX = 300 - halfW;
   const rightX = 300 + halfW;
-  const tailBottomY = wrapStyle === 'basket' ? 536 : wrapStyle === 'vase' ? 534 : 622;
+  const bowTransform =
+    bowScale !== 1
+      ? `translate(300, ${waistY}) scale(${bowScale}, 1) translate(-300, ${-waistY})`
+      : undefined;
 
   return (
     <g
@@ -92,17 +127,7 @@ export const BouquetRibbonSVG: React.FC<{
       {/* 1. CLASSIC SATIN BOW (Sculpted satin loops, waist sash & dovetail streamers) */}
       {ribbonStyle === 'satin' && (
         <g>
-          {/* Flowing Dovetail Streamers */}
-          <path
-            d={`M295,${waistY + 2} Q272,${(waistY + tailBottomY) / 2} 252,${tailBottomY} L264,${tailBottomY - 10} L274,${tailBottomY} Q288,${(waistY + tailBottomY) / 2} 300,${waistY + 8} Z`}
-            fill={ribbonColor}
-          />
-          <path
-            d={`M305,${waistY + 2} Q328,${(waistY + tailBottomY) / 2} 348,${tailBottomY} L336,${tailBottomY - 10} L326,${tailBottomY} Q312,${(waistY + tailBottomY) / 2} 300,${waistY + 8} Z`}
-            fill={ribbonColor}
-            opacity="0.92"
-          />
-          {/* Contoured Satin Waist Sash */}
+          {/* Contoured Satin Waist Sash (Always spans exact wrapper waist leftX..rightX) */}
           <path
             d={`M${leftX},${waistY - 6} Q300,${waistY + 8} ${rightX},${waistY - 6} L${rightX - 2},${waistY + 9} Q300,${waistY + 23} ${leftX + 2},${waistY + 9} Z`}
             fill={ribbonColor}
@@ -110,69 +135,66 @@ export const BouquetRibbonSVG: React.FC<{
             strokeWidth="1"
             strokeOpacity="0.35"
           />
-          {/* Left & Right Sculpted Satin Bow Loops */}
-          <path
-            d={`M296,${waistY} C244,${waistY - 36} 230,${waistY + 24} 288,${waistY + 10} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.45"
-          />
-          <path
-            d={`M304,${waistY} C356,${waistY - 36} 370,${waistY + 24} 312,${waistY + 10} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.45"
-          />
-          {/* Inner Loop Depth Crease */}
-          <path
-            d={`M288,${waistY + 1} C262,${waistY - 12} 258,${waistY + 10} 286,${waistY + 5}`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            opacity="0.45"
-          />
-          <path
-            d={`M312,${waistY + 1} C338,${waistY - 12} 342,${waistY + 10} 314,${waistY + 5}`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            opacity="0.45"
-          />
-          {/* Center Pillow Knot */}
-          <rect
-            x="289"
-            y={waistY - 11}
-            width="22"
-            height="23"
-            rx="7"
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.55"
-          />
+          <g transform={bowTransform}>
+            {/* Flowing Dovetail Streamers */}
+            <path
+              d={`M295,${waistY + 2} Q272,${(waistY + tailBottomY) / 2} 252,${tailBottomY} L264,${tailBottomY - 10} L274,${tailBottomY} Q288,${(waistY + tailBottomY) / 2} 300,${waistY + 8} Z`}
+              fill={ribbonColor}
+            />
+            <path
+              d={`M305,${waistY + 2} Q328,${(waistY + tailBottomY) / 2} 348,${tailBottomY} L336,${tailBottomY - 10} L326,${tailBottomY} Q312,${(waistY + tailBottomY) / 2} 300,${waistY + 8} Z`}
+              fill={ribbonColor}
+              opacity="0.92"
+            />
+            {/* Left & Right Sculpted Satin Bow Loops */}
+            <path
+              d={`M296,${waistY} C244,${waistY - 36} 230,${waistY + 24} 288,${waistY + 10} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.45"
+            />
+            <path
+              d={`M304,${waistY} C356,${waistY - 36} 370,${waistY + 24} 312,${waistY + 10} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.45"
+            />
+            {/* Inner Loop Depth Crease */}
+            <path
+              d={`M288,${waistY + 1} C262,${waistY - 12} 258,${waistY + 10} 286,${waistY + 5}`}
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              opacity="0.45"
+            />
+            <path
+              d={`M312,${waistY + 1} C338,${waistY - 12} 342,${waistY + 10} 314,${waistY + 5}`}
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              opacity="0.45"
+            />
+            {/* Center Pillow Knot */}
+            <rect
+              x="289"
+              y={waistY - 11}
+              width="22"
+              height="23"
+              rx="7"
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.55"
+            />
+          </g>
         </g>
       )}
 
       {/* 2. BRIDAL EYELET LACE (Scalloped pierced-eyelet lace band + floral lace bow + pearl brooch) */}
       {ribbonStyle === 'lace' && (
         <g>
-          {/* Scalloped Lace Tails */}
-          <path
-            d={`M294,${waistY + 4} Q272,${(waistY + tailBottomY) / 2} 254,${tailBottomY - 4} L274,${tailBottomY - 2} Q290,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.4"
-            strokeDasharray="3 2"
-          />
-          <path
-            d={`M306,${waistY + 4} Q328,${(waistY + tailBottomY) / 2} 346,${tailBottomY - 4} L326,${tailBottomY - 2} Q310,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.4"
-            strokeDasharray="3 2"
-          />
           {/* Scalloped White Eyelet Trim Backing Waist Band */}
           <path
             d={`M${leftX - 2},${waistY - 11} Q300,${waistY + 5} ${rightX + 2},${waistY - 11} L${rightX},${waistY + 15} Q300,${waistY + 31} ${leftX},${waistY + 15} Z`}
@@ -193,25 +215,42 @@ export const BouquetRibbonSVG: React.FC<{
             <circle cx={300 + halfW * 0.35} cy={waistY + 4} r="2.3" />
             <circle cx={300 + halfW * 0.65} cy={waistY + 1} r="2.3" />
           </g>
-          {/* Scalloped Lace Bow Loops */}
-          <path
-            d={`M296,${waistY + 1} C238,${waistY - 40} 226,${waistY + 28} 290,${waistY + 12} Z`}
-            fill={ribbonColor}
-            stroke="#FFFFFF"
-            strokeWidth="2"
-            strokeDasharray="4 2.5"
-          />
-          <path
-            d={`M304,${waistY + 1} C362,${waistY - 40} 374,${waistY + 28} 310,${waistY + 12} Z`}
-            fill={ribbonColor}
-            stroke="#FFFFFF"
-            strokeWidth="2"
-            strokeDasharray="4 2.5"
-          />
-          {/* Center Pearl & Gold Filigree Brooch */}
-          <circle cx="300" cy={waistY + 2} r="12" fill="#FFFDF9" stroke="#FDE68A" strokeWidth="2.2" />
-          <circle cx="300" cy={waistY + 2} r="7.5" fill={ribbonColor} opacity="0.25" />
-          <circle cx="297" cy={waistY - 1} r="3" fill="#FFFFFF" />
+          <g transform={bowTransform}>
+            {/* Scalloped Lace Tails */}
+            <path
+              d={`M294,${waistY + 4} Q272,${(waistY + tailBottomY) / 2} 254,${tailBottomY - 4} L274,${tailBottomY - 2} Q290,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.4"
+              strokeDasharray="3 2"
+            />
+            <path
+              d={`M306,${waistY + 4} Q328,${(waistY + tailBottomY) / 2} 346,${tailBottomY - 4} L326,${tailBottomY - 2} Q310,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.4"
+              strokeDasharray="3 2"
+            />
+            {/* Scalloped Lace Bow Loops */}
+            <path
+              d={`M296,${waistY + 1} C238,${waistY - 40} 226,${waistY + 28} 290,${waistY + 12} Z`}
+              fill={ribbonColor}
+              stroke="#FFFFFF"
+              strokeWidth="2"
+              strokeDasharray="4 2.5"
+            />
+            <path
+              d={`M304,${waistY + 1} C362,${waistY - 40} 374,${waistY + 28} 310,${waistY + 12} Z`}
+              fill={ribbonColor}
+              stroke="#FFFFFF"
+              strokeWidth="2"
+              strokeDasharray="4 2.5"
+            />
+            {/* Center Pearl & Gold Filigree Brooch */}
+            <circle cx="300" cy={waistY + 2} r="12" fill="#FFFDF9" stroke="#FDE68A" strokeWidth="2.2" />
+            <circle cx="300" cy={waistY + 2} r="7.5" fill={ribbonColor} opacity="0.25" />
+            <circle cx="297" cy={waistY - 1} r="3" fill="#FFFFFF" />
+          </g>
         </g>
       )}
 
@@ -220,14 +259,14 @@ export const BouquetRibbonSVG: React.FC<{
         <g>
           {/* Upper & Lower Horizontal Corset Bands */}
           <path
-            d={`M${leftX + 6},${waistY - 22} Q300,${waistY - 10} ${rightX - 6},${waistY - 22}`}
+            d={`M${leftX + 4},${waistY - 20} Q300,${waistY - 8} ${rightX - 4},${waistY - 20}`}
             fill="none"
             stroke={ribbonColor}
             strokeWidth="4.5"
             strokeLinecap="round"
           />
           <path
-            d={`M${leftX + 2},${waistY + 18} Q300,${waistY + 30} ${rightX - 2},${waistY + 18}`}
+            d={`M${leftX + 2},${waistY + 16} Q300,${waistY + 28} ${rightX - 2},${waistY + 16}`}
             fill="none"
             stroke={ribbonColor}
             strokeWidth="4.5"
@@ -235,14 +274,14 @@ export const BouquetRibbonSVG: React.FC<{
           />
           {/* Criss-Cross X-Lacing */}
           <path
-            d={`M${300 - halfW * 0.55},${waistY - 18} L${300 + halfW * 0.52},${waistY + 2} M${300 + halfW * 0.55},${waistY - 18} L${300 - halfW * 0.52},${waistY + 2}`}
+            d={`M${300 - halfW * 0.55},${waistY - 16} L${300 + halfW * 0.52},${waistY + 2} M${300 + halfW * 0.55},${waistY - 16} L${300 - halfW * 0.52},${waistY + 2}`}
             fill="none"
             stroke={ribbonColor}
             strokeWidth="3.8"
             strokeLinecap="round"
           />
           <path
-            d={`M${300 - halfW * 0.52},${waistY + 2} L${300 + halfW * 0.48},${waistY + 21} M${300 + halfW * 0.52},${waistY + 2} L${300 - halfW * 0.48},${waistY + 21}`}
+            d={`M${300 - halfW * 0.52},${waistY + 2} L${300 + halfW * 0.48},${waistY + 19} M${300 + halfW * 0.52},${waistY + 2} L${300 - halfW * 0.48},${waistY + 19}`}
             fill="none"
             stroke={ribbonColor}
             strokeWidth="3.8"
@@ -250,111 +289,115 @@ export const BouquetRibbonSVG: React.FC<{
           />
           {/* Pearl Eyelet Studs at Corset Anchor Points */}
           <g fill="#FFFDF9" stroke={ribbonColor} strokeWidth="1.4">
-            <circle cx={300 - halfW * 0.55} cy={waistY - 18} r="3.5" />
-            <circle cx={300 + halfW * 0.55} cy={waistY - 18} r="3.5" />
+            <circle cx={300 - halfW * 0.55} cy={waistY - 16} r="3.5" />
+            <circle cx={300 + halfW * 0.55} cy={waistY - 16} r="3.5" />
             <circle cx={300 - halfW * 0.52} cy={waistY + 2} r="3.5" />
             <circle cx={300 + halfW * 0.52} cy={waistY + 2} r="3.5" />
-            <circle cx={300 - halfW * 0.48} cy={waistY + 21} r="3.5" />
-            <circle cx={300 + halfW * 0.48} cy={waistY + 21} r="3.5" />
+            <circle cx={300 - halfW * 0.48} cy={waistY + 19} r="3.5" />
+            <circle cx={300 + halfW * 0.48} cy={waistY + 19} r="3.5" />
           </g>
           {/* Petite Lower Tie Bow & Hanging Tassels */}
-          <path
-            d={`M297,${waistY + 24} C266,${waistY + 8} 262,${waistY + 42} 295,${waistY + 30} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1"
-          />
-          <path
-            d={`M303,${waistY + 24} C334,${waistY + 8} 338,${waistY + 42} 305,${waistY + 30} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1"
-          />
-          <path
-            d={`M296,${waistY + 26} Q284,${(waistY + tailBottomY) / 2 + 12} 276,${tailBottomY} M304,${waistY + 26} Q316,${(waistY + tailBottomY) / 2 + 12} 324,${tailBottomY}`}
-            fill="none"
-            stroke={ribbonColor}
-            strokeWidth="3.8"
-            strokeLinecap="round"
-          />
-          <circle cx="300" cy={waistY + 26} r="6.5" fill={ribbonColor} stroke="#ffffff" strokeWidth="1.2" />
+          <g transform={bowTransform}>
+            <path
+              d={`M297,${waistY + 22} C266,${waistY + 6} 262,${waistY + 40} 295,${waistY + 28} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1"
+            />
+            <path
+              d={`M303,${waistY + 22} C334,${waistY + 6} 338,${waistY + 40} 305,${waistY + 28} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1"
+            />
+            <path
+              d={`M296,${waistY + 24} Q284,${(waistY + tailBottomY) / 2 + 10} 276,${tailBottomY} M304,${waistY + 24} Q316,${(waistY + tailBottomY) / 2 + 10} 324,${tailBottomY}`}
+              fill="none"
+              stroke={ribbonColor}
+              strokeWidth="3.8"
+              strokeLinecap="round"
+            />
+            <circle cx="300" cy={waistY + 24} r="6.5" fill={ribbonColor} stroke="#ffffff" strokeWidth="1.2" />
+          </g>
         </g>
       )}
 
       {/* 4. DOUBLE COUTURE ROSETTE (Multi-looped Parisian rosette bow + wide sash + twin tails) */}
       {ribbonStyle === 'double' && (
         <g>
-          {/* Four Layered Ribbon Tails */}
-          <path
-            d={`M292,${waistY + 4} L246,${tailBottomY - 6} L264,${tailBottomY} L298,${waistY + 10} Z`}
-            fill={ribbonColor}
-            opacity="0.88"
-          />
-          <path
-            d={`M308,${waistY + 4} L354,${tailBottomY - 6} L336,${tailBottomY} L302,${waistY + 10} Z`}
-            fill={ribbonColor}
-            opacity="0.88"
-          />
-          <path
-            d={`M296,${waistY + 6} L274,${tailBottomY} L288,${tailBottomY - 4} L300,${waistY + 12} Z`}
-            fill={ribbonColor}
-          />
-          <path
-            d={`M304,${waistY + 6} L326,${tailBottomY} L312,${tailBottomY - 4} L300,${waistY + 12} Z`}
-            fill={ribbonColor}
-          />
           {/* Wide Belted Waist Sash */}
           <path
             d={`M${leftX},${waistY - 8} Q300,${waistY + 6} ${rightX},${waistY - 8} L${rightX - 2},${waistY + 10} Q300,${waistY + 24} ${leftX + 2},${waistY + 10} Z`}
             fill={ribbonColor}
           />
-          {/* Outer Large Bow Loops */}
-          <path
-            d={`M295,${waistY} C228,${waistY - 46} 218,${waistY + 34} 288,${waistY + 14} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.4"
-          />
-          <path
-            d={`M305,${waistY} C372,${waistY - 46} 382,${waistY + 34} 312,${waistY + 14} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.4"
-          />
-          {/* Upper Diagonal Rosette Loops */}
-          <path
-            d={`M296,${waistY - 3} C254,${waistY - 52} 248,${waistY - 6} 292,${waistY + 2} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.3"
-            strokeOpacity="0.55"
-          />
-          <path
-            d={`M304,${waistY - 3} C346,${waistY - 52} 352,${waistY - 6} 308,${waistY + 2} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.3"
-            strokeOpacity="0.55"
-          />
-          {/* Inner Petite Loops */}
-          <path
-            d={`M297,${waistY + 2} C266,${waistY - 18} 262,${waistY + 18} 293,${waistY + 8} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.65"
-          />
-          <path
-            d={`M303,${waistY + 2} C334,${waistY - 18} 338,${waistY + 18} 307,${waistY + 8} Z`}
-            fill={ribbonColor}
-            stroke="#ffffff"
-            strokeWidth="1.2"
-            strokeOpacity="0.65"
-          />
-          {/* Center Gathered Rosette Knot */}
-          <circle cx="300" cy={waistY + 2} r="11" fill={ribbonColor} stroke="#ffffff" strokeWidth="1.5" strokeOpacity="0.65" />
+          <g transform={bowTransform}>
+            {/* Four Layered Ribbon Tails */}
+            <path
+              d={`M292,${waistY + 4} L246,${tailBottomY - 6} L264,${tailBottomY} L298,${waistY + 10} Z`}
+              fill={ribbonColor}
+              opacity="0.88"
+            />
+            <path
+              d={`M308,${waistY + 4} L354,${tailBottomY - 6} L336,${tailBottomY} L302,${waistY + 10} Z`}
+              fill={ribbonColor}
+              opacity="0.88"
+            />
+            <path
+              d={`M296,${waistY + 6} L274,${tailBottomY} L288,${tailBottomY - 4} L300,${waistY + 12} Z`}
+              fill={ribbonColor}
+            />
+            <path
+              d={`M304,${waistY + 6} L326,${tailBottomY} L312,${tailBottomY - 4} L300,${waistY + 12} Z`}
+              fill={ribbonColor}
+            />
+            {/* Outer Large Bow Loops */}
+            <path
+              d={`M295,${waistY} C228,${waistY - 46} 218,${waistY + 34} 288,${waistY + 14} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.4"
+            />
+            <path
+              d={`M305,${waistY} C372,${waistY - 46} 382,${waistY + 34} 312,${waistY + 14} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.4"
+            />
+            {/* Upper Diagonal Rosette Loops */}
+            <path
+              d={`M296,${waistY - 3} C254,${waistY - 52} 248,${waistY - 6} 292,${waistY + 2} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.3"
+              strokeOpacity="0.55"
+            />
+            <path
+              d={`M304,${waistY - 3} C346,${waistY - 52} 352,${waistY - 6} 308,${waistY + 2} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.3"
+              strokeOpacity="0.55"
+            />
+            {/* Inner Petite Loops */}
+            <path
+              d={`M297,${waistY + 2} C266,${waistY - 18} 262,${waistY + 18} 293,${waistY + 8} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.65"
+            />
+            <path
+              d={`M303,${waistY + 2} C334,${waistY - 18} 338,${waistY + 18} 307,${waistY + 8} Z`}
+              fill={ribbonColor}
+              stroke="#ffffff"
+              strokeWidth="1.2"
+              strokeOpacity="0.65"
+            />
+            {/* Center Gathered Rosette Knot */}
+            <circle cx="300" cy={waistY + 2} r="11" fill={ribbonColor} stroke="#ffffff" strokeWidth="1.5" strokeOpacity="0.65" />
+          </g>
         </g>
       )}
 
@@ -384,64 +427,49 @@ export const BouquetRibbonSVG: React.FC<{
             strokeWidth="4.2"
             strokeLinecap="round"
           />
-          {/* Delicate Twine Loops */}
-          <path
-            d={`M295,${waistY + 4} C254,${waistY - 22} 248,${waistY + 26} 292,${waistY + 11}`}
-            fill="none"
-            stroke={ribbonColor}
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-          <path
-            d={`M305,${waistY + 4} C346,${waistY - 22} 352,${waistY + 26} 308,${waistY + 11}`}
-            fill="none"
-            stroke={ribbonColor}
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-          {/* Trailing Cord Ends with Beaded Tips */}
-          <path
-            d={`M296,${waistY + 10} Q280,${(waistY + tailBottomY) / 2} 268,${tailBottomY - 6} M304,${waistY + 10} Q320,${(waistY + tailBottomY) / 2} 332,${tailBottomY - 6}`}
-            fill="none"
-            stroke={ribbonColor}
-            strokeWidth="3.6"
-            strokeLinecap="round"
-          />
-          <circle cx="268" cy={tailBottomY - 5} r="4.5" fill={ribbonColor} />
-          <circle cx="332" cy={tailBottomY - 5} r="4.5" fill={ribbonColor} />
-          {/* Embossed Botanical Wax Seal Medallion */}
-          <circle cx="300" cy={waistY + 6} r="16" fill={ribbonColor} stroke="#FFFBEB" strokeWidth="1.8" />
-          <circle cx="300" cy={waistY + 6} r="11.5" fill="none" stroke="#FFFBEB" strokeWidth="1" strokeDasharray="3 2" opacity="0.85" />
-          {/* Pressed Leaf Sprig Inside Wax Seal */}
-          <path
-            d={`M300,${waistY + 13} L300,${waistY - 1} M300,${waistY + 8} L295,${waistY + 4} M300,${waistY + 5} L305,${waistY + 1}`}
-            stroke="#FFFBEB"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
+          <g transform={bowTransform}>
+            {/* Delicate Twine Loops */}
+            <path
+              d={`M295,${waistY + 4} C254,${waistY - 22} 248,${waistY + 26} 292,${waistY + 11}`}
+              fill="none"
+              stroke={ribbonColor}
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+            <path
+              d={`M305,${waistY + 4} C346,${waistY - 22} 352,${waistY + 26} 308,${waistY + 11}`}
+              fill="none"
+              stroke={ribbonColor}
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
+            {/* Trailing Cord Ends with Beaded Tips */}
+            <path
+              d={`M296,${waistY + 10} Q280,${(waistY + tailBottomY) / 2} 268,${tailBottomY - 6} M304,${waistY + 10} Q320,${(waistY + tailBottomY) / 2} 332,${tailBottomY - 6}`}
+              fill="none"
+              stroke={ribbonColor}
+              strokeWidth="3.6"
+              strokeLinecap="round"
+            />
+            <circle cx="268" cy={tailBottomY - 5} r="4.5" fill={ribbonColor} />
+            <circle cx="332" cy={tailBottomY - 5} r="4.5" fill={ribbonColor} />
+            {/* Embossed Botanical Wax Seal Medallion */}
+            <circle cx="300" cy={waistY + 6} r="16" fill={ribbonColor} stroke="#FFFBEB" strokeWidth="1.8" />
+            <circle cx="300" cy={waistY + 6} r="11.5" fill="none" stroke="#FFFBEB" strokeWidth="1" strokeDasharray="3 2" opacity="0.85" />
+            {/* Pressed Leaf Sprig Inside Wax Seal */}
+            <path
+              d={`M300,${waistY + 13} L300,${waistY - 1} M300,${waistY + 8} L295,${waistY + 4} M300,${waistY + 5} L305,${waistY + 1}`}
+              stroke="#FFFBEB"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </g>
         </g>
       )}
 
       {/* 6. SHEER CHIFFON DRAPE (Translucent billowy organza butterfly loops + gossamer trailing veils) */}
       {ribbonStyle === 'organza' && (
         <g>
-          {/* Wide Billowy Gossamer Trailing Veils */}
-          <path
-            d={`M292,${waistY + 2} Q256,${(waistY + tailBottomY) / 2} 228,${tailBottomY} Q256,${tailBottomY + 6} 282,${tailBottomY - 4} Q294,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.48"
-            stroke="#FFFFFF"
-            strokeWidth="1.2"
-            strokeOpacity="0.65"
-          />
-          <path
-            d={`M308,${waistY + 2} Q344,${(waistY + tailBottomY) / 2} 372,${tailBottomY} Q344,${tailBottomY + 6} 318,${tailBottomY - 4} Q306,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.48"
-            stroke="#FFFFFF"
-            strokeWidth="1.2"
-            strokeOpacity="0.65"
-          />
           {/* Sheer Pleated Organza Waist Wrap */}
           <path
             d={`M${leftX - 2},${waistY - 10} Q300,${waistY + 6} ${rightX + 2},${waistY - 10} L${rightX - 1},${waistY + 12} Q300,${waistY + 28} ${leftX + 1},${waistY + 12} Z`}
@@ -450,56 +478,59 @@ export const BouquetRibbonSVG: React.FC<{
             stroke="#FFFFFF"
             strokeWidth="1.2"
           />
-          {/* Oversized Translucent Butterfly Chiffon Wings */}
-          <path
-            d={`M296,${waistY + 1} C216,${waistY - 56} 206,${waistY + 42} 290,${waistY + 14} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.55"
-            stroke="#FFFFFF"
-            strokeWidth="1.5"
-          />
-          <path
-            d={`M304,${waistY + 1} C384,${waistY - 56} 394,${waistY + 42} 310,${waistY + 14} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.55"
-            stroke="#FFFFFF"
-            strokeWidth="1.5"
-          />
-          {/* Inner Shimmer Fold */}
-          <path
-            d={`M296,${waistY + 1} C244,${waistY - 28} 238,${waistY + 18} 290,${waistY + 8} Z`}
-            fill="#FFFFFF"
-            fillOpacity="0.32"
-          />
-          <path
-            d={`M304,${waistY + 1} C356,${waistY - 28} 362,${waistY + 18} 310,${waistY + 8} Z`}
-            fill="#FFFFFF"
-            fillOpacity="0.32"
-          />
-          {/* Gathered Silk Knot */}
-          <ellipse cx="300" cy={waistY + 2} rx="12" ry="10" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.4" />
+          <g transform={bowTransform}>
+            {/* Wide Billowy Gossamer Trailing Veils */}
+            <path
+              d={`M292,${waistY + 2} Q256,${(waistY + tailBottomY) / 2} 228,${tailBottomY} Q256,${tailBottomY + 6} 282,${tailBottomY - 4} Q294,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.48"
+              stroke="#FFFFFF"
+              strokeWidth="1.2"
+              strokeOpacity="0.65"
+            />
+            <path
+              d={`M308,${waistY + 2} Q344,${(waistY + tailBottomY) / 2} 372,${tailBottomY} Q344,${tailBottomY + 6} 318,${tailBottomY - 4} Q306,${(waistY + tailBottomY) / 2} 300,${waistY + 10} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.48"
+              stroke="#FFFFFF"
+              strokeWidth="1.2"
+              strokeOpacity="0.65"
+            />
+            {/* Oversized Translucent Butterfly Chiffon Wings */}
+            <path
+              d={`M296,${waistY + 1} C216,${waistY - 56} 206,${waistY + 42} 290,${waistY + 14} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.55"
+              stroke="#FFFFFF"
+              strokeWidth="1.5"
+            />
+            <path
+              d={`M304,${waistY + 1} C384,${waistY - 56} 394,${waistY + 42} 310,${waistY + 14} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.55"
+              stroke="#FFFFFF"
+              strokeWidth="1.5"
+            />
+            {/* Inner Shimmer Fold */}
+            <path
+              d={`M296,${waistY + 1} C244,${waistY - 28} 238,${waistY + 18} 290,${waistY + 8} Z`}
+              fill="#FFFFFF"
+              fillOpacity="0.32"
+            />
+            <path
+              d={`M304,${waistY + 1} C356,${waistY - 28} 362,${waistY + 18} 310,${waistY + 8} Z`}
+              fill="#FFFFFF"
+              fillOpacity="0.32"
+            />
+            {/* Gathered Silk Knot */}
+            <ellipse cx="300" cy={waistY + 2} rx="12" ry="10" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.4" />
+          </g>
         </g>
       )}
 
       {/* 7. CAMEO VELVET SASH (Rich draped velvet band + gold-rimmed oval pearl cameo clasp & fringed ends) */}
       {ribbonStyle === 'velvet' && (
         <g>
-          {/* Draped Velvet Sash Ends with Gold Fringe Trim */}
-          <path
-            d={`M290,${waistY + 4} L256,${tailBottomY - 8} L282,${tailBottomY - 4} L300,${waistY + 10} Z`}
-            fill={ribbonColor}
-          />
-          <path
-            d={`M310,${waistY + 4} L344,${tailBottomY - 8} L318,${tailBottomY - 4} L300,${waistY + 10} Z`}
-            fill={ribbonColor}
-          />
-          {/* Gold Bullion Fringe on Sash Tips */}
-          <path
-            d={`M256,${tailBottomY - 8} L282,${tailBottomY - 4} M344,${tailBottomY - 8} L318,${tailBottomY - 4}`}
-            stroke="#FBBF24"
-            strokeWidth="3.5"
-            strokeDasharray="2.5 2"
-          />
           {/* Rich Velvet Waist Belt with Gold Piping */}
           <path
             d={`M${leftX},${waistY - 8} Q300,${waistY + 6} ${rightX},${waistY - 8} L${rightX - 2},${waistY + 10} Q300,${waistY + 24} ${leftX + 2},${waistY + 10} Z`}
@@ -507,46 +538,47 @@ export const BouquetRibbonSVG: React.FC<{
             stroke="#FDE68A"
             strokeWidth="1.4"
           />
-          {/* Tailored Velvet Bow Loops */}
-          <path
-            d={`M294,${waistY} C242,${waistY - 30} 236,${waistY + 22} 288,${waistY + 10} Z`}
-            fill={ribbonColor}
-            stroke="#FDE68A"
-            strokeWidth="1.3"
-          />
-          <path
-            d={`M306,${waistY} C358,${waistY - 30} 364,${waistY + 22} 312,${waistY + 10} Z`}
-            fill={ribbonColor}
-            stroke="#FDE68A"
-            strokeWidth="1.3"
-          />
-          {/* Gold-Rimmed Oval Pearl Cameo Brooch */}
-          <ellipse cx="300" cy={waistY + 2} rx="12" ry="15" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.5" />
-          <ellipse cx="300" cy={waistY + 2} rx="8.5" ry="11.5" fill="#FFFDF9" />
-          <circle cx="298" cy={waistY - 2} r="2.8" fill="#FFFFFF" />
+          <g transform={bowTransform}>
+            {/* Draped Velvet Sash Ends with Gold Fringe Trim */}
+            <path
+              d={`M290,${waistY + 4} L256,${tailBottomY - 8} L282,${tailBottomY - 4} L300,${waistY + 10} Z`}
+              fill={ribbonColor}
+            />
+            <path
+              d={`M310,${waistY + 4} L344,${tailBottomY - 8} L318,${tailBottomY - 4} L300,${waistY + 10} Z`}
+              fill={ribbonColor}
+            />
+            {/* Gold Bullion Fringe on Sash Tips */}
+            <path
+              d={`M256,${tailBottomY - 8} L282,${tailBottomY - 4} M344,${tailBottomY - 8} L318,${tailBottomY - 4}`}
+              stroke="#FBBF24"
+              strokeWidth="3.5"
+              strokeDasharray="2.5 2"
+            />
+            {/* Tailored Velvet Bow Loops */}
+            <path
+              d={`M294,${waistY} C242,${waistY - 30} 236,${waistY + 22} 288,${waistY + 10} Z`}
+              fill={ribbonColor}
+              stroke="#FDE68A"
+              strokeWidth="1.3"
+            />
+            <path
+              d={`M306,${waistY} C358,${waistY - 30} 364,${waistY + 22} 312,${waistY + 10} Z`}
+              fill={ribbonColor}
+              stroke="#FDE68A"
+              strokeWidth="1.3"
+            />
+            {/* Gold-Rimmed Oval Pearl Cameo Brooch */}
+            <ellipse cx="300" cy={waistY + 2} rx="12" ry="15" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.5" />
+            <ellipse cx="300" cy={waistY + 2} rx="8.5" ry="11.5" fill="#FFFDF9" />
+            <circle cx="298" cy={waistY - 2} r="2.8" fill="#FFFFFF" />
+          </g>
         </g>
       )}
 
       {/* 8. CHIFFON FRINGE (Raw-edge frayed silk chiffon drape with soft organic knot) */}
       {ribbonStyle === 'chiffon' && (
         <g>
-          {/* Long Flowing Frayed Chiffon Tails */}
-          <path
-            d={`M294,${waistY + 4} C262,${waistY + 55} 238,${tailBottomY - 12} 262,${tailBottomY + 8} C278,${tailBottomY - 10} 292,${waistY + 46} 300,${waistY + 8} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.68"
-            stroke="#FFFFFF"
-            strokeWidth="1.3"
-            strokeDasharray="4 2"
-          />
-          <path
-            d={`M306,${waistY + 4} C338,${waistY + 55} 362,${tailBottomY - 12} 338,${tailBottomY + 8} C322,${tailBottomY - 10} 308,${waistY + 46} 300,${waistY + 8} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.68"
-            stroke="#FFFFFF"
-            strokeWidth="1.3"
-            strokeDasharray="4 2"
-          />
           {/* Gathered Chiffon Waist Sash */}
           <path
             d={`M${leftX},${waistY - 7} Q300,${waistY + 8} ${rightX},${waistY - 7} L${rightX - 3},${waistY + 9} Q300,${waistY + 22} ${leftX + 3},${waistY + 9} Z`}
@@ -556,24 +588,43 @@ export const BouquetRibbonSVG: React.FC<{
             strokeWidth="1.2"
             strokeDasharray="5 2"
           />
-          {/* Billowy Frayed Chiffon Loops */}
-          <path
-            d={`M295,${waistY} C228,${waistY - 38} 222,${waistY + 28} 290,${waistY + 10} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.72"
-            stroke="#FFFFFF"
-            strokeWidth="1.4"
-            strokeDasharray="4 2"
-          />
-          <path
-            d={`M305,${waistY} C372,${waistY - 38} 378,${waistY + 28} 310,${waistY + 10} Z`}
-            fill={ribbonColor}
-            fillOpacity="0.72"
-            stroke="#FFFFFF"
-            strokeWidth="1.4"
-            strokeDasharray="4 2"
-          />
-          <ellipse cx="300" cy={waistY + 2} rx="14" ry="10" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.3" />
+          <g transform={bowTransform}>
+            {/* Long Flowing Frayed Chiffon Tails */}
+            <path
+              d={`M294,${waistY + 4} C262,${waistY + 55} 238,${tailBottomY - 12} 262,${tailBottomY + 6} C278,${tailBottomY - 10} 292,${waistY + 46} 300,${waistY + 8} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.68"
+              stroke="#FFFFFF"
+              strokeWidth="1.3"
+              strokeDasharray="4 2"
+            />
+            <path
+              d={`M306,${waistY + 4} C338,${waistY + 55} 362,${tailBottomY - 12} 338,${tailBottomY + 6} C322,${tailBottomY - 10} 308,${waistY + 46} 300,${waistY + 8} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.68"
+              stroke="#FFFFFF"
+              strokeWidth="1.3"
+              strokeDasharray="4 2"
+            />
+            {/* Billowy Frayed Chiffon Loops */}
+            <path
+              d={`M295,${waistY} C228,${waistY - 38} 222,${waistY + 28} 290,${waistY + 10} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.72"
+              stroke="#FFFFFF"
+              strokeWidth="1.4"
+              strokeDasharray="4 2"
+            />
+            <path
+              d={`M305,${waistY} C372,${waistY - 38} 378,${waistY + 28} 310,${waistY + 10} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.72"
+              stroke="#FFFFFF"
+              strokeWidth="1.4"
+              strokeDasharray="4 2"
+            />
+            <ellipse cx="300" cy={waistY + 2} rx="14" ry="10" fill={ribbonColor} stroke="#FFFFFF" strokeWidth="1.3" />
+          </g>
         </g>
       )}
 
@@ -582,7 +633,7 @@ export const BouquetRibbonSVG: React.FC<{
         <g>
           {/* Twin Draped Golden Curb Chains */}
           <path
-            d={`M${leftX},${waistY - 4} Q300,${waistY + 18} ${rightX},${waistY - 4}`}
+            d={`M${leftX},${waistY - 4} Q300,${waistY + 16} ${rightX},${waistY - 4}`}
             fill="none"
             stroke="#D97706"
             strokeWidth="6"
@@ -590,7 +641,7 @@ export const BouquetRibbonSVG: React.FC<{
             strokeLinecap="round"
           />
           <path
-            d={`M${leftX},${waistY - 4} Q300,${waistY + 18} ${rightX},${waistY - 4}`}
+            d={`M${leftX},${waistY - 4} Q300,${waistY + 16} ${rightX},${waistY - 4}`}
             fill="none"
             stroke="#FDE047"
             strokeWidth="2.6"
@@ -598,29 +649,31 @@ export const BouquetRibbonSVG: React.FC<{
             strokeLinecap="round"
           />
           <path
-            d={`M${leftX + 6},${waistY + 4} Q300,${waistY + 34} ${rightX - 6},${waistY + 4}`}
+            d={`M${leftX + 5},${waistY + 4} Q300,${waistY + 28} ${rightX - 5},${waistY + 4}`}
             fill="none"
             stroke="#F59E0B"
             strokeWidth="4.2"
             strokeDasharray="6 4"
             strokeLinecap="round"
           />
-          {/* Hanging Drop Chains */}
-          <line x1="286" y1={waistY + 14} x2="286" y2={waistY + 48} stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="3 2" />
-          <line x1="314" y1={waistY + 14} x2="314" y2={waistY + 42} stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="3 2" />
-          {/* Pearl Drop & Enamel Heart Charm */}
-          <circle cx="314" cy={waistY + 46} r="6.5" fill="#FFFDF9" stroke="#F59E0B" strokeWidth="1.5" />
-          <g transform={`translate(286, ${waistY + 54})`}>
-            <path
-              d="M0,10 C-12,2 -12,-8 -5,-8 C-2,-8 0,-4 0,-4 C0,-4 2,-8 5,-8 C12,-8 12,2 0,10 Z"
-              fill={ribbonColor}
-              stroke="#FDE047"
-              strokeWidth="1.8"
-            />
+          <g transform={bowTransform}>
+            {/* Hanging Drop Chains */}
+            <line x1="286" y1={waistY + 12} x2="286" y2={waistY + 40} stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="3 2" />
+            <line x1="314" y1={waistY + 12} x2="314" y2={waistY + 36} stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="3 2" />
+            {/* Pearl Drop & Enamel Heart Charm */}
+            <circle cx="314" cy={waistY + 40} r="6" fill="#FFFDF9" stroke="#F59E0B" strokeWidth="1.5" />
+            <g transform={`translate(286, ${waistY + 46})`}>
+              <path
+                d="M0,9 C-11,2 -11,-7 -4.5,-7 C-1.8,-7 0,-3.5 0,-3.5 C0,-3.5 1.8,-7 4.5,-7 C11,-7 11,2 0,9 Z"
+                fill={ribbonColor}
+                stroke="#FDE047"
+                strokeWidth="1.8"
+              />
+            </g>
+            {/* Center Golden Clasp */}
+            <circle cx="300" cy={waistY + 7} r="9" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.8" />
+            <circle cx="300" cy={waistY + 7} r="4" fill={ribbonColor} />
           </g>
-          {/* Center Golden Clasp */}
-          <circle cx="300" cy={waistY + 8} r="9" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.8" />
-          <circle cx="300" cy={waistY + 8} r="4" fill={ribbonColor} />
         </g>
       )}
 
@@ -635,26 +688,28 @@ export const BouquetRibbonSVG: React.FC<{
             strokeWidth="3.2"
             strokeLinecap="round"
           />
-          {/* Frayed Raffia Straw Loops & Whiskers */}
-          <path
-            d={`M296,${waistY + 2} C235,${waistY - 26} 232,${waistY + 22} 294,${waistY + 8} M304,${waistY + 2} C365,${waistY - 26} 368,${waistY + 22} 306,${waistY + 8}`}
-            fill="none"
-            stroke="#DFB78C"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-          />
-          <path
-            d={`M296,${waistY + 6} L248,${tailBottomY - 12} M298,${waistY + 6} L264,${tailBottomY - 4} M304,${waistY + 6} L352,${tailBottomY - 12} M302,${waistY + 6} L336,${tailBottomY - 4}`}
-            stroke="#C89B6E"
-            strokeWidth="2.8"
-            strokeLinecap="round"
-          />
-          {/* Tucked Dried Botanical Sprig & Wax Knot */}
-          <path d={`M300,${waistY + 2} L288,${waistY - 24} M300,${waistY + 2} L312,${waistY - 26}`} stroke="#65A30D" strokeWidth="1.8" />
-          <circle cx="288" cy={waistY - 25} r="4" fill="#FFFDF9" />
-          <circle cx="312" cy={waistY - 27} r="4" fill="#FFFDF9" />
-          <circle cx="300" cy={waistY - 30} r="4.5" fill={ribbonColor} />
-          <ellipse cx="300" cy={waistY + 4} rx="11" ry="8" fill="#B4846C" stroke="#DFB78C" strokeWidth="1.5" />
+          <g transform={bowTransform}>
+            {/* Frayed Raffia Straw Loops & Whiskers */}
+            <path
+              d={`M296,${waistY + 2} C235,${waistY - 26} 232,${waistY + 22} 294,${waistY + 8} M304,${waistY + 2} C365,${waistY - 26} 368,${waistY + 22} 306,${waistY + 8}`}
+              fill="none"
+              stroke="#DFB78C"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+            />
+            <path
+              d={`M296,${waistY + 6} L248,${tailBottomY - 12} M298,${waistY + 6} L264,${tailBottomY - 4} M304,${waistY + 6} L352,${tailBottomY - 12} M302,${waistY + 6} L336,${tailBottomY - 4}`}
+              stroke="#C89B6E"
+              strokeWidth="2.8"
+              strokeLinecap="round"
+            />
+            {/* Tucked Dried Botanical Sprig & Wax Knot */}
+            <path d={`M300,${waistY + 2} L288,${waistY - 24} M300,${waistY + 2} L312,${waistY - 26}`} stroke="#65A30D" strokeWidth="1.8" />
+            <circle cx="288" cy={waistY - 25} r="4" fill="#FFFDF9" />
+            <circle cx="312" cy={waistY - 27} r="4" fill="#FFFDF9" />
+            <circle cx="300" cy={waistY - 30} r="4.5" fill={ribbonColor} />
+            <ellipse cx="300" cy={waistY + 4} rx="11" ry="8" fill="#B4846C" stroke="#DFB78C" strokeWidth="1.5" />
+          </g>
         </g>
       )}
     </g>
@@ -1731,14 +1786,15 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     captureSvgPointer(e);
     hasCommittedDragHistoryRef.current = false;
 
+    const disp = getStageItemDisplayTransform(item, wrapStyle);
     const pt = clientToSvgCoords(e.clientX, e.clientY);
     setInteraction({
       mode: 'transform',
       itemId: item.id,
       startPointerX: pt.x,
       startPointerY: pt.y,
-      startItemX: item.x,
-      startItemY: item.y,
+      startItemX: disp.x,
+      startItemY: disp.y,
       startScale: item.scale,
       startRotation: item.rotation
     });
@@ -1937,11 +1993,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   }, [interaction, applyPointerMoveAtClientCoords]);
 
   const selectedItem = items.find((i) => i.id === selectedId) || null;
+  const selectedDisplay = selectedItem ? getStageItemDisplayTransform(selectedItem, wrapStyle) : null;
   const wrapperBottomClipY =
     wrapStyle === 'basket'
       ? 596
       : wrapStyle === 'vase'
       ? 610
+      : wrapStyle === 'cloche'
+      ? 560
       : wrapStyle === 'plain'
       ? 650
       : 618;
@@ -1965,17 +2024,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         }}
       >
         <defs>
-          {/* Stage Backdrop Gradient */}
+          {/* Stage Backdrop Gradient (Light Mode) */}
           <radialGradient id="stageBgGrad" cx="50%" cy="42%" r="60%">
             <stop offset="0%" stopColor="#FFFFFF" />
             <stop offset="55%" stopColor="#FAFAF8" />
             <stop offset="100%" stopColor="#F5F3EF" stopOpacity="0.45" />
           </radialGradient>
+          {/* Stage Backdrop Gradient (Soft Cashmere-Cocoa Dark Mode) */}
           <radialGradient id="stageBgGradDark" cx="50%" cy="42%" r="60%">
-            <stop offset="0%" stopColor="#24211e" />
-            <stop offset="55%" stopColor="#1E1C1A" />
-            <stop offset="100%" stopColor="#141211" stopOpacity="0.8" />
+            <stop offset="0%" stopColor="#3E3330" />
+            <stop offset="55%" stopColor="#342B28" />
+            <stop offset="100%" stopColor="#2B2321" stopOpacity="0.88" />
           </radialGradient>
+          {/* Glass Cloche Front Sheen Gradient */}
+          <linearGradient id="clocheFrontGlassGrad" x1="0" y1="0" x2="1" y2="0.2">
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.28" />
+            <stop offset="35%" stopColor="#E0F2FE" stopOpacity="0.06" />
+            <stop offset="75%" stopColor="#E0F2FE" stopOpacity="0.04" />
+            <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.22" />
+          </linearGradient>
 
           {/* Kraft Paper Gradient */}
           <linearGradient id="kraftBackGrad" x1="0" y1="0" x2="1" y2="1">
@@ -1992,15 +2059,22 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1C1917" floodOpacity="0.06" />
           </filter>
 
-          {/* Wrapper Bottom Boundary Clip (Prevents stems from poking below wrapper/basket/vase) */}
+          {/* Wrapper Boundary Clip (Prevents stems/blooms from poking outside Glass Cloche or below wrappers) */}
           <clipPath id="bouquetWrapperBoundsClip">
-            <rect x="0" y="0" width="600" height={wrapperBottomClipY} />
+            {wrapStyle === 'cloche' ? (
+              <path d="M132,560 L132,276 C132,102 468,102 468,276 L468,560 Z" />
+            ) : (
+              <rect x="0" y="0" width="600" height={wrapperBottomClipY} />
+            )}
           </clipPath>
 
           {/* Per-Flower Adjustable Stem Length ClipPaths */}
           {items.map((item) => {
             const stemRatio = item.stemLength ?? 1;
-            const localBottomY = Math.round(18 + 145 * stemRatio);
+            const localBottomY =
+              wrapStyle === 'cloche'
+                ? Math.round(14 + 34 * stemRatio)
+                : Math.round(18 + 145 * stemRatio);
             return (
               <clipPath key={`stem-clip-${item.id}`} id={`stem-clip-${item.id}`}>
                 <rect x="-170" y="-170" width="340" height={170 + localBottomY} />
@@ -2009,24 +2083,46 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           })}
         </defs>
 
-        {/* 1. Arch Backdrop */}
+        {/* 1. Arch Backdrop (Cross-fades smoothly between Light & Soft Dark Mode) */}
         <rect
           x="20"
           y="16"
           width="560"
           height="648"
           rx="42"
-          fill={isDarkMode ? 'url(#stageBgGradDark)' : 'url(#stageBgGrad)'}
+          fill="url(#stageBgGrad)"
         />
-        <circle cx="300" cy="285" r="215" fill="#ffffff" opacity={isDarkMode ? 0.04 : 0.65} />
+        <rect
+          x="20"
+          y="16"
+          width="560"
+          height="648"
+          rx="42"
+          fill="url(#stageBgGradDark)"
+          style={{
+            opacity: isDarkMode ? 1 : 0,
+            transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        />
+        <circle
+          cx="300"
+          cy="285"
+          r="215"
+          fill="#ffffff"
+          style={{
+            opacity: isDarkMode ? 0.05 : 0.65,
+            transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        />
         <circle
           cx="300"
           cy="285"
           r="215"
           fill="none"
-          stroke={isDarkMode ? '#292524' : '#E8DDD3'}
+          stroke={isDarkMode ? '#4E423E' : '#E8DDD3'}
           strokeWidth="1.5"
           strokeDasharray="6 6"
+          style={{ transition: 'stroke 520ms cubic-bezier(0.22, 1, 0.36, 1)' }}
         />
 
         {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable to edit wrapper color, not moveable) */}
@@ -2252,18 +2348,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 11: GLASS CLOCHE (Back glass bell dome & inner shadow behind flowers) */}
+            {/* STYLE 11: GLASS CLOCHE (Back glass bell dome, crystal finial & moss bed behind flowers) */}
             {wrapStyle === 'cloche' && (
               <g>
-                <circle cx="300" cy="112" r="18" fill="#E2E8F0" fillOpacity="0.65" stroke="#94A3B8" strokeWidth="2" />
+                {/* Sculpted Crystal Finial Knob */}
+                <ellipse cx="300" cy="108" rx="22" ry="7" fill="#CBD5E1" fillOpacity="0.7" />
+                <circle cx="300" cy="90" r="18" fill="#E2E8F0" fillOpacity="0.72" stroke="#94A3B8" strokeWidth="2" />
+                <circle cx="294" cy="84" r="5" fill="#FFFFFF" fillOpacity="0.8" />
+                {/* Spacious Bell Jar Glass Dome Back Wall */}
                 <path
-                  d="M148,568 L148,295 C148,118 452,118 452,295 L452,568 Z"
+                  d="M130,564 L130,276 C130,100 470,100 470,276 L470,564 Z"
                   fill="#E0F2FE"
                   fillOpacity="0.22"
                   stroke="#94A3B8"
-                  strokeWidth="2.2"
+                  strokeWidth="2.4"
                 />
-                <ellipse cx="300" cy="568" rx="162" ry="24" fill="#5C3A1E" />
+                {/* Inner Walnut Pedestal Rim & Preserved Botanical Moss Cushion */}
+                <ellipse cx="300" cy="564" rx="172" ry="22" fill="#5C3A1E" />
+                <ellipse cx="300" cy="558" rx="132" ry="14" fill="#3F624D" opacity="0.82" />
+                <ellipse cx="300" cy="556" rx="104" ry="10" fill="#527961" opacity="0.75" />
               </g>
             )}
 
@@ -2288,28 +2391,51 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           </g>
         )}
 
-        {/* Gather Stems at the Bouquet Tie Point (Only shown for hand-tied or open-bottom sleeves) */}
-        {wrapStyle !== 'basket' && wrapStyle !== 'vase' && wrapStyle !== 'hatbox' && (
-          <g opacity="0.85" clipPath="url(#bouquetWrapperBoundsClip)">
-            <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
-            <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
-            <path d="M304,490 L315,616" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
-            <path d="M312,490 L336,612" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
-            <path d="M300,490 L300,618" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
+        {/* Gather Stems at the Bouquet Tie Point (Custom curved gathered stems for Glass Cloche; lower bundle for open sleeves) */}
+        {wrapStyle === 'cloche' ? (
+          <g clipPath="url(#bouquetWrapperBoundsClip)" opacity="0.9">
+            {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+              if (item.hidden) return null;
+              const disp = getStageItemDisplayTransform(item, wrapStyle);
+              const bottomSpreadX = Math.round(300 + (disp.x - 300) * 0.22);
+              return (
+                <path
+                  key={`cloche-stem-${item.id}`}
+                  d={`M${disp.x},${disp.y + 8} Q${Math.round((disp.x + 300) / 2)},${Math.round((disp.y + 484) / 2 + 12)} 300,484 L${bottomSpreadX},552`}
+                  stroke="#15803d"
+                  strokeWidth="5.2"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+              );
+            })}
           </g>
+        ) : (
+          wrapStyle !== 'basket' &&
+          wrapStyle !== 'vase' &&
+          wrapStyle !== 'hatbox' && (
+            <g opacity="0.85" clipPath="url(#bouquetWrapperBoundsClip)">
+              <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
+              <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
+              <path d="M304,490 L315,616" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
+              <path d="M312,490 L336,612" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
+              <path d="M300,490 L300,618" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
+            </g>
+          )
         )}
 
-        {/* 3. BOUQUET FLOWERS & FOLIAGE LAYER (Clipped to wrapper bounds & per-stem adjustable stemLength) */}
+        {/* 3. BOUQUET FLOWERS & FOLIAGE LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
         <g clipPath="url(#bouquetWrapperBoundsClip)">
           {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
             if (item.hidden) return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
+            const disp = getStageItemDisplayTransform(item, wrapStyle);
             return (
               <g
                 key={item.id}
-                transform={`translate(${item.x}, ${item.y}) rotate(${item.rotation}) scale(${
-                  item.flipX ? -item.scale : item.scale
-                }, ${item.scale})`}
+                transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
+                  item.flipX ? -disp.scale : disp.scale
+                }, ${disp.scale})`}
                 onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
                 className={
                   isPreviewMode
@@ -2701,60 +2827,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 11 FRONT: GLASS CLOCHE (Specular glass highlights & sculpted walnut pedestal base) */}
-            {wrapStyle === 'cloche' && (
-              <g>
-                {/* Glass Bell Dome Specular Highlights Over Flowers */}
-                <path
-                  d="M168,548 L168,300 C168,175 235,142 275,136"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  opacity="0.55"
-                />
-                <path
-                  d="M432,548 L432,310 C432,210 390,165 348,148"
-                  fill="none"
-                  stroke="#E0F2FE"
-                  strokeWidth="3.5"
-                  strokeLinecap="round"
-                  opacity="0.45"
-                />
-                {/* Sculpted Walnut Pedestal Base */}
-                <ellipse
-                  cx="300"
-                  cy="568"
-                  rx="168"
-                  ry="22"
-                  fill={wrapColor}
-                  stroke={shadeWrapHex(wrapColor, -45)}
-                  strokeWidth="2.2"
-                />
-                <path
-                  d="M132,568 L468,568 L454,606 Q300,628 146,606 Z"
-                  fill={shadeWrapHex(wrapColor, -28)}
-                  stroke={shadeWrapHex(wrapColor, -55)}
-                  strokeWidth="2"
-                />
-                <rect
-                  x="252"
-                  y="580"
-                  width="96"
-                  height="20"
-                  rx="4"
-                  fill="#FEF3C7"
-                  stroke="#D97706"
-                  strokeWidth="1.2"
-                />
-              </g>
-            )}
-
-            {/* STYLE 12 FRONT: KOREAN MESH (Architectural pleated frosted tulle wrap) */}
+            {/* STYLE 12 FRONT: KOREAN MESH (Architectural pleated frosted tulle wrap with cinched waist) */}
             {wrapStyle === 'koreanmesh' && (
               <g>
                 <path
-                  d="M135,345 L286,478 L236,618 L178,495 Z"
+                  d="M135,345 L286,478 L238,618 L206,488 Z"
                   fill={shadeWrapHex(wrapColor, -10)}
                   fillOpacity="0.82"
                   stroke="#FFFFFF"
@@ -2762,7 +2839,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   strokeDasharray="4 2"
                 />
                 <path
-                  d="M465,345 L314,478 L364,618 L422,495 Z"
+                  d="M465,345 L314,478 L362,618 L394,488 Z"
                   fill={shadeWrapHex(wrapColor, -10)}
                   fillOpacity="0.82"
                   stroke="#FFFFFF"
@@ -2770,7 +2847,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   strokeDasharray="4 2"
                 />
                 <path
-                  d="M196,422 Q300,458 404,422 L358,620 Q300,632 242,620 Z"
+                  d="M196,422 Q300,458 404,422 L394,488 L358,620 Q300,632 242,620 L206,488 Z"
                   fill={wrapColor}
                   fillOpacity="0.9"
                   stroke="#FFFFFF"
@@ -2786,7 +2863,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             )}
           </g>
 
-          {/* UNIVERSAL RIBBON / LACE DESIGN (Fits every wrapper — Clickable, not moveable!) */}
+          {/* UNIVERSAL RIBBON / LACE DESIGN (Fits every wrapper — rendered inside the glass dome for cloche!) */}
           <BouquetRibbonSVG
             ribbonStyle={ribbonStyle || 'satin'}
             ribbonColor={ribbonColor}
@@ -2794,6 +2871,95 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             isPreviewMode={isPreviewMode}
             onRibbonClick={onRibbonClick}
           />
+
+          {/* STYLE 11 FRONT: GLASS CLOCHE (Front glass dome glaze, specular reflections & sculpted walnut pedestal over stems & ribbon) */}
+          {wrapStyle === 'cloche' && (
+            <g
+              role={isPreviewMode ? undefined : 'button'}
+              aria-label={isPreviewMode ? undefined : 'Select glass cloche base to edit color'}
+              onPointerDown={
+                isPreviewMode
+                  ? undefined
+                  : (e) => {
+                      e.stopPropagation();
+                      selectItem(null);
+                      setActiveSpecialObject(null);
+                    }
+              }
+              onClick={
+                isPreviewMode
+                  ? undefined
+                  : (e) => {
+                      e.stopPropagation();
+                      onWrapperClick?.();
+                    }
+              }
+              className={isPreviewMode ? 'pointer-events-none' : 'cursor-pointer'}
+            >
+              {/* Translucent Front Glass Bell Glaze Over Flowers & Ribbon */}
+              <path
+                d="M130,564 L130,276 C130,100 470,100 470,276 L470,564 Z"
+                fill="url(#clocheFrontGlassGrad)"
+                stroke="#CBD5E1"
+                strokeWidth="1.8"
+                strokeOpacity="0.65"
+                className="pointer-events-none"
+              />
+              {/* Left & Right Curved Specular Glass Highlights */}
+              <path
+                d="M150,544 L150,285 C150,152 224,124 272,118"
+                fill="none"
+                stroke="#FFFFFF"
+                strokeWidth="5.5"
+                strokeLinecap="round"
+                opacity="0.62"
+                className="pointer-events-none"
+              />
+              <path
+                d="M450,544 L450,295 C450,192 402,148 354,132"
+                fill="none"
+                stroke="#E0F2FE"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                opacity="0.48"
+                className="pointer-events-none"
+              />
+              {/* Foreground Moss Tuft Rim Inside Glass Base */}
+              <path
+                d="M168,560 Q230,546 300,554 Q370,546 432,560 Z"
+                fill="#4D7C5D"
+                opacity="0.7"
+                className="pointer-events-none"
+              />
+              {/* Sculpted Walnut Pedestal Base */}
+              <ellipse
+                cx="300"
+                cy="566"
+                rx="178"
+                ry="20"
+                fill={wrapColor}
+                stroke={shadeWrapHex(wrapColor, -45)}
+                strokeWidth="2.2"
+              />
+              <path
+                d="M122,566 L478,566 L462,606 Q300,626 138,606 Z"
+                fill={shadeWrapHex(wrapColor, -28)}
+                stroke={shadeWrapHex(wrapColor, -55)}
+                strokeWidth="2"
+              />
+              <rect
+                x="252"
+                y="579"
+                width="96"
+                height="20"
+                rx="4"
+                fill="#FEF3C7"
+                stroke="#D97706"
+                strokeWidth="1.2"
+              />
+              <line x1="268" y1="589" x2="332" y2="589" stroke="#B45309" strokeWidth="1.2" strokeLinecap="round" />
+            </g>
+          )}
         </g>
 
         {/* 5. DRAGGABLE, ROTATABLE & RESIZABLE GREETING CARD ON BOUQUET */}
@@ -3382,16 +3548,16 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           })()}
 
         {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE */}
-        {!isPreviewMode && selectedItem && !selectedItem.hidden && (
+        {!isPreviewMode && selectedItem && selectedDisplay && !selectedItem.hidden && (
           <g
             data-export-ignore="true"
-            transform={`translate(${selectedItem.x}, ${selectedItem.y})`}
+            transform={`translate(${selectedDisplay.x}, ${selectedDisplay.y})`}
           >
             {/* Outer Selection Ring */}
             <circle
               cx="0"
               cy="0"
-              r={58 * selectedItem.scale}
+              r={58 * selectedDisplay.scale}
               fill="none"
               stroke={selectedItem.locked ? '#d97706' : '#B4846C'}
               strokeWidth="1.75"
@@ -3402,7 +3568,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             {selectedItem.locked ? (
               /* Locked Indicator Pill on Ring Top — Tap to Unlock */
               <g
-                transform={`translate(0, ${-58 * selectedItem.scale - 14})`}
+                transform={`translate(0, ${-58 * selectedDisplay.scale - 14})`}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   toggleItemLock(selectedItem.id);
@@ -3437,8 +3603,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               <>
                 {/* TOP-LEFT HANDLE (-135°): Quick Flip Button */}
                 <g
-                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * 58 * selectedItem.scale}, ${
-                    Math.sin((-3 * Math.PI) / 4) * 58 * selectedItem.scale
+                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * 58 * selectedDisplay.scale}, ${
+                    Math.sin((-3 * Math.PI) / 4) * 58 * selectedDisplay.scale
                   })`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -3463,8 +3629,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
                 {/* TOP-RIGHT HANDLE (-45°): Working Delete (X) Button */}
                 <g
-                  transform={`translate(${Math.cos(-Math.PI / 4) * 58 * selectedItem.scale}, ${
-                    Math.sin(-Math.PI / 4) * 58 * selectedItem.scale
+                  transform={`translate(${Math.cos(-Math.PI / 4) * 58 * selectedDisplay.scale}, ${
+                    Math.sin(-Math.PI / 4) * 58 * selectedDisplay.scale
                   })`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -3487,8 +3653,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
                 {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate */}
                 <g
-                  transform={`translate(${Math.cos(Math.PI / 4) * 58 * selectedItem.scale}, ${
-                    Math.sin(Math.PI / 4) * 58 * selectedItem.scale
+                  transform={`translate(${Math.cos(Math.PI / 4) * 58 * selectedDisplay.scale}, ${
+                    Math.sin(Math.PI / 4) * 58 * selectedDisplay.scale
                   })`}
                   onPointerDown={(e) => handleGizmoPointerDown(e, selectedItem)}
                   className="cursor-nwse-resize"
