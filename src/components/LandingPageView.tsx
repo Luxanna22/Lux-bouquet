@@ -3,12 +3,13 @@ import Lenis from 'lenis';
 import {
   ChevronDown,
   Heart,
-  Flower2,
   Sun,
   Moon,
+  X,
 } from 'lucide-react';
 import { fetchStudioGlobalStats, StudioGlobalStats } from '../lib/firebase';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
+import { BrandLogoMark } from './BrandLogoMark';
 import {
   MiniWrapConeSVG,
   MiniRibbonBowSVG,
@@ -215,8 +216,8 @@ function applyShowcasePresetToStudio(preset: ShowcasePreset) {
   });
 }
 
-/** Full-Proportioned Architectural Bouquet Illustration for the Hero Vitrine (Uses CSS drop-shadow so SVG never blanks out on theme toggle) */
-const HeroBouquetIllustrationSVG: React.FC<{ preset: ShowcasePreset }> = ({ preset }) => {
+/** Full-Proportioned Architectural Bouquet Illustration for the Hero Vitrine (Memoized for instant theme switches) */
+const HeroBouquetIllustrationSVG: React.FC<{ preset: ShowcasePreset }> = React.memo(({ preset }) => {
   const { wrapStyle, wrapColor, wrapShadow, ribbonColor, stems } = preset;
   const headClipId = `hero-bloom-head-${preset.id}`;
   const domeClipId = `hero-cloche-dome-${preset.id}`;
@@ -492,10 +493,10 @@ const HeroBouquetIllustrationSVG: React.FC<{ preset: ShowcasePreset }> = ({ pres
       </g>
     </svg>
   );
-};
+});
 
 /** Cohesive Scene Illustration for Step 01: Pick & Wrap */
-const StepOneSceneSVG: React.FC = () => (
+const StepOneSceneSVG: React.FC = React.memo(() => (
   <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none drop-shadow-[0_5px_10px_rgba(122,75,58,0.1)]">
     <circle cx="120" cy="76" r="54" fill="#FDE8EF" opacity="0.55" />
     <circle cx="120" cy="76" r="40" fill="#FFFDF9" opacity="0.7" />
@@ -563,10 +564,10 @@ const StepOneSceneSVG: React.FC = () => (
       <circle cx="17" cy="17" r="2" fill="#B4846C" />
     </g>
   </svg>
-);
+));
 
 /** Cohesive Scene Illustration for Step 02: Voice & Note */
-const StepTwoSceneSVG: React.FC = () => (
+const StepTwoSceneSVG: React.FC = React.memo(() => (
   <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none drop-shadow-[0_5px_10px_rgba(122,75,58,0.1)]">
     <circle cx="120" cy="74" r="54" fill="#F5E9DE" opacity="0.65" />
 
@@ -620,10 +621,10 @@ const StepTwoSceneSVG: React.FC = () => (
       </g>
     </g>
   </svg>
-);
+));
 
 /** Cohesive Scene Illustration for Step 03: Send or Time-Lock */
-const StepThreeSceneSVG: React.FC = () => (
+const StepThreeSceneSVG: React.FC = React.memo(() => (
   <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none drop-shadow-[0_5px_10px_rgba(122,75,58,0.1)]">
     <circle cx="120" cy="76" r="54" fill="#F6EADF" opacity="0.65" />
 
@@ -666,10 +667,10 @@ const StepThreeSceneSVG: React.FC = () => (
       </g>
     </g>
   </svg>
-);
+));
 
 /** Delicate Thin Rope Lace & Scallop Bow Divider Illustration */
-const ThinRopeLaceDivider: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) => {
+const ThinRopeLaceDivider: React.FC<{ isDarkMode: boolean }> = React.memo(({ isDarkMode }) => {
   const stroke = isDarkMode ? '#65554E' : '#D5C2B4';
   const accent = isDarkMode ? '#D8A88E' : '#B0826C';
   return (
@@ -728,7 +729,7 @@ const ThinRopeLaceDivider: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
       </svg>
     </div>
   );
-};
+});
 
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onStartCrafting,
@@ -747,9 +748,26 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [openFaqIdx, setOpenFaqIdx] = useState<number | null>(0);
   const [activePresetIdx, setActivePresetIdx] = useState<number>(0);
 
+  // Minimal Contact & Legal modal state
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [isContactSent, setIsContactSent] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [legalModal, setLegalModal] = useState<'terms' | 'privacy' | null>(null);
+
   const scrollWrapperRef = useRef<HTMLDivElement | null>(null);
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
   const lenisRef = useRef<Lenis | null>(null);
+  const isDarkModeRef = useRef<boolean>(isDarkMode);
+  isDarkModeRef.current = isDarkMode;
+
+  // Direct DOM refs for 120fps Scroll-Linked Blooming Watercolor & Colored Lineart Flower behind Title
+  const bloomRootRef = useRef<HTMLDivElement | null>(null);
+  const bloomOuterRingRef = useRef<SVGGElement | null>(null);
+  const bloomMidRingRef = useRef<SVGGElement | null>(null);
+  const bloomInnerCorollaRef = useRef<SVGGElement | null>(null);
+  const bloomBotanicalLeavesRef = useRef<SVGGElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -763,22 +781,106 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     };
   }, []);
 
+  // Pure GPU-driven scroll bloom updater (0 React re-renders during scroll)
+  const applyHeroBloomProgress = (scrollTop: number) => {
+    const rootEl = bloomRootRef.current;
+    if (!rootEl) return;
+
+    // Blooms from scrollTop 0 -> 300px, and completely vanishes as scroll reaches "Couture Wraps & Keepsakes" (~290px)
+    const maxScroll = 295;
+    const rawP = Math.min(1, Math.max(0, scrollTop / maxScroll));
+    // Smooth cubic ease-out for organic petal unfurling
+    const bloomEase = 1 - Math.pow(1 - rawP, 2.2);
+
+    const baseOpacity = isDarkModeRef.current ? 0.68 : 0.92;
+    // Holds gentle presence behind the title from 0..22% scroll, then dissolves to 0 by 100% ("Couture Wraps & Keepsakes")
+    const fadeFactor =
+      rawP <= 0.22
+        ? 1
+        : Math.max(0, Math.pow(1 - (rawP - 0.22) / 0.78, 1.55));
+    const finalOpacity = baseOpacity * fadeFactor;
+
+    if (finalOpacity <= 0.008) {
+      rootEl.style.opacity = '0';
+      rootEl.style.visibility = 'hidden';
+      return;
+    }
+
+    rootEl.style.visibility = 'visible';
+    rootEl.style.opacity = finalOpacity.toFixed(3);
+
+    // Overall flower expands from a soft morning blossom (0.76) to full wide bloom (1.46) while drifting slightly down
+    const rootScale = 0.76 + bloomEase * 0.7;
+    const driftY = rawP * 36;
+    rootEl.style.transform = `translate3d(-50%, ${driftY.toFixed(1)}px, 0) scale(${rootScale.toFixed(3)})`;
+
+    if (bloomOuterRingRef.current) {
+      const outerScale = 0.8 + bloomEase * 0.38;
+      const outerRot = bloomEase * 24;
+      bloomOuterRingRef.current.setAttribute(
+        'transform',
+        `translate(260, 170) rotate(${outerRot.toFixed(2)}) scale(${outerScale.toFixed(3)})`
+      );
+    }
+    if (bloomMidRingRef.current) {
+      const midScale = 0.72 + bloomEase * 0.44;
+      const midRot = -bloomEase * 18;
+      bloomMidRingRef.current.setAttribute(
+        'transform',
+        `translate(260, 170) rotate(${midRot.toFixed(2)}) scale(${midScale.toFixed(3)})`
+      );
+    }
+    if (bloomInnerCorollaRef.current) {
+      const innerScale = 0.68 + bloomEase * 0.48;
+      const innerRot = bloomEase * 32;
+      bloomInnerCorollaRef.current.setAttribute(
+        'transform',
+        `translate(260, 170) rotate(${innerRot.toFixed(2)}) scale(${innerScale.toFixed(3)})`
+      );
+    }
+    if (bloomBotanicalLeavesRef.current) {
+      const spreadX = 0.84 + bloomEase * 0.42;
+      const spreadY = 0.88 + bloomEase * 0.25;
+      bloomBotanicalLeavesRef.current.setAttribute(
+        'transform',
+        `translate(260, 170) scale(${spreadX.toFixed(3)}, ${spreadY.toFixed(3)})`
+      );
+    }
+  };
+
+  // Re-sync bloom opacity when theme switches
+  useEffect(() => {
+    const wrapper = scrollWrapperRef.current;
+    applyHeroBloomProgress(wrapper ? wrapper.scrollTop : 0);
+  }, [isDarkMode]);
+
   // Initialize Lenis smooth water-like scrolling on the LandingPageView scroll container
   useEffect(() => {
     const wrapper = scrollWrapperRef.current;
     const content = scrollContentRef.current;
     if (!wrapper || !content) return;
 
+    applyHeroBloomProgress(wrapper.scrollTop);
+
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.075,
-      duration: 1.35,
+      lerp: 0.085,
+      duration: 1.25,
       smoothWheel: true,
       wheelMultiplier: 0.95,
       touchMultiplier: 1.5,
     });
     lenisRef.current = lenis;
+
+    lenis.on('scroll', (e: { scroll: number }) => {
+      applyHeroBloomProgress(e.scroll);
+    });
+
+    const handleNativeScroll = () => {
+      applyHeroBloomProgress(wrapper.scrollTop);
+    };
+    wrapper.addEventListener('scroll', handleNativeScroll, { passive: true });
 
     let rafId = 0;
     const raf = (time: number) => {
@@ -788,6 +890,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     rafId = requestAnimationFrame(raf);
 
     return () => {
+      wrapper.removeEventListener('scroll', handleNativeScroll);
       cancelAnimationFrame(rafId);
       lenis.destroy();
       lenisRef.current = null;
@@ -850,10 +953,35 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     onStartCrafting();
   };
 
+  const handleCopyStudioEmail = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText('hello@sendaboquet.com').catch(() => {});
+    }
+    setCopiedEmail(true);
+    setTimeout(() => setCopiedEmail(false), 2200);
+  };
+
+  const handleContactSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contactMessage.trim()) return;
+    setIsContactSent(true);
+  };
+
+  const scrollToTop = () => {
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(0, {
+        duration: 1.3,
+        easing: (t: number) => 1 - Math.pow(1 - t, 4),
+      });
+    } else if (scrollWrapperRef.current) {
+      scrollWrapperRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   return (
     <div
       ref={scrollWrapperRef}
-      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-hidden transition-[background-color,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] selection:bg-[#7A4B3A]/15 ${
+      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-hidden transition-[background-color,color] duration-300 ease-out selection:bg-[#7A4B3A]/15 ${
         isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'
       }`}
       style={{
@@ -937,26 +1065,21 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               : 'bg-white/92 border-[#EFE6DD] text-[#231C18]'
           }`}
         >
-          {/* Brand Wordmark */}
+          {/* Brand Wordmark & Official Logo */}
           <button
             type="button"
             onClick={onStartCrafting}
             className="flex items-center gap-2 sm:gap-2.5 text-left cursor-pointer group min-w-0"
           >
-            <span
-              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center group-hover:scale-105 transition-all duration-500 shrink-0 ${
-                isDarkMode
-                  ? 'bg-[#483C38] text-[#E6B89C]'
-                  : 'bg-[#F5EBE4] text-[#7A4B3A]'
-              }`}
-            >
-              <Flower2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </span>
+            <BrandLogoMark
+              className="w-7 h-7 sm:w-8 sm:h-8 group-hover:scale-105 transition-transform duration-300"
+              isDarkMode={isDarkMode}
+            />
             <span
               className="text-lg sm:text-2xl font-semibold tracking-tight truncate"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              Flowers For You
+              Send A Boquet
             </span>
           </button>
 
@@ -976,7 +1099,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('faq')}
-              className={`hidden md:inline text-xs font-medium transition-colors duration-300 cursor-pointer ${
+              className={`hidden md:inline text-xs font-medium transition-colors duration-200 cursor-pointer ${
                 isDarkMode
                   ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
                   : 'text-stone-600 hover:text-[#7A4B3A]'
@@ -986,8 +1109,19 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => scrollToSection('contact')}
+              className={`hidden md:inline text-xs font-medium transition-colors duration-200 cursor-pointer ${
+                isDarkMode
+                  ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
+                  : 'text-stone-600 hover:text-[#7A4B3A]'
+              }`}
+            >
+              Contact
+            </button>
+            <button
+              type="button"
               onClick={onOpenVault}
-              className={`px-2 sm:px-0 py-1 text-xs font-medium transition-colors duration-300 inline-flex items-center gap-1 cursor-pointer ${
+              className={`px-2 sm:px-0 py-1 text-xs font-medium transition-colors duration-200 inline-flex items-center gap-1 cursor-pointer ${
                 isDarkMode
                   ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
                   : 'text-stone-600 hover:text-[#7A4B3A]'
@@ -1038,29 +1172,225 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
       <div ref={scrollContentRef} className="w-full">
-        {/* 2. CENTERED HERO (GENEROUS TOP SPACING ABOVE TITLE + UPSIZED HEADLINE) */}
+        {/* 2. CENTERED HERO (GENEROUS TOP SPACING ABOVE TITLE + UPSIZED HEADLINE + SCROLL-BLOOMING WATERCOLOR FLOWER) */}
         <section className="relative overflow-hidden pt-16 sm:pt-24 md:pt-28 pb-9 sm:pb-11 px-4 sm:px-8">
-          {/* Soft Pastel / Warm Rose Aura Behind Headline (Cross-fades smoothly between Light & Soft Dark Mode) */}
+          {/* Zero-Blur GPU Radial Aura Behind Headline (No CSS blur-3xl filter so theme toggles & scrolling run at 120fps on any PC) */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-8 sm:top-12 -translate-x-1/2 w-[340px] sm:w-[760px] h-[280px] sm:h-[360px] rounded-full blur-3xl transition-opacity duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className="pointer-events-none absolute left-1/2 top-2 sm:top-6 -translate-x-1/2 w-[360px] sm:w-[820px] h-[300px] sm:h-[400px] rounded-full"
             style={{
-              opacity: isDarkMode ? 0 : 0.55,
-              background:
-                'radial-gradient(circle at 50% 45%, #F9D8E4 0%, #E8DCF8 42%, rgba(253, 249, 245, 0) 75%)',
-            }}
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-8 sm:top-12 -translate-x-1/2 w-[340px] sm:w-[760px] h-[280px] sm:h-[360px] rounded-full blur-3xl transition-opacity duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
-            style={{
-              opacity: isDarkMode ? 0.38 : 0,
-              background:
-                'radial-gradient(circle at 50% 45%, #8A5264 0%, #5E496E 45%, rgba(43, 35, 33, 0) 75%)',
+              background: isDarkMode
+                ? 'radial-gradient(circle at 50% 44%, rgba(154, 92, 110, 0.28) 0%, rgba(104, 78, 118, 0.16) 38%, rgba(43, 35, 33, 0) 72%)'
+                : 'radial-gradient(circle at 50% 44%, rgba(249, 216, 228, 0.62) 0%, rgba(232, 220, 248, 0.38) 42%, rgba(253, 249, 245, 0) 72%)',
             }}
           />
 
-          <div className="relative max-w-5xl mx-auto text-center">
+          {/* SCROLL-LINKED WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING FLOWER BEHIND TITLE
+              Unfurls its petals as you scroll down and vanishes completely as scroll reaches "Couture Wraps & Keepsakes" */}
+          <div
+            ref={bloomRootRef}
+            aria-hidden="true"
+            className="pointer-events-none select-none absolute left-1/2 top-5 sm:top-8 z-0 w-[330px] sm:w-[520px] h-[230px] sm:h-[340px]"
+            style={{
+              opacity: isDarkMode ? 0.68 : 0.92,
+              transform: 'translate3d(-50%, 0px, 0) scale(0.76)',
+              willChange: 'transform, opacity',
+            }}
+          >
+            <svg
+              viewBox="0 0 520 340"
+              className="w-full h-full overflow-visible"
+            >
+              <defs>
+                {/* Soft Watercolor Wash Gradients */}
+                <radialGradient id="wc-petal-blush" cx="50%" cy="35%" r="65%">
+                  <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.68'} />
+                  <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.22' : '0.42'} />
+                  <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
+                </radialGradient>
+                <radialGradient id="wc-petal-peach" cx="50%" cy="30%" r="65%">
+                  <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.34' : '0.72'} />
+                  <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.20' : '0.44'} />
+                  <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
+                </radialGradient>
+                <radialGradient id="wc-leaf-sage" cx="50%" cy="50%" r="60%">
+                  <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.62'} />
+                  <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.32'} />
+                  <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
+                </radialGradient>
+                <radialGradient id="wc-center-gold" cx="50%" cy="50%" r="55%">
+                  <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.45' : '0.75'} />
+                  <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.18' : '0.28'} />
+                  <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+
+              {/* 1. Botanical Leaf Sprigs & Delicate Colored Lineart Tendrils (Spreads outward on scroll) */}
+              <g ref={bloomBotanicalLeavesRef} transform="translate(260, 170) scale(0.84, 0.88)">
+                {/* Left Watercolor Leaf & Lineart Veins */}
+                <path
+                  d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
+                  fill="url(#wc-leaf-sage)"
+                  stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
+                  strokeWidth="1.25"
+                  strokeOpacity={isDarkMode ? '0.55' : '0.65'}
+                />
+                <path
+                  d="M -60,10 Q -135,4 -198,17 M -115,7 L -138,-6 M -145,10 L -168,0 M -125,11 L -148,24"
+                  fill="none"
+                  stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                  strokeWidth="0.95"
+                  strokeLinecap="round"
+                  strokeOpacity={isDarkMode ? '0.5' : '0.58'}
+                />
+                {/* Left Upper Bud & Thin Rope Tendril */}
+                <path
+                  d="M -75,-18 C -128,-58 -168,-54 -194,-32"
+                  fill="none"
+                  stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
+                  strokeWidth="1.1"
+                  strokeDasharray="3 3"
+                  strokeLinecap="round"
+                  strokeOpacity="0.6"
+                />
+                <path
+                  d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
+                  fill="url(#wc-petal-blush)"
+                  stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
+                  strokeWidth="1.15"
+                />
+
+                {/* Right Watercolor Leaf & Lineart Veins */}
+                <path
+                  d="M 55,10 C 115,-28 175,-18 212,18 C 170,48 110,44 55,10 Z"
+                  fill="url(#wc-leaf-sage)"
+                  stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
+                  strokeWidth="1.25"
+                  strokeOpacity={isDarkMode ? '0.55' : '0.65'}
+                />
+                <path
+                  d="M 60,10 Q 135,4 198,17 M 115,7 L 138,-6 M 145,10 L 168,0 M 125,11 L 148,24"
+                  fill="none"
+                  stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                  strokeWidth="0.95"
+                  strokeLinecap="round"
+                  strokeOpacity={isDarkMode ? '0.5' : '0.58'}
+                />
+                {/* Right Upper Bud & Thin Rope Tendril */}
+                <path
+                  d="M 75,-18 C 128,-58 168,-54 194,-32"
+                  fill="none"
+                  stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
+                  strokeWidth="1.1"
+                  strokeDasharray="3 3"
+                  strokeLinecap="round"
+                  strokeOpacity="0.6"
+                />
+                <path
+                  d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
+                  fill="url(#wc-petal-blush)"
+                  stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
+                  strokeWidth="1.15"
+                />
+              </g>
+
+              {/* 2. Outer Ring of 8 Watercolor + Colored Lineart Peony Petals */}
+              <g ref={bloomOuterRingRef} transform="translate(260, 170) rotate(0) scale(0.8)">
+                {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                  <g key={`outer-petal-${angle}`} transform={`rotate(${angle})`}>
+                    {/* Soft Watercolor Wash Petal */}
+                    <path
+                      d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
+                      fill="url(#wc-petal-blush)"
+                      stroke={isDarkMode ? '#E5A3B7' : '#CD7E95'}
+                      strokeWidth="1.3"
+                      strokeOpacity={isDarkMode ? '0.58' : '0.68'}
+                    />
+                    {/* Delicate Botanical Lineart Vein Curves Inside Each Petal */}
+                    <path
+                      d="M 0,-14 Q -12,-62 -6,-106 M 0,-18 Q 12,-62 6,-106 M 0,-10 L 0,-114"
+                      fill="none"
+                      stroke={isDarkMode ? '#DF9BB0' : '#C67B91'}
+                      strokeWidth="0.75"
+                      strokeLinecap="round"
+                      strokeOpacity={isDarkMode ? '0.4' : '0.45'}
+                    />
+                  </g>
+                ))}
+              </g>
+
+              {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals (Counter-rotates & unfolds on scroll) */}
+              <g ref={bloomMidRingRef} transform="translate(260, 170) rotate(0) scale(0.72)">
+                {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
+                  <g key={`mid-petal-${angle}`} transform={`rotate(${angle})`}>
+                    <path
+                      d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
+                      fill="url(#wc-petal-peach)"
+                      stroke={isDarkMode ? '#E8B298' : '#C88A74'}
+                      strokeWidth="1.2"
+                      strokeOpacity={isDarkMode ? '0.62' : '0.72'}
+                    />
+                    <path
+                      d="M 0,-12 Q -8,-48 -3,-78 M 0,-12 Q 8,-48 3,-78"
+                      fill="none"
+                      stroke={isDarkMode ? '#E2A88B' : '#B87B65'}
+                      strokeWidth="0.7"
+                      strokeLinecap="round"
+                      strokeOpacity="0.45"
+                    />
+                  </g>
+                ))}
+              </g>
+
+              {/* 4. Inner Corolla & Golden Botanical Stamens */}
+              <g ref={bloomInnerCorollaRef} transform="translate(260, 170) rotate(0) scale(0.68)">
+                {[0, 60, 120, 180, 240, 300].map((angle) => (
+                  <path
+                    key={`inner-petal-${angle}`}
+                    transform={`rotate(${angle})`}
+                    d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
+                    fill="url(#wc-petal-blush)"
+                    stroke={isDarkMode ? '#F0B6C8' : '#C4748B'}
+                    strokeWidth="1.15"
+                    strokeOpacity="0.7"
+                  />
+                ))}
+                <circle cx="0" cy="0" r="24" fill="url(#wc-center-gold)" />
+                {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
+                  <g key={`stamen-${deg}`} transform={`rotate(${deg})`}>
+                    <line
+                      x1="0"
+                      y1="-4"
+                      x2="0"
+                      y2="-20"
+                      stroke={isDarkMode ? '#FCD34D' : '#D97706'}
+                      strokeWidth="1"
+                      strokeOpacity="0.65"
+                      strokeLinecap="round"
+                    />
+                    <circle
+                      cx="0"
+                      cy="-21.5"
+                      r="2"
+                      fill={isDarkMode ? '#FDE68A' : '#F59E0B'}
+                      fillOpacity="0.8"
+                    />
+                  </g>
+                ))}
+                <circle
+                  cx="0"
+                  cy="0"
+                  r="6.5"
+                  fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
+                  stroke={isDarkMode ? '#F59E0B' : '#D97706'}
+                  strokeWidth="1.1"
+                  strokeOpacity="0.75"
+                />
+              </g>
+            </svg>
+          </div>
+
+          <div className="relative z-10 max-w-5xl mx-auto text-center">
             {/* Desktop Floating Notification Card — Reverted Top-Right Position, Clear of Upsized Title */}
             <div
               className={`hidden lg:flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-[0_8px_28px_rgba(122,75,58,0.08)] absolute -top-11 -right-4 xl:-right-16 text-left select-none z-10 animate-fluid-badge-right transition-colors ${
@@ -1083,7 +1413,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <div>
                 <div className="flex items-center justify-between gap-4">
                   <span className={`text-xs font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'}`}>
-                    Flowers For You
+                    Send A Boquet
                   </span>
                   <span className={`text-[10px] ${isDarkMode ? 'text-[#B8A59C]' : 'text-stone-400'}`}>now</span>
                 </div>
@@ -1167,7 +1497,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 </button>
               </div>
 
-              {/* Mobile-Only Compact Social Proof Pill */}
+              {/* Mobile-Only Compact Social Proof Pill (No extra symbols or clutter) */}
               <div className="mt-5 flex lg:hidden items-center justify-center">
                 <div
                   className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-[11px] shadow-2xs select-none transition-colors ${
@@ -1184,10 +1514,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <Heart className="w-2.5 h-2.5 fill-current" />
                   </span>
                   <span className="font-medium tabular-nums">
-                    {stats.bouquetsCreated.toLocaleString()}+ bouquets sent
+                    Over {stats.bouquetsCreated.toLocaleString()}+ bouquets sent
                   </span>
-                  <span className={isDarkMode ? 'text-[#6E5D55]' : 'text-stone-300'}>·</span>
-                  <span className={isDarkMode ? 'text-[#C9B6AC]' : 'text-[#8C7365]'}>Free &amp; no login</span>
                 </div>
               </div>
             </div>
@@ -1274,9 +1602,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                   {/* Right: Pulled Down & Balanced with Delicate Botanical Lace Graphic Filler */}
                   <div className="md:col-span-6 flex flex-col items-center md:items-start text-center md:text-left pt-1 sm:pt-3 space-y-3 sm:space-y-4">
-                    {/* Delicate Botanical & Thin Rope Lace Graphic Header Filler */}
+                    {/* Delicate Botanical & Thin Rope Lace Graphic Header (Zero Eyebrow Text) */}
                     <div className="w-full flex flex-col items-center md:items-start">
-                      <div className="inline-flex items-center gap-2 sm:gap-2.5 mb-1.5 sm:mb-2 select-none" aria-hidden="true">
+                      <div className="inline-flex items-center gap-2 sm:gap-2.5 mb-2 select-none" aria-hidden="true">
                         <span
                           className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border flex items-center justify-center overflow-hidden shrink-0 ${
                             isDarkMode
@@ -1288,7 +1616,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                             <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" />
                           </svg>
                         </span>
-                        <svg viewBox="0 0 96 16" className="w-14 sm:w-20 h-3 sm:h-3.5 overflow-visible">
+                        <svg viewBox="0 0 96 16" className="w-16 sm:w-24 h-3 sm:h-3.5 overflow-visible">
                           <path
                             d="M 2,8 Q 24,2 48,8 T 94,8"
                             fill="none"
@@ -1299,13 +1627,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           />
                           <circle cx="48" cy="8" r="2.2" fill={isDarkMode ? '#E0B298' : '#B4846C'} />
                         </svg>
-                        <span
-                          className={`text-[9.5px] sm:text-[10px] uppercase tracking-[0.18em] sm:tracking-[0.2em] font-semibold ${
-                            isDarkMode ? 'text-[#DEB399]' : 'text-[#9A7B69]'
-                          }`}
-                        >
-                          Tap to Preview Style
-                        </span>
                       </div>
 
                       <h2
@@ -1433,7 +1754,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           isDarkMode ? 'text-[#EABCA0]' : 'text-[#7A4B3A]'
                         }`}
                       >
-                        Customize {preset.label} →
+                        Customize {preset.label}
                       </span>
                     </button>
                   </div>
@@ -1445,19 +1766,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
         <ThinRopeLaceDivider isDarkMode={isDarkMode} />
 
-        {/* 3. COHESIVE, SINGLE-SURFACE 3-STEP "HOW IT WORKS" */}
+        {/* 3. COHESIVE, SINGLE-SURFACE 3-STEP "HOW IT WORKS" (No Eyebrow) */}
         <section
           id="how-it-works"
           className="scroll-mt-24 max-w-4xl mx-auto px-4 sm:px-8 pt-8 sm:pt-10 pb-10 sm:pb-12"
         >
           <div className="fluid-scroll-item text-center mb-7 sm:mb-10">
-            <div
-              className={`text-[10.5px] sm:text-[11px] uppercase tracking-[0.22em] font-semibold mb-1 ${
-                isDarkMode ? 'text-[#DEB399]' : 'text-[#9A7B69]'
-              }`}
-            >
-              Three Little Steps
-            </div>
             <h2
               className={`text-3xl sm:text-4xl font-semibold ${
                 isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
@@ -1620,19 +1934,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
         <ThinRopeLaceDivider isDarkMode={isDarkMode} />
 
-        {/* 4. CENTERED "GENTLE ANSWERS" FAQ CARD STACK */}
+        {/* 4. CENTERED FAQ CARD STACK (No Eyebrow) */}
         <section
           id="faq"
           className="scroll-mt-24 max-w-2xl mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-10 sm:pb-12"
         >
           <div className="fluid-scroll-item text-center mb-6 sm:mb-8">
-            <div
-              className={`text-[10.5px] sm:text-[11px] uppercase tracking-[0.22em] font-semibold mb-1 ${
-                isDarkMode ? 'text-[#DEB399]' : 'text-[#9A7B69]'
-              }`}
-            >
-              Gentle Answers
-            </div>
             <h2
               className={`text-3xl sm:text-4xl font-semibold ${
                 isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
@@ -1768,6 +2075,360 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </button>
           </div>
         </section>
+
+        {/* DELICATE THIN ROPE LACE DIVIDER BEFORE CONTACT */}
+        <ThinRopeLaceDivider isDarkMode={isDarkMode} />
+
+        {/* 6. BREATHABLE, MINIMAL & CUTE CONTACT SECTION (Zero Eyebrows, Zero Clutter) */}
+        <section id="contact" className="scroll-mt-24 max-w-xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
+          <div
+            className={`fluid-scroll-item rounded-[24px] sm:rounded-[30px] border p-2.5 sm:p-4 shadow-[0_10px_32px_rgba(122,75,58,0.04)] ${
+              isDarkMode
+                ? 'bg-[#352C29] border-[#4D403C]'
+                : 'bg-white border-[#EFE6DD]'
+            }`}
+          >
+            {/* Delicate Inner Stitch Border */}
+            <div
+              className={`rounded-[18px] sm:rounded-[22px] border border-dashed px-5 py-7 sm:px-10 sm:py-9 text-center ${
+                isDarkMode ? 'border-[#574944]' : 'border-[#E6D7C9]'
+              }`}
+            >
+              {/* Single Soft Blossom Emblem */}
+              <div className="flex items-center justify-center mb-3 select-none" aria-hidden="true">
+                <div
+                  className={`w-10 h-10 rounded-full border flex items-center justify-center overflow-hidden ${
+                    isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-[#FCF8F4] border-[#EDE2D8]'
+                  }`}
+                >
+                  <svg viewBox="-58 -58 116 116" className="w-7 h-7">
+                    <FlowerRenderer type="peony" petalColor="#F472B6" centerColor="#FEF08A" />
+                  </svg>
+                </div>
+              </div>
+
+              <h2
+                className={`text-3xl sm:text-4xl font-semibold tracking-tight ${
+                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                }`}
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                Get in Touch
+              </h2>
+
+              <p
+                className={`mt-1.5 text-xs sm:text-sm max-w-xs mx-auto ${
+                  isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                }`}
+              >
+                Questions, flower wishes, or a little note.
+              </p>
+
+              {isContactSent ? (
+                <div className="mt-6 py-6 px-4 rounded-2xl border border-dashed border-[#DFCFC2]/60 dark:border-[#574944] space-y-2.5">
+                  <div
+                    className={`text-xl font-semibold ${
+                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                    }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Note Sent
+                  </div>
+                  <p
+                    className={`text-xs ${
+                      isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                    }`}
+                  >
+                    Thank you for writing to us{contactName ? `, ${contactName}` : ''}.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsContactSent(false);
+                      setContactMessage('');
+                    }}
+                    className={`mt-1 inline-block px-5 py-2 rounded-full border text-xs font-medium transition cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#423734] border-[#594A45] text-[#FBF6F1] hover:bg-[#4C403C]'
+                        : 'bg-[#FCF8F4] border-[#E5D8C9] text-[#231C18] hover:bg-[#F5ECE3]'
+                    }`}
+                  >
+                    Send another note
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleContactSubmit} className="mt-6 space-y-3 text-left">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      aria-label="Name"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      placeholder="Name"
+                      className={`w-full px-4 py-2.5 rounded-xl border text-xs focus:outline-none transition ${
+                        isDarkMode
+                          ? 'bg-[#423734] border-[#564843] text-[#FBF6F1] placeholder-[#9E8C83] focus:border-[#DEB399]'
+                          : 'bg-[#FCF8F4] border-[#EAE0D5] text-[#231C18] placeholder-[#9A897E] focus:border-[#7A4B3A]'
+                      }`}
+                    />
+                    <input
+                      type="email"
+                      aria-label="Email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      placeholder="Email"
+                      className={`w-full px-4 py-2.5 rounded-xl border text-xs focus:outline-none transition ${
+                        isDarkMode
+                          ? 'bg-[#423734] border-[#564843] text-[#FBF6F1] placeholder-[#9E8C83] focus:border-[#DEB399]'
+                          : 'bg-[#FCF8F4] border-[#EAE0D5] text-[#231C18] placeholder-[#9A897E] focus:border-[#7A4B3A]'
+                      }`}
+                    />
+                  </div>
+
+                  <textarea
+                    rows={3}
+                    required
+                    aria-label="Message"
+                    value={contactMessage}
+                    onChange={(e) => setContactMessage(e.target.value)}
+                    placeholder="Write your note..."
+                    className={`w-full px-4 py-3 rounded-xl border text-xs leading-relaxed resize-none focus:outline-none transition ${
+                      isDarkMode
+                        ? 'bg-[#423734] border-[#564843] text-[#FBF6F1] placeholder-[#9E8C83] focus:border-[#DEB399]'
+                        : 'bg-[#FCF8F4] border-[#EAE0D5] text-[#231C18] placeholder-[#9A897E] focus:border-[#7A4B3A]'
+                    }`}
+                  />
+
+                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCopyStudioEmail}
+                      className={`text-xs transition cursor-pointer ${
+                        isDarkMode
+                          ? 'text-[#C9B6AC] hover:text-[#FBF6F1]'
+                          : 'text-[#8C7365] hover:text-[#231C18]'
+                      }`}
+                    >
+                      {copiedEmail ? 'Copied hello@sendaboquet.com' : 'hello@sendaboquet.com'}
+                    </button>
+
+                    <button
+                      type="submit"
+                      className={`w-full sm:w-auto px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer ${
+                        isDarkMode
+                          ? 'bg-[#9A6550] hover:bg-[#875642]'
+                          : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                      }`}
+                    >
+                      Send Note
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* 7. MINIMAL EDITORIAL FOOTER (With Legal: Terms & Privacy) */}
+        <footer
+          className={`border-t mt-2 transition-colors ${
+            isDarkMode
+              ? 'bg-[#261F1D] border-[#423734] text-[#D8C7BE]'
+              : 'bg-[#F7EFE6]/70 border-[#EAE0D5] text-[#6E5D54]'
+          }`}
+        >
+          <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-8">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-8 border-b border-dashed border-[#DFCFC2]/50 dark:border-[#4D403C]">
+              {/* Brand Signature Column */}
+              <div className="md:col-span-5 space-y-2.5 text-left">
+                <div className="flex items-center gap-2.5">
+                  <BrandLogoMark className="w-8 h-8" isDarkMode={isDarkMode} />
+                  <span
+                    className={`text-2xl font-semibold tracking-tight ${
+                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                    }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Send A Boquet
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed max-w-xs">
+                  Handcrafted digital bouquets, wraps, and voice keepsakes.
+                </p>
+              </div>
+
+              {/* Minimal Navigation Columns: Studio, Explore, Legal */}
+              <div className="md:col-span-7 grid grid-cols-3 gap-6 text-left">
+                <div className="space-y-2.5">
+                  <div
+                    className={`text-xs font-semibold ${
+                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                    }`}
+                  >
+                    Studio
+                  </div>
+                  <ul className="space-y-2 text-xs">
+                    <li>
+                      <button
+                        type="button"
+                        onClick={onStartCrafting}
+                        className="hover:underline cursor-pointer"
+                      >
+                        Craft a Bouquet
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={handleCustomizePresetInStudio}
+                        className="hover:underline cursor-pointer"
+                      >
+                        Couture Wraps
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={onOpenVault}
+                        className="hover:underline cursor-pointer"
+                      >
+                        History
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div
+                    className={`text-xs font-semibold ${
+                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                    }`}
+                  >
+                    Explore
+                  </div>
+                  <ul className="space-y-2 text-xs">
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection('how-it-works')}
+                        className="hover:underline cursor-pointer"
+                      >
+                        How It Works
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection('faq')}
+                        className="hover:underline cursor-pointer"
+                      >
+                        FAQ
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection('contact')}
+                        className="hover:underline cursor-pointer"
+                      >
+                        Contact
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div
+                    className={`text-xs font-semibold ${
+                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                    }`}
+                  >
+                    Legal
+                  </div>
+                  <ul className="space-y-2 text-xs">
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setLegalModal('terms')}
+                        className="hover:underline cursor-pointer"
+                      >
+                        Terms
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setLegalModal('privacy')}
+                        className="hover:underline cursor-pointer"
+                      >
+                        Privacy
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Copyright Bar */}
+            <div className="pt-6 flex items-center justify-between gap-3 text-[11px] opacity-75">
+              <div>© {new Date().getFullYear()} Send A Boquet</div>
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className="hover:underline cursor-pointer"
+              >
+                Back to top
+              </button>
+            </div>
+          </div>
+        </footer>
+
+        {/* CLEAN MINIMAL LEGAL MODAL (Terms / Privacy) */}
+        {legalModal && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setLegalModal(null)}
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full max-w-md rounded-[24px] border p-6 shadow-xl relative text-left space-y-3 ${
+                isDarkMode
+                  ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
+                  : 'bg-white border-[#EFE6DD] text-[#231C18]'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <h3
+                  className="text-2xl font-semibold"
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  {legalModal === 'terms' ? 'Terms of Use' : 'Privacy Policy'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setLegalModal(null)}
+                  aria-label="Close"
+                  className={`p-1.5 rounded-full transition cursor-pointer ${
+                    isDarkMode ? 'hover:bg-[#463A36] text-[#D8C7BE]' : 'hover:bg-stone-100 text-stone-500'
+                  }`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p
+                className={`text-xs leading-relaxed ${
+                  isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                }`}
+              >
+                {legalModal === 'terms'
+                  ? 'Send A Boquet is a free digital floral studio for creating and sharing personal flower arrangements, notes, and voice keepsakes with loved ones. Shared links are intended for personal, non-commercial gifting.'
+                  : 'We respect your privacy. No account or login is required. Your saved history is stored locally on your device, and shared bouquets or voice notes are only accessible via the private gift link you share.'}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

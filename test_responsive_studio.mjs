@@ -302,7 +302,7 @@ try {
       onToggleDarkMode: () => {},
     })
   );
-  assert(landingHtml.includes('Flowers For You') && landingHtml.includes('Send Love in Every Bloom.') && landingHtml.includes('Start Crafting Your Bouquet'), 'Minimal Landing Page renders brand title, Send Love in Every Bloom headline, and Start Crafting CTA');
+  assert(landingHtml.includes('Send A Boquet') && landingHtml.includes('Send Love in Every Bloom.') && landingHtml.includes('Start Crafting Your Bouquet'), 'Minimal Landing Page renders Send A Boquet brand title, Send Love in Every Bloom headline, and Start Crafting CTA');
   assert(landingHtml.includes('How It Works') && landingHtml.includes('Frequently Asked Questions') && landingHtml.includes('Make someone smile today'), 'Landing Page includes concise How It Works, Gentle Answers FAQ cards, and Make someone smile today CTA container');
 
   // Verify new botanicals, wrappers, and ribbons render cleanly

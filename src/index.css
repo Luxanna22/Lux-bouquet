@@ -70,25 +70,12 @@
     background-color: rgba(168, 162, 158, 0.75);
   }
 
-  /* Smooth Theme Transition for Light / Soft Dark Mode Switching */
+  /* Lightweight Theme Transition — avoids expensive global div/span/box-shadow repaints */
   body,
   #root,
-  header,
-  section,
-  aside,
-  nav,
-  footer,
-  div,
-  button,
-  span,
-  p,
-  h1,
-  h2,
-  h3,
-  input,
-  textarea {
-    transition-property: background-color, border-color, color, box-shadow;
-    transition-duration: 450ms;
+  .theme-smooth {
+    transition-property: background-color, border-color, color;
+    transition-duration: 280ms;
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 }

@@ -101,6 +101,7 @@ import {
 } from '../lib/firebase';
 import { useBouquetStore } from '../store/useBouquetStore';
 import { BouquetStage, FallingPetalsOverlay } from './BouquetStage';
+import { BrandLogoMark } from './BrandLogoMark';
 import {
   MiniWrapConeSVG,
   MiniTemplateBouquetSVG,
@@ -1215,12 +1216,14 @@ export default function App() {
         </div>
       )}
 
-      {/* =====================================================================
-          STUDIO EDITOR TOP BAR (Hidden in View-Only / Shared Bouquet Mode!)
-          In View-Only mode, all navigation bars and editing tools are removed
-          so the recipient focuses purely on the bouquet and card.
-          ===================================================================== */}
-      {!isGiftView && !isPreviewMode && (
+      {(!showLandingPage || isGiftView || isPreviewMode) && (
+        <>
+          {/* =====================================================================
+              STUDIO EDITOR TOP BAR (Hidden in View-Only / Shared Bouquet Mode!)
+              In View-Only mode, all navigation bars and editing tools are removed
+              so the recipient focuses purely on the bouquet and card.
+              ===================================================================== */}
+          {!isGiftView && !isPreviewMode && (
         <div className="px-2.5 sm:px-4 pt-2 pb-1 shrink-0 z-30">
           <div
             className={`h-11 sm:h-12 px-2.5 sm:px-3.5 rounded-full border shadow-sm flex items-center justify-between gap-1.5 transition-colors ${
@@ -1234,18 +1237,16 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowLandingPage(true)}
-                title="Back to Flowers For You Home & About"
-                aria-label="Open Flowers For You Home Page"
-                className="flex items-center gap-1.5 pl-1 pr-2 sm:pr-3 mr-0.5 sm:mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none hover:opacity-80 transition cursor-pointer"
+                title="Back to Send A Boquet Home"
+                aria-label="Open Send A Boquet Home Page"
+                className="flex items-center gap-2 pl-1 pr-2 sm:pr-3 mr-0.5 sm:mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none hover:opacity-85 transition cursor-pointer"
               >
-                <div className="w-7 h-7 rounded-full bg-[#B4846C]/15 text-[#B4846C] flex items-center justify-center shrink-0">
-                  <Flower2 className="w-4 h-4" />
-                </div>
+                <BrandLogoMark className="w-7 h-7 sm:w-8 sm:h-8" isDarkMode={isDarkMode} />
                 <span
                   className="hidden lg:inline text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 >
-                  Flowers For You
+                  Send A Boquet
                 </span>
               </button>
 
@@ -3552,6 +3553,8 @@ export default function App() {
           </aside>
         )}
       </div>
+        </>
+      )}
 
       {/* =====================================================================
           ZOOMING HANDWRITTEN GREETING CARD MODAL
