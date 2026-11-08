@@ -531,6 +531,55 @@ export const BouquetRibbonSVG: React.FC<{
 };
 
 /**
+ * Helper to wrap greeting card message into clean SVG <tspan> lines so rotated cards
+ * render with 100% vector precision without browser <foreignObject> rotation artifacts.
+ */
+function wrapCardCanvasLines(text: string, maxChars = 25, maxLines = 4): string[] {
+  const cleaned = (text || '').replace(/\r\n/g, '\n').trim();
+  if (!cleaned) return [];
+  const paragraphs = cleaned.split('\n');
+  const lines: string[] = [];
+
+  for (const para of paragraphs) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      if (lines.length < maxLines) lines.push('');
+      continue;
+    }
+    let currentLine = '';
+    for (const word of words) {
+      const candidate = currentLine ? `${currentLine} ${word}` : word;
+      if (candidate.length <= maxChars) {
+        currentLine = candidate;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+          if (lines.length >= maxLines) {
+            lines[maxLines - 1] = lines[maxLines - 1].slice(0, Math.max(0, maxChars - 1)).trimEnd() + '…';
+            return lines;
+          }
+          currentLine = word.length > maxChars ? word.slice(0, maxChars) : word;
+        } else {
+          lines.push(word.slice(0, maxChars));
+          if (lines.length >= maxLines) {
+            lines[maxLines - 1] = lines[maxLines - 1].slice(0, Math.max(0, maxChars - 1)).trimEnd() + '…';
+            return lines;
+          }
+          currentLine = '';
+        }
+      }
+    }
+    if (currentLine) {
+      lines.push(currentLine);
+      if (lines.length >= maxLines) {
+        return lines.slice(0, maxLines);
+      }
+    }
+  }
+  return lines.slice(0, maxLines);
+}
+
+/**
  * 7 Unique Architectural Greeting Card Tag Silhouettes for BouquetStage
  */
 export const BouquetCardShapeSVG: React.FC<{
@@ -1623,10 +1672,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         let deltaDeg = ((currentAngle - startAngle) * 180) / Math.PI;
         while (deltaDeg > 180) deltaDeg -= 360;
         while (deltaDeg < -180) deltaDeg += 360;
-        const nextRotation = Math.max(
-          -140,
-          Math.min(140, Math.round(interaction.startRotation + deltaDeg))
-        );
+        let nextRotation = Math.round(interaction.startRotation + deltaDeg);
+        while (nextRotation > 180) nextRotation -= 360;
+        while (nextRotation < -180) nextRotation += 360;
 
         const startDist = Math.hypot(
           interaction.startPointerX - interaction.startItemX,
@@ -1658,10 +1706,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         let deltaDeg = ((currentAngle - startAngle) * 180) / Math.PI;
         while (deltaDeg > 180) deltaDeg -= 360;
         while (deltaDeg < -180) deltaDeg += 360;
-        const nextRotation = Math.max(
-          -140,
-          Math.min(140, Math.round(interaction.startRotation + deltaDeg))
-        );
+        let nextRotation = Math.round(interaction.startRotation + deltaDeg);
+        while (nextRotation > 180) nextRotation -= 360;
+        while (nextRotation < -180) nextRotation += 360;
 
         const startDist = Math.hypot(
           interaction.startPointerX - interaction.startItemX,
@@ -2434,172 +2481,164 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             (activeSpecialObject === 'card' ||
               interaction?.mode === 'move-card' ||
               interaction?.mode === 'resize-card');
+          const wrappedMessageLines = !isUnopenedEnvelope
+            ? wrapCardCanvasLines(card.message, 25, 4)
+            : [];
           return (
             <g
-              transform={`translate(${cardX}, ${cardY}) rotate(${cardRotation}) scale(${cardScale})`}
+              transform={`translate(${cardX}, ${cardY})`}
               style={{
                 filter: isCardSelected
                   ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
                   : 'url(#softShadow)',
+                outline: 'none',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {/* Card Group: Effortlessly draggable anywhere in editor mode (matches flower drag behavior) */}
-              <g
-                role="button"
-                tabIndex={0}
-                aria-label={isPreviewMode ? 'Open greeting card letter' : 'Drag, resize, rotate, or edit greeting card'}
-                onPointerDown={isPreviewMode ? undefined : handleCardPointerDown}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isPreviewMode) {
-                    onCardTagClick?.();
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+              {/* Inner Rotated & Scaled Card Group centered around (0, 0) */}
+              <g transform={`rotate(${cardRotation}) scale(${cardScale})`}>
+                <g
+                  aria-label={isPreviewMode ? 'Open greeting card letter' : 'Drag, resize, rotate, or edit greeting card'}
+                  onPointerDown={isPreviewMode ? undefined : handleCardPointerDown}
+                  onClick={(e) => {
                     e.stopPropagation();
-                    onCardTagClick?.();
+                    if (isPreviewMode) {
+                      onCardTagClick?.();
+                    }
+                  }}
+                  style={{
+                    outline: 'none',
+                    WebkitTapHighlightColor: 'transparent',
+                    WebkitTouchCallout: 'none',
+                  }}
+                  className={
+                    isPreviewMode
+                      ? 'bouquet-card-wiggle cursor-pointer select-none outline-none focus:outline-none'
+                      : 'cursor-grab active:cursor-grabbing select-none outline-none focus:outline-none'
                   }
-                }}
-                className={
-                  isPreviewMode
-                    ? 'bouquet-card-wiggle cursor-pointer'
-                    : 'cursor-grab active:cursor-grabbing'
-                }
-              >
-                {/* Generous touch hit target matching flower hit ergonomics */}
-                <circle cx="0" cy="0" r="64" fill="transparent" />
-                <g className={isPreviewMode ? '' : 'pointer-events-none'}>
-                  <BouquetCardShapeSVG theme={card.theme} palette={cardPalette} />
+                >
+                  {/* Generous touch hit target matching flower hit ergonomics */}
+                  <circle cx="0" cy="0" r="68" fill="transparent" />
 
-                  {/* Only render open message text when NOT using the unopened 'sealed' envelope style */}
-                  {!isUnopenedEnvelope && (
-                    <>
-                      <text
-                        x="-46"
-                        y="-18"
-                        fill={cardPalette.title}
-                        fontSize="12"
-                        fontWeight="600"
-                        className="pointer-events-none"
-                        style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      >
-                        {card.to.slice(0, 22)}
-                      </text>
+                  {/* Translate (-1, -12) centers all BouquetCardShapeSVG paths (which span x:-85..88, y:-44..68) around (0, 0) */}
+                  <g transform="translate(-1, -12)" className={isPreviewMode ? '' : 'pointer-events-none'}>
+                    <BouquetCardShapeSVG theme={card.theme} palette={cardPalette} />
 
-                      <foreignObject
-                        x="-71"
-                        y="-12"
-                        width="148"
-                        height="56"
-                        data-text-color={cardPalette.body}
-                        className={isPreviewMode ? '' : 'pointer-events-none'}
-                      >
-                        <div
-                          onClick={(e) => {
-                            if (!isPreviewMode) return;
-                            e.stopPropagation();
-                            onCardTagClick?.();
-                          }}
-                          onWheel={(e) => e.stopPropagation()}
-                          className={`w-full h-full overflow-y-auto pr-1 select-none ${
-                            isPreviewMode ? '' : 'pointer-events-none'
-                          }`}
-                          style={{
-                            color: cardPalette.body,
-                            fontFamily: "'Cormorant Garamond', serif",
-                            fontSize: '12.5px',
-                            lineHeight: '14px',
-                            wordBreak: 'break-word',
-                            scrollbarWidth: 'thin',
-                            touchAction: isPreviewMode ? 'pan-y' : 'none'
-                          }}
+                    {/* Only render open message text when NOT using the unopened 'sealed' envelope style */}
+                    {!isUnopenedEnvelope && (
+                      <>
+                        <text
+                          x="-46"
+                          y="-18"
+                          fill={cardPalette.title}
+                          fontSize="12"
+                          fontWeight="600"
+                          className="pointer-events-none"
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
                         >
-                          {card.message}
-                        </div>
-                      </foreignObject>
+                          {card.to.slice(0, 22)}
+                        </text>
 
+                        <text
+                          x="-68"
+                          y="-2"
+                          fill={cardPalette.body}
+                          fontSize="12.2"
+                          className="pointer-events-none"
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                        >
+                          {wrappedMessageLines.map((line, idx) => (
+                            <tspan key={idx} x="-68" dy={idx === 0 ? 0 : 13.5}>
+                              {line}
+                            </tspan>
+                          ))}
+                        </text>
+
+                        <text
+                          x="72"
+                          y="58"
+                          textAnchor="end"
+                          fill={cardPalette.sign}
+                          fontSize="11"
+                          fontWeight="500"
+                          fontStyle="italic"
+                          className="pointer-events-none"
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                        >
+                          {card.from ? `— ${card.from.slice(0, 20)}` : ''}
+                        </text>
+                      </>
+                    )}
+                  </g>
+
+                  {/* Top-most unified transparent hit surface centered around (0, 0) */}
+                  <rect x="-94" y="-64" width="188" height="128" rx="16" fill="transparent" />
+
+                  {/* Recipient "Tap to open" badge in Preview Mode */}
+                  {isPreviewMode && (
+                    <g data-export-ignore="true" transform="translate(0, -68)">
+                      <rect
+                        x="-38"
+                        y="-11"
+                        width="76"
+                        height="20"
+                        rx="10"
+                        fill={cardPalette.seal}
+                      />
                       <text
-                        x="72"
-                        y="58"
-                        textAnchor="end"
-                        fill={cardPalette.sign}
-                        fontSize="11"
-                        fontWeight="500"
-                        fontStyle="italic"
-                        className="pointer-events-none"
-                        style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                        x="0"
+                        y="2.5"
+                        textAnchor="middle"
+                        fill="#ffffff"
+                        fontSize="9.5"
+                        fontWeight="600"
+                        style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
                       >
-                        {card.from ? `— ${card.from.slice(0, 20)}` : ''}
+                        Tap to open
                       </text>
-                    </>
+                    </g>
                   )}
                 </g>
-
-                {/* Top-most unified transparent hit surface so dragging from anywhere on the card never gets blocked */}
-                <rect x="-98" y="-56" width="196" height="136" rx="16" fill="transparent" />
-
-                {/* Floating Action Badge — "Tap to open" in Preview Mode; "✏️ Write note" in Editor Mode */}
-                {isPreviewMode ? (
-                  <g data-export-ignore="true" transform="translate(0, -60)">
-                    <rect
-                      x="-38"
-                      y="-11"
-                      width="76"
-                      height="20"
-                      rx="10"
-                      fill={cardPalette.seal}
-                    />
-                    <text
-                      x="0"
-                      y="2.5"
-                      textAnchor="middle"
-                      fill="#ffffff"
-                      fontSize="9.5"
-                      fontWeight="600"
-                      style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
-                    >
-                      Tap to open
-                    </text>
-                  </g>
-                ) : (
-                  <g
-                    data-export-ignore="true"
-                    data-drawer-trigger="true"
-                    transform="translate(0, -56)"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveSpecialObject('card');
-                      onCardTagClick?.();
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <rect
-                      x="-42"
-                      y="-11"
-                      width="84"
-                      height="20"
-                      rx="10"
-                      fill="#1C1917"
-                      stroke="#ffffff"
-                      strokeWidth="1"
-                    />
-                    <text
-                      x="0"
-                      y="2.5"
-                      textAnchor="middle"
-                      fill="#ffffff"
-                      fontSize="9.2"
-                      fontWeight="600"
-                      style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
-                    >
-                      ✏️ Write note
-                    </text>
-                  </g>
-                )}
               </g>
+
+              {/* Upright Editor "✏️ Write note" Pill (stays upright even when card is rotated) */}
+              {!isPreviewMode && (
+                <g
+                  data-export-ignore="true"
+                  data-drawer-trigger="true"
+                  transform={`translate(0, ${Math.round(-54 * cardScale - 14)})`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSpecialObject('card');
+                    onCardTagClick?.();
+                  }}
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-pointer select-none outline-none focus:outline-none"
+                >
+                  <rect
+                    x="-42"
+                    y="-11"
+                    width="84"
+                    height="20"
+                    rx="10"
+                    fill="#1C1917"
+                    stroke="#ffffff"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x="0"
+                    y="2.5"
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="9.2"
+                    fontWeight="600"
+                    style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                  >
+                    ✏️ Write note
+                  </text>
+                </g>
+              )}
             </g>
           );
         })()}
@@ -2617,118 +2656,123 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               interaction?.mode === 'resize-voice');
           return (
             <g
-              transform={`translate(${voiceX}, ${voiceY}) rotate(${voiceRotation}) scale(${voiceScale})`}
+              transform={`translate(${voiceX}, ${voiceY})`}
               style={{
                 filter: isVoiceSelected
                   ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
                   : 'url(#softShadow)',
+                outline: 'none',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
-              <g
-                role="button"
-                tabIndex={0}
-                aria-label={
-                  isPreviewMode
-                    ? isVoicePlaying
-                      ? 'Pause voice keepsake'
-                      : 'Play voice keepsake'
-                    : 'Drag, resize, rotate, or edit voice keepsake'
-                }
-                onPointerDown={isPreviewMode ? undefined : handleVoicePointerDown}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isPreviewMode) {
-                    onVoiceKeepsakeClick?.();
+              <g transform={`rotate(${voiceRotation}) scale(${voiceScale})`}>
+                <g
+                  aria-label={
+                    isPreviewMode
+                      ? isVoicePlaying
+                        ? 'Pause voice keepsake'
+                        : 'Play voice keepsake'
+                      : 'Drag, resize, rotate, or edit voice keepsake'
                   }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+                  onPointerDown={isPreviewMode ? undefined : handleVoicePointerDown}
+                  onClick={(e) => {
                     e.stopPropagation();
-                    onVoiceKeepsakeClick?.();
-                  }
-                }}
-                className={
-                  isPreviewMode
-                    ? 'bouquet-card-wiggle cursor-pointer'
-                    : 'cursor-grab active:cursor-grabbing'
-                }
-              >
-                {/* Generous touch hit target matching flower hit ergonomics */}
-                <circle cx="0" cy="0" r="58" fill="transparent" />
-                <g className={isPreviewMode ? '' : 'pointer-events-none'}>
-                  <BouquetVoiceKeepsakeSVG voice={voice} isPlaying={isVoicePlaying} />
-                </g>
-
-                {/* Top-most unified transparent hit surface so dragging from anywhere on the voice keepsake is effortless */}
-                <rect x="-74" y="-60" width="148" height="122" rx="16" fill="transparent" />
-
-                {/* Icon-Only Play/Pause Badge for Recipient in Preview/Gift Mode; Clickable Record/Saved Pill in Editor Mode */}
-                {isPreviewMode ? (
-                  <g data-export-ignore="true" transform="translate(0, -52)">
-                    <circle
-                      cx="0"
-                      cy="0"
-                      r="12"
-                      fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
-                      stroke="#ffffff"
-                      strokeWidth="1.4"
-                    />
-                    {isVoicePlaying ? (
-                      <g fill="#ffffff">
-                        <rect x="-3.5" y="-4.5" width="2.4" height="9" rx="0.8" />
-                        <rect x="1.1" y="-4.5" width="2.4" height="9" rx="0.8" />
-                      </g>
-                    ) : (
-                      <polygon points="-2.5,-4.8 5.2,0 -2.5,4.8" fill="#ffffff" />
-                    )}
-                  </g>
-                ) : (
-                  <g
-                    data-export-ignore="true"
-                    data-drawer-trigger="true"
-                    transform="translate(0, -52)"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveSpecialObject('voice');
+                    if (isPreviewMode) {
                       onVoiceKeepsakeClick?.();
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <rect
-                      x="-46"
-                      y="-11"
-                      width="92"
-                      height="20"
-                      rx="10"
-                      fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
-                      stroke="#ffffff"
-                      strokeWidth="1"
-                    />
-                    <text
-                      x="0"
-                      y="2.5"
-                      textAnchor="middle"
-                      fill="#ffffff"
-                      fontSize="9.2"
-                      fontWeight="600"
-                      style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
-                    >
-                      {isVoicePlaying
-                        ? '⏸ Playing...'
-                        : voice.audioDataUrl
-                        ? '✓ Voice saved'
-                        : '🎙️ Tap to record'}
-                    </text>
+                    }
+                  }}
+                  style={{
+                    outline: 'none',
+                    WebkitTapHighlightColor: 'transparent',
+                    WebkitTouchCallout: 'none',
+                  }}
+                  className={
+                    isPreviewMode
+                      ? 'cursor-pointer select-none outline-none focus:outline-none'
+                      : 'cursor-grab active:cursor-grabbing select-none outline-none focus:outline-none'
+                  }
+                >
+                  {/* Generous touch hit target matching flower hit ergonomics */}
+                  <circle cx="0" cy="0" r="58" fill="transparent" />
+                  <g className={isPreviewMode ? '' : 'pointer-events-none'}>
+                    <BouquetVoiceKeepsakeSVG voice={voice} isPlaying={isVoicePlaying} />
                   </g>
-                )}
+
+                  {/* Top-most unified transparent hit surface so dragging from anywhere on the voice keepsake is effortless */}
+                  <rect x="-74" y="-60" width="148" height="122" rx="16" fill="transparent" />
+
+                  {/* Recipient Top-Right Play/Pause Icon Button in Preview/Gift Mode */}
+                  {isPreviewMode && (
+                    <g data-export-ignore="true" transform="translate(46, -38)">
+                      <circle cx="0" cy="0" r="22" fill="transparent" />
+                      <circle
+                        cx="0"
+                        cy="0"
+                        r="13"
+                        fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
+                        stroke="#ffffff"
+                        strokeWidth="1.6"
+                      />
+                      {isVoicePlaying ? (
+                        <g fill="#ffffff">
+                          <rect x="-3.5" y="-4.5" width="2.4" height="9" rx="0.8" />
+                          <rect x="1.1" y="-4.5" width="2.4" height="9" rx="0.8" />
+                        </g>
+                      ) : (
+                        <polygon points="-2.5,-4.8 5.2,0 -2.5,4.8" fill="#ffffff" />
+                      )}
+                    </g>
+                  )}
+                </g>
               </g>
+
+              {/* Upright Editor Record/Saved Pill in Editor Mode */}
+              {!isPreviewMode && (
+                <g
+                  data-export-ignore="true"
+                  data-drawer-trigger="true"
+                  transform={`translate(0, ${Math.round(-48 * voiceScale - 14)})`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSpecialObject('voice');
+                    onVoiceKeepsakeClick?.();
+                  }}
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-pointer select-none outline-none focus:outline-none"
+                >
+                  <rect
+                    x="-46"
+                    y="-11"
+                    width="92"
+                    height="20"
+                    rx="10"
+                    fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
+                    stroke="#ffffff"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x="0"
+                    y="2.5"
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="9.2"
+                    fontWeight="600"
+                    style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                  >
+                    {isVoicePlaying
+                      ? '⏸ Playing...'
+                      : voice.audioDataUrl
+                      ? '✓ Voice saved'
+                      : '🎙️ Tap to record'}
+                  </text>
+                </g>
+              )}
             </g>
           );
         })()}
 
-        {/* 5C. CONSISTENT SELECTION RING, STRAIGHTEN, HIDE (X) & PULL-IN/OUT RESIZE+ROTATE HANDLE FOR GREETING CARD */}
+        {/* 5C. CORNER CONTROLS (STRAIGHTEN, HIDE X & PULL-IN/OUT RESIZE+ROTATE) FOR GREETING CARD — NO FOCUS/OUTLINE RING */}
         {!isPreviewMode &&
           card.visibleOnStage &&
           showCardInGiftView &&
@@ -2745,18 +2789,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 data-export-ignore="true"
                 transform={`translate(${cardX}, ${cardY})`}
               >
-                {/* Outer Dashed Selection Ring (identical style to Flowers) */}
-                <circle
-                  cx="0"
-                  cy="0"
-                  r={ringRadius}
-                  fill="none"
-                  stroke="#B4846C"
-                  strokeWidth="1.75"
-                  strokeDasharray="6 5"
-                  className="pointer-events-none"
-                />
-
                 {/* TOP-LEFT HANDLE (-135°): Straighten / Reset Tilt to 0° */}
                 <g
                   transform={`translate(${Math.cos((-3 * Math.PI) / 4) * ringRadius}, ${
@@ -2767,7 +2799,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     commitHistorySnapshot();
                     updateCard({ rotation: 0 });
                   }}
-                  className="cursor-pointer"
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-pointer select-none outline-none focus:outline-none"
                   role="button"
                   aria-label="Straighten greeting card rotation"
                 >
@@ -2794,7 +2827,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     updateCard({ visibleOnStage: false });
                     setActiveSpecialObject(null);
                   }}
-                  className="cursor-pointer"
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-pointer select-none outline-none focus:outline-none"
                   role="button"
                   aria-label="Hide greeting card from canvas"
                 >
@@ -2809,28 +2843,19 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   />
                 </g>
 
-                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate (identical to Flowers) */}
+                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate */}
                 <g
                   transform={`translate(${Math.cos(Math.PI / 4) * ringRadius}, ${
                     Math.sin(Math.PI / 4) * ringRadius
                   })`}
                   onPointerDown={handleCardResizePointerDown}
-                  className="cursor-nwse-resize"
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-nwse-resize select-none outline-none focus:outline-none"
                   role="slider"
                   aria-label="Pull in or out to resize greeting card"
                   aria-valuenow={Math.round(cardScale * 100)}
                 >
                   <title>Drag corner to resize and rotate card</title>
-                  <line
-                    x1="-22"
-                    y1="-22"
-                    x2="22"
-                    y2="22"
-                    stroke="#B4846C"
-                    strokeWidth="1.6"
-                    strokeDasharray="2.5 2.5"
-                    className="pointer-events-none"
-                  />
                   <circle
                     cx="0"
                     cy="0"
@@ -2888,7 +2913,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             );
           })()}
 
-        {/* 5D. CONSISTENT SELECTION RING, STRAIGHTEN, HIDE (X) & PULL-IN/OUT RESIZE+ROTATE HANDLE FOR VOICE KEEPSAKE */}
+        {/* 5D. CORNER CONTROLS (STRAIGHTEN, HIDE X & PULL-IN/OUT RESIZE+ROTATE) FOR VOICE KEEPSAKE — NO FOCUS/OUTLINE RING */}
         {!isPreviewMode &&
           voice?.visibleOnStage &&
           (activeSpecialObject === 'voice' ||
@@ -2904,18 +2929,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 data-export-ignore="true"
                 transform={`translate(${voiceX}, ${voiceY})`}
               >
-                {/* Outer Dashed Selection Ring (identical style to Flowers) */}
-                <circle
-                  cx="0"
-                  cy="0"
-                  r={ringRadius}
-                  fill="none"
-                  stroke="#B4846C"
-                  strokeWidth="1.75"
-                  strokeDasharray="6 5"
-                  className="pointer-events-none"
-                />
-
                 {/* TOP-LEFT HANDLE (-135°): Straighten / Reset Tilt to 0° */}
                 <g
                   transform={`translate(${Math.cos((-3 * Math.PI) / 4) * ringRadius}, ${
@@ -2926,7 +2939,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     commitHistorySnapshot();
                     updateVoice({ rotation: 0 });
                   }}
-                  className="cursor-pointer"
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-pointer select-none outline-none focus:outline-none"
                   role="button"
                   aria-label="Straighten voice keepsake rotation"
                 >
@@ -2953,7 +2967,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     updateVoice({ visibleOnStage: false });
                     setActiveSpecialObject(null);
                   }}
-                  className="cursor-pointer"
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-pointer select-none outline-none focus:outline-none"
                   role="button"
                   aria-label="Hide voice keepsake from canvas"
                 >
@@ -2968,28 +2983,19 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   />
                 </g>
 
-                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate (identical to Flowers) */}
+                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate */}
                 <g
                   transform={`translate(${Math.cos(Math.PI / 4) * ringRadius}, ${
                     Math.sin(Math.PI / 4) * ringRadius
                   })`}
                   onPointerDown={handleVoiceResizePointerDown}
-                  className="cursor-nwse-resize"
+                  style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+                  className="cursor-nwse-resize select-none outline-none focus:outline-none"
                   role="slider"
                   aria-label="Pull in or out to resize voice keepsake"
                   aria-valuenow={Math.round(voiceScale * 100)}
                 >
                   <title>Drag corner to resize and rotate voice keepsake</title>
-                  <line
-                    x1="-22"
-                    y1="-22"
-                    x2="22"
-                    y2="22"
-                    stroke="#B4846C"
-                    strokeWidth="1.6"
-                    strokeDasharray="2.5 2.5"
-                    className="pointer-events-none"
-                  />
                   <circle
                     cx="0"
                     cy="0"

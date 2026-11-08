@@ -277,8 +277,21 @@ try {
   assert(!studioSrc.includes('Ready for recipient') && studioSrc.includes('Saving...') && studioSrc.includes('Saved'), 'Voice recorder provides automatic Saving... and Saved visual feedback');
   console.log('✓ Panel outside-click dismissal and automatic voice Saving/Saved feedback verified');
 
-  console.log('\nAll 28 Verification and Edge Case Checks Passed Successfully! 🎉');
+  // 29. Voice Wiggle Removal, Focus/Outline Ring Removal, Top-Right Play Button, Centered Card Rotation & Repo Safety
+  const stageSrc = fs.readFileSync('src/components/BouquetStage.tsx', 'utf-8');
+  const wiggleMatches = stageSrc.match(/bouquet-card-wiggle/g) || [];
+  assert.strictEqual(wiggleMatches.length, 1, 'bouquet-card-wiggle applies to the greeting card only (removed from voice keepsake)');
+  assert(stageSrc.includes('transform="translate(46, -38)"'), 'Recipient play button is placed at top-right of the voice keepsake');
+  assert(stageSrc.includes('transform="translate(-1, -12)"') && stageSrc.includes('wrapCardCanvasLines'), 'Greeting card rotation is centered at (0, 0) with vector SVG text');
+  assert(studioSrc.includes('outline: none !important'), 'SVG focus outline and tap highlight suppressed');
+  const gitignoreSrc = fs.readFileSync('.gitignore', 'utf-8');
+  assert(gitignoreSrc.includes('.env') && gitignoreSrc.includes('.aistudio') && gitignoreSrc.includes('*service-account*.json'), '.gitignore protects against pushing sensitive or temporary files');
+  assert(!fs.existsSync('DRAFT_firestore.rules') && !fs.existsSync('security_spec.md'), 'Temporary Firebase draft files cleaned up');
+  console.log('✓ Voice wiggle removal, focus line removal, top-right play icon, centered card rotation, and .gitignore safety verified');
+
+  console.log('\nAll 29 Verification and Edge Case Checks Passed Successfully! 🎉');
 } finally {
   await vite.close();
 }
+
 

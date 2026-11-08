@@ -6,13 +6,35 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
 
+# Dependencies & Build Output
 node_modules
 dist
 dist-ssr
-*.local
 .vercel
+
+# Environment variables & Secrets (never commit real .env files or private keys)
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+*service-account*.json
+*credentials*.json
+!firebase-applet-config.json
+!firebase-blueprint.json
+
+# AI Studio & Scratch Artifacts
+.aistudio
+.agents
 .agents/teamwork
+DRAFT_*
+security_spec.md
 
 # Editor directories and files
 .vscode/*

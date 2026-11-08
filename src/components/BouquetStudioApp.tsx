@@ -872,7 +872,8 @@ export default function App() {
           45% { transform: rotate(2.2deg) scale(1.02); }
         }
         .bouquet-card-wiggle {
-          transform-origin: -10px -28px;
+          transform-origin: 0px 0px;
+          transform-box: view-box;
           animation:
             cardBloomSwingIn 0.78s cubic-bezier(0.22, 1, 0.36, 1) forwards,
             cardGentleWiggle 2.8s ease-in-out 0.78s infinite;
@@ -880,6 +881,13 @@ export default function App() {
         }
         .bouquet-card-wiggle:hover {
           filter: drop-shadow(0px 8px 16px rgba(180, 132, 108, 0.38));
+        }
+        svg, svg *, svg g:focus, svg g:focus-visible, svg g:active {
+          outline: none !important;
+          -webkit-tap-highlight-color: transparent;
+          -webkit-touch-callout: none;
+          user-select: none;
+          -webkit-user-select: none;
         }
         @keyframes cardModalZoomIn {
           0% { opacity: 0; transform: scale(0.55) rotate(-6deg) translateY(36px); }
