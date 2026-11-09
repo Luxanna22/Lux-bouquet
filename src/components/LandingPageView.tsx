@@ -25,9 +25,13 @@ import {
   DEFAULT_BOUQUET_LOCK,
 } from '../types/bouquet';
 import { useBouquetStore } from '../store/useBouquetStore';
+import { computeForegroundPetalTransform } from '../lib/dofParallax';
+import { HeroLaceGarlandPreview, CreationsGalleryPageView } from './LaceGarlandShowcase';
+import { ShowcaseBouquetEntry } from '../lib/showcaseGallery';
 
 interface LandingPageViewProps {
   onStartCrafting: () => void;
+  onPreviewShowcaseBouquet?: () => void;
   onOpenVault: () => void;
   vaultCount: number;
   isDarkMode: boolean;
@@ -213,6 +217,47 @@ function applyShowcasePresetToStudio(preset: ShowcasePreset) {
       title: preset.voiceLabel.split('·')[0].trim(),
     },
     lock: store.lock || { ...DEFAULT_BOUQUET_LOCK },
+  });
+}
+
+/** Converts a LaceGarlandShowcase entry into a full 600x650 Studio BouquetSnapshot */
+function applyShowcaseEntryToStudio(entry: ShowcaseBouquetEntry) {
+  const store = useBouquetStore.getState();
+  const studioItems = entry.stems.map((st, idx) => ({
+    id: `garland-${entry.id}-${idx}-${Date.now()}`,
+    type: st.type,
+    x: Math.round(300 + (st.x - 200) * 1.65),
+    y: Math.round(245 + (st.y - 112) * 3.0),
+    scale: Number((st.scale * 1.45).toFixed(2)),
+    rotation: st.rot,
+    flipX: st.rot > 0,
+    petalColor: st.petal,
+    centerColor: st.center,
+    stemLength: 1,
+    locked: false,
+    hidden: false,
+  }));
+
+  store.loadSnapshot({
+    items: studioItems,
+    wrapStyle: entry.wrapStyle,
+    wrapColor: entry.wrapColor,
+    ribbonStyle: entry.ribbonStyle,
+    ribbonColor: entry.ribbonColor,
+    card: {
+      ...store.card,
+      to: entry.to,
+      from: entry.from,
+      message: entry.noteExcerpt.replace(/[“”]/g, ''),
+      visibleOnStage: true,
+    },
+    voice: {
+      ...(store.voice || DEFAULT_VOICE_KEEPSAKE),
+      visibleOnStage: Boolean(entry.hasVoice),
+      style: entry.voiceStyle || 'mixtape',
+      title: entry.voiceLabel ? entry.voiceLabel.split('·')[0].trim() : 'For You ♥',
+    },
+    lock: { ...DEFAULT_BOUQUET_LOCK },
   });
 }
 
@@ -727,6 +772,7 @@ const ThinRopeLaceDivider: React.FC<{ isDarkMode: boolean }> = React.memo(({ isD
 
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onStartCrafting,
+  onPreviewShowcaseBouquet,
   onOpenVault,
   vaultCount,
   isDarkMode,
@@ -750,6 +796,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMaintainNoteOpen, setIsMaintainNoteOpen] = useState(false);
+  const [isCreationsPageOpen, setIsCreationsPageOpen] = useState(false);
   const [legalModal, setLegalModal] = useState<'terms' | 'privacy' | null>(null);
 
   const scrollWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -765,6 +812,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const bloomInnerCorollaRef = useRef<SVGGElement | null>(null);
   const bloomBotanicalLeavesRef = useRef<SVGGElement | null>(null);
 
+  // Direct DOM refs for Depth-of-Field Foreground Camera-Lens Petals (2.15x & 2.65x fast scroll parallax)
+  const fgPetalLeftRef = useRef<HTMLDivElement | null>(null);
+  const fgPetalRightRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     let mounted = true;
     fetchStudioGlobalStats()
@@ -777,8 +828,23 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     };
   }, []);
 
-  // Pure GPU-driven scroll bloom updater (0 React re-renders during scroll)
+  // Pure GPU-driven scroll bloom & foreground depth-of-field petal updater (0 React re-renders during scroll)
   const applyHeroBloomProgress = (scrollTop: number) => {
+    const vh = scrollWrapperRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 900);
+
+    // 1. Update Foreground Depth-of-Field Camera-Lens Petals across the entire scroll height
+    if (fgPetalLeftRef.current) {
+      const p0 = computeForegroundPetalTransform(scrollTop, 0, vh, isDarkModeRef.current);
+      fgPetalLeftRef.current.style.opacity = String(p0.opacity);
+      fgPetalLeftRef.current.style.transform = `translate3d(${p0.translateX}px, ${p0.translateY}px, 0) rotate(${p0.rotateDeg}deg) scale(${p0.scale})`;
+    }
+    if (fgPetalRightRef.current) {
+      const p1 = computeForegroundPetalTransform(scrollTop, 1, vh, isDarkModeRef.current);
+      fgPetalRightRef.current.style.opacity = String(p1.opacity);
+      fgPetalRightRef.current.style.transform = `translate3d(${p1.translateX}px, ${p1.translateY}px, 0) rotate(${p1.rotateDeg}deg) scale(${p1.scale})`;
+    }
+
+    // 2. Update Hero Background Watercolor Bloom
     const rootEl = bloomRootRef.current;
     if (!rootEl) return;
 
@@ -950,6 +1016,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     onStartCrafting();
   };
 
+  const handleUnwrapShowcaseEntry = (entry: ShowcaseBouquetEntry) => {
+    applyShowcaseEntryToStudio(entry);
+    if (onPreviewShowcaseBouquet) {
+      onPreviewShowcaseBouquet();
+    } else {
+      onStartCrafting();
+    }
+  };
+
+  const handleCraftFromShowcaseEntry = (entry: ShowcaseBouquetEntry) => {
+    applyShowcaseEntryToStudio(entry);
+    onStartCrafting();
+  };
+
   const handleCopyStudioEmail = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText('hello@sendabouquet.com').catch(() => {});
@@ -1096,6 +1176,17 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => scrollToSection('showcase')}
+                className={`text-xs font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap ${
+                  isDarkMode
+                    ? 'text-[#D8C7BE] hover:text-[#FBF6F1]'
+                    : 'text-stone-600 hover:text-[#7A4B3A]'
+                }`}
+              >
+                Showcase
+              </button>
+              <button
+                type="button"
                 onClick={() => scrollToSection('faq')}
                 className={`text-xs font-medium transition-colors duration-200 cursor-pointer whitespace-nowrap ${
                   isDarkMode
@@ -1189,7 +1280,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {isMobileNavOpen && (
           <nav
             aria-label="Mobile navigation"
-            className={`sm:hidden pointer-events-auto mt-2 mx-auto max-w-xs rounded-[20px] border border-dashed px-4 py-2.5 shadow-[0_12px_32px_rgba(35,28,24,0.12)] backdrop-blur-md flex items-center justify-around gap-2 transition-all ${
+            className={`sm:hidden pointer-events-auto mt-2 mx-auto max-w-xs rounded-[20px] border border-dashed px-3.5 py-2.5 shadow-[0_12px_32px_rgba(35,28,24,0.12)] backdrop-blur-md flex items-center justify-around gap-1.5 transition-all ${
               isDarkMode
                 ? 'bg-[#362D2A]/96 border-[#5E4E49] text-[#FBF6F1]'
                 : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#231C18]'
@@ -1198,15 +1289,23 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('how-it-works')}
-              className="text-xs font-medium py-1 px-2 cursor-pointer whitespace-nowrap"
+              className="text-xs font-medium py-1 px-1.5 cursor-pointer whitespace-nowrap"
             >
               How It Works
             </button>
             <span aria-hidden="true" className="opacity-30">·</span>
             <button
               type="button"
+              onClick={() => scrollToSection('showcase')}
+              className="text-xs font-medium py-1 px-1.5 cursor-pointer whitespace-nowrap"
+            >
+              Showcase
+            </button>
+            <span aria-hidden="true" className="opacity-30">·</span>
+            <button
+              type="button"
               onClick={() => scrollToSection('faq')}
-              className="text-xs font-medium py-1 px-2 cursor-pointer whitespace-nowrap"
+              className="text-xs font-medium py-1 px-1.5 cursor-pointer whitespace-nowrap"
             >
               FAQ
             </button>
@@ -1214,7 +1313,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('contact')}
-              className="text-xs font-medium py-1 px-2 cursor-pointer whitespace-nowrap"
+              className="text-xs font-medium py-1 px-1.5 cursor-pointer whitespace-nowrap"
             >
               Contact
             </button>
@@ -1222,10 +1321,117 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         )}
       </div>
 
+      {/* DEPTH-OF-FIELD FOREGROUND CAMERA-LENS PETALS
+          Large out-of-focus wind-swept petals framing the outer screen edges that part outward & fade away on scroll */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none select-none fixed inset-0 z-20 overflow-hidden"
+      >
+        {/* Foreground Lens Petal 01 — Large Lower-Left Screen Edge */}
+        <div
+          ref={fgPetalLeftRef}
+          data-testid="dof-petal-left"
+          className="absolute -left-10 sm:-left-14 md:-left-16 bottom-[3%] w-56 h-40 sm:w-76 sm:h-52 md:w-92 md:h-64"
+          style={{
+            opacity: isDarkMode ? 0.42 : 0.62,
+            transform: 'translate3d(0px, 0px, 0) rotate(-10deg) scale(1.08)',
+            filter: 'blur(13px)',
+            willChange: 'transform, opacity',
+          }}
+        >
+          <svg
+            viewBox="0 0 220 150"
+            className="w-full h-full overflow-visible animate-fluid-badge-left"
+          >
+            <defs>
+              <linearGradient id="dof-lens-petal-blush" x1="12%" y1="82%" x2="88%" y2="14%">
+                <stop
+                  offset="0%"
+                  stopColor={isDarkMode ? '#D97B98' : '#F49AB9'}
+                  stopOpacity={isDarkMode ? '0.68' : '0.82'}
+                />
+                <stop
+                  offset="55%"
+                  stopColor={isDarkMode ? '#F2ACC2' : '#FBD0DF'}
+                  stopOpacity={isDarkMode ? '0.54' : '0.72'}
+                />
+                <stop
+                  offset="100%"
+                  stopColor={isDarkMode ? '#FCE0E9' : '#FFF4F8'}
+                  stopOpacity="0.28"
+                />
+              </linearGradient>
+            </defs>
+            <path
+              d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+              fill="url(#dof-lens-petal-blush)"
+            />
+            <path
+              d="M 28,122 Q 112,92 184,26"
+              fill="none"
+              stroke={isDarkMode ? '#FAD2DF' : '#FFF7FA'}
+              strokeWidth="2.4"
+              strokeOpacity="0.55"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+
+        {/* Foreground Lens Petal 02 — Large Upper-Right Screen Edge (Below Navbar) */}
+        <div
+          ref={fgPetalRightRef}
+          data-testid="dof-petal-right"
+          className="absolute -right-10 sm:-right-14 md:-right-16 top-[11%] w-60 h-44 sm:w-80 sm:h-56 md:w-96 md:h-68"
+          style={{
+            opacity: isDarkMode ? 0.38 : 0.56,
+            transform: 'translate3d(0px, 0px, 0) rotate(-6deg) scale(1.12)',
+            filter: 'blur(15px)',
+            willChange: 'transform, opacity',
+          }}
+        >
+          <svg
+            viewBox="0 0 220 150"
+            className="w-full h-full overflow-visible animate-fluid-badge-right"
+          >
+            <defs>
+              <linearGradient id="dof-lens-petal-peach" x1="15%" y1="80%" x2="88%" y2="16%">
+                <stop
+                  offset="0%"
+                  stopColor={isDarkMode ? '#DF8E7A' : '#F5A99C'}
+                  stopOpacity={isDarkMode ? '0.64' : '0.78'}
+                />
+                <stop
+                  offset="58%"
+                  stopColor={isDarkMode ? '#F4BBA8' : '#FCD5CC'}
+                  stopOpacity={isDarkMode ? '0.50' : '0.68'}
+                />
+                <stop
+                  offset="100%"
+                  stopColor={isDarkMode ? '#FDE6DE' : '#FFF6F2'}
+                  stopOpacity="0.24"
+                />
+              </linearGradient>
+            </defs>
+            <path
+              d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+              fill="url(#dof-lens-petal-peach)"
+            />
+            <path
+              d="M 28,122 Q 112,92 184,26"
+              fill="none"
+              stroke={isDarkMode ? '#FDE2D6' : '#FFFDF9'}
+              strokeWidth="2.4"
+              strokeOpacity="0.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+      </div>
+
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
       <div ref={scrollContentRef} className="w-full">
         {/* 2. FULL-SCREEN LUXURY HERO — Grand Background Bloom, Editorial Serif Tagline + Roman/Italic Headline */}
-        <section className="relative min-h-[calc(100svh-5.25rem)] sm:min-h-[calc(100svh-6rem)] flex flex-col items-center justify-center px-4 sm:px-8 py-8 sm:py-12 overflow-hidden">
+        <section className="relative min-h-[68svh] sm:min-h-[72svh] flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-12 pb-4 sm:pb-6 overflow-hidden">
           {/* Seamless GPU Radial Aura Centered Behind the Bloom */}
           <div
             aria-hidden="true"
@@ -1501,6 +1707,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </div>
           </div>
         </section>
+
+        {/* 2B. SWEEPING CATENARY LACE GARLAND RIGHT BELOW THE HERO — 4 Limited Hanging Creations Moving with Lenis Scroll + CTA to Dedicated All Creations Page */}
+        <HeroLaceGarlandPreview
+          isDarkMode={isDarkMode}
+          vaultCount={vaultCount}
+          scrollContainerRef={scrollWrapperRef}
+          onExploreAllCreations={() => setIsCreationsPageOpen(true)}
+          onUnwrapShowcaseBouquet={handleUnwrapShowcaseEntry}
+          onCraftFromShowcaseBouquet={handleCraftFromShowcaseEntry}
+        />
 
         <ThinRopeLaceDivider isDarkMode={isDarkMode} />
 
@@ -2497,6 +2713,32 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </p>
             </div>
           </div>
+        )}
+
+        {/* DEDICATED ALL CREATIONS GALLERY PAGE (Full-Screen View with For/From Search & Category Filter Tabs) */}
+        {isCreationsPageOpen && (
+          <CreationsGalleryPageView
+            isDarkMode={isDarkMode}
+            vaultCount={vaultCount}
+            onBackToHome={() => setIsCreationsPageOpen(false)}
+            onStartCrafting={() => {
+              setIsCreationsPageOpen(false);
+              onStartCrafting();
+            }}
+            onOpenVault={() => {
+              setIsCreationsPageOpen(false);
+              onOpenVault();
+            }}
+            onToggleDarkMode={onToggleDarkMode}
+            onUnwrapShowcaseBouquet={(entry) => {
+              setIsCreationsPageOpen(false);
+              handleUnwrapShowcaseEntry(entry);
+            }}
+            onCraftFromShowcaseBouquet={(entry) => {
+              setIsCreationsPageOpen(false);
+              handleCraftFromShowcaseEntry(entry);
+            }}
+          />
         )}
       </div>
     </div>

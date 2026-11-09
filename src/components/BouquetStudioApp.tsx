@@ -114,6 +114,7 @@ import { SelectedFlowerToolbar, UnifiedColorTarget } from './SelectedFlowerToolb
 import { VoiceRecorderStudio, VoiceKeepsakePlayerModal } from './VoiceRecorderStudio';
 import { LandingPageView } from './LandingPageView';
 import { BouquetVaultModal } from './BouquetVaultModal';
+import { computeRecipientSlideBloomState } from '../lib/dofParallax';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -206,6 +207,12 @@ export default function App() {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isGiftView, setIsGiftView] = useState<boolean>(initialGiftMode);
   const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState<boolean>(initialGiftMode);
+  const [isEntranceUnfurling, setIsEntranceUnfurling] = useState<boolean>(false);
+  const [entranceSlideProgress, setEntranceSlideProgress] = useState<number>(0);
+  const [isDraggingEntranceSlider, setIsDraggingEntranceSlider] = useState<boolean>(false);
+  const entranceSliderTrackRef = useRef<HTMLDivElement | null>(null);
+  const entranceSliderDragStartXRef = useRef<number | null>(null);
+  const entranceSlideRafRef = useRef<number | null>(null);
   const [isResolvingShortCode, setIsResolvingShortCode] = useState<boolean>(initialNeedsRemoteResolve);
   const [bloomedCount, setBloomedCount] = useState<number | undefined>(
     initialGiftMode ? 0 : undefined
@@ -234,11 +241,45 @@ export default function App() {
   const floatingToolStackRef = useRef<HTMLDivElement | null>(null);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const studioCarouselRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollCarouselLeft, setCanScrollCarouselLeft] = useState(false);
+  const [canScrollCarouselRight, setCanScrollCarouselRight] = useState(true);
   const bloomIntervalRef = useRef<number | null>(null);
   const hasHydratedRef = useRef(false);
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
   const currentSessionVaultCodeRef = useRef<string | null>(null);
+
+  const updateStudioCarouselScrollState = useCallback(() => {
+    const el = studioCarouselRef.current;
+    if (!el) return;
+    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    setCanScrollCarouselLeft(el.scrollLeft > 6);
+    setCanScrollCarouselRight(maxScrollLeft - el.scrollLeft > 6);
+  }, []);
+
+  const handleScrollStudioCarousel = useCallback((direction: 'left' | 'right') => {
+    const el = studioCarouselRef.current;
+    if (!el) return;
+    const step = Math.max(240, Math.round(el.clientWidth * 0.55));
+    el.scrollBy({
+      left: direction === 'left' ? -step : step,
+      behavior: 'smooth',
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = studioCarouselRef.current;
+    if (el) {
+      el.scrollLeft = 0;
+    }
+    const timer = window.setTimeout(updateStudioCarouselScrollState, 40);
+    window.addEventListener('resize', updateStudioCarouselScrollState);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateStudioCarouselScrollState);
+    };
+  }, [mobileCategory, isDesktopDockCollapsed, showLandingPage, updateStudioCarouselScrollState]);
 
   // Close the Slide-in Tool Drawer (Colors, Stem, Layers, Edit Note / Card, Voice) when clicking anywhere outside it
   useEffect(() => {
@@ -548,6 +589,9 @@ export default function App() {
     setIsReactionPopoverOpen(false);
     setIsPreviewMode(fromEditorPreview);
     setIsGiftView(true);
+    setIsEntranceUnfurling(false);
+    setEntranceSlideProgress(0);
+    setIsDraggingEntranceSlider(false);
     setIsGiftEntranceOpen(true);
     setShowGiftCardReveal(false);
     setBloomedCount(0);
@@ -565,11 +609,22 @@ export default function App() {
       if (forceBypassLock) {
         setIsPasscodeUnlocked(true);
       }
+      if (entranceSlideRafRef.current !== null) {
+        cancelAnimationFrame(entranceSlideRafRef.current);
+        entranceSlideRafRef.current = null;
+      }
+      setEntranceSlideProgress(1);
+      setIsDraggingEntranceSlider(false);
       musicBox.start();
       musicBox.resumeIfBlocked();
       setIsMusicPlaying(true);
-      setIsGiftEntranceOpen(false);
+      setIsEntranceUnfurling(true);
       runStemBloomSequence(items.length);
+
+      window.setTimeout(() => {
+        setIsGiftEntranceOpen(false);
+        setIsEntranceUnfurling(false);
+      }, 420);
 
       if (!isPreviewMode && activeShortCode && countedOpenCodeRef.current !== activeShortCode) {
         countedOpenCodeRef.current = activeShortCode;
@@ -577,6 +632,40 @@ export default function App() {
       }
     },
     [items.length, runStemBloomSequence, isGiftCurrentlyLocked, isPreviewMode, activeShortCode]
+  );
+
+  // Smoothly glides the slider to 100% so the background flower blooms open before transitioning
+  const handleGlideSlideToOpen = useCallback(
+    (startFrom = entranceSlideProgress) => {
+      if (isGiftCurrentlyLocked || isEntranceUnfurling) return;
+      if (entranceSlideRafRef.current !== null) {
+        cancelAnimationFrame(entranceSlideRafRef.current);
+      }
+      const startVal = Math.max(0, Math.min(1, startFrom));
+      const durationMs = Math.max(180, (1 - startVal) * 440);
+      const startTime = performance.now();
+
+      const tick = (now: number) => {
+        const elapsed = now - startTime;
+        const t = Math.min(1, elapsed / durationMs);
+        const eased = 1 - Math.pow(1 - t, 2.2);
+        const nextVal = startVal + (1 - startVal) * eased;
+        setEntranceSlideProgress(nextVal);
+        if (t < 1) {
+          entranceSlideRafRef.current = requestAnimationFrame(tick);
+        } else {
+          entranceSlideRafRef.current = null;
+          handleUnwrapGiftEntrance();
+        }
+      };
+      entranceSlideRafRef.current = requestAnimationFrame(tick);
+    },
+    [entranceSlideProgress, isGiftCurrentlyLocked, isEntranceUnfurling, handleUnwrapGiftEntrance]
+  );
+
+  const recipientBloom = useMemo(
+    () => computeRecipientSlideBloomState(isEntranceUnfurling ? 1 : entranceSlideProgress),
+    [isEntranceUnfurling, entranceSlideProgress]
   );
 
   // Live 1-second tick for Time-Capsule Countdown Lock & automatic unwrap when timer reaches zero
@@ -1206,6 +1295,11 @@ export default function App() {
             setStudioEntranceKey((k) => k + 1);
             setShowLandingPage(false);
           }}
+          onPreviewShowcaseBouquet={() => {
+            const currentItems = useBouquetStore.getState().items;
+            setShowLandingPage(false);
+            startGiftBloomAnimation(currentItems.length, true);
+          }}
           onOpenVault={() => setIsVaultModalOpen(true)}
           vaultCount={vaultCount}
           isDarkMode={isDarkMode}
@@ -1601,305 +1695,487 @@ export default function App() {
           {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
 
           {/* ===================================================================
-              GIFT ENTRANCE OVERLAY — Luxury Stationery Envelope & Keepsake Gate
-              Supports Immediate Unwrap, Time-Capsule Countdown Lock, and Secret
-              Question Lock in the warm ivory / cashmere atelier aesthetic.
+              GIFT ENTRANCE OVERLAY — Full-Screen Couture Botanical Bloom Unveiling
+              Minimal, expensive, non-text-y opening with our signature Watercolor
+              & Colored Lineart Blooming Peony, Depth-of-Field foreground petals,
+              and tactile Wax-Sealed Ribbon button.
               =================================================================== */}
           {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
             <div
               role="dialog"
               aria-modal="true"
               aria-label="Bouquet Gift Entrance"
-              onClick={() => {
-                if (!isResolvingShortCode && !isGiftCurrentlyLocked) {
-                  handleUnwrapGiftEntrance();
-                }
-              }}
-              className={`absolute inset-0 z-40 flex items-center justify-center p-4 sm:p-6 transition-opacity duration-300 ${
-                isGiftCurrentlyLocked ? 'cursor-default' : 'cursor-pointer'
+              className={`absolute inset-0 z-40 flex flex-col items-center justify-center px-4 sm:px-8 py-8 overflow-hidden select-none transition-all duration-420 ease-out ${
+                isEntranceUnfurling ? 'opacity-0 scale-[1.08] pointer-events-none' : 'opacity-100 scale-100'
               } ${
                 isDarkMode
-                  ? 'bg-[#2B2321]/96'
-                  : 'bg-[#FAF6F0]/96'
+                  ? 'bg-[#2B2321] text-[#FBF6F1]'
+                  : 'bg-[#FDF9F5] text-[#231C18]'
               }`}
-              style={{
-                backgroundImage: isDarkMode
-                  ? 'radial-gradient(circle at 50% 42%, rgba(230, 184, 156, 0.08) 0%, transparent 65%)'
-                  : 'radial-gradient(circle at 50% 42%, rgba(244, 184, 196, 0.18) 0%, transparent 65%)',
-              }}
             >
+              {/* Seamless Radial Aura Behind the Living Watercolor Bloom (Scales with slide progress) */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-1/2 top-1/2 w-[560px] sm:w-[980px] h-[560px] sm:h-[740px] rounded-full transition-transform duration-150 ease-out"
+                style={{
+                  transform: `translate(-50%, -50%) scale(${recipientBloom.auraScale})`,
+                  background: isDarkMode
+                    ? 'radial-gradient(closest-side at 50% 46%, rgba(164, 96, 116, 0.30) 0%, rgba(112, 82, 126, 0.14) 52%, rgba(43, 35, 33, 0) 100%)'
+                    : 'radial-gradient(closest-side at 50% 46%, rgba(250, 210, 225, 0.72) 0%, rgba(235, 220, 250, 0.36) 52%, rgba(253, 249, 245, 0) 100%)',
+                }}
+              />
+
+              {/* Two Large Out-of-Focus Wind-Swept Side-Profile Depth-of-Field Petals at the Outer Screen Edges
+                  They part outward off the screen edges and fade away as the recipient slides to open */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -left-10 sm:-left-14 md:-left-16 bottom-[3%] w-56 h-40 sm:w-76 sm:h-52 md:w-92 md:h-64"
+                style={{
+                  filter: 'blur(13px)',
+                  opacity: Number(((isDarkMode ? 0.38 : 0.55) * (1 - recipientBloom.progress)).toFixed(3)),
+                  transform: `translate3d(${(-recipientBloom.progress * 180).toFixed(1)}px, ${(recipientBloom.progress * 55).toFixed(1)}px, 0) rotate(-10deg) scale(1.08)`,
+                }}
+              >
+                <svg viewBox="0 0 220 150" className="w-full h-full overflow-visible">
+                  <path
+                    d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+                    fill={isDarkMode ? '#E28BA6' : '#F6B0C8'}
+                    fillOpacity="0.74"
+                  />
+                  <path
+                    d="M 28,122 Q 112,92 184,26"
+                    fill="none"
+                    stroke={isDarkMode ? '#FAD2DF' : '#FFF7FA'}
+                    strokeWidth="2.4"
+                    strokeOpacity="0.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-10 sm:-right-14 md:-right-16 top-[11%] w-60 h-44 sm:w-80 sm:h-56 md:w-96 md:h-68"
+                style={{
+                  filter: 'blur(15px)',
+                  opacity: Number(((isDarkMode ? 0.32 : 0.48) * (1 - recipientBloom.progress)).toFixed(3)),
+                  transform: `translate3d(${(recipientBloom.progress * 190).toFixed(1)}px, ${(recipientBloom.progress * 40).toFixed(1)}px, 0) rotate(-6deg) scale(1.12)`,
+                }}
+              >
+                <svg viewBox="0 0 220 150" className="w-full h-full overflow-visible">
+                  <path
+                    d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+                    fill={isDarkMode ? '#E49B85' : '#F8BCAE'}
+                    fillOpacity="0.68"
+                  />
+                  <path
+                    d="M 28,122 Q 112,92 184,26"
+                    fill="none"
+                    stroke={isDarkMode ? '#FDE2D6' : '#FFFDF9'}
+                    strokeWidth="2.4"
+                    strokeOpacity="0.45"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+
+              {/* LIVING WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING PEONY
+                  Blooms open in real time as the recipient slides the wax-seal handle */}
+              <div
+                aria-hidden="true"
+                data-testid="recipient-entrance-bloom"
+                data-bloom-progress={recipientBloom.progress}
+                className={`pointer-events-none select-none absolute left-1/2 top-1/2 z-0 w-[410px] sm:w-[680px] md:w-[780px] h-[280px] sm:h-[450px] md:h-[520px] transition-all ${
+                  isDraggingEntranceSlider ? 'duration-0' : 'duration-300'
+                } ease-out ${
+                  isEntranceUnfurling
+                    ? '-translate-x-1/2 -translate-y-[50%] scale-[1.42] opacity-0'
+                    : '-translate-x-1/2 -translate-y-[50%] scale-100'
+                }`}
+                style={{ opacity: isEntranceUnfurling ? 0 : isDarkMode ? 0.8 : 0.95 }}
+              >
+                <svg viewBox="0 0 520 340" className="w-full h-full overflow-visible">
+                  <defs>
+                    <radialGradient id="rg-wc-petal-blush" cx="50%" cy="35%" r="65%">
+                      <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.36' : '0.72'} />
+                      <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.24' : '0.44'} />
+                      <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
+                    </radialGradient>
+                    <radialGradient id="rg-wc-petal-peach" cx="50%" cy="30%" r="65%">
+                      <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.38' : '0.74'} />
+                      <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.22' : '0.46'} />
+                      <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
+                    </radialGradient>
+                    <radialGradient id="rg-wc-leaf-sage" cx="50%" cy="50%" r="60%">
+                      <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.30' : '0.66'} />
+                      <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.16' : '0.34'} />
+                      <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
+                    </radialGradient>
+                    <radialGradient id="rg-wc-center-gold" cx="50%" cy="50%" r="55%">
+                      <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.48' : '0.78'} />
+                      <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.20' : '0.28'} />
+                      <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                    </radialGradient>
+                  </defs>
+
+                  {/* 1. Botanical Sage Leaf Sprigs & Dashed Rope Tendrils (Unfurls with slide progress) */}
+                  <g
+                    transform={`translate(260, 170) scale(${recipientBloom.leafScale}, ${recipientBloom.leafScale})`}
+                  >
+                    <path
+                      d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
+                      fill="url(#rg-wc-leaf-sage)"
+                      stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
+                      strokeWidth="1.2"
+                      strokeOpacity={isDarkMode ? '0.55' : '0.65'}
+                    />
+                    <path
+                      d="M -60,10 Q -135,4 -198,17 M -115,7 L -138,-6 M -145,10 L -168,0 M -125,11 L -148,24"
+                      fill="none"
+                      stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                      strokeWidth="0.9"
+                      strokeLinecap="round"
+                      strokeOpacity={isDarkMode ? '0.48' : '0.56'}
+                    />
+                    <path
+                      d="M -75,-18 C -128,-58 -168,-54 -194,-32"
+                      fill="none"
+                      stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
+                      strokeWidth="1.05"
+                      strokeDasharray="3 3"
+                      strokeDashoffset={recipientBloom.stamenDashOffset}
+                      strokeLinecap="round"
+                      strokeOpacity="0.58"
+                    />
+                    <path
+                      d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
+                      fill="url(#rg-wc-petal-blush)"
+                      stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
+                      strokeWidth="1.1"
+                    />
+
+                    <path
+                      d="M 55,10 C 115,-28 175,-18 212,18 C 170,48 110,44 55,10 Z"
+                      fill="url(#rg-wc-leaf-sage)"
+                      stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
+                      strokeWidth="1.2"
+                      strokeOpacity={isDarkMode ? '0.55' : '0.65'}
+                    />
+                    <path
+                      d="M 60,10 Q 135,4 198,17 M 115,7 L 138,-6 M 145,10 L 168,0 M 125,11 L 148,24"
+                      fill="none"
+                      stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                      strokeWidth="0.9"
+                      strokeLinecap="round"
+                      strokeOpacity={isDarkMode ? '0.48' : '0.56'}
+                    />
+                    <path
+                      d="M 75,-18 C 128,-58 168,-54 194,-32"
+                      fill="none"
+                      stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
+                      strokeWidth="1.05"
+                      strokeDasharray="3 3"
+                      strokeDashoffset={recipientBloom.stamenDashOffset}
+                      strokeLinecap="round"
+                      strokeOpacity="0.58"
+                    />
+                    <path
+                      d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
+                      fill="url(#rg-wc-petal-blush)"
+                      stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
+                      strokeWidth="1.1"
+                    />
+                  </g>
+
+                  {/* 2. Outer Ring of 8 Watercolor Peony Petals (Blooms from 0.58 bud to 1.12 full bloom) */}
+                  <g
+                    transform={`translate(260, 170) rotate(${recipientBloom.outerRotateDeg}) scale(${recipientBloom.outerScale})`}
+                  >
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                      <g key={`rg-outer-${angle}`} transform={`rotate(${angle})`}>
+                        <path
+                          d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
+                          fill="url(#rg-wc-petal-blush)"
+                          stroke={isDarkMode ? '#E5A3B7' : '#CD7E95'}
+                          strokeWidth="1.2"
+                          strokeOpacity={isDarkMode ? '0.56' : '0.66'}
+                        />
+                        <path
+                          d="M 0,-14 Q -12,-62 -6,-106 M 0,-18 Q 12,-62 6,-106 M 0,-10 L 0,-114"
+                          fill="none"
+                          stroke={isDarkMode ? '#DF9BB0' : '#C67B91'}
+                          strokeWidth="0.7"
+                          strokeLinecap="round"
+                          strokeOpacity={isDarkMode ? '0.38' : '0.44'}
+                        />
+                      </g>
+                    ))}
+                  </g>
+
+                  {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals (Blooms from 0.50 bud to 1.04 full bloom) */}
+                  <g
+                    transform={`translate(260, 170) rotate(${recipientBloom.midRotateDeg}) scale(${recipientBloom.midScale})`}
+                  >
+                    {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
+                      <g key={`rg-mid-${angle}`} transform={`rotate(${angle})`}>
+                        <path
+                          d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
+                          fill="url(#rg-wc-petal-peach)"
+                          stroke={isDarkMode ? '#E8B298' : '#C88A74'}
+                          strokeWidth="1.1"
+                          strokeOpacity={isDarkMode ? '0.58' : '0.68'}
+                        />
+                        <path
+                          d="M 0,-12 Q -8,-48 -3,-78 M 0,-12 Q 8,-48 3,-78"
+                          fill="none"
+                          stroke={isDarkMode ? '#E2A88B' : '#B87B65'}
+                          strokeWidth="0.65"
+                          strokeLinecap="round"
+                          strokeOpacity="0.42"
+                        />
+                      </g>
+                    ))}
+                  </g>
+
+                  {/* 4. Inner Corolla & Golden Botanical Stamens (Blooms from 0.44 bud to 0.98 full bloom) */}
+                  <g
+                    transform={`translate(260, 170) rotate(${recipientBloom.innerRotateDeg}) scale(${recipientBloom.innerScale})`}
+                  >
+                    {[0, 60, 120, 180, 240, 300].map((angle) => (
+                      <path
+                        key={`rg-inner-${angle}`}
+                        transform={`rotate(${angle})`}
+                        d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
+                        fill="url(#rg-wc-petal-blush)"
+                        stroke={isDarkMode ? '#F0B6C8' : '#C4748B'}
+                        strokeWidth="1.05"
+                        strokeOpacity="0.62"
+                      />
+                    ))}
+                    <circle cx="0" cy="0" r="24" fill="url(#rg-wc-center-gold)" />
+                    {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
+                      <g key={`rg-stamen-${deg}`} transform={`rotate(${deg})`}>
+                        <line
+                          x1="0"
+                          y1="-4"
+                          x2="0"
+                          y2="-20"
+                          stroke={isDarkMode ? '#FCD34D' : '#D97706'}
+                          strokeWidth="1"
+                          strokeOpacity="0.58"
+                          strokeLinecap="round"
+                        />
+                        <circle
+                          cx="0"
+                          cy="-21.5"
+                          r="2"
+                          fill={isDarkMode ? '#FDE68A' : '#F59E0B'}
+                          fillOpacity="0.72"
+                        />
+                      </g>
+                    ))}
+                    <circle
+                      cx="0"
+                      cy="0"
+                      r="6.5"
+                      fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
+                      stroke={isDarkMode ? '#F59E0B' : '#D97706'}
+                      strokeWidth="1.05"
+                      strokeOpacity="0.68"
+                    />
+                  </g>
+                </svg>
+              </div>
+
               {!isResolvingShortCode && (
                 <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isGiftCurrentlyLocked) {
-                      handleUnwrapGiftEntrance();
-                    }
-                  }}
-                  className={`card-zoom-modal w-full max-w-[390px] rounded-[28px] p-2.5 shadow-[0_24px_60px_rgba(38,26,20,0.14)] border relative transition-colors ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
-                      : 'bg-[#FFFDF9] border-[#E6D7C8] text-[#231C18]'
-                  }`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="relative z-10 max-w-xl w-full mx-auto text-center flex flex-col items-center px-3"
                 >
-                  {/* Inner Dashed Stitch Frame */}
-                  <div
-                    className={`rounded-[22px] border border-dashed px-6 py-7 sm:px-8 sm:py-8 text-center relative ${
-                      isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
-                    }`}
-                  >
-                    {/* Floating Botanical Wax-Sealed Envelope Artwork */}
-                    <div className="float-keepsake-envelope mx-auto mb-3.5 w-24 h-20 flex items-center justify-center">
-                      <svg viewBox="0 0 136 104" className="w-full h-full overflow-visible">
-                        {/* Delicate Botanical Sprigs Peeking Behind Envelope */}
-                        <path
-                          d="M28,22 C18,12 14,6 10,4 M22,16 C16,18 11,17 8,15 M25,19 C22,11 23,6 25,3"
-                          fill="none"
-                          stroke="#659A76"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          opacity="0.75"
-                        />
-                        <path
-                          d="M108,22 C118,12 122,6 126,4 M114,16 C120,18 125,17 128,15 M111,19 C114,11 113,6 111,3"
-                          fill="none"
-                          stroke="#659A76"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          opacity="0.75"
-                        />
-                        {/* Envelope Drop Shadow Base */}
-                        <rect
-                          x="16"
-                          y="18"
-                          width="104"
-                          height="70"
-                          rx="9"
-                          fill={isDarkMode ? '#241D1B' : '#EFE5DA'}
-                          transform="translate(0, 3)"
-                        />
-                        {/* Main Stationery Envelope Body */}
-                        <rect
-                          x="16"
-                          y="18"
-                          width="104"
-                          height="70"
-                          rx="9"
-                          fill={isDarkMode ? '#2D2421' : '#FFFDF9'}
-                          stroke={isDarkMode ? '#66554F' : '#D8C3B0'}
-                          strokeWidth="1.6"
-                        />
-                        {/* Inner Dashed Stitch Border */}
-                        <rect
-                          x="21"
-                          y="23"
-                          width="94"
-                          height="60"
-                          rx="6"
-                          fill="none"
-                          stroke={isDarkMode ? '#52433E' : '#E5D5C5'}
-                          strokeWidth="1"
-                          strokeDasharray="3.5 3"
-                        />
-                        {/* Bottom & Side Envelope Folds */}
-                        <path
-                          d="M18,86 L68,52 L118,86"
-                          fill="none"
-                          stroke={isDarkMode ? '#52433E' : '#E2D1C1'}
-                          strokeWidth="1.3"
-                        />
-                        {/* Top Closed Triangular Flap */}
-                        <path
-                          d="M17,20 L68,58 L119,20 Z"
-                          fill={isDarkMode ? '#3B302C' : '#FAF3EB'}
-                          stroke={isDarkMode ? '#66554F' : '#D8C3B0'}
-                          strokeWidth="1.6"
-                          strokeLinejoin="round"
-                        />
-                        {/* Embossed Rose-Terracotta Wax Seal */}
-                        <circle
-                          cx="68"
-                          cy="56"
-                          r="12"
-                          fill="#B85D4B"
-                          stroke={isDarkMode ? '#352C29' : '#FFFDF9'}
-                          strokeWidth="1.5"
-                        />
-                        <circle
-                          cx="68"
-                          cy="56"
-                          r="8.5"
-                          fill="none"
-                          stroke="#FDE68A"
-                          strokeWidth="0.9"
-                          strokeDasharray="2.5 2"
-                          opacity="0.8"
-                        />
-                        {/* Tiny Heart Inside Wax Seal */}
-                        <path
-                          d="M68,53.8 C65.8,51.2 62,53 64,56.4 L68,60 L72,56.4 C74,53 70.2,51.2 68,53.8 Z"
-                          fill="#FFFDF9"
-                        />
-                      </svg>
-                    </div>
+                  {/* Delicate Thin Rope Lace & Scallop Bow Ornament Above Dedication */}
+                  <div className="mb-3 sm:mb-4 opacity-85" aria-hidden="true">
+                    <svg viewBox="0 0 220 24" className="w-36 sm:w-44 h-5 overflow-visible">
+                      <line
+                        x1="14"
+                        y1="12"
+                        x2="86"
+                        y2="12"
+                        stroke={isDarkMode ? '#8C766C' : '#C8B09E'}
+                        strokeWidth="1.1"
+                        strokeDasharray="2.5 3"
+                        strokeLinecap="round"
+                      />
+                      <line
+                        x1="134"
+                        y1="12"
+                        x2="206"
+                        y2="12"
+                        stroke={isDarkMode ? '#8C766C' : '#C8B09E'}
+                        strokeWidth="1.1"
+                        strokeDasharray="2.5 3"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M 110,12 C 100,4 92,8 97,13 C 100,16 106,14 110,12 Z M 110,12 C 120,4 128,8 123,13 C 120,16 114,14 110,12 Z"
+                        fill="none"
+                        stroke={isDarkMode ? '#E6B89C' : '#A6725C'}
+                        strokeWidth="1.25"
+                      />
+                      <path
+                        d="M 110,12 Q 104,18 100,21 M 110,12 Q 116,18 120,21"
+                        fill="none"
+                        stroke={isDarkMode ? '#E6B89C' : '#A6725C'}
+                        strokeWidth="1.1"
+                        strokeLinecap="round"
+                      />
+                      <circle cx="110" cy="12" r="1.8" fill={isDarkMode ? '#E6B89C' : '#A6725C'} />
+                    </svg>
+                  </div>
 
-                    {/* Subtle Cursive / Serif Intro */}
+                  {/* Minimal Editorial Dedication Lockup Over the Living Peony Bloom */}
+                  <h2
+                    className="mx-auto leading-[0.98] tracking-[-0.02em]"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    <span
+                      className={`block text-2xl sm:text-3xl italic font-normal mb-1 ${
+                        isDarkMode ? 'text-[#DFCFC6]' : 'text-[#6E594E]'
+                      }`}
+                    >
+                      For
+                    </span>
+                    <span
+                      className={`block text-[46px] sm:text-[62px] md:text-[74px] font-semibold tracking-[-0.02em] leading-[0.98] ${
+                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                      }`}
+                    >
+                      {card.to || 'Someone Special'}
+                    </span>
+                  </h2>
+
+                  {card.from && (
                     <p
-                      className={`text-sm italic ${
-                        isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                      className={`mt-3 sm:mt-4 text-lg sm:text-xl italic font-normal ${
+                        isDarkMode ? 'text-[#E5D6CE]' : 'text-[#5C473C]'
                       }`}
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
-                      A handwritten bouquet arranged for
-                    </p>
-
-                    <h2
-                      className="text-3xl sm:text-[34px] font-medium tracking-tight leading-tight mt-0.5"
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                    >
-                      {card.to || 'Someone Special'}
-                    </h2>
-
-                    {card.from && (
-                      <p
-                        className={`text-xs mt-1.5 ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                      with love,{' '}
+                      <span
+                        className={`not-italic font-semibold ${
+                          isDarkMode ? 'text-[#F0C2AE]' : 'text-[#7A4B3A]'
                         }`}
                       >
-                        Sent with love by{' '}
-                        <span
-                          className={`font-medium ${
-                            isDarkMode ? 'text-[#E6B89C]' : 'text-[#6E4434]'
-                          }`}
-                        >
-                          {card.from}
-                        </span>
-                      </p>
-                    )}
+                        {card.from}
+                      </span>
+                    </p>
+                  )}
 
-                    {/* Delicate Bow Divider */}
-                    <div className="flex items-center justify-center gap-2 my-4 opacity-70" aria-hidden="true">
-                      <span
-                        className={`w-10 border-t border-dashed ${
-                          isDarkMode ? 'border-[#5E4E49]' : 'border-[#D8C3B0]'
+                  {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK (Clean Editorial Numerals, Zero Box Clutter) */}
+                  {isCountdownLocked ? (
+                    <div className="mt-7 sm:mt-8 flex flex-col items-center space-y-3" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className={`inline-flex items-center gap-3 sm:gap-5 px-6 py-3 rounded-full border border-dashed backdrop-blur-md shadow-[0_10px_28px_rgba(35,28,24,0.06)] ${
+                          isDarkMode
+                            ? 'bg-[#352C29]/90 border-[#5E4E49]'
+                            : 'bg-[#FFFDF9]/90 border-[#D8C3B0]'
                         }`}
-                      />
-                      <svg viewBox="0 0 24 12" className="w-4 h-2.5 text-[#B4846C]" fill="none">
-                        <path
-                          d="M12,6 C8,1 3,3 5,6 C3,9 8,11 12,6 Z M12,6 C16,1 21,3 19,6 C21,9 16,11 12,6 Z"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      <span
-                        className={`w-10 border-t border-dashed ${
-                          isDarkMode ? 'border-[#5E4E49]' : 'border-[#D8C3B0]'
-                        }`}
-                      />
-                    </div>
-
-                    {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK */}
-                    {isCountdownLocked ? (
-                      <div className="space-y-3.5">
-                        <div className="grid grid-cols-4 gap-2">
-                          {[
-                            { label: 'Days', val: countdownParts.days },
-                            { label: 'Hours', val: countdownParts.hours },
-                            { label: 'Mins', val: countdownParts.minutes },
-                            { label: 'Secs', val: countdownParts.seconds },
-                          ].map((unit) => (
-                            <div
-                              key={unit.label}
-                              className={`rounded-2xl py-2.5 px-1 border border-dashed ${
-                                isDarkMode
-                                  ? 'bg-[#2B2321]/85 border-[#5E4E49]'
-                                  : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
-                              }`}
-                            >
-                              <div
-                                className={`text-xl sm:text-2xl font-semibold tracking-tight tabular-nums ${
-                                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#6E4434]'
+                      >
+                        {[
+                          { label: 'd', val: countdownParts.days },
+                          { label: 'h', val: countdownParts.hours },
+                          { label: 'm', val: countdownParts.minutes },
+                          { label: 's', val: countdownParts.seconds },
+                        ].map((unit, idx) => (
+                          <React.Fragment key={unit.label}>
+                            {idx > 0 && (
+                              <span
+                                aria-hidden="true"
+                                className={`text-sm ${
+                                  isDarkMode ? 'text-[#7E6B62]' : 'text-[#C8B4A4]'
+                                }`}
+                              >
+                                ·
+                              </span>
+                            )}
+                            <div className="flex items-baseline gap-0.5 tabular-nums">
+                              <span
+                                className={`text-2xl sm:text-3xl font-semibold ${
+                                  isDarkMode ? 'text-[#F0C2AE]' : 'text-[#6E4434]'
                                 }`}
                                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                               >
                                 {unit.val}
-                              </div>
-                              <div
-                                className={`text-[10px] mt-0.5 ${
+                              </span>
+                              <span
+                                className={`text-xs italic ${
                                   isDarkMode ? 'text-[#B8A59B]' : 'text-[#8C7A70]'
                                 }`}
+                                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                               >
                                 {unit.label}
-                              </div>
+                              </span>
                             </div>
-                          ))}
-                        </div>
+                          </React.Fragment>
+                        ))}
+                      </div>
 
-                        <p
-                          className={`text-xs leading-relaxed ${
-                            isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                      <p
+                        className={`text-sm italic ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                        }`}
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        Opens{' '}
+                        {countdownTargetMs
+                          ? new Date(countdownTargetMs).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })
+                          : 'soon'}
+                      </p>
+
+                      {isPreviewMode && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUnwrapGiftEntrance(true);
+                          }}
+                          className={`mt-1 px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                            isDarkMode
+                              ? 'border-[#5E4E49] bg-[#352C29]/80 text-[#E6D6C7] hover:bg-[#423632]'
+                              : 'border-[#DECBB9] bg-white/80 text-[#5C4438] hover:bg-[#FAF4EE]'
                           }`}
                         >
-                          Sealed until{' '}
-                          <strong
-                            className={`font-medium ${
-                              isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                            }`}
-                          >
-                            {countdownTargetMs
-                              ? new Date(countdownTargetMs).toLocaleString(undefined, {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                })
-                              : 'the unlock date'}
-                          </strong>
-                        </p>
-
-                        {isPreviewMode && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUnwrapGiftEntrance(true);
-                            }}
-                            className={`w-full py-2 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                              isDarkMode
-                                ? 'border-[#5E4E49] bg-[#2B2321] text-[#E6D6C7] hover:bg-[#423632]'
-                                : 'border-[#DECBB9] bg-[#FAF4EE] text-[#5C4438] hover:bg-[#F3E9DF]'
-                            }`}
-                          >
-                            Sender Preview: Test Unwrap Now
-                          </button>
-                        )}
-                      </div>
-                    ) : isPasscodeLocked ? (
-                      /* MODE 2: SECRET QUESTION / PASSCODE LOCK */
-                      <form
-                        onSubmit={handleAttemptPasscodeUnlock}
-                        onClick={(e) => e.stopPropagation()}
-                        className="space-y-3 text-center"
+                          Sender Preview: Test Unwrap
+                        </button>
+                      )}
+                    </div>
+                  ) : isPasscodeLocked ? (
+                    /* MODE 2: SECRET HINT LOCK (Minimal Inline Pill Input + Wax Seal Submit) */
+                    <form
+                      onSubmit={handleAttemptPasscodeUnlock}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-6 sm:mt-7 w-full max-w-xs flex flex-col items-center space-y-2.5"
+                    >
+                      <p
+                        className={`text-lg sm:text-xl italic font-normal leading-snug px-2 ${
+                          isDarkMode ? 'text-[#F0DFD6]' : 'text-[#4A3B33]'
+                        }`}
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                       >
-                        <div>
-                          <p
-                            className={`text-[11px] ${
-                              isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
-                            }`}
-                          >
-                            Answer the secret hint to unwrap:
-                          </p>
-                          <p
-                            className="mt-1 text-lg sm:text-xl font-medium italic leading-snug"
-                            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                          >
-                            “{lock?.questionPrompt || 'Enter our special secret or date to unlock'}”
-                          </p>
-                        </div>
+                        “{lock?.questionPrompt || 'Our special secret'}”
+                      </p>
 
+                      <div
+                        className={`w-full flex items-center p-1 rounded-full border border-dashed shadow-[0_10px_28px_rgba(35,28,24,0.07)] backdrop-blur-md ${
+                          isDarkMode
+                            ? 'bg-[#352C29]/92 border-[#66554F]'
+                            : 'bg-[#FFFDF9]/92 border-[#D8C3B0]'
+                        }`}
+                      >
                         <input
                           type="text"
                           value={passcodeAttempt}
@@ -1907,73 +2183,176 @@ export default function App() {
                             setPasscodeAttempt(e.target.value);
                             if (passcodeError) setPasscodeError(null);
                           }}
-                          placeholder="Type your answer..."
+                          placeholder="Secret answer..."
                           aria-label="Secret answer to unlock bouquet"
-                          className={`w-full px-4 py-2.5 rounded-full border border-dashed text-xs text-center focus:outline-none focus:border-[#B4846C] ${
+                          className={`flex-1 min-w-0 bg-transparent px-4 py-2 text-xs sm:text-sm focus:outline-none ${
                             isDarkMode
-                              ? 'bg-[#2B2321] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#9A877B]'
-                              : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#231C18] placeholder:text-[#9A877B]'
+                              ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
+                              : 'text-[#231C18] placeholder:text-[#9A877B]'
                           }`}
                         />
-
-                        {passcodeError && (
-                          <p className="text-[11px] text-rose-600 dark:text-rose-300 text-center font-medium">
-                            {passcodeError}
-                          </p>
-                        )}
-
                         <button
                           type="submit"
-                          className={`w-full py-2.5 px-6 rounded-full text-xs font-medium tracking-wide transition active:scale-98 cursor-pointer ${
+                          className={`px-4 py-2 rounded-full text-xs font-medium shrink-0 transition active:scale-95 cursor-pointer ${
                             isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                              : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                              ? 'bg-[#9A6550] text-white hover:bg-[#875642]'
+                              : 'bg-[#7A4B3A] text-white hover:bg-[#633B2C]'
                           }`}
                         >
-                          Unlock &amp; Open Bouquet
+                          Unlock
                         </button>
+                      </div>
 
-                        {isPreviewMode && (
-                          <button
-                            type="button"
-                            onClick={() => handleUnwrapGiftEntrance(true)}
-                            className={`w-full py-1.5 px-3 rounded-full text-[11px] transition cursor-pointer ${
-                              isDarkMode
-                                ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
-                                : 'text-[#8C7A70] hover:text-[#231C18]'
-                            }`}
-                          >
-                            Sender Preview: Skip Lock &amp; Test Bloom
-                          </button>
-                        )}
-                      </form>
-                    ) : (
-                      /* MODE 3: READY TO OPEN IMMEDIATELY */
-                      <div className="space-y-2.5">
+                      {passcodeError && (
+                        <p className="text-xs text-rose-600 dark:text-rose-300 font-medium">
+                          {passcodeError}
+                        </p>
+                      )}
+
+                      {isPreviewMode && (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnwrapGiftEntrance();
-                          }}
-                          className={`w-full py-3 px-6 rounded-full text-xs sm:text-sm font-medium tracking-wide shadow-sm transition active:scale-98 cursor-pointer ${
+                          onClick={() => handleUnwrapGiftEntrance(true)}
+                          className={`pt-0.5 text-[11px] underline decoration-dashed underline-offset-4 transition cursor-pointer ${
                             isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                              : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                              ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
+                              : 'text-[#8C7A70] hover:text-[#231C18]'
                           }`}
                         >
-                          Open Bouquet
+                          Preview bloom without answer
                         </button>
-                        <p
-                          className={`text-[11px] ${
-                            isDarkMode ? 'text-[#B8A59B]' : 'text-[#9A877B]'
+                      )}
+                    </form>
+                  ) : (
+                    /* MODE 3: SLIDE TO OPEN & BLOOM — Interactive Couture Wax-Seal Track */
+                    <div className="mt-7 sm:mt-9 flex flex-col items-center">
+                      <div
+                        ref={entranceSliderTrackRef}
+                        data-testid="recipient-slide-track"
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Slide to open bouquet"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleGlideSlideToOpen(entranceSlideProgress);
+                          }
+                        }}
+                        onPointerDown={(e) => {
+                          if (isEntranceUnfurling || isGiftCurrentlyLocked) return;
+                          e.stopPropagation();
+                          if (entranceSlideRafRef.current !== null) {
+                            cancelAnimationFrame(entranceSlideRafRef.current);
+                            entranceSlideRafRef.current = null;
+                          }
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          entranceSliderDragStartXRef.current = e.clientX;
+                          setIsDraggingEntranceSlider(true);
+                        }}
+                        onPointerMove={(e) => {
+                          if (!isDraggingEntranceSlider || !entranceSliderTrackRef.current) return;
+                          const rect = entranceSliderTrackRef.current.getBoundingClientRect();
+                          const thumbDiameter = 42;
+                          const maxTravel = Math.max(1, rect.width - thumbDiameter - 12);
+                          const offsetFromLeft = e.clientX - rect.left - thumbDiameter / 2 - 6;
+                          const ratio = Math.max(0, Math.min(1, offsetFromLeft / maxTravel));
+                          setEntranceSlideProgress(ratio);
+                        }}
+                        onPointerUp={(e) => {
+                          if (!isDraggingEntranceSlider) return;
+                          setIsDraggingEntranceSlider(false);
+                          const dragDistance =
+                            entranceSliderDragStartXRef.current !== null
+                              ? Math.abs(e.clientX - entranceSliderDragStartXRef.current)
+                              : 0;
+                          entranceSliderDragStartXRef.current = null;
+
+                          if (entranceSlideProgress >= 0.72) {
+                            handleGlideSlideToOpen(entranceSlideProgress);
+                          } else if (dragDistance < 8) {
+                            // Quick tap/click glides the slider smoothly across so the flower blooms open
+                            handleGlideSlideToOpen(entranceSlideProgress);
+                          } else {
+                            setEntranceSlideProgress(0);
+                          }
+                        }}
+                        onPointerCancel={() => {
+                          setIsDraggingEntranceSlider(false);
+                          entranceSliderDragStartXRef.current = null;
+                          setEntranceSlideProgress(0);
+                        }}
+                        className={`relative w-[264px] sm:w-[280px] h-[52px] sm:h-[54px] rounded-full border border-dashed flex items-center select-none touch-none cursor-grab active:cursor-grabbing shadow-[0_12px_32px_rgba(35,28,24,0.08)] backdrop-blur-md overflow-hidden ${
+                          isDarkMode
+                            ? 'bg-[#352C29]/92 border-[#6A5750]'
+                            : 'bg-[#FFFDF9]/92 border-[#D5BCA8]'
+                        }`}
+                      >
+                        {/* Soft Blush/Terracotta Progress Fill Trailing the Wax-Seal Thumb */}
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-1.5 left-1.5 rounded-full transition-none"
+                          style={{
+                            width: `calc(40px + ${entranceSlideProgress} * (100% - 52px))`,
+                            background: isDarkMode
+                              ? 'linear-gradient(90deg, rgba(184, 93, 75, 0.30) 0%, rgba(230, 184, 156, 0.38) 100%)'
+                              : 'linear-gradient(90deg, rgba(248, 187, 208, 0.42) 0%, rgba(180, 132, 108, 0.28) 100%)',
+                          }}
+                        />
+
+                        {/* Centered Editorial Prompt ("Slide to open") */}
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 pl-8 flex items-center justify-center gap-1.5 text-xs sm:text-[13px] font-medium tracking-wide"
+                          style={{
+                            opacity: Math.max(0, 1 - entranceSlideProgress * 1.45),
+                          }}
+                        >
+                          <span className={isDarkMode ? 'text-[#F0DFD6]' : 'text-[#5C4438]'}>
+                            Slide to open
+                          </span>
+                          <ChevronRight
+                            className={`w-3.5 h-3.5 ${
+                              isDarkMode ? 'text-[#E6B89C]' : 'text-[#9A6B56]'
+                            }`}
+                          />
+                        </div>
+
+                        {/* Draggable Embossed Botanical Wax-Seal Thumb (Starts on Left, Slides to Right) */}
+                        <div
+                          data-testid="recipient-slide-thumb"
+                          style={{
+                            left: `calc(6px + ${entranceSlideProgress} * (100% - 46px))`,
+                          }}
+                          className={`absolute top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-[0_6px_16px_rgba(122,75,58,0.28)] ${
+                            isDraggingEntranceSlider ? 'scale-105' : ''
+                          } ${
+                            isDarkMode
+                              ? 'bg-[#9A6550] text-white'
+                              : 'bg-[#7A4B3A] text-white'
                           }`}
                         >
-                          Tap to unwrap your flowers &amp; note
-                        </p>
+                          <span className="w-7 h-7 rounded-full bg-[#B85D4B] border border-[#FFFDF9]/50 flex items-center justify-center">
+                            <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 overflow-visible">
+                              <circle
+                                cx="10"
+                                cy="10"
+                                r="7.5"
+                                fill="none"
+                                stroke="#FDE68A"
+                                strokeWidth="0.9"
+                                strokeDasharray="2 1.6"
+                                opacity="0.85"
+                              />
+                              <path
+                                d="M10,7.8 C8.2,5.8 5.4,7.3 7,10.2 L10,13.2 L13,10.2 C14.6,7.3 11.8,5.8 10,7.8 Z"
+                                fill="#FFFDF9"
+                              />
+                            </svg>
+                          </span>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2410,45 +2789,44 @@ export default function App() {
 
           {/* ===================================================================
               RECIPIENT TOP FLOATING DEDICATION & AMBIENT PILL BAR
-              Quiet luxury header showing "For [Recipient] · from [Sender]" on the
-              left and Replay Bloom / Music / Theme controls on the right.
+              Quiet luxury header showing "For [Recipient] · with love, [Sender]"
+              on the left and Replay Bloom / Music / Theme controls on the right.
               =================================================================== */}
           {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
-            <div className="w-full px-3 sm:px-6 z-20 absolute top-3 sm:top-4 inset-x-0 pointer-events-none flex items-center justify-between gap-2">
-              {/* Left: Dedication Capsule */}
+            <div className="w-full max-w-full px-2.5 sm:px-6 z-20 absolute top-3 sm:top-4 inset-x-0 pointer-events-none flex items-center justify-between gap-1.5 sm:gap-2">
+              {/* Left: Dedication Capsule (Flexes and truncates cleanly so right pill never clips on mobile) */}
               <div
-                className={`pointer-events-auto inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md max-w-[68vw] sm:max-w-md ${
+                className={`pointer-events-auto min-w-0 flex-initial max-w-[calc(100%-6.75rem)] sm:max-w-md inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md ${
                   isDarkMode
-                    ? 'bg-[#352C29]/92 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#231C18]'
+                    ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
                 }`}
               >
-                <BrandLogoMark className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" isDarkMode={isDarkMode} />
-                <div className="truncate text-xs sm:text-sm">
-                  <span
-                    className="font-semibold tracking-tight text-sm sm:text-base"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    For {card.to || 'You'}
-                  </span>
+                <BrandLogoMark className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 shrink-0" isDarkMode={isDarkMode} />
+                <div
+                  className="min-w-0 truncate text-xs sm:text-base leading-tight"
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  <span className="italic opacity-75 mr-1">For</span>
+                  <span className="font-semibold tracking-tight">{card.to || 'My Dearest'}</span>
                   {card.from && (
                     <span
-                      className={`ml-1.5 text-[11px] sm:text-xs ${
+                      className={`ml-1.5 sm:ml-2 italic text-[11px] sm:text-sm ${
                         isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
                       }`}
                     >
-                      · from {card.from}
+                      · with love, {card.from}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Right: Quiet Ambient Controls (Replay Bloom, Music, Theme) */}
+              {/* Right: Quiet Ambient Controls (Replay Bloom, Music, Theme — never clipped on mobile) */}
               <div
-                className={`pointer-events-auto inline-flex items-center gap-1 p-1 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md shrink-0 ${
+                className={`pointer-events-auto inline-flex items-center gap-0.5 px-1.5 sm:px-2 py-1 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md shrink-0 ${
                   isDarkMode
-                    ? 'bg-[#352C29]/92 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#231C18]'
+                    ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
                 }`}
               >
                 <button
@@ -2456,15 +2834,17 @@ export default function App() {
                   onClick={() => startGiftBloomAnimation(items.length, false)}
                   aria-label="Replay bloom animation"
                   title="Replay bloom animation"
-                  className={`h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 transition active:scale-95 cursor-pointer ${
+                  className={`h-6 sm:h-7 px-1.5 sm:px-2 rounded-full text-[11px] font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
                     isDarkMode
-                      ? 'text-[#E6D6C7] hover:bg-[#463A36]'
-                      : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                      ? 'text-[#E6D6C7] hover:text-[#FBF6F1]'
+                      : 'text-[#5C4438] hover:text-[#231C18]'
                   }`}
                 >
                   <RotateCcw className="w-3 h-3 text-[#B4846C]" />
                   <span className="hidden sm:inline">Replay</span>
                 </button>
+
+                <span aria-hidden="true" className="opacity-25 text-xs select-none">·</span>
 
                 <button
                   type="button"
@@ -2472,26 +2852,28 @@ export default function App() {
                   aria-pressed={isMusicPlaying}
                   aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                   title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                  className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
                     isMusicPlaying
-                      ? 'bg-[#B4846C]/20 text-[#B4846C]'
+                      ? 'text-[#B4846C]'
                       : isDarkMode
-                      ? 'text-[#C8B6AC] hover:bg-[#463A36]'
-                      : 'text-[#7D6B60] hover:bg-[#FAF4EE]'
+                      ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
+                      : 'text-[#7D6B60] hover:text-[#231C18]'
                   }`}
                 >
                   {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
                 </button>
+
+                <span aria-hidden="true" className="opacity-25 text-xs select-none">·</span>
 
                 <button
                   type="button"
                   onClick={() => setIsDarkMode((prev) => !prev)}
                   aria-label="Toggle theme"
                   title="Toggle theme"
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                  className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
                     isDarkMode
-                      ? 'text-[#E6B89C] hover:bg-[#463A36]'
-                      : 'text-[#7D6B60] hover:bg-[#FAF4EE]'
+                      ? 'text-[#E6B89C] hover:text-[#FBF6F1]'
+                      : 'text-[#7D6B60] hover:text-[#231C18]'
                   }`}
                 >
                   {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
@@ -2501,56 +2883,73 @@ export default function App() {
           )}
 
           {/* ===================================================================
-              RECIPIENT BOTTOM KEEPSAKE BAR & REACTION POPOVER
-              Warm stationery dock with direct Read Letter, Voice, Thank/Reply,
-              Save PNG, and Craft Yours actions.
+              RECIPIENT BOTTOM KEEPSAKE BAR & MINIATURE STATIONERY REPLY POSTCARD
+              Single-surface couture dock (zero nested pills-in-pills) + cute
+              postage-stamped miniature stationery reply card.
               =================================================================== */}
           {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
             <div
               className="w-full px-3 sm:px-4 z-20 absolute bottom-3.5 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2.5"
               style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
-              {/* Expandable Recipient Reaction & Thank-You Note Stationery Card */}
+              {/* Miniature Stationery Reply Postcard */}
               {isReactionPopoverOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className={`pointer-events-auto w-full max-w-sm rounded-[24px] p-4 sm:p-5 border border-dashed shadow-[0_20px_50px_rgba(28,20,16,0.18)] backdrop-blur-xl animate-in fade-in duration-150 ${
+                  className={`pointer-events-auto relative w-full max-w-[340px] rounded-[24px] p-4 sm:p-5 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.18)] backdrop-blur-xl animate-in fade-in duration-150 ${
                     isDarkMode
                       ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
                       : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#231C18]'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-3">
+                  {/* Top Header: Serif Salutation + Tiny Floral Postage Stamp + Close */}
+                  <div className="flex items-start justify-between gap-2 mb-3">
                     <div>
-                      <h4
-                        className="text-lg font-medium tracking-tight leading-none"
+                      <span
+                        className="block text-xl sm:text-2xl italic font-normal tracking-tight leading-tight"
                         style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                       >
-                        Send a Note to {card.from || 'Sender'}
-                      </h4>
-                      <p
-                        className={`text-[11px] mt-0.5 ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                        Dear {card.from || 'Friend'},
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Cute Perforated Botanical Postage Stamp */}
+                      <div
+                        aria-hidden="true"
+                        className={`w-8 h-9 rounded-[4px] border border-dashed flex items-center justify-center rotate-3 ${
+                          isDarkMode
+                            ? 'border-[#6E5A53] bg-[#2B2321]'
+                            : 'border-[#D5BFA9] bg-[#FAF3EB]'
                         }`}
                       >
-                        Let them know their bouquet arrived
-                      </p>
+                        <svg viewBox="0 0 24 24" className="w-4 h-4">
+                          <circle cx="12" cy="12" r="2.2" fill="#E8A558" />
+                          <circle cx="12" cy="7.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                          <circle cx="16.2" cy="10.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                          <circle cx="14.6" cy="15.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                          <circle cx="9.4" cy="15.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                          <circle cx="7.8" cy="10.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                        </svg>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsReactionPopoverOpen(false)}
+                        className={`p-1 rounded-full transition cursor-pointer ${
+                          isDarkMode
+                            ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                            : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#FAF4EE]'
+                        }`}
+                        aria-label="Close reaction card"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsReactionPopoverOpen(false)}
-                      className={`p-1.5 rounded-full transition cursor-pointer ${
-                        isDarkMode
-                          ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                          : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#FAF4EE]'
-                      }`}
-                      aria-label="Close reaction card"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+                  {/* Subtle Reactions Row */}
+                  <div className="flex flex-wrap gap-1.5 mb-3">
                     {RECIPIENT_REACTIONS.map((rx) => {
                       const active = selectedReactionId === rx.id;
                       return (
@@ -2558,151 +2957,168 @@ export default function App() {
                           key={rx.id}
                           type="button"
                           onClick={() => setSelectedReactionId(rx.id)}
-                          className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
                             active
                               ? isDarkMode
                                 ? 'border-[#E6B89C] bg-[#E6B89C]/20 text-[#FBF6F1]'
                                 : 'border-[#6E4434] bg-[#6E4434]/10 text-[#231C18]'
                               : isDarkMode
-                              ? 'border-dashed border-[#544540] bg-[#2B2321] text-[#D8C7BE] hover:border-[#6E5B54]'
-                              : 'border-dashed border-[#DECBB9] bg-[#FAF4EE]/70 text-[#5C4438] hover:border-[#C5A892]'
+                              ? 'border-dashed border-[#544540] text-[#D8C7BE] hover:border-[#6E5B54]'
+                              : 'border-dashed border-[#DECBB9] text-[#5C4438] hover:border-[#C5A892]'
                           }`}
                         >
-                          <span className="text-sm">{rx.symbol}</span>
-                          <span className="truncate">{rx.label}</span>
+                          <span>{rx.symbol}</span>
+                          <span>{rx.label}</span>
                         </button>
                       );
                     })}
                   </div>
 
+                  {/* Ruled Stationery Note Lines */}
                   <textarea
                     rows={2}
                     maxLength={200}
                     value={recipientReplyText}
                     onChange={(e) => setRecipientReplyText(e.target.value)}
-                    placeholder={`Write a sweet thank-you note to ${card.from || 'the sender'}...`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
-                    className={`w-full px-3.5 py-2 rounded-xl border border-dashed resize-none focus:outline-none focus:border-[#B4846C] ${
+                    placeholder="Write a little note back..."
+                    style={{
+                      fontFamily: "'Cormorant Garamond', Georgia, serif",
+                      fontSize: '17px',
+                      lineHeight: '28px',
+                      backgroundImage: isDarkMode
+                        ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(212, 180, 158, 0.14) 27px, rgba(212, 180, 158, 0.14) 28px)'
+                        : 'repeating-linear-gradient(transparent, transparent 27px, rgba(180, 148, 125, 0.18) 27px, rgba(180, 148, 125, 0.18) 28px)',
+                    }}
+                    className={`w-full px-1 py-0.5 bg-transparent resize-none focus:outline-none ${
                       isDarkMode
-                        ? 'bg-[#2B2321] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#9A877B]'
-                        : 'bg-[#FAF4EE]/70 border-[#DECBB9] text-[#231C18] placeholder:text-[#9A877B]'
+                        ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
+                        : 'text-[#231C18] placeholder:text-[#9A877B]'
                     }`}
                   />
 
-                  <button
-                    type="button"
-                    disabled={isSubmittingReaction}
-                    onClick={handleSubmitRecipientReaction}
-                    className={`mt-2.5 w-full py-2.5 px-4 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 ${
-                      isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                    }`}
-                  >
-                    {isSubmittingReaction ? 'Sending...' : 'Send Thank-You Note ♥'}
-                  </button>
+                  <div className="mt-3 flex items-center justify-end">
+                    <button
+                      type="button"
+                      disabled={isSubmittingReaction}
+                      onClick={handleSubmitRecipientReaction}
+                      className={`py-2 px-5 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 ${
+                        isDarkMode
+                          ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                          : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                      }`}
+                    >
+                      {isSubmittingReaction ? 'Sending...' : 'Send Reply'}
+                    </button>
+                  </div>
                 </div>
               )}
 
+              {/* Single-Surface Couture Keepsake Dock (Fits 100% on narrow mobile viewports without clipping) */}
               <div
-                className={`pointer-events-auto inline-flex items-center gap-1 sm:gap-1.5 p-1.5 rounded-full border border-dashed shadow-[0_12px_36px_rgba(35,28,24,0.10)] backdrop-blur-md max-w-full overflow-x-auto no-scrollbar transition-all duration-500 ${
+                className={`pointer-events-auto inline-flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-1.5 rounded-full border border-dashed shadow-[0_12px_36px_rgba(35,28,24,0.10)] backdrop-blur-md max-w-[calc(100vw-1rem)] overflow-x-auto no-scrollbar transition-all duration-500 ${
                   isDarkMode
-                    ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#231C18]'
+                    ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/94 border-[#DECBB9] text-[#231C18]'
                 } ${
                   showGiftCardReveal || isPreviewMode
                     ? 'opacity-100 translate-y-0'
                     : 'opacity-0 translate-y-3 pointer-events-none'
                 }`}
               >
-                {/* 1. Open / Read Letter Button */}
+                {/* 1. Open / Read Letter Action */}
                 {card.visibleOnStage && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLetterTypedChars(0);
-                      setIsLetterModalOpen(true);
-                    }}
-                    className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
-                      isDarkMode
-                        ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
-                        : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
-                    }`}
-                  >
-                    <Mail className="w-3.5 h-3.5 text-[#B4846C]" />
-                    <span className="hidden sm:inline">Read Letter</span>
-                    <span className="sm:hidden">Letter</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLetterTypedChars(0);
+                        setIsLetterModalOpen(true);
+                      }}
+                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                        isDarkMode
+                          ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                          : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                      }`}
+                    >
+                      <Mail className="w-3.5 h-3.5 text-[#B4846C]" />
+                      <span>Letter</span>
+                    </button>
+                    <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+                  </>
                 )}
 
-                {/* 2. Recipient Voice Keepsake Play Button */}
+                {/* 2. Recipient Voice Keepsake Play Action */}
                 {(voice.visibleOnStage || Boolean(voice.audioDataUrl)) && (
-                  <button
-                    type="button"
-                    aria-label={isVoicePlaying ? 'Pause voice' : 'Play voice'}
-                    title={isVoicePlaying ? 'Pause voice' : 'Play voice'}
-                    onClick={() => {
-                      if (voice.audioDataUrl) {
-                        handleTogglePlayVoice();
-                      } else {
-                        setIsVoiceModalOpen(true);
-                      }
-                    }}
-                    className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
-                      isVoicePlaying
-                        ? 'bg-rose-600 text-white border-rose-600'
-                        : isDarkMode
-                        ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
-                        : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
-                    }`}
-                  >
-                    {isVoicePlaying ? (
-                      <Pause className="w-3.5 h-3.5 fill-current" />
-                    ) : (
-                      <Play className="w-3.5 h-3.5 fill-current text-[#B4846C]" />
-                    )}
-                    <span>Voice</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      aria-label={isVoicePlaying ? 'Pause voice' : 'Play voice'}
+                      title={isVoicePlaying ? 'Pause voice' : 'Play voice'}
+                      onClick={() => {
+                        if (voice.audioDataUrl) {
+                          handleTogglePlayVoice();
+                        } else {
+                          setIsVoiceModalOpen(true);
+                        }
+                      }}
+                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                        isVoicePlaying
+                          ? 'text-rose-500 font-semibold'
+                          : isDarkMode
+                          ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                          : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                      }`}
+                    >
+                      {isVoicePlaying ? (
+                        <Pause className="w-3.5 h-3.5 fill-current" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 fill-current text-[#B4846C]" />
+                      )}
+                      <span>Voice</span>
+                    </button>
+                    <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+                  </>
                 )}
 
-                {/* 3. Recipient Reaction / Thank-You Reply Button */}
+                {/* 3. Recipient Reaction / Reply Note Action */}
                 <button
                   type="button"
                   onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
-                  className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                  className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
                     hasSubmittedReaction
-                      ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-300'
+                      ? 'text-rose-600 dark:text-rose-300'
                       : isDarkMode
-                      ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
-                      : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
+                      ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                      : 'text-[#5C4438] hover:bg-[#FAF4EE]'
                   }`}
                 >
                   <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
-                  <span>{hasSubmittedReaction ? 'Sent ♥' : 'React / Reply'}</span>
+                  <span>{hasSubmittedReaction ? 'Sent' : 'Reply'}</span>
                 </button>
 
-                {/* 4. Save PNG Button */}
+                <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+
+                {/* 4. Save Keepsake PNG Action */}
                 <button
                   type="button"
                   onClick={handleExportPng}
                   aria-label="Save as PNG"
-                  title="Save bouquet as PNG image"
-                  className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                  title="Save bouquet keepsake image"
+                  className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
                     isDarkMode
-                      ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
-                      : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
+                      ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                      : 'text-[#5C4438] hover:bg-[#FAF4EE]'
                   }`}
                 >
                   <Download className="w-3.5 h-3.5 text-[#B4846C]" />
-                  <span className="hidden sm:inline">Save as PNG</span>
-                  <span className="sm:hidden">PNG</span>
+                  <span>Save</span>
                 </button>
 
-                {/* 5. Back to Editing / Create Yours Primary CTA */}
+                {/* 5. Back to Editing / Craft Yours Filled CTA Pill */}
                 <button
                   type="button"
                   onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
-                  className={`px-4 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                  className={`ml-0.5 sm:ml-1 px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer whitespace-nowrap ${
                     isDarkMode
                       ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
                       : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
@@ -2710,13 +3126,13 @@ export default function App() {
                 >
                   {isPreviewMode ? (
                     <>
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      <span>Back to editing</span>
+                      <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
+                      <span>Back to Studio</span>
                     </>
                   ) : (
                     <>
-                      <Flower2 className="w-3.5 h-3.5" />
-                      <span>Create Yours</span>
+                      <Flower2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Craft Yours</span>
                     </>
                   )}
                 </button>
@@ -2833,13 +3249,44 @@ export default function App() {
               </div>
             </div>
 
-            {/* Row 2: Horizontal Circular Item Carousel (Collapsible down on Phone & Desktop) */}
+            {/* Row 2: Horizontal Circular Item Carousel with Desktop Scroll Arrows & Mouse-Wheel Support */}
             <div
-              className={`flex items-start gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 ${
+              className={`relative flex items-center ${
                 isDesktopDockCollapsed ? 'hidden' : ''
               }`}
             >
-              {/* CATEGORY 1: TEMPLATES */}
+              {/* Left Carousel Scroll Arrow Button (Desktop & Tablet) */}
+              <button
+                type="button"
+                data-testid="studio-carousel-prev"
+                onClick={() => handleScrollStudioCarousel('left')}
+                aria-label="Scroll selection choices left"
+                title="Previous choices"
+                className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-dashed shrink-0 mr-1.5 transition active:scale-95 cursor-pointer shadow-xs ${
+                  canScrollCarouselLeft
+                    ? isDarkMode
+                      ? 'bg-[#2B2321] border-[#6A5750] text-[#FBF6F1] hover:border-[#B4846C]'
+                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438] hover:border-[#B4846C]'
+                    : isDarkMode
+                    ? 'bg-[#2B2321]/40 border-[#4A3D38] text-[#7A6860] opacity-50'
+                    : 'bg-[#FAF4EE]/50 border-[#E8D9CB] text-[#B8A69A] opacity-50'
+                }`}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div
+                ref={studioCarouselRef}
+                onScroll={updateStudioCarouselScrollState}
+                onWheel={(e) => {
+                  if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && studioCarouselRef.current) {
+                    studioCarouselRef.current.scrollLeft += e.deltaY;
+                    updateStudioCarouselScrollState();
+                  }
+                }}
+                className="flex-1 min-w-0 flex items-start gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 scroll-smooth"
+              >
+                {/* CATEGORY 1: TEMPLATES */}
               {mobileCategory === 'templates' && (
                 <>
                   <button
@@ -3236,6 +3683,27 @@ export default function App() {
                   </button>
                 </>
               )}
+              </div>
+
+              {/* Right Carousel Scroll Arrow Button (Desktop & Tablet) */}
+              <button
+                type="button"
+                data-testid="studio-carousel-next"
+                onClick={() => handleScrollStudioCarousel('right')}
+                aria-label="Scroll selection choices right"
+                title="More choices"
+                className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-dashed shrink-0 ml-1.5 transition active:scale-95 cursor-pointer shadow-xs ${
+                  canScrollCarouselRight
+                    ? isDarkMode
+                      ? 'bg-[#2B2321] border-[#6A5750] text-[#FBF6F1] hover:border-[#B4846C]'
+                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438] hover:border-[#B4846C]'
+                    : isDarkMode
+                    ? 'bg-[#2B2321]/40 border-[#4A3D38] text-[#7A6860] opacity-50'
+                    : 'bg-[#FAF4EE]/50 border-[#E8D9CB] text-[#B8A69A] opacity-50'
+                }`}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </section>
         )}
@@ -3800,24 +4268,38 @@ export default function App() {
                   <X className="w-4 h-4" />
                 </button>
 
-                {/* Embossed Wax Seal Header */}
-                <div className="flex items-center gap-3 mb-4">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center shadow-md shrink-0 relative"
-                    style={{ backgroundColor: cardPalette.seal }}
-                  >
-                    <div className="w-7 h-7 rounded-full border border-white/60 flex items-center justify-center">
-                      <Flower2 className="w-4 h-4 text-white" />
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <span
-                      className="text-[11px] uppercase tracking-widest font-semibold opacity-70 block"
-                      style={{ color: cardPalette.sign }}
-                    >
-                      A Personal Note
-                    </span>
-                  </div>
+                {/* Embossed Botanical Wax Seal & Pressed Sage Leaf Header (Zero All-Caps Shouting) */}
+                <div className="flex items-center gap-2.5 mb-3">
+                  <svg viewBox="0 0 56 38" className="w-14 h-9 overflow-visible select-none" aria-hidden="true">
+                    {/* Delicate Sage Leaf Sprig Behind Seal */}
+                    <path
+                      d="M 22,19 C 34,10 46,12 52,18 C 44,24 32,24 22,19 Z"
+                      fill="rgba(122, 163, 135, 0.28)"
+                      stroke="#6A9478"
+                      strokeWidth="1.1"
+                    />
+                    {/* Embossed Wax Seal */}
+                    <circle
+                      cx="19"
+                      cy="19"
+                      r="14"
+                      fill={cardPalette.seal}
+                    />
+                    <circle
+                      cx="19"
+                      cy="19"
+                      r="10"
+                      fill="none"
+                      stroke="#FFFDF9"
+                      strokeWidth="0.9"
+                      strokeDasharray="2.5 2"
+                      opacity="0.75"
+                    />
+                    <path
+                      d="M19,16.2 C16.6,13.6 13,15.4 15,18.8 L19,22.6 L23,18.8 C25,15.4 21.4,13.6 19,16.2 Z"
+                      fill="#FFFDF9"
+                    />
+                  </svg>
                 </div>
 
                 {/* Handwritten Greeting ("Dearest ...,") */}

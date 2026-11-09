@@ -3961,8 +3961,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         )}
       </svg>
 
-      {/* Empty Bouquet Prompt */}
-      {items.length === 0 && (
+      {/* Empty Bouquet Prompt (Editor only — never shown in Recipient / Preview mode) */}
+      {items.length === 0 && !isPreviewMode && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center p-6">
           <div className="bg-white/90 dark:bg-[#1E1C1A]/90 backdrop-blur-md px-6 py-5 rounded-2xl shadow-md border border-stone-200 dark:border-stone-800 max-w-xs">
             <Flower2 className="w-7 h-7 text-stone-400 dark:text-stone-400 mx-auto mb-2" />
@@ -3988,12 +3988,12 @@ export const FallingPetalsOverlay: React.FC<{ items: BouquetItem[] }> = ({ items
       items.length > 0
         ? items.map((i) => i.petalColor)
         : ['#fb7185', '#f472b6', '#fda4af', '#fbcfe8', '#c4b5fd'];
-    return Array.from({ length: 22 }, (_, idx) => ({
+    return Array.from({ length: 16 }, (_, idx) => ({
       id: idx,
-      left: `${(idx * 4.7 + (idx % 3) * 3) % 98}%`,
-      delay: `${(idx * 0.65) % 9}s`,
-      duration: `${8.5 + (idx % 5) * 1.6}s`,
-      size: 12 + (idx % 4) * 4,
+      left: `${(idx * 6.2 + (idx % 3) * 3) % 96}%`,
+      delay: `${(idx * 0.75) % 9}s`,
+      duration: `${9.2 + (idx % 5) * 1.8}s`,
+      size: 11 + (idx % 4) * 3.5,
       color: paletteColors[idx % paletteColors.length],
       sway: idx % 2 === 0 ? 28 : -28
     }));
@@ -4011,18 +4011,34 @@ export const FallingPetalsOverlay: React.FC<{ items: BouquetItem[] }> = ({ items
             opacity: 0;
           }
           12% {
-            opacity: 0.78;
+            opacity: 0.72;
           }
           50% {
             transform: translate3d(24px, 48vh, 0) rotate(165deg);
-            opacity: 0.75;
+            opacity: 0.68;
           }
           88% {
-            opacity: 0.65;
+            opacity: 0.58;
           }
           100% {
             transform: translate3d(-18px, 102vh, 0) rotate(340deg);
             opacity: 0;
+          }
+        }
+        @keyframes dofStageForegroundLeft {
+          0%, 100% {
+            transform: translate3d(0px, 0px, 0) rotate(-16deg) scale(1.04);
+          }
+          50% {
+            transform: translate3d(14px, -26px, 0) rotate(-8deg) scale(1.09);
+          }
+        }
+        @keyframes dofStageForegroundRight {
+          0%, 100% {
+            transform: translate3d(0px, 0px, 0) rotate(22deg) scale(1.1);
+          }
+          50% {
+            transform: translate3d(-16px, 28px, 0) rotate(12deg) scale(1.04);
           }
         }
       `}</style>
@@ -4042,7 +4058,7 @@ export const FallingPetalsOverlay: React.FC<{ items: BouquetItem[] }> = ({ items
           <path
             d="M12,2 C18,6 20,14 12,22 C4,14 6,6 12,2 Z"
             fill={p.color}
-            fillOpacity="0.82"
+            fillOpacity="0.76"
           />
         </svg>
       ))}
