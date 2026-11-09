@@ -206,3 +206,47 @@ test('Single-Bouquet Unlock binds strictly to its bouquet code and cannot unlock
   assert.equal(blockedOnSecond.valid, false);
   assert.equal(blockedOnSecond.status, 'SINGLE_BOUQUET_ALREADY_USED');
 });
+
+test('Vercel Ko-fi checkout, URL normalization, stateless token, and PASS_SIGNING_SECRET client compatibility', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+
+  assert.equal(paymentLib.resolveKofiPageUrl('luxinnamon'), 'https://ko-fi.com/luxinnamon');
+  assert.equal(paymentLib.resolveKofiPageUrl('ko-fi.com/luxinnamon'), 'https://ko-fi.com/luxinnamon');
+  assert.equal(paymentLib.resolveKofiPageUrl('https://ko-fi.com/<your-handle>'), 'https://ko-fi.com/luxinnamon');
+
+  process.env.PASS_SIGNING_SECRET = 'prod_custom_secret_xyz_999';
+  process.env.KOFI_VERIFICATION_TOKEN = 'kofi_test_token_123';
+  process.env.KOFI_PAGE_URL = 'ko-fi.com/luxinnamon';
+
+  try {
+    const serverIssuedPass = paymentLib.createSignedStudioPassServer({
+      tier: 'pass_7d',
+      region: 'PH',
+      deviceTokenHash: 'dev_vercel_test_001',
+      paymentProvider: 'kofi',
+      paymentReference: 'kofi_tx_001',
+    });
+
+    // Must pass client-side verifyPassIntegritySignature even when PASS_SIGNING_SECRET is custom!
+    assert.equal(verifyPassIntegritySignature(serverIssuedPass), true);
+
+    const token = paymentLib.createSignedCheckoutToken({
+      cid: 'chk_123',
+      pk: serverIssuedPass.passKey,
+      t: 'pass_7d',
+      r: 'PH',
+      p: 'kofi',
+      d: 'dev_vercel_test_001',
+      ts: Date.now(),
+    });
+    const decoded = paymentLib.verifySignedCheckoutToken(token);
+    assert.equal(decoded?.cid, 'chk_123');
+    assert.equal(decoded?.pk, serverIssuedPass.passKey);
+  } finally {
+    delete process.env.PASS_SIGNING_SECRET;
+    delete process.env.KOFI_VERIFICATION_TOKEN;
+    delete process.env.KOFI_PAGE_URL;
+  }
+});
+

@@ -1115,9 +1115,15 @@ export default function App() {
   }, [triggerToast]);
 
   const handleExportPng = async () => {
-    // Recipients viewing a shared gift can save a snapshot directly; studio creators check Couture/PNG pass
-    if (!isGiftView && (currentPremiumInspection.isPremiumBouquet || premiumAssetConfig.requirePassForHighResPng)) {
+    // Creators in Studio OR Preview Bloom must unlock Couture / High-Res PNG Pass before saving PNG
+    if (
+      (!isGiftView || isPreviewMode) &&
+      (currentPremiumInspection.isPremiumBouquet || premiumAssetConfig.requirePassForHighResPng)
+    ) {
       if (!isBouquetUnlockedByPass) {
+        if (isPreviewMode) {
+          handleExitGiftViewToEditor();
+        }
         setCheckoutTriggerAction('png');
         setIsCheckoutModalOpen(true);
         return;
@@ -1248,10 +1254,20 @@ export default function App() {
   // Compute preview short link when Share Modal is open without saving duplicate entries on every keystroke
   useEffect(() => {
     if (!isShareModalOpen) return;
+    if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
+      setShortShareUrl('');
+      setIsShorteningUrl(false);
+      return;
+    }
     const firstPartyUrl = registerShortCodeOnServer(true, false);
     setShortShareUrl(firstPartyUrl);
     setIsShorteningUrl(false);
-  }, [isShareModalOpen, registerShortCodeOnServer]);
+  }, [
+    isShareModalOpen,
+    registerShortCodeOnServer,
+    currentPremiumInspection.isPremiumBouquet,
+    isBouquetUnlockedByPass,
+  ]);
 
   const handleShareLink = async (asGift = true, overridePass?: StudioPassRecord | null) => {
     const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;

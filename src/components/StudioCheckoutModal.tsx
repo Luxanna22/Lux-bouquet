@@ -119,7 +119,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 }) => {
   const [region, setRegion] = useState<PricingRegion>(() => detectPricingRegion());
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
-  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>('paymongo');
+  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>('kofi');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card' | 'asset_config'>(
     () => (activePass ? 'pass_card' : 'plans')
   );
@@ -587,26 +587,6 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                data-testid="gateway-paymongo"
-                onClick={() => setPaymentGateway('paymongo')}
-                className={`py-2 px-3 rounded-xl border border-dashed text-left transition cursor-pointer ${
-                  paymentGateway === 'paymongo'
-                    ? isDarkMode
-                      ? 'border-[#E6B89C] bg-[#3B302C]'
-                      : 'border-[#6E4434] bg-[#FAF3EB]'
-                    : isDarkMode
-                    ? 'border-[#544540] opacity-75 hover:opacity-100'
-                    : 'border-[#DECBB9] opacity-75 hover:opacity-100'
-                }`}
-              >
-                <div className="text-[11px] font-semibold">
-                  {region === 'PH' ? 'QR Ph · GCash · Maya' : 'Card · Apple / Google Pay'}
-                </div>
-                <div className="text-[10px] opacity-70">PayMongo Instant</div>
-              </button>
-
-              <button
-                type="button"
                 data-testid="gateway-kofi"
                 onClick={() => setPaymentGateway('kofi')}
                 className={`py-2 px-3 rounded-xl border border-dashed text-left transition cursor-pointer ${
@@ -619,8 +599,28 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     : 'border-[#DECBB9] opacity-75 hover:opacity-100'
                 }`}
               >
-                <div className="text-[11px] font-semibold">PayPal · Ko-fi</div>
-                <div className="text-[10px] opacity-70">Pass Key Receipt</div>
+                <div className="text-[11px] font-semibold">PayPal · Card · Ko-fi</div>
+                <div className="text-[10px] opacity-70">Instant Pass Key</div>
+              </button>
+
+              <button
+                type="button"
+                data-testid="gateway-paymongo"
+                onClick={() => setPaymentGateway('paymongo')}
+                className={`py-2 px-3 rounded-xl border border-dashed text-left transition cursor-pointer ${
+                  paymentGateway === 'paymongo'
+                    ? isDarkMode
+                      ? 'border-[#E6B89C] bg-[#3B302C]'
+                      : 'border-[#6E4434] bg-[#FAF3EB]'
+                    : isDarkMode
+                    ? 'border-[#544540] opacity-70 hover:opacity-95'
+                    : 'border-[#DECBB9] opacity-70 hover:opacity-95'
+                }`}
+              >
+                <div className="text-[11px] font-semibold">
+                  {region === 'PH' ? 'QR Ph · GCash · Maya' : 'Card · Apple / Google Pay'}
+                </div>
+                <div className="text-[10px] opacity-70">PayMongo · Soon</div>
               </button>
             </div>
 
@@ -657,7 +657,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            STEP 2: CLEAN QR / CHECKOUT CONFIRMATION
+            STEP 2: CLEAN KO-FI / QR CHECKOUT CONFIRMATION
             =================================================================== */}
         {activeView === 'plans' && checkoutStep === 'qr_confirm' && pendingCheckout && (
           <div className="mt-4 space-y-3.5 animate-in fade-in duration-150">
@@ -682,22 +682,74 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 </div>
               </div>
 
-              <div className="mx-auto w-36 h-36 rounded-2xl border border-dashed border-[#D8C4B4] bg-[#FFFDF9] text-[#231C18] p-3 flex flex-col items-center justify-center gap-1.5">
-                <QrCode className="w-20 h-20 text-[#231C18]" strokeWidth={1.35} />
-                <span className="font-mono text-[10px] tracking-wider text-[#6E4434]">
-                  {pendingCheckout.passKeyPreview}
-                </span>
-              </div>
+              {pendingCheckout.provider === 'kofi' ? (
+                <div className="space-y-2.5">
+                  <div
+                    className={`mx-auto max-w-[260px] px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 ${
+                      isDarkMode
+                        ? 'bg-[#221B19] border-[#66554F]'
+                        : 'bg-[#FFFDF9] border-[#D8C4B4]'
+                    }`}
+                  >
+                    <span className="font-mono text-xs font-semibold tracking-wider text-[#B4846C]">
+                      {pendingCheckout.passKeyPreview}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPassKey(pendingCheckout.passKeyPreview)}
+                      className="text-[11px] font-medium underline opacity-80 hover:opacity-100 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedPassKey ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedPassKey ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
 
-              {pendingCheckout.checkoutUrl && (
-                <a
-                  href={pendingCheckout.checkoutUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block px-3.5 py-1.5 rounded-full text-xs font-medium border border-dashed border-[#B4846C] text-[#B4846C] hover:opacity-85 transition"
-                >
-                  Open Payment Page ↗
-                </a>
+                  <p className="text-[11px] opacity-75">
+                    Paste this key in your Ko-fi note when paying {pendingCheckout.plan.displayPrice}.
+                  </p>
+
+                  <a
+                    href={pendingCheckout.checkoutUrl || 'https://ko-fi.com/luxinnamon'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard
+                          .writeText(pendingCheckout.passKeyPreview)
+                          .catch(() => {});
+                      }
+                      setCopiedPassKey(true);
+                      onToast('Key copied — paste in your Ko-fi note');
+                    }}
+                    className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium border border-dashed transition ${
+                      isDarkMode
+                        ? 'border-[#E6B89C] text-[#F0C8B0] hover:bg-[#3B302C]'
+                        : 'border-[#6E4434] text-[#6E4434] bg-[#FFFDF9] hover:bg-[#F3E9DF]'
+                    }`}
+                  >
+                    <span>Copy Key &amp; Open Ko-fi ↗</span>
+                  </a>
+                </div>
+              ) : (
+                <>
+                  <div className="mx-auto w-36 h-36 rounded-2xl border border-dashed border-[#D8C4B4] bg-[#FFFDF9] text-[#231C18] p-3 flex flex-col items-center justify-center gap-1.5">
+                    <QrCode className="w-20 h-20 text-[#231C18]" strokeWidth={1.35} />
+                    <span className="font-mono text-[10px] tracking-wider text-[#6E4434]">
+                      {pendingCheckout.passKeyPreview}
+                    </span>
+                  </div>
+
+                  {pendingCheckout.checkoutUrl && (
+                    <a
+                      href={pendingCheckout.checkoutUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block px-3.5 py-1.5 rounded-full text-xs font-medium border border-dashed border-[#B4846C] text-[#B4846C] hover:opacity-85 transition"
+                    >
+                      Open Payment Page ↗
+                    </a>
+                  )}
+                </>
               )}
             </div>
 
@@ -724,7 +776,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
                 }`}
               >
-                {isProcessing ? 'Verifying...' : 'Complete & Unlock'}
+                {isProcessing
+                  ? 'Verifying...'
+                  : pendingCheckout.provider === 'kofi'
+                  ? "I've Paid · Verify Pass"
+                  : 'Complete & Unlock'}
               </button>
             </div>
           </div>
