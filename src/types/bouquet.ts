@@ -862,7 +862,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         to: 'Birthday Star',
         message: 'Wishing you sunshine, vibrant laughter, and blooms all year long!',
         from: 'With Love',
-        theme: 'cream',
+        theme: 'sealed',
         visibleOnStage: true
       },
       items: [
@@ -890,7 +890,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         to: 'My Soulmate',
         message: 'Every moment with you has felt like spring. Happy Anniversary!',
         from: 'Yours Forever',
-        theme: 'blush',
+        theme: 'sealed',
         visibleOnStage: true
       },
       items: [
@@ -918,7 +918,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         to: 'Dear Friend',
         message: 'Sending warm floral hugs and peaceful prayers for a speedy recovery.',
         from: 'Thinking of You',
-        theme: 'lavender',
+        theme: 'sealed',
         visibleOnStage: true
       },
       items: [
@@ -945,7 +945,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         to: 'Someone Wonderful',
         message: 'Thank you from the bottom of my heart for your kindness and grace.',
         from: 'Gratefully Yours',
-        theme: 'cream',
+        theme: 'sealed',
         visibleOnStage: true
       },
       items: [

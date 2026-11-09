@@ -238,6 +238,7 @@ export default function App() {
   const hasHydratedRef = useRef(false);
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
+  const currentSessionVaultCodeRef = useRef<string | null>(null);
 
   // Close the Slide-in Tool Drawer (Colors, Stem, Layers, Edit Note / Card, Voice) when clicking anywhere outside it
   useEffect(() => {
@@ -945,7 +946,7 @@ export default function App() {
   );
 
   const registerShortCodeOnServer = useCallback(
-    (asGift = true) => {
+    (asGift = true, persistToVault = false) => {
       const snap: BouquetSnapshot = {
         items,
         wrapStyle,
@@ -961,22 +962,38 @@ export default function App() {
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
       const firstPartyUrl = origin ? `${origin}/${code}` : `/${code}`;
 
+      // Always keep local short-code lookup cache warm for instant preview resolution
+      localShortCodeCache.set(code, hashPayload);
+      try {
+        localStorage.setItem(`bq_short_${code}`, hashPayload);
+      } catch {
+        // Ignore localStorage quota errors
+      }
+
+      if (!persistToVault) {
+        return firstPartyUrl;
+      }
+
       // Persist directly to Firebase Firestore for instant cross-device & Vercel persistence
       saveSharedBouquetToFirestore(code, hashPayload, snap).catch(() => {});
 
-      // Save to local account-free Bouquet Vault so the sender can check open receipts & reactions anytime
-      const updatedVault = saveBouquetToLocalVault({
-        code,
-        to: card.to || 'Someone Special',
-        from: card.from || 'Yours',
-        recipientName: card.to || 'Someone Special',
-        senderName: card.from || 'Yours',
-        createdAt: new Date().toISOString(),
-        shareUrl: firstPartyUrl,
-        lockMode: lock?.mode || 'none',
-        hasVoice: Boolean(voice?.audioDataUrl),
-        flowerCount: items.length,
-      });
+      // Save to local account-free Bouquet Vault (replaces previous code from the same editing session so changing share info never duplicates!)
+      const updatedVault = saveBouquetToLocalVault(
+        {
+          code,
+          to: card.to || 'Someone Special',
+          from: card.from || 'Yours',
+          recipientName: card.to || 'Someone Special',
+          senderName: card.from || 'Yours',
+          createdAt: new Date().toISOString(),
+          shareUrl: firstPartyUrl,
+          lockMode: lock?.mode || 'none',
+          hasVoice: Boolean(voice?.audioDataUrl),
+          flowerCount: items.length,
+        },
+        currentSessionVaultCodeRef.current
+      );
+      currentSessionVaultCodeRef.current = code;
       setVaultCount(updatedVault.length);
 
       if (!countedCreatedCodeSetRef.current.has(code)) {
@@ -1004,20 +1021,20 @@ export default function App() {
     [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]
   );
 
-  // Immediately generate and register our own first-party short link (e.g. https://[domain]/Vu18KSuusq9133s)
+  // Compute preview short link when Share Modal is open without saving duplicate entries on every keystroke
   useEffect(() => {
     if (!isShareModalOpen) return;
-    const firstPartyUrl = registerShortCodeOnServer(true);
+    const firstPartyUrl = registerShortCodeOnServer(true, false);
     setShortShareUrl(firstPartyUrl);
     setIsShorteningUrl(false);
   }, [isShareModalOpen, registerShortCodeOnServer]);
 
   const handleShareLink = async (asGift = true) => {
-    const firstPartyUrl = registerShortCodeOnServer(asGift);
+    const firstPartyUrl = registerShortCodeOnServer(asGift, true);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
-    triggerToast('Link copied & saved to My Bouquets ♥');
+    triggerToast('Link copied & saved to Saved Bouquets ♥');
   };
 
   const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card' | 'voice') => {
@@ -1292,6 +1309,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  currentSessionVaultCodeRef.current = null;
                   clearBouquet();
                   triggerToast('Started over with an empty bouquet');
                 }}
@@ -1583,11 +1601,9 @@ export default function App() {
           {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
 
           {/* ===================================================================
-              GIFT ENTRANCE OVERLAY (Supports Immediate Unwrap, Time-Capsule
-              Date & Time Countdown Lock, and Secret Question Lock!)
-              While locked, the bouquet unwrap, greeting card, and voice keepsake
-              remain completely sealed until the countdown finishes or the secret
-              answer is entered.
+              GIFT ENTRANCE OVERLAY — Luxury Stationery Envelope & Keepsake Gate
+              Supports Immediate Unwrap, Time-Capsule Countdown Lock, and Secret
+              Question Lock in the warm ivory / cashmere atelier aesthetic.
               =================================================================== */}
           {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
             <div
@@ -1599,9 +1615,18 @@ export default function App() {
                   handleUnwrapGiftEntrance();
                 }
               }}
-              className={`absolute inset-0 z-40 flex items-center justify-center p-4 transition-opacity duration-300 ${
+              className={`absolute inset-0 z-40 flex items-center justify-center p-4 sm:p-6 transition-opacity duration-300 ${
                 isGiftCurrentlyLocked ? 'cursor-default' : 'cursor-pointer'
-              } ${isDarkMode ? 'bg-[#2B2321]' : 'bg-[#FAFAF8]'}`}
+              } ${
+                isDarkMode
+                  ? 'bg-[#2B2321]/96'
+                  : 'bg-[#FAF6F0]/96'
+              }`}
+              style={{
+                backgroundImage: isDarkMode
+                  ? 'radial-gradient(circle at 50% 42%, rgba(230, 184, 156, 0.08) 0%, transparent 65%)'
+                  : 'radial-gradient(circle at 50% 42%, rgba(244, 184, 196, 0.18) 0%, transparent 65%)',
+              }}
             >
               {!isResolvingShortCode && (
                 <div
@@ -1611,195 +1636,344 @@ export default function App() {
                       handleUnwrapGiftEntrance();
                     }
                   }}
-                  className={`card-zoom-modal w-full max-w-[360px] rounded-2xl px-7 py-8 text-center border shadow-xl relative ${
+                  className={`card-zoom-modal w-full max-w-[390px] rounded-[28px] p-2.5 shadow-[0_24px_60px_rgba(38,26,20,0.14)] border relative transition-colors ${
                     isDarkMode
                       ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
-                      : 'bg-white border-stone-200/90 text-[#1C1917]'
+                      : 'bg-[#FFFDF9] border-[#E6D7C8] text-[#231C18]'
                   }`}
                 >
-                  {/* Minimal Wax-Sealed Envelope Icon */}
-                  <div className="float-keepsake-envelope mx-auto mb-4 w-20 h-16 flex items-center justify-center">
-                    <svg viewBox="0 0 120 92" className="w-full h-full">
-                      <rect
-                        x="10"
-                        y="14"
-                        width="100"
-                        height="66"
-                        rx="8"
-                        fill={isDarkMode ? '#292524' : '#FAF8F5'}
-                        stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
-                        strokeWidth="1.5"
-                      />
-                      <path
-                        d="M12,78 L60,46 L108,78"
-                        fill="none"
-                        stroke={isDarkMode ? '#44403C' : '#E5DFD7'}
-                        strokeWidth="1.2"
-                      />
-                      <path
-                        d="M11,16 L60,52 L109,16"
-                        fill={isDarkMode ? '#24211E' : '#F3EFEA'}
-                        stroke={isDarkMode ? '#44403C' : '#D6CFC7'}
-                        strokeWidth="1.5"
-                        strokeLinejoin="round"
-                      />
-                      <circle cx="60" cy="50" r="10" fill="#B4846C" />
-                      <circle cx="60" cy="50" r="6.5" fill="none" stroke="#FFFDF9" strokeWidth="0.8" opacity="0.7" />
-                    </svg>
-                  </div>
-
-                  <h2
-                    className="text-2xl sm:text-[28px] font-medium tracking-tight leading-snug"
-                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  {/* Inner Dashed Stitch Frame */}
+                  <div
+                    className={`rounded-[22px] border border-dashed px-6 py-7 sm:px-8 sm:py-8 text-center relative ${
+                      isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
+                    }`}
                   >
-                    For {card.to || 'You'}
-                  </h2>
-                  {card.from && (
-                    <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-                      Sent with love by <span className="font-medium text-[#B4846C]">{card.from}</span>
+                    {/* Floating Botanical Wax-Sealed Envelope Artwork */}
+                    <div className="float-keepsake-envelope mx-auto mb-3.5 w-24 h-20 flex items-center justify-center">
+                      <svg viewBox="0 0 136 104" className="w-full h-full overflow-visible">
+                        {/* Delicate Botanical Sprigs Peeking Behind Envelope */}
+                        <path
+                          d="M28,22 C18,12 14,6 10,4 M22,16 C16,18 11,17 8,15 M25,19 C22,11 23,6 25,3"
+                          fill="none"
+                          stroke="#659A76"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          opacity="0.75"
+                        />
+                        <path
+                          d="M108,22 C118,12 122,6 126,4 M114,16 C120,18 125,17 128,15 M111,19 C114,11 113,6 111,3"
+                          fill="none"
+                          stroke="#659A76"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          opacity="0.75"
+                        />
+                        {/* Envelope Drop Shadow Base */}
+                        <rect
+                          x="16"
+                          y="18"
+                          width="104"
+                          height="70"
+                          rx="9"
+                          fill={isDarkMode ? '#241D1B' : '#EFE5DA'}
+                          transform="translate(0, 3)"
+                        />
+                        {/* Main Stationery Envelope Body */}
+                        <rect
+                          x="16"
+                          y="18"
+                          width="104"
+                          height="70"
+                          rx="9"
+                          fill={isDarkMode ? '#2D2421' : '#FFFDF9'}
+                          stroke={isDarkMode ? '#66554F' : '#D8C3B0'}
+                          strokeWidth="1.6"
+                        />
+                        {/* Inner Dashed Stitch Border */}
+                        <rect
+                          x="21"
+                          y="23"
+                          width="94"
+                          height="60"
+                          rx="6"
+                          fill="none"
+                          stroke={isDarkMode ? '#52433E' : '#E5D5C5'}
+                          strokeWidth="1"
+                          strokeDasharray="3.5 3"
+                        />
+                        {/* Bottom & Side Envelope Folds */}
+                        <path
+                          d="M18,86 L68,52 L118,86"
+                          fill="none"
+                          stroke={isDarkMode ? '#52433E' : '#E2D1C1'}
+                          strokeWidth="1.3"
+                        />
+                        {/* Top Closed Triangular Flap */}
+                        <path
+                          d="M17,20 L68,58 L119,20 Z"
+                          fill={isDarkMode ? '#3B302C' : '#FAF3EB'}
+                          stroke={isDarkMode ? '#66554F' : '#D8C3B0'}
+                          strokeWidth="1.6"
+                          strokeLinejoin="round"
+                        />
+                        {/* Embossed Rose-Terracotta Wax Seal */}
+                        <circle
+                          cx="68"
+                          cy="56"
+                          r="12"
+                          fill="#B85D4B"
+                          stroke={isDarkMode ? '#352C29' : '#FFFDF9'}
+                          strokeWidth="1.5"
+                        />
+                        <circle
+                          cx="68"
+                          cy="56"
+                          r="8.5"
+                          fill="none"
+                          stroke="#FDE68A"
+                          strokeWidth="0.9"
+                          strokeDasharray="2.5 2"
+                          opacity="0.8"
+                        />
+                        {/* Tiny Heart Inside Wax Seal */}
+                        <path
+                          d="M68,53.8 C65.8,51.2 62,53 64,56.4 L68,60 L72,56.4 C74,53 70.2,51.2 68,53.8 Z"
+                          fill="#FFFDF9"
+                        />
+                      </svg>
+                    </div>
+
+                    {/* Subtle Cursive / Serif Intro */}
+                    <p
+                      className={`text-sm italic ${
+                        isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                      }`}
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      A handwritten bouquet arranged for
                     </p>
-                  )}
 
-                  {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK */}
-                  {isCountdownLocked ? (
-                    <div className="mt-5 space-y-4">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/70 text-[11px] font-medium text-rose-700 dark:text-rose-300">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>Time-Capsule Bouquet Lock</span>
-                      </div>
+                    <h2
+                      className="text-3xl sm:text-[34px] font-medium tracking-tight leading-tight mt-0.5"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      {card.to || 'Someone Special'}
+                    </h2>
 
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          { label: 'Days', val: countdownParts.days },
-                          { label: 'Hours', val: countdownParts.hours },
-                          { label: 'Mins', val: countdownParts.minutes },
-                          { label: 'Secs', val: countdownParts.seconds },
-                        ].map((unit) => (
-                          <div
-                            key={unit.label}
-                            className={`rounded-xl py-2.5 px-1 border ${
-                              isDarkMode
-                                ? 'bg-[#141211] border-stone-800'
-                                : 'bg-stone-50 border-stone-200/80'
+                    {card.from && (
+                      <p
+                        className={`text-xs mt-1.5 ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                        }`}
+                      >
+                        Sent with love by{' '}
+                        <span
+                          className={`font-medium ${
+                            isDarkMode ? 'text-[#E6B89C]' : 'text-[#6E4434]'
+                          }`}
+                        >
+                          {card.from}
+                        </span>
+                      </p>
+                    )}
+
+                    {/* Delicate Bow Divider */}
+                    <div className="flex items-center justify-center gap-2 my-4 opacity-70" aria-hidden="true">
+                      <span
+                        className={`w-10 border-t border-dashed ${
+                          isDarkMode ? 'border-[#5E4E49]' : 'border-[#D8C3B0]'
+                        }`}
+                      />
+                      <svg viewBox="0 0 24 12" className="w-4 h-2.5 text-[#B4846C]" fill="none">
+                        <path
+                          d="M12,6 C8,1 3,3 5,6 C3,9 8,11 12,6 Z M12,6 C16,1 21,3 19,6 C21,9 16,11 12,6 Z"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span
+                        className={`w-10 border-t border-dashed ${
+                          isDarkMode ? 'border-[#5E4E49]' : 'border-[#D8C3B0]'
+                        }`}
+                      />
+                    </div>
+
+                    {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK */}
+                    {isCountdownLocked ? (
+                      <div className="space-y-3.5">
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { label: 'Days', val: countdownParts.days },
+                            { label: 'Hours', val: countdownParts.hours },
+                            { label: 'Mins', val: countdownParts.minutes },
+                            { label: 'Secs', val: countdownParts.seconds },
+                          ].map((unit) => (
+                            <div
+                              key={unit.label}
+                              className={`rounded-2xl py-2.5 px-1 border border-dashed ${
+                                isDarkMode
+                                  ? 'bg-[#2B2321]/85 border-[#5E4E49]'
+                                  : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
+                              }`}
+                            >
+                              <div
+                                className={`text-xl sm:text-2xl font-semibold tracking-tight tabular-nums ${
+                                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#6E4434]'
+                                }`}
+                                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                              >
+                                {unit.val}
+                              </div>
+                              <div
+                                className={`text-[10px] mt-0.5 ${
+                                  isDarkMode ? 'text-[#B8A59B]' : 'text-[#8C7A70]'
+                                }`}
+                              >
+                                {unit.label}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <p
+                          className={`text-xs leading-relaxed ${
+                            isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                          }`}
+                        >
+                          Sealed until{' '}
+                          <strong
+                            className={`font-medium ${
+                              isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
                             }`}
                           >
-                            <div
-                              className="text-xl sm:text-2xl font-semibold tracking-tight text-[#B4846C] tabular-nums"
-                              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                            >
-                              {unit.val}
-                            </div>
-                            <div className="text-[10px] uppercase tracking-wider text-stone-400 dark:text-stone-500 mt-0.5">
-                              {unit.label}
-                            </div>
-                          </div>
-                        ))}
+                            {countdownTargetMs
+                              ? new Date(countdownTargetMs).toLocaleString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })
+                              : 'the unlock date'}
+                          </strong>
+                        </p>
+
+                        {isPreviewMode && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUnwrapGiftEntrance(true);
+                            }}
+                            className={`w-full py-2 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                              isDarkMode
+                                ? 'border-[#5E4E49] bg-[#2B2321] text-[#E6D6C7] hover:bg-[#423632]'
+                                : 'border-[#DECBB9] bg-[#FAF4EE] text-[#5C4438] hover:bg-[#F3E9DF]'
+                            }`}
+                          >
+                            Sender Preview: Test Unwrap Now
+                          </button>
+                        )}
                       </div>
+                    ) : isPasscodeLocked ? (
+                      /* MODE 2: SECRET QUESTION / PASSCODE LOCK */
+                      <form
+                        onSubmit={handleAttemptPasscodeUnlock}
+                        onClick={(e) => e.stopPropagation()}
+                        className="space-y-3 text-center"
+                      >
+                        <div>
+                          <p
+                            className={`text-[11px] ${
+                              isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                            }`}
+                          >
+                            Answer the secret hint to unwrap:
+                          </p>
+                          <p
+                            className="mt-1 text-lg sm:text-xl font-medium italic leading-snug"
+                            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                          >
+                            “{lock?.questionPrompt || 'Enter our special secret or date to unlock'}”
+                          </p>
+                        </div>
 
-                      <p className="text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
-                        Your bouquet, handwritten greeting card, and voice keepsake are sealed until{' '}
-                        <strong className="text-stone-700 dark:text-stone-200">
-                          {countdownTargetMs
-                            ? new Date(countdownTargetMs).toLocaleString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })
-                            : 'the unlock date'}
-                        </strong>
-                        . It will unwrap automatically when the timer reaches zero!
-                      </p>
+                        <input
+                          type="text"
+                          value={passcodeAttempt}
+                          onChange={(e) => {
+                            setPasscodeAttempt(e.target.value);
+                            if (passcodeError) setPasscodeError(null);
+                          }}
+                          placeholder="Type your answer..."
+                          aria-label="Secret answer to unlock bouquet"
+                          className={`w-full px-4 py-2.5 rounded-full border border-dashed text-xs text-center focus:outline-none focus:border-[#B4846C] ${
+                            isDarkMode
+                              ? 'bg-[#2B2321] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#9A877B]'
+                              : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#231C18] placeholder:text-[#9A877B]'
+                          }`}
+                        />
 
-                      {isPreviewMode && (
+                        {passcodeError && (
+                          <p className="text-[11px] text-rose-600 dark:text-rose-300 text-center font-medium">
+                            {passcodeError}
+                          </p>
+                        )}
+
+                        <button
+                          type="submit"
+                          className={`w-full py-2.5 px-6 rounded-full text-xs font-medium tracking-wide transition active:scale-98 cursor-pointer ${
+                            isDarkMode
+                              ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                              : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                          }`}
+                        >
+                          Unlock &amp; Open Bouquet
+                        </button>
+
+                        {isPreviewMode && (
+                          <button
+                            type="button"
+                            onClick={() => handleUnwrapGiftEntrance(true)}
+                            className={`w-full py-1.5 px-3 rounded-full text-[11px] transition cursor-pointer ${
+                              isDarkMode
+                                ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
+                                : 'text-[#8C7A70] hover:text-[#231C18]'
+                            }`}
+                          >
+                            Sender Preview: Skip Lock &amp; Test Bloom
+                          </button>
+                        )}
+                      </form>
+                    ) : (
+                      /* MODE 3: READY TO OPEN IMMEDIATELY */
+                      <div className="space-y-2.5">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleUnwrapGiftEntrance(true);
+                            handleUnwrapGiftEntrance();
                           }}
-                          className="w-full py-2 px-4 rounded-xl border border-stone-300 dark:border-stone-700 text-[11px] font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+                          className={`w-full py-3 px-6 rounded-full text-xs sm:text-sm font-medium tracking-wide shadow-sm transition active:scale-98 cursor-pointer ${
+                            isDarkMode
+                              ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                              : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                          }`}
                         >
-                          Sender Preview: Test Unwrap Now
+                          Open Bouquet
                         </button>
-                      )}
-                    </div>
-                  ) : isPasscodeLocked ? (
-                    /* MODE 2: SECRET QUESTION / PASSCODE LOCK */
-                    <form
-                      onSubmit={handleAttemptPasscodeUnlock}
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-5 space-y-3 text-left"
-                    >
-                      <div className="text-center">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 text-[11px] font-medium text-amber-800 dark:text-amber-300">
-                          <KeyRound className="w-3.5 h-3.5" />
-                          <span>Sealed with a Secret Question</span>
-                        </div>
                         <p
-                          className="mt-2.5 text-base font-medium text-[#1C1917] dark:text-stone-100"
-                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                          className={`text-[11px] ${
+                            isDarkMode ? 'text-[#B8A59B]' : 'text-[#9A877B]'
+                          }`}
                         >
-                          “{lock?.questionPrompt || 'Enter our special secret or date to unlock'}”
-                        </p>
-                        <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
-                          Answer to unwrap the bouquet, greeting card, and voice keepsake.
+                          Tap to unwrap your flowers &amp; note
                         </p>
                       </div>
-
-                      <input
-                        type="text"
-                        value={passcodeAttempt}
-                        onChange={(e) => {
-                          setPasscodeAttempt(e.target.value);
-                          if (passcodeError) setPasscodeError(null);
-                        }}
-                        placeholder="Type your answer..."
-                        aria-label="Secret answer to unlock bouquet"
-                        className={`w-full px-3.5 py-2 rounded-xl border text-xs text-center focus:outline-none focus:border-[#B4846C] ${
-                          isDarkMode
-                            ? 'bg-[#141211] border-stone-700 text-stone-100'
-                            : 'bg-stone-50 border-stone-200 text-[#1C1917]'
-                        }`}
-                      />
-
-                      {passcodeError && (
-                        <p className="text-[11px] text-rose-600 dark:text-rose-400 text-center font-medium">
-                          {passcodeError}
-                        </p>
-                      )}
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98 cursor-pointer"
-                      >
-                        Unlock &amp; Open Bouquet
-                      </button>
-
-                      {isPreviewMode && (
-                        <button
-                          type="button"
-                          onClick={() => handleUnwrapGiftEntrance(true)}
-                          className="w-full py-1.5 px-3 rounded-xl text-[11px] text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 text-center transition cursor-pointer"
-                        >
-                          Sender Preview: Skip Lock &amp; Test Bloom
-                        </button>
-                      )}
-                    </form>
-                  ) : (
-                    /* MODE 3: READY TO OPEN IMMEDIATELY */
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUnwrapGiftEntrance();
-                      }}
-                      className="mt-6 w-full py-2.5 px-5 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium tracking-wide transition active:scale-98 cursor-pointer"
-                    >
-                      Open Bouquet
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2235,38 +2409,144 @@ export default function App() {
           </div>
 
           {/* ===================================================================
-              VIEW-ONLY MODE MINIMAL ACTION PILL (Shared Bouquet Links & Preview)
-              Removes all editor sidebars, top navigation, and clutter.
-              Focuses purely on the visual bouquet, the clickable wiggling card tag,
-              the voice keepsake player, and 'Save as PNG' / 'Create Yours'.
+              RECIPIENT TOP FLOATING DEDICATION & AMBIENT PILL BAR
+              Quiet luxury header showing "For [Recipient] · from [Sender]" on the
+              left and Replay Bloom / Music / Theme controls on the right.
+              =================================================================== */}
+          {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
+            <div className="w-full px-3 sm:px-6 z-20 absolute top-3 sm:top-4 inset-x-0 pointer-events-none flex items-center justify-between gap-2">
+              {/* Left: Dedication Capsule */}
+              <div
+                className={`pointer-events-auto inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md max-w-[68vw] sm:max-w-md ${
+                  isDarkMode
+                    ? 'bg-[#352C29]/92 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#231C18]'
+                }`}
+              >
+                <BrandLogoMark className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" isDarkMode={isDarkMode} />
+                <div className="truncate text-xs sm:text-sm">
+                  <span
+                    className="font-semibold tracking-tight text-sm sm:text-base"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    For {card.to || 'You'}
+                  </span>
+                  {card.from && (
+                    <span
+                      className={`ml-1.5 text-[11px] sm:text-xs ${
+                        isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                      }`}
+                    >
+                      · from {card.from}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Quiet Ambient Controls (Replay Bloom, Music, Theme) */}
+              <div
+                className={`pointer-events-auto inline-flex items-center gap-1 p-1 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md shrink-0 ${
+                  isDarkMode
+                    ? 'bg-[#352C29]/92 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#231C18]'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => startGiftBloomAnimation(items.length, false)}
+                  aria-label="Replay bloom animation"
+                  title="Replay bloom animation"
+                  className={`h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 transition active:scale-95 cursor-pointer ${
+                    isDarkMode
+                      ? 'text-[#E6D6C7] hover:bg-[#463A36]'
+                      : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                  }`}
+                >
+                  <RotateCcw className="w-3 h-3 text-[#B4846C]" />
+                  <span className="hidden sm:inline">Replay</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleMusic}
+                  aria-pressed={isMusicPlaying}
+                  aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                  title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                    isMusicPlaying
+                      ? 'bg-[#B4846C]/20 text-[#B4846C]'
+                      : isDarkMode
+                      ? 'text-[#C8B6AC] hover:bg-[#463A36]'
+                      : 'text-[#7D6B60] hover:bg-[#FAF4EE]'
+                  }`}
+                >
+                  {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsDarkMode((prev) => !prev)}
+                  aria-label="Toggle theme"
+                  title="Toggle theme"
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                    isDarkMode
+                      ? 'text-[#E6B89C] hover:bg-[#463A36]'
+                      : 'text-[#7D6B60] hover:bg-[#FAF4EE]'
+                  }`}
+                >
+                  {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================
+              RECIPIENT BOTTOM KEEPSAKE BAR & REACTION POPOVER
+              Warm stationery dock with direct Read Letter, Voice, Thank/Reply,
+              Save PNG, and Craft Yours actions.
               =================================================================== */}
           {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
             <div
-              className="w-full px-4 z-20 absolute bottom-4 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2"
+              className="w-full px-3 sm:px-4 z-20 absolute bottom-3.5 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2.5"
               style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
-              {/* Expandable Recipient Reaction & Reply Note Card */}
+              {/* Expandable Recipient Reaction & Thank-You Note Stationery Card */}
               {isReactionPopoverOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className={`pointer-events-auto w-full max-w-sm rounded-2xl p-4 border shadow-xl backdrop-blur-md animate-in fade-in duration-150 ${
+                  className={`pointer-events-auto w-full max-w-sm rounded-[24px] p-4 sm:p-5 border border-dashed shadow-[0_20px_50px_rgba(28,20,16,0.18)] backdrop-blur-xl animate-in fade-in duration-150 ${
                     isDarkMode
-                      ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
-                      : 'bg-white/95 border-stone-200 text-[#1C1917]'
+                      ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#231C18]'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2.5">
-                    <span className="text-xs font-semibold flex items-center gap-1.5">
-                      <MessageSquareHeart className="w-3.5 h-3.5 text-[#B4846C]" />
-                      <span>Send a Reaction to {card.from || 'Sender'}</span>
-                    </span>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4
+                        className="text-lg font-medium tracking-tight leading-none"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        Send a Note to {card.from || 'Sender'}
+                      </h4>
+                      <p
+                        className={`text-[11px] mt-0.5 ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                        }`}
+                      >
+                        Let them know their bouquet arrived
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setIsReactionPopoverOpen(false)}
-                      className="p-1 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400"
+                      className={`p-1.5 rounded-full transition cursor-pointer ${
+                        isDarkMode
+                          ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                          : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#FAF4EE]'
+                      }`}
                       aria-label="Close reaction card"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
 
@@ -2278,12 +2558,14 @@ export default function App() {
                           key={rx.id}
                           type="button"
                           onClick={() => setSelectedReactionId(rx.id)}
-                          className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer ${
+                          className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                             active
-                              ? 'border-[#B4846C] bg-[#B4846C]/15 text-[#1C1917] dark:text-white'
+                              ? isDarkMode
+                                ? 'border-[#E6B89C] bg-[#E6B89C]/20 text-[#FBF6F1]'
+                                : 'border-[#6E4434] bg-[#6E4434]/10 text-[#231C18]'
                               : isDarkMode
-                              ? 'border-stone-800 bg-[#141211] text-stone-300 hover:border-stone-700'
-                              : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300'
+                              ? 'border-dashed border-[#544540] bg-[#2B2321] text-[#D8C7BE] hover:border-[#6E5B54]'
+                              : 'border-dashed border-[#DECBB9] bg-[#FAF4EE]/70 text-[#5C4438] hover:border-[#C5A892]'
                           }`}
                         >
                           <span className="text-sm">{rx.symbol}</span>
@@ -2298,11 +2580,12 @@ export default function App() {
                     maxLength={200}
                     value={recipientReplyText}
                     onChange={(e) => setRecipientReplyText(e.target.value)}
-                    placeholder={`Write a sweet thank-you note to ${card.from || 'the sender'} (optional)...`}
-                    className={`w-full px-3 py-2 rounded-xl border text-xs resize-none focus:outline-none focus:border-[#B4846C] ${
+                    placeholder={`Write a sweet thank-you note to ${card.from || 'the sender'}...`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
+                    className={`w-full px-3.5 py-2 rounded-xl border border-dashed resize-none focus:outline-none focus:border-[#B4846C] ${
                       isDarkMode
-                        ? 'bg-[#141211] border-stone-800 text-stone-100'
-                        : 'bg-stone-50 border-stone-200 text-[#1C1917]'
+                        ? 'bg-[#2B2321] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#9A877B]'
+                        : 'bg-[#FAF4EE]/70 border-[#DECBB9] text-[#231C18] placeholder:text-[#9A877B]'
                     }`}
                   />
 
@@ -2310,40 +2593,49 @@ export default function App() {
                     type="button"
                     disabled={isSubmittingReaction}
                     onClick={handleSubmitRecipientReaction}
-                    className="mt-2.5 w-full py-2 px-4 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] text-xs font-medium transition cursor-pointer disabled:opacity-50"
+                    className={`mt-2.5 w-full py-2.5 px-4 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 ${
+                      isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                    }`}
                   >
-                    {isSubmittingReaction ? 'Sending...' : 'Send Reaction & Note ♥'}
+                    {isSubmittingReaction ? 'Sending...' : 'Send Thank-You Note ♥'}
                   </button>
                 </div>
               )}
 
               <div
-                className={`pointer-events-auto inline-flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-full border shadow-lg backdrop-blur-md transition-all duration-500 ${
+                className={`pointer-events-auto inline-flex items-center gap-1 sm:gap-1.5 p-1.5 rounded-full border border-dashed shadow-[0_12px_36px_rgba(35,28,24,0.10)] backdrop-blur-md max-w-full overflow-x-auto no-scrollbar transition-all duration-500 ${
                   isDarkMode
-                    ? 'bg-[#1E1C1A]/90 border-stone-800 text-stone-100'
-                    : 'bg-white/90 border-stone-200/90 text-[#1C1917]'
+                    ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#231C18]'
                 } ${
                   showGiftCardReveal || isPreviewMode
                     ? 'opacity-100 translate-y-0'
                     : 'opacity-0 translate-y-3 pointer-events-none'
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={handleToggleMusic}
-                  aria-pressed={isMusicPlaying}
-                  aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
-                  title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center transition active:scale-95 ${
-                    isMusicPlaying
-                      ? 'bg-[#B4846C]/20 text-[#B4846C]'
-                      : 'text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800'
-                  }`}
-                >
-                  {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                </button>
+                {/* 1. Open / Read Letter Button */}
+                {card.visibleOnStage && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLetterTypedChars(0);
+                      setIsLetterModalOpen(true);
+                    }}
+                    className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                      isDarkMode
+                        ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
+                        : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
+                    }`}
+                  >
+                    <Mail className="w-3.5 h-3.5 text-[#B4846C]" />
+                    <span className="hidden sm:inline">Read Letter</span>
+                    <span className="sm:hidden">Letter</span>
+                  </button>
+                )}
 
-                {/* Recipient Voice Keepsake Play Icon Button (Icon-only, no text label) */}
+                {/* 2. Recipient Voice Keepsake Play Button */}
                 {(voice.visibleOnStage || Boolean(voice.audioDataUrl)) && (
                   <button
                     type="button"
@@ -2356,43 +2648,49 @@ export default function App() {
                         setIsVoiceModalOpen(true);
                       }
                     }}
-                    className={`w-9 h-9 rounded-full flex items-center justify-center transition active:scale-95 ${
+                    className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
                       isVoicePlaying
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900/70 dark:text-rose-200 dark:border-rose-800'
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : isDarkMode
+                        ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
+                        : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
                     }`}
                   >
                     {isVoicePlaying ? (
-                      <Pause className="w-4 h-4 fill-current" />
+                      <Pause className="w-3.5 h-3.5 fill-current" />
                     ) : (
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                      <Play className="w-3.5 h-3.5 fill-current text-[#B4846C]" />
                     )}
+                    <span>Voice</span>
                   </button>
                 )}
 
-                {/* Recipient Reaction / Thank-You Reply Button */}
+                {/* 3. Recipient Reaction / Thank-You Reply Button */}
                 <button
                   type="button"
                   onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
-                  className={`px-3 sm:px-3.5 py-2 rounded-full border text-xs font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                  className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
                     hasSubmittedReaction
                       ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-300'
                       : isDarkMode
-                      ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-100'
-                      : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
+                      ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
+                      : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
                   }`}
                 >
                   <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
                   <span>{hasSubmittedReaction ? 'Sent ♥' : 'React / Reply'}</span>
                 </button>
 
+                {/* 4. Save PNG Button */}
                 <button
                   type="button"
                   onClick={handleExportPng}
-                  className={`px-3 sm:px-3.5 py-2 rounded-full border text-xs font-medium flex items-center gap-1.5 transition active:scale-95 ${
+                  aria-label="Save as PNG"
+                  title="Save bouquet as PNG image"
+                  className={`px-3 sm:px-3.5 py-2 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
                     isDarkMode
-                      ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-100'
-                      : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917]'
+                      ? 'border-[#5E4E49] bg-[#2B2321] hover:bg-[#423632] text-[#FBF6F1]'
+                      : 'border-[#DECBB9] bg-[#FAF4EE] hover:bg-[#F3E9DF] text-[#5C4438]'
                   }`}
                 >
                   <Download className="w-3.5 h-3.5 text-[#B4846C]" />
@@ -2400,10 +2698,15 @@ export default function App() {
                   <span className="sm:hidden">PNG</span>
                 </button>
 
+                {/* 5. Back to Editing / Create Yours Primary CTA */}
                 <button
                   type="button"
                   onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
-                  className="px-4 py-2 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shadow-xs active:scale-95"
+                  className={`px-4 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                  }`}
                 >
                   {isPreviewMode ? (
                     <>
@@ -2542,6 +2845,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      currentSessionVaultCodeRef.current = null;
                       clearBouquet();
                       triggerToast('Started over with an empty bouquet');
                     }}
@@ -2566,6 +2870,7 @@ export default function App() {
                       key={tpl.id}
                       type="button"
                       onClick={() => {
+                        currentSessionVaultCodeRef.current = null;
                         loadSnapshot(tpl.snapshot);
                         triggerToast(`Loaded ${tpl.name}`);
                       }}
@@ -3572,13 +3877,30 @@ export default function App() {
 
                 {/* Subtle Card Footer Actions */}
                 <div
-                  className="mt-5 pt-3.5 flex items-center justify-end gap-2"
-                  style={{ borderTop: `1px solid ${cardPalette.rule}` }}
+                  className="mt-5 pt-3.5 flex items-center justify-between gap-2"
+                  style={{ borderTop: `1px dashed ${cardPalette.rule}` }}
                 >
+                  {(isGiftView || isPreviewMode) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsLetterModalOpen(false);
+                        setIsReactionPopoverOpen(true);
+                      }}
+                      className="px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                      style={{
+                        borderColor: cardPalette.inner,
+                        color: cardPalette.title,
+                      }}
+                    >
+                      <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
+                      <span>Send a thank-you note</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsLetterModalOpen(false)}
-                    className="px-4 py-1.5 rounded-full text-xs font-semibold text-white shadow-xs transition active:scale-95"
+                    className="ml-auto px-4 py-1.5 rounded-full text-xs font-semibold text-white shadow-xs transition active:scale-95 cursor-pointer"
                     style={{ backgroundColor: cardPalette.seal }}
                   >
                     Close

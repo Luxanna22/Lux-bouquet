@@ -35,19 +35,65 @@ export const MiniWrapConeSVG: React.FC<{
       </g>
     )}
 
-    {/* 2. BUTTERFLY PETAL (Ref #2: Split V-notched blush pink wings + side petals + crimson cord) */}
+    {/* 2. BUTTERFLY PETAL (Sculpted 4-wing Korean butterfly wrap + translucent inner silk tissue + ribbon bow) */}
     {styleType === 'tissue' && (
       <g>
-        <path d="M32,42 L12,15 Q22,14 32,26 Z" fill="#FFC4D0" />
-        <path d="M32,42 L12,15 L18,16 L32,36 Z" fill="#F7A8B8" opacity="0.85" />
-        <path d="M32,42 L52,15 Q42,14 32,26 Z" fill="#FFD6DF" />
-        <path d="M23,43 L41,43 L40,56 L24,56 Z" fill="#FFE0E7" />
-        <path d="M16,29 Q24,35 33,44 L23,44 Q19,37 16,29 Z" fill="#FFC6D3" />
-        <path d="M48,29 Q40,35 31,44 L41,44 Q45,37 48,29 Z" fill="#FFD4DF" />
-        <path d="M22,43 Q32,46 42,43" fill="none" stroke="#E11D48" strokeWidth="1.6" strokeLinecap="round" />
-        <circle cx="32" cy="43.5" r="2" fill="#E11D48" />
-        <circle cx="32" cy="41.5" r="1.3" fill="#E11D48" />
-        <path d="M31.5,44 L29,56 M32.5,44 L35,56" stroke="#E11D48" strokeWidth="1.3" strokeLinecap="round" />
+        {/* Frosted Inner Silk Tissue Crown */}
+        <path
+          d="M32,39 C24,25 19,14 26,12 C29.5,11 31.2,16 32,20 C32.8,16 34.5,11 38,12 C45,14 40,25 32,39 Z"
+          fill="#FFFDF9"
+          stroke="#FBCFE8"
+          strokeWidth="0.8"
+        />
+        {/* Upper Left & Right Sweeping Butterfly Forewings */}
+        <path
+          d="M32,40 C20,36 9,27 8,18 C7.5,12 14,10 20,13 C25,15.5 29,21 32,27 Z"
+          fill="#FFC4D0"
+          stroke="#FFFFFF"
+          strokeWidth="0.9"
+        />
+        <path
+          d="M32,40 C44,36 55,27 56,18 C56.5,12 50,10 44,13 C39,15.5 35,21 32,27 Z"
+          fill="#FFD4DF"
+          stroke="#FFFFFF"
+          strokeWidth="0.9"
+        />
+        {/* Lower Flared Butterfly Hindwings */}
+        <path
+          d="M25,41 C16,44 13,51 16.5,55 C19.5,58 25,55.5 28,50 L32,42 Z"
+          fill="#F9A8B8"
+          stroke="#FFFFFF"
+          strokeWidth="0.8"
+        />
+        <path
+          d="M39,41 C48,44 51,51 47.5,55 C44.5,58 39,55.5 36,50 L32,42 Z"
+          fill="#FFC4D0"
+          stroke="#FFFFFF"
+          strokeWidth="0.8"
+        />
+        {/* Front Crossover Petal Fold & Pleated Center Tail */}
+        <path
+          d="M25,41 L39,41 L37,56 Q32,58 27,56 Z"
+          fill="#FFE4EC"
+          stroke="#FFFFFF"
+          strokeWidth="0.8"
+        />
+        <path
+          d="M13,27 C13,34 19,39 25,42 L33,42 C28,36 21,29 16,26 C14,25 13,25.5 13,27 Z"
+          fill="#FFCAD6"
+          stroke="#FFFFFF"
+          strokeWidth="0.8"
+        />
+        <path
+          d="M51,27 C51,34 45,39 39,42 L31,42 C36,36 43,29 48,26 C50,25 51,25.5 51,27 Z"
+          fill="#FFD8E2"
+          stroke="#FFFFFF"
+          strokeWidth="0.8"
+        />
+        {/* Ribbon Tie & Bow at Cinched Butterfly Waist */}
+        <path d="M24,41.5 Q32,44 40,41.5" fill="none" stroke={ribbon || '#E11D48'} strokeWidth="2" strokeLinecap="round" />
+        <path d="M31,41.5 C26,38 25,44 31,42.5 M33,41.5 C38,38 39,44 33,42.5" fill="none" stroke={ribbon || '#E11D48'} strokeWidth="1.5" />
+        <path d="M31,42.5 L28.5,54 M33,42.5 L35.5,54" stroke={ribbon || '#E11D48'} strokeWidth="1.3" strokeLinecap="round" />
       </g>
     )}
 
@@ -157,22 +203,41 @@ export const MiniWrapConeSVG: React.FC<{
       </g>
     )}
 
-    {/* 11. GLASS CLOCHE (Botanical glass bell dome on walnut pedestal) */}
+    {/* 11. GLASS CLOCHE (Crystal bell jar with connected finial, specular reflection & turned pedestal) */}
     {styleType === 'cloche' && (
       <g>
-        <circle cx="32" cy="11" r="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1" />
+        {/* Connected Crystal Finial Knob */}
+        <ellipse cx="32" cy="12" rx="4.2" ry="1.4" fill="#CBD5E1" />
+        <circle cx="32" cy="9.2" r="3" fill="#F1F5F9" stroke="#94A3B8" strokeWidth="1.1" />
+        {/* True Semicircular Bell Jar Dome */}
         <path
-          d="M17,48 L17,28 C17,16 47,16 47,28 L47,48 Z"
+          d="M16,47 L16,28 A16,16 0 0,1 48,28 L48,47 Z"
           fill="#E0F2FE"
-          fillOpacity="0.45"
+          fillOpacity="0.48"
           stroke="#94A3B8"
-          strokeWidth="1.4"
+          strokeWidth="1.3"
         />
-        <circle cx="26" cy="29" r="5.5" fill="#fda4af" />
-        <circle cx="38" cy="29" r="5.5" fill="#fbcfe8" />
-        <circle cx="32" cy="25" r="6.5" fill="#e11d48" />
-        <path d="M28,33 L26,47 M32,31 L32,47 M36,33 L38,47" stroke="#15803d" strokeWidth="2" strokeLinecap="round" />
-        <rect x="14" y="48" width="36" height="5" rx="2.5" fill="#78350F" stroke="#451A03" strokeWidth="1" />
+        {/* Inner Blooms & Gathered Stems */}
+        <path d="M27,31 Q30,39 32,42 L29,46 M32,29 L32,46 M37,31 Q34,39 32,42 L35,46" stroke="#15803d" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+        <circle cx="26.5" cy="28.5" r="5" fill="#fda4af" />
+        <circle cx="37.5" cy="28.5" r="5" fill="#fbcfe8" />
+        <circle cx="32" cy="24.5" r="6" fill="#e11d48" />
+        {/* Ribbon Knot on Stems & Moss Cushion */}
+        <ellipse cx="32" cy="46.5" rx="12" ry="2.2" fill="#3F624D" opacity="0.85" />
+        <rect x="29" y="40.5" width="6" height="2.4" rx="1.2" fill={ribbon || '#e11d48'} />
+        {/* Specular Glass Highlight Arc */}
+        <path
+          d="M19,44 L19,28 A13,13 0 0,1 29,15.5"
+          fill="none"
+          stroke="#FFFFFF"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          opacity="0.85"
+        />
+        {/* Turned Wood & Brass Pedestal Base */}
+        <ellipse cx="32" cy="47.5" rx="17.5" ry="2.5" fill="#8B5E34" stroke="#5C3A1E" strokeWidth="0.9" />
+        <path d="M14.5,47.5 L49.5,47.5 L47.5,53.5 Q32,55.5 16.5,53.5 Z" fill="#78350F" stroke="#451A03" strokeWidth="1" />
+        <rect x="27" y="49.5" width="10" height="2.6" rx="0.8" fill="#FDE68A" stroke="#B45309" strokeWidth="0.6" />
       </g>
     )}
 

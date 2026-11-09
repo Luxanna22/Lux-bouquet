@@ -35,7 +35,7 @@ const WRAPPER_RIBBON_GEOMETRY: Record<
   { waistY: number; halfW: number; tailBottomY: number; bowScale: number }
 > = {
   kraft:      { waistY: 508, halfW: 76,  tailBottomY: 618, bowScale: 1.0 },
-  tissue:     { waistY: 514, halfW: 76,  tailBottomY: 618, bowScale: 1.0 },
+  tissue:     { waistY: 486, halfW: 66,  tailBottomY: 604, bowScale: 0.96 },
   chalice:    { waistY: 506, halfW: 82,  tailBottomY: 618, bowScale: 1.0 },
   basket:     { waistY: 436, halfW: 144, tailBottomY: 538, bowScale: 1.04 },
   vintage:    { waistY: 486, halfW: 104, tailBottomY: 608, bowScale: 1.0 },
@@ -44,7 +44,7 @@ const WRAPPER_RIBBON_GEOMETRY: Record<
   vase:       { waistY: 422, halfW: 93,  tailBottomY: 530, bowScale: 0.96 },
   plain:      { waistY: 504, halfW: 34,  tailBottomY: 598, bowScale: 0.8 },
   hatbox:     { waistY: 428, halfW: 121, tailBottomY: 480, bowScale: 0.88 },
-  cloche:     { waistY: 484, halfW: 34,  tailBottomY: 546, bowScale: 0.78 },
+  cloche:     { waistY: 484, halfW: 32,  tailBottomY: 544, bowScale: 0.78 },
   koreanmesh: { waistY: 488, halfW: 94,  tailBottomY: 610, bowScale: 1.0 },
 };
 
@@ -2059,13 +2059,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1C1917" floodOpacity="0.06" />
           </filter>
 
-          {/* Wrapper Boundary Clip (Prevents stems/blooms from poking outside Glass Cloche or below wrappers) */}
+          {/* Wrapper Boundary Clips (Separate permanent IDs prevent Chromium SVG dirty-rect glitches on wrapper switch) */}
           <clipPath id="bouquetWrapperBoundsClip">
-            {wrapStyle === 'cloche' ? (
-              <path d="M132,560 L132,276 C132,102 468,102 468,276 L468,560 Z" />
-            ) : (
-              <rect x="0" y="0" width="600" height={wrapperBottomClipY} />
-            )}
+            <rect x="0" y="0" width="600" height={wrapperBottomClipY} />
+          </clipPath>
+          <clipPath id="bouquetClocheBoundsClip">
+            <path d="M132,560 L132,276 A168,168 0 0,1 468,276 L468,560 Z" />
           </clipPath>
 
           {/* Per-Flower Adjustable Stem Length ClipPaths */}
@@ -2073,7 +2072,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             const stemRatio = item.stemLength ?? 1;
             const localBottomY =
               wrapStyle === 'cloche'
-                ? Math.round(14 + 34 * stemRatio)
+                ? 38
                 : Math.round(18 + 145 * stemRatio);
             return (
               <clipPath key={`stem-clip-${item.id}`} id={`stem-clip-${item.id}`}>
@@ -2170,30 +2169,87 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 2: BUTTERFLY PETAL (Split V-notched dual wings) */}
+            {/* STYLE 2: BUTTERFLY PETAL (Sculpted 4-wing Korean butterfly wrap with frosted inner silk tissue) */}
             {wrapStyle === 'tissue' && (
               <g>
-                {/* Left Outer Wing */}
+                {/* Frosted Inner Silk Tissue Crown (Billowing translucent ivory petals in center V-cleft) */}
                 <path
-                  d="M300,480 L102,225 Q195,215 300,325 Z"
+                  d="M300,476 C220,315 168,186 242,170 C280,162 295,212 300,254 C305,212 320,162 358,170 C432,186 380,315 300,476 Z"
+                  fill="#FFFDF9"
+                  fillOpacity="0.92"
+                  stroke={shadeWrapHex(wrapColor, 18)}
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M300,472 C245,335 212,215 262,202 C288,195 297,232 300,268 C303,232 312,195 338,202 C388,215 355,335 300,472 Z"
+                  fill={shadeWrapHex(wrapColor, 34)}
+                  fillOpacity="0.55"
+                />
+
+                {/* Upper Left Sweeping Butterfly Forewing (Outer + Inner Scalloped Lobe) */}
+                <path
+                  d="M300,480 C192,438 82,348 74,238 C70,182 124,158 186,184 C242,208 276,262 300,320 Z"
                   fill={shadeWrapHex(wrapColor, -10)}
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                  strokeOpacity="0.85"
                 />
-                {/* Left Inner Fold Bevel */}
                 <path
-                  d="M300,480 L102,225 L155,230 L300,420 Z"
-                  fill={shadeWrapHex(wrapColor, -28)}
-                  opacity="0.78"
+                  d="M300,478 C212,425 118,336 112,246 C109,204 148,188 196,212 C242,235 276,286 300,348 Z"
+                  fill={shadeWrapHex(wrapColor, 12)}
+                  fillOpacity="0.78"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.2"
+                  strokeOpacity="0.65"
                 />
-                {/* Right Outer Wing */}
+                {/* Left Forewing Delicate Vein Creases */}
                 <path
-                  d="M300,480 L498,225 Q405,215 300,325 Z"
+                  d="M286,458 C215,380 148,302 108,222 M292,464 C236,396 188,332 158,248"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.1"
+                  opacity="0.55"
+                />
+
+                {/* Upper Right Sweeping Butterfly Forewing (Outer + Inner Scalloped Lobe) */}
+                <path
+                  d="M300,480 C408,438 518,348 526,238 C530,182 476,158 414,184 C358,208 324,262 300,320 Z"
                   fill={wrapColor}
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                  strokeOpacity="0.85"
                 />
-                {/* Right Inner Fold Bevel */}
                 <path
-                  d="M300,480 L498,225 L445,230 L300,420 Z"
-                  fill={shadeWrapHex(wrapColor, -10)}
-                  opacity="0.65"
+                  d="M300,478 C388,425 482,336 488,246 C491,204 452,188 404,212 C358,235 324,286 300,348 Z"
+                  fill={shadeWrapHex(wrapColor, 22)}
+                  fillOpacity="0.78"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.2"
+                  strokeOpacity="0.65"
+                />
+                {/* Right Forewing Delicate Vein Creases */}
+                <path
+                  d="M314,458 C385,380 452,302 492,222 M308,464 C364,396 412,332 442,248"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.1"
+                  opacity="0.55"
+                />
+
+                {/* Back Lower Butterfly Hindwings Flaring Out Below Waist */}
+                <path
+                  d="M236,478 C154,500 120,562 152,600 C178,630 232,608 264,566 L300,486 Z"
+                  fill={shadeWrapHex(wrapColor, -18)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                  strokeOpacity="0.8"
+                />
+                <path
+                  d="M364,478 C446,500 480,562 448,600 C422,630 368,608 336,566 L300,486 Z"
+                  fill={shadeWrapHex(wrapColor, -8)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                  strokeOpacity="0.8"
                 />
               </g>
             )}
@@ -2348,25 +2404,72 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 11: GLASS CLOCHE (Back glass bell dome, crystal finial & moss bed behind flowers) */}
+            {/* STYLE 11: GLASS CLOCHE (Back crystal bell jar dome, connected finial & preserved moss cushion) */}
             {wrapStyle === 'cloche' && (
               <g>
-                {/* Sculpted Crystal Finial Knob */}
-                <ellipse cx="300" cy="108" rx="22" ry="7" fill="#CBD5E1" fillOpacity="0.7" />
-                <circle cx="300" cy="90" r="18" fill="#E2E8F0" fillOpacity="0.72" stroke="#94A3B8" strokeWidth="2" />
-                <circle cx="294" cy="84" r="5" fill="#FFFFFF" fillOpacity="0.8" />
-                {/* Spacious Bell Jar Glass Dome Back Wall */}
-                <path
-                  d="M130,564 L130,276 C130,100 470,100 470,276 L470,564 Z"
-                  fill="#E0F2FE"
-                  fillOpacity="0.22"
+                {/* Sculpted Crystal Finial Knob (Connected directly to dome apex at y=106) */}
+                <ellipse
+                  cx="300"
+                  cy="106"
+                  rx="26"
+                  ry="6.5"
+                  fill="#CBD5E1"
+                  fillOpacity="0.85"
                   stroke="#94A3B8"
-                  strokeWidth="2.4"
+                  strokeWidth="1.4"
                 />
-                {/* Inner Walnut Pedestal Rim & Preserved Botanical Moss Cushion */}
-                <ellipse cx="300" cy="564" rx="172" ry="22" fill="#5C3A1E" />
-                <ellipse cx="300" cy="558" rx="132" ry="14" fill="#3F624D" opacity="0.82" />
-                <ellipse cx="300" cy="556" rx="104" ry="10" fill="#527961" opacity="0.75" />
+                <path
+                  d="M288,104 Q300,96 312,104 L308,95 Q300,91 292,95 Z"
+                  fill="#E2E8F0"
+                  stroke="#94A3B8"
+                  strokeWidth="1.2"
+                />
+                <circle
+                  cx="300"
+                  cy="82"
+                  r="15"
+                  fill="#F1F5F9"
+                  fillOpacity="0.88"
+                  stroke="#94A3B8"
+                  strokeWidth="1.8"
+                />
+                <circle cx="294" cy="77" r="4.5" fill="#FFFFFF" fillOpacity="0.92" />
+                <circle cx="305" cy="87" r="2.2" fill="#FFFFFF" fillOpacity="0.55" />
+
+                {/* True Semicircular Crystal Bell Jar Back Wall (Apex at 300,106) */}
+                <path
+                  d="M130,562 L130,276 A170,170 0 0,1 470,276 L470,562 Z"
+                  fill="#E0F2FE"
+                  fillOpacity="0.24"
+                  stroke="#94A3B8"
+                  strokeWidth="2.2"
+                />
+                {/* Subtle Inner Glass Rim Halo */}
+                <path
+                  d="M136,558 L136,276 A164,164 0 0,1 464,276 L464,558"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.2"
+                  opacity="0.45"
+                />
+
+                {/* Recessed Pedestal Deck & Preserved Botanical Moss Cushion Behind Stems */}
+                <ellipse
+                  cx="300"
+                  cy="562"
+                  rx="172"
+                  ry="20"
+                  fill={shadeWrapHex(wrapColor, -42)}
+                />
+                <ellipse
+                  cx="300"
+                  cy="558"
+                  rx="154"
+                  ry="15"
+                  fill={shadeWrapHex(wrapColor, -62)}
+                />
+                <ellipse cx="300" cy="554" rx="134" ry="14" fill="#3B5E49" opacity="0.88" />
+                <ellipse cx="300" cy="551" rx="106" ry="10.5" fill="#4D785E" opacity="0.82" />
               </g>
             )}
 
@@ -2391,22 +2494,34 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           </g>
         )}
 
-        {/* Gather Stems at the Bouquet Tie Point (Custom curved gathered stems for Glass Cloche; lower bundle for open sleeves) */}
+        {/* Gather Stems at the Bouquet Tie Point (Organic curved botanical stems for Glass Cloche; lower bundle for open sleeves) */}
         {wrapStyle === 'cloche' ? (
-          <g clipPath="url(#bouquetWrapperBoundsClip)" opacity="0.9">
-            {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+          <g clipPath="url(#bouquetClocheBoundsClip)" opacity="0.94">
+            {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item, idx) => {
               if (item.hidden) return null;
               const disp = getStageItemDisplayTransform(item, wrapStyle);
-              const bottomSpreadX = Math.round(300 + (disp.x - 300) * 0.22);
+              const startY = disp.y + 16;
+              const bottomSpreadX = Math.round(300 + (disp.x - 300) * 0.25);
+              const midCtrlX = Math.round(300 + (disp.x - 300) * 0.36);
+              const midCtrlY = Math.round(startY + (484 - startY) * 0.56);
               return (
-                <path
-                  key={`cloche-stem-${item.id}`}
-                  d={`M${disp.x},${disp.y + 8} Q${Math.round((disp.x + 300) / 2)},${Math.round((disp.y + 484) / 2 + 12)} 300,484 L${bottomSpreadX},552`}
-                  stroke="#15803d"
-                  strokeWidth="5.2"
-                  fill="none"
-                  strokeLinecap="round"
-                />
+                <g key={`cloche-stem-${item.id}`}>
+                  <path
+                    d={`M${disp.x},${startY} Q${midCtrlX},${midCtrlY} 300,484 Q${Math.round((300 + bottomSpreadX) / 2)},518 ${bottomSpreadX},550`}
+                    stroke={idx % 2 === 0 ? '#15803d' : '#166534'}
+                    strokeWidth="4.8"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M${disp.x},${startY} Q${midCtrlX},${midCtrlY} 300,484`}
+                    stroke="#4ade80"
+                    strokeWidth="1.2"
+                    strokeOpacity="0.45"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                </g>
               );
             })}
           </g>
@@ -2425,7 +2540,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         )}
 
         {/* 3. BOUQUET FLOWERS & FOLIAGE LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
-        <g clipPath="url(#bouquetWrapperBoundsClip)">
+        <g clipPath={wrapStyle === 'cloche' ? 'url(#bouquetClocheBoundsClip)' : 'url(#bouquetWrapperBoundsClip)'}>
           {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
             if (item.hidden) return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
@@ -2508,30 +2623,75 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 2 FRONT: BUTTERFLY PETAL */}
+            {/* STYLE 2 FRONT: BUTTERFLY PETAL (Sculpted lower hindwings, pleated center tail & crossover petal waist folds) */}
             {wrapStyle === 'tissue' && (
               <g>
+                {/* Flared Lower Left & Right Butterfly Hindwings (Front Layer) */}
                 <path
-                  d="M225,512 L375,512 L362,625 Q300,632 238,625 Z"
-                  fill={shadeWrapHex(wrapColor, 14)}
+                  d="M234,482 C168,510 144,572 174,606 C198,634 248,612 276,570 L300,486 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                  strokeOpacity="0.88"
                 />
                 <path
-                  d="M258,515 L248,625 M342,515 L352,625 M300,518 L300,627"
-                  stroke={shadeWrapHex(wrapColor, -25)}
+                  d="M366,482 C432,510 456,572 426,606 C402,634 352,612 324,570 L300,486 Z"
+                  fill={shadeWrapHex(wrapColor, 6)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                  strokeOpacity="0.88"
+                />
+
+                {/* Center Accordion-Pleated Silk Tail Fan */}
+                <path
+                  d="M236,484 L364,484 L348,618 Q300,632 252,618 Z"
+                  fill={shadeWrapHex(wrapColor, 18)}
+                  stroke="#FFFFFF"
                   strokeWidth="1.5"
-                  opacity="0.65"
                 />
                 <path
-                  d="M150,362 Q232,415 318,518 L222,520 Q180,445 150,362 Z"
+                  d="M264,486 L258,618 M282,486 L279,622 M300,486 L300,625 M318,486 L321,622 M336,486 L342,618"
+                  stroke={shadeWrapHex(wrapColor, -20)}
+                  strokeWidth="1.2"
+                  opacity="0.48"
+                />
+
+                {/* Frosted Inner Tissue Ruffle Peeking Along Front Crossover Collar */}
+                <path
+                  d="M128,298 C178,325 242,395 308,480 L238,482 C185,428 134,368 128,298 Z"
+                  fill="#FFFDF9"
+                  fillOpacity="0.85"
+                />
+                <path
+                  d="M472,298 C422,325 358,395 292,480 L362,482 C415,428 466,368 472,298 Z"
+                  fill="#FFFDF9"
+                  fillOpacity="0.85"
+                />
+
+                {/* Left Curved Butterfly Crossover Wing Fold */}
+                <path
+                  d="M114,312 C108,382 162,452 234,486 L316,486 C268,418 198,336 144,296 C126,283 116,292 114,312 Z"
                   fill={shadeWrapHex(wrapColor, -8)}
-                  stroke={shadeWrapHex(wrapColor, 22)}
-                  strokeWidth="1.2"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.9"
                 />
+                {/* Right Curved Butterfly Crossover Wing Fold */}
                 <path
-                  d="M450,362 Q368,415 282,518 L378,520 Q420,445 450,362 Z"
+                  d="M486,312 C492,382 438,452 366,486 L284,486 C332,418 402,336 456,296 C474,283 484,292 486,312 Z"
                   fill={wrapColor}
-                  stroke={shadeWrapHex(wrapColor, 28)}
-                  strokeWidth="1.2"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.9"
+                />
+                {/* Delicate Inner Gold/White Edge Trim Along Front Wing Margins */}
+                <path
+                  d="M124,306 C178,346 242,418 296,482 M476,306 C422,346 358,418 304,482"
+                  fill="none"
+                  stroke="#FFFDF9"
+                  strokeWidth="1.1"
+                  strokeDasharray="4 3"
+                  opacity="0.75"
                 />
               </g>
             )}
@@ -2872,7 +3032,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             onRibbonClick={onRibbonClick}
           />
 
-          {/* STYLE 11 FRONT: GLASS CLOCHE (Front glass dome glaze, specular reflections & sculpted walnut pedestal over stems & ribbon) */}
+          {/* STYLE 11 FRONT: GLASS CLOCHE (Front crystal dome glaze, concentric specular reflections & turned pedestal over stems & ribbon) */}
           {wrapStyle === 'cloche' && (
             <g
               role={isPreviewMode ? undefined : 'button'}
@@ -2896,68 +3056,128 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               }
               className={isPreviewMode ? 'pointer-events-none' : 'cursor-pointer'}
             >
-              {/* Translucent Front Glass Bell Glaze Over Flowers & Ribbon */}
+              {/* Foreground Botanical Moss Tuft Cushion Over Stem Ends */}
               <path
-                d="M130,564 L130,276 C130,100 470,100 470,276 L470,564 Z"
-                fill="url(#clocheFrontGlassGrad)"
-                stroke="#CBD5E1"
-                strokeWidth="1.8"
-                strokeOpacity="0.65"
+                d="M164,558 Q215,541 268,550 Q300,542 332,550 Q385,541 436,558 Z"
+                fill="#4D7C5D"
+                opacity="0.82"
                 className="pointer-events-none"
               />
-              {/* Left & Right Curved Specular Glass Highlights */}
               <path
-                d="M150,544 L150,285 C150,152 224,124 272,118"
+                d="M196,558 Q248,546 300,553 Q352,546 404,558 Z"
+                fill="#659A76"
+                opacity="0.65"
+                className="pointer-events-none"
+              />
+
+              {/* Translucent Front Crystal Bell Jar Glaze Over Flowers & Ribbon (True Semicircular Arc A170,170) */}
+              <path
+                d="M130,562 L130,276 A170,170 0 0,1 470,276 L470,562 Z"
+                fill="url(#clocheFrontGlassGrad)"
+                stroke="#CBD5E1"
+                strokeWidth="2"
+                strokeOpacity="0.72"
+                className="pointer-events-none"
+              />
+
+              {/* Concentric Left & Right Curved Specular Glass Highlights (Always 100% Inside the Dome!) */}
+              <path
+                d="M148,542 L148,276 A152,152 0 0,1 268,128"
                 fill="none"
                 stroke="#FFFFFF"
                 strokeWidth="5.5"
                 strokeLinecap="round"
-                opacity="0.62"
+                opacity="0.65"
                 className="pointer-events-none"
               />
               <path
-                d="M450,544 L450,295 C450,192 402,148 354,132"
+                d="M158,528 L158,276 A142,142 0 0,1 242,146"
+                fill="none"
+                stroke="#FFFFFF"
+                strokeWidth="2"
+                strokeLinecap="round"
+                opacity="0.38"
+                className="pointer-events-none"
+              />
+              <path
+                d="M452,542 L452,276 A152,152 0 0,0 348,133"
                 fill="none"
                 stroke="#E0F2FE"
                 strokeWidth="3.5"
                 strokeLinecap="round"
-                opacity="0.48"
+                opacity="0.52"
                 className="pointer-events-none"
               />
-              {/* Foreground Moss Tuft Rim Inside Glass Base */}
-              <path
-                d="M168,560 Q230,546 300,554 Q370,546 432,560 Z"
-                fill="#4D7C5D"
-                opacity="0.7"
-                className="pointer-events-none"
-              />
-              {/* Sculpted Walnut Pedestal Base */}
+
+              {/* Glass Rim Seated Groove Ring */}
               <ellipse
                 cx="300"
-                cy="566"
-                rx="178"
-                ry="20"
-                fill={wrapColor}
-                stroke={shadeWrapHex(wrapColor, -45)}
-                strokeWidth="2.2"
+                cy="562"
+                rx="170"
+                ry="16"
+                fill="none"
+                stroke="#FFFFFF"
+                strokeWidth="1.8"
+                opacity="0.6"
+                className="pointer-events-none"
               />
-              <path
-                d="M122,566 L478,566 L462,606 Q300,626 138,606 Z"
-                fill={shadeWrapHex(wrapColor, -28)}
-                stroke={shadeWrapHex(wrapColor, -55)}
+
+              {/* Multi-Tiered Turned Pedestal Base (Responds to wrapColor with warm brass molding) */}
+              <ellipse
+                cx="300"
+                cy="565"
+                rx="180"
+                ry="20"
+                fill={shadeWrapHex(wrapColor, 8)}
+                stroke={shadeWrapHex(wrapColor, -42)}
                 strokeWidth="2"
               />
-              <rect
-                x="252"
-                y="579"
-                width="96"
-                height="20"
-                rx="4"
-                fill="#FEF3C7"
-                stroke="#D97706"
-                strokeWidth="1.2"
+              <path
+                d="M120,565 L480,565 L468,596 Q300,616 132,596 Z"
+                fill={shadeWrapHex(wrapColor, -18)}
+                stroke={shadeWrapHex(wrapColor, -52)}
+                strokeWidth="2"
               />
-              <line x1="268" y1="589" x2="332" y2="589" stroke="#B45309" strokeWidth="1.2" strokeLinecap="round" />
+              {/* Turned Lower Plinth Foot */}
+              <path
+                d="M136,595 Q300,614 464,595 L472,608 Q300,628 128,608 Z"
+                fill={shadeWrapHex(wrapColor, -34)}
+                stroke={shadeWrapHex(wrapColor, -62)}
+                strokeWidth="1.8"
+              />
+              {/* Subtle Gold Inlay Line Along Pedestal Waist */}
+              <path
+                d="M128,582 Q300,601 472,582"
+                fill="none"
+                stroke="#FDE68A"
+                strokeWidth="1.1"
+                opacity="0.55"
+              />
+
+              {/* Antique Brass Atelier Plaque with Corner Rivets */}
+              <rect
+                x="248"
+                y="578"
+                width="104"
+                height="20"
+                rx="5"
+                fill="#FEF3C7"
+                stroke="#B45309"
+                strokeWidth="1.3"
+              />
+              <circle cx="255" cy="588" r="1.3" fill="#B45309" />
+              <circle cx="345" cy="588" r="1.3" fill="#B45309" />
+              <text
+                x="300"
+                y="591"
+                textAnchor="middle"
+                fill="#78350F"
+                fontSize="7.5"
+                fontWeight="600"
+                style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.18em' }}
+              >
+                FLEURS · ATELIER
+              </text>
             </g>
           )}
         </g>
@@ -3068,27 +3288,29 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   {/* Top-most unified transparent hit surface centered around (0, 0) */}
                   <rect x="-94" y="-64" width="188" height="128" rx="16" fill="transparent" />
 
-                  {/* Recipient "Tap to open" badge in Preview Mode */}
+                  {/* Recipient "Open letter" / "Read note" badge in Preview Mode */}
                   {isPreviewMode && (
                     <g data-export-ignore="true" transform="translate(0, -68)">
                       <rect
-                        x="-38"
+                        x="-42"
                         y="-11"
-                        width="76"
-                        height="20"
-                        rx="10"
+                        width="84"
+                        height="21"
+                        rx="10.5"
                         fill={cardPalette.seal}
+                        stroke="#FFFDF9"
+                        strokeWidth="1"
                       />
                       <text
                         x="0"
-                        y="2.5"
+                        y="3"
                         textAnchor="middle"
                         fill="#ffffff"
                         fontSize="9.5"
                         fontWeight="600"
                         style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
                       >
-                        Tap to open
+                        {isUnopenedEnvelope ? 'Open letter' : 'Read note'}
                       </text>
                     </g>
                   )}

@@ -676,6 +676,13 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       hasCustomRibbonColor: false,
       hasCustomCardColor: false,
       hasCustomVoiceColor: false,
+      card: {
+        ...state.card,
+        theme: 'sealed',
+        customBg: undefined,
+        customAccent: undefined,
+        visibleOnStage: true
+      },
       voice: { ...DEFAULT_VOICE_KEEPSAKE },
       lock: { ...DEFAULT_BOUQUET_LOCK },
       selectedId: null
@@ -715,6 +722,10 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   loadSnapshot: (snap) => {
     set({
       ...snap,
+      card: {
+        ...snap.card,
+        theme: snap.card?.theme || 'sealed'
+      },
       hasCustomWrapColor: false,
       hasCustomRibbonColor: false,
       hasCustomCardColor: Boolean(snap.card?.customBg || snap.card?.customAccent),

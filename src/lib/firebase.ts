@@ -344,23 +344,63 @@ export async function incrementStudioGlobalStat(
 
 const VAULT_STORAGE_KEY = 'flowers_for_you_local_vault_v1';
 
+function deduplicateVaultList(list: SavedVaultBouquet[]): SavedVaultBouquet[] {
+  const seenCodes = new Set<string>();
+  const result: SavedVaultBouquet[] = [];
+
+  for (const item of list) {
+    if (!item || typeof item.code !== 'string') continue;
+    if (seenCodes.has(item.code)) continue;
+
+    // Collapse rapid-fire edits of the same bouquet (same recipient, sender, flower count) saved within 15 minutes
+    const itemTime = Date.parse(item.createdAt || '') || 0;
+    const isRapidDuplicate = result.some((existing) => {
+      const existingTime = Date.parse(existing.createdAt || '') || 0;
+      const withinWindow = Math.abs(existingTime - itemTime) < 15 * 60 * 1000;
+      return (
+        withinWindow &&
+        (existing.to || '') === (item.to || '') &&
+        (existing.from || '') === (item.from || '') &&
+        existing.flowerCount === item.flowerCount &&
+        Boolean(existing.hasVoice) === Boolean(item.hasVoice)
+      );
+    });
+
+    seenCodes.add(item.code);
+    if (!isRapidDuplicate) {
+      result.push(item);
+    }
+  }
+  return result;
+}
+
 export function getSavedVaultBouquets(): SavedVaultBouquet[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(VAULT_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const cleaned = deduplicateVaultList(parsed);
+    if (cleaned.length !== parsed.length) {
+      localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch {
     return [];
   }
 }
 
-export function saveBouquetToLocalVault(entry: SavedVaultBouquet): SavedVaultBouquet[] {
+export function saveBouquetToLocalVault(
+  entry: SavedVaultBouquet,
+  replaceCode?: string | null
+): SavedVaultBouquet[] {
   if (typeof window === 'undefined') return [];
   try {
-    const existing = getSavedVaultBouquets().filter((b) => b.code !== entry.code);
-    const next = [entry, ...existing].slice(0, 30);
+    const existing = getSavedVaultBouquets().filter(
+      (b) => b.code !== entry.code && (!replaceCode || b.code !== replaceCode)
+    );
+    const next = deduplicateVaultList([entry, ...existing]).slice(0, 30);
     localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(next));
     return next;
   } catch {

@@ -650,7 +650,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               from: DEFAULT_SHARE_CARD_FROM,
               message: DEFAULT_SHARE_CARD_MSG,
               visibleOnStage: true,
-              theme: 'cream'
+              theme: 'sealed'
             }
           };
         }
