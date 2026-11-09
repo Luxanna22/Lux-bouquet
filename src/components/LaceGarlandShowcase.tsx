@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
 import { ArrowLeft, Moon, Search, Sun, X } from 'lucide-react';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
@@ -10,16 +11,15 @@ import {
   convertVaultBouquetToShowcaseEntry,
   evaluateCatenaryCurveY,
   filterShowcaseBouquets,
-  getShowcaseFreshnessInfo,
   ShowcaseBouquetEntry,
-  ShowcaseCategoryFilter,
 } from '../lib/showcaseGallery';
 import { getSavedVaultBouquets } from '../lib/firebase';
 import { decodeBouquetFromHash } from '../lib/shareAndExport';
 
 /**
- * Shared hook to merge user's locally saved/shared bouquets with the curated community showcase
- * and filter out any >30-day expired bouquets (unless marked `isPremium: true`).
+ * Shared hook to merge user's locally saved/shared bouquets with the curated community showcase,
+ * deduplicating identical recipient/sender entries so duplicate drafts never clutter the garland,
+ * and filtering out any >30-day expired bouquets (unless marked `isPremium: true`).
  */
 export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
   return useMemo(() => {
@@ -29,7 +29,21 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
     }
 
     const localVault = getSavedVaultBouquets();
-    const userEntries: ShowcaseBouquetEntry[] = localVault.slice(0, 8).map((v, idx) => {
+    const seenRecipientSender = new Set<string>();
+    const userEntries: ShowcaseBouquetEntry[] = [];
+
+    for (let idx = 0; idx < localVault.length; idx++) {
+      const v = localVault[idx];
+      const dedupeKey = `${(v.to || '').trim().toLowerCase()}__${(v.from || '').trim().toLowerCase()}`;
+      // Skip default unedited placeholder drafts or duplicate recipient+sender entries
+      const isDefaultPlaceholder =
+        (v.to || '').trim().toLowerCase() === 'my soulmate' &&
+        (v.from || '').trim().toLowerCase() === 'secret admirer';
+      if (isDefaultPlaceholder || seenRecipientSender.has(dedupeKey)) {
+        continue;
+      }
+      seenRecipientSender.add(dedupeKey);
+
       let decodedSnap = null;
       try {
         const rawPayload = localStorage.getItem(`bq_short_${v.code}`);
@@ -39,8 +53,9 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       } catch {
         // Ignore decode errors
       }
-      return convertVaultBouquetToShowcaseEntry(v, decodedSnap, idx);
-    });
+      userEntries.push(convertVaultBouquetToShowcaseEntry(v, decodedSnap, userEntries.length));
+      if (userEntries.length >= 2) break;
+    }
 
     const seenCodes = new Set<string>(userEntries.map((u) => u.code));
     const merged = [...userEntries, ...curated.filter((c) => !seenCodes.has(c.code))];
@@ -49,309 +64,314 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
 }
 
 /**
- * Renders the full botanical bouquet inside each hanging parcel on the Lace Garland.
+ * Pure Botanical Bouquet + Attached Assets SVG (just like a saved Studio PNG keepsake:
+ * soft dashed halo ring, full wrapped bouquet, tucked wax-sealed letter envelope, and optional voice keepsake).
  */
-export const ShowcaseBouquetIllustrationSVG: React.FC<{ entry: ShowcaseBouquetEntry }> = React.memo(
-  ({ entry }) => {
-    const { wrapStyle, wrapColor, wrapShadow, ribbonColor, stems } = entry;
-    const domeClipId = `garland-cloche-clip-${entry.id}`;
+export const ShowcaseBouquetIllustrationSVG: React.FC<{
+  entry: ShowcaseBouquetEntry;
+  isDarkMode?: boolean;
+}> = React.memo(({ entry, isDarkMode = false }) => {
+  const { wrapStyle, wrapColor, wrapShadow, ribbonColor, stems } = entry;
+  const domeClipId = `garland-cloche-clip-${entry.id}`;
 
-    const silhouette =
-      wrapStyle === 'hatbox' || wrapStyle === 'vase' || wrapStyle === 'basket'
-        ? 'hatbox'
-        : wrapStyle === 'cloche'
-        ? 'cloche'
-        : wrapStyle === 'koreanmesh' || wrapStyle === 'lace' || wrapStyle === 'chalice'
-        ? 'koreanmesh'
-        : 'tissue';
+  const silhouette =
+    wrapStyle === 'hatbox' || wrapStyle === 'vase' || wrapStyle === 'basket'
+      ? 'hatbox'
+      : wrapStyle === 'cloche'
+      ? 'cloche'
+      : wrapStyle === 'koreanmesh' || wrapStyle === 'lace' || wrapStyle === 'chalice'
+      ? 'butterfly'
+      : 'cone';
 
-    return (
-      <svg
-        viewBox="56 32 288 264"
-        className="w-full h-full max-w-[172px] sm:max-w-[188px] max-h-[146px] sm:max-h-[160px] overflow-visible select-none drop-shadow-[0_6px_14px_rgba(122,75,58,0.13)]"
+  const renderStems = (yShift = 0, scaleMul = 1) =>
+    stems.map((s, i) => (
+      <g
+        key={`${entry.id}-stem-${i}`}
+        transform={`translate(${s.x}, ${s.y + yShift}) rotate(${s.rot}) scale(${(
+          s.scale * scaleMul
+        ).toFixed(2)})`}
       >
-        <defs>
-          <clipPath id={domeClipId}>
-            <path d="M 129,246 L 129,130 A 71,71 0 0 1 271,130 L 271,246 Z" />
-          </clipPath>
-        </defs>
+        <path
+          d={`M 0,10 Q ${(200 - s.x) * 0.22},66 ${(200 - s.x) * 0.52},132`}
+          stroke="#2E7D32"
+          strokeWidth="5.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <FlowerRenderer
+          type={s.type}
+          petalColor={s.petal}
+          centerColor={s.center}
+          hideStem
+        />
+      </g>
+    ));
+
+  return (
+    <svg
+      viewBox="44 22 312 284"
+      className="w-full h-full overflow-visible select-none"
+    >
+      <defs>
+        <clipPath id={domeClipId}>
+          <path d="M 116,238 L 116,136 A 84,84 0 0,1 284,136 L 284,238 Z" />
+        </clipPath>
+      </defs>
+
+      {/* Studio Saved-PNG Dashed Botanical Halo Circle Behind the Bouquet */}
+      <circle
+        cx="200"
+        cy="154"
+        r="112"
+        fill={isDarkMode ? 'rgba(255,253,249,0.03)' : 'rgba(255,253,249,0.55)'}
+        stroke={isDarkMode ? '#5A4A44' : '#E2D4C5'}
+        strokeWidth="1.25"
+        strokeDasharray="4 4"
+      />
+
+      {/* 1. CONE SILHOUETTE */}
+      {silhouette === 'cone' && (
         <g>
-          {/* 1. BACK WRAPPER LAYER */}
-          {silhouette === 'tissue' && (
-            <g>
-              <path d="M 200,225 L 96,95 Q 145,78 200,132 Z" fill={wrapShadow} />
-              <path d="M 200,225 L 304,95 Q 255,78 200,132 Z" fill={wrapColor} />
-              <path d="M 200,225 L 116,115 Q 158,105 200,150 Z" fill="#FFF5F7" opacity="0.72" />
-              <path d="M 200,225 L 284,115 Q 242,105 200,150 Z" fill="#FFF5F7" opacity="0.72" />
-            </g>
-          )}
-
-          {silhouette === 'hatbox' && (
-            <g>
-              <path
-                d="M 122,185 Q 155,120 200,145 Q 245,120 278,185 Z"
-                fill="#FFFDF9"
-                stroke="#F3E8E2"
-                strokeWidth="1.2"
-              />
-              <ellipse cx="200" cy="182" rx="70" ry="12" fill="#4C0519" />
-            </g>
-          )}
-
-          {silhouette === 'cloche' && (
-            <g>
-              <ellipse cx="200" cy="60" rx="10" ry="3.5" fill="#CBD5E1" opacity="0.75" />
-              <circle cx="200" cy="52" r="8" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.2" />
-              <path
-                d="M 128,248 L 128,130 A 72,72 0 0 1 272,130 L 272,248 Z"
-                fill="#E0F2FE"
-                fillOpacity="0.32"
-                stroke="#CBD5E1"
-                strokeWidth="1.6"
-              />
-            </g>
-          )}
-
-          {silhouette === 'koreanmesh' && (
-            <g>
-              <path
-                d="M 200,225 L 92,108 Q 140,72 200,104 Q 260,72 308,108 Z"
-                fill={wrapColor}
-                opacity="0.88"
-              />
-              <path
-                d="M 200,225 L 112,120 Q 155,92 200,118 Q 245,92 288,120 Z"
-                fill="#FFFFFF"
-                opacity="0.65"
-              />
-            </g>
-          )}
-
-          {/* 2 & 3. STEMS & BLOOMS LAYER */}
-          <g clipPath={silhouette === 'cloche' ? `url(#${domeClipId})` : undefined}>
-            {stems.map((st, idx) => {
-              const bottomX = silhouette === 'cloche' ? Math.round(200 + (st.x - 200) * 0.22) : 200;
-              const bottomY = silhouette === 'cloche' ? 243 : 232;
-              const tieY = silhouette === 'cloche' ? 220 : 225;
-              return (
-                <path
-                  key={`stem-${idx}`}
-                  d={
-                    silhouette === 'cloche'
-                      ? `M ${st.x},${st.y + 4} Q ${(st.x + 200) / 2},${(st.y + tieY) / 2 + 6} 200,${tieY} L ${bottomX},${bottomY}`
-                      : `M ${st.x},${st.y} Q ${(st.x + 200) / 2},${(st.y + 225) / 2 + 8} 200,232`
-                  }
-                  stroke="#4D7C5D"
-                  strokeWidth="3.5"
-                  fill="none"
-                  strokeLinecap="round"
-                />
-              );
-            })}
-
-            {stems.map((st, idx) => (
-              <g
-                key={`bloom-${idx}`}
-                transform={`translate(${st.x}, ${st.y}) rotate(${st.rot}) scale(${st.scale})`}
-              >
-                <FlowerRenderer
-                  type={st.type}
-                  petalColor={st.petal}
-                  centerColor={st.center}
-                  hideStem
-                />
-              </g>
-            ))}
+          <polygon
+            points="92,126 200,56 308,126 244,254 156,254"
+            fill={wrapShadow}
+            stroke="#E5C158"
+            strokeWidth="1.4"
+          />
+          <polygon points="116,122 200,74 284,122 200,236" fill="#FFFDF9" opacity="0.92" />
+          <g>{renderStems(0, 1)}</g>
+          <polygon
+            points="92,126 164,192 184,264 148,264"
+            fill={wrapColor}
+            stroke="#E5C158"
+            strokeWidth="1.2"
+          />
+          <polygon
+            points="308,126 236,192 216,264 252,264"
+            fill={wrapShadow}
+            stroke="#E5C158"
+            strokeWidth="1.2"
+          />
+          <polygon
+            points="148,200 252,200 232,272 168,272"
+            fill={wrapColor}
+            stroke="#E5C158"
+            strokeWidth="1.4"
+          />
+          <g transform="translate(200, 212)">
+            <rect x="-38" y="-5" width="76" height="10" rx="5" fill={ribbonColor} />
+            <path
+              d="M 0,0 C -26,-20 -36,10 -4,6 M 0,0 C 26,-20 36,10 4,6"
+              fill="none"
+              stroke={ribbonColor}
+              strokeWidth="5.5"
+              strokeLinecap="round"
+            />
+            <path
+              d="M -4,5 L -16,44 M 4,5 L 16,44"
+              stroke={ribbonColor}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+            />
+            <circle cx="0" cy="0" r="6" fill={ribbonColor} />
           </g>
-
-          {/* 4. FRONT WRAPPER FOLD & RIBBON LAYER */}
-          {silhouette === 'tissue' && (
-            <g>
-              <path d="M 164,228 L 236,228 L 226,282 Q 200,288 174,282 Z" fill={wrapColor} />
-              <path
-                d="M 122,166 Q 162,190 204,230 L 164,230 Q 142,200 122,166 Z"
-                fill={wrapShadow}
-              />
-              <path
-                d="M 278,166 Q 238,190 196,230 L 236,230 Q 258,200 278,166 Z"
-                fill={wrapColor}
-              />
-              <path
-                d="M 162,228 Q 200,236 238,228"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 200,231 C 180,216 174,238 198,233 M 200,231 C 220,216 226,238 202,233"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 198,233 Q 190,254 185,270 M 202,233 Q 210,254 215,270"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-              <circle cx="200" cy="231" r="4" fill={ribbonColor} />
-            </g>
-          )}
-
-          {silhouette === 'hatbox' && (
-            <g>
-              <path
-                d="M 134,182 L 266,182 L 258,278 Q 200,290 142,278 Z"
-                fill={wrapColor}
-                stroke={wrapShadow}
-                strokeWidth="1.5"
-              />
-              <rect
-                x="128"
-                y="174"
-                width="144"
-                height="14"
-                rx="5"
-                fill={wrapShadow}
-                stroke="#F59E0B"
-                strokeWidth="1"
-              />
-              <rect
-                x="174"
-                y="214"
-                width="52"
-                height="30"
-                rx="6"
-                fill="#FFFBEB"
-                stroke="#F59E0B"
-                strokeWidth="1.5"
-              />
-              <line
-                x1="184"
-                y1="226"
-                x2="216"
-                y2="226"
-                stroke="#92400E"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <line
-                x1="190"
-                y1="234"
-                x2="210"
-                y2="234"
-                stroke="#B45309"
-                strokeWidth="1.1"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 136,192 Q 200,224 264,192"
-                fill="none"
-                stroke="#F59E0B"
-                strokeWidth="2.2"
-                strokeDasharray="4 3"
-              />
-            </g>
-          )}
-
-          {silhouette === 'cloche' && (
-            <g>
-              <path
-                d="M 188,220 Q 200,224 212,220"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3.2"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 200,221 C 185,210 182,228 198,223 M 200,221 C 215,210 218,228 202,223"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="2.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 198,223 L 191,241 M 202,223 L 209,241"
-                stroke={ribbonColor}
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              />
-              <circle cx="200" cy="221" r="3.2" fill={ribbonColor} />
-              <ellipse cx="200" cy="245" rx="54" ry="6.5" fill="#4D7C5D" opacity="0.72" />
-              <ellipse cx="200" cy="244" rx="40" ry="4.5" fill="#86EFAC" opacity="0.45" />
-              <path
-                d="M 140,132 A 60,60 0 0 1 178,74"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                opacity="0.82"
-              />
-              <line
-                x1="138"
-                y1="142"
-                x2="138"
-                y2="236"
-                stroke="#FFFFFF"
-                strokeWidth="2.8"
-                strokeLinecap="round"
-                opacity="0.62"
-              />
-              <ellipse
-                cx="200"
-                cy="248"
-                rx="76"
-                ry="9"
-                fill={wrapColor}
-                stroke={wrapShadow}
-                strokeWidth="1.5"
-              />
-              <rect x="122" y="248" width="156" height="15" rx="6" fill={wrapShadow} />
-            </g>
-          )}
-
-          {silhouette === 'koreanmesh' && (
-            <g>
-              <path d="M 160,225 L 240,225 L 234,278 Q 200,286 166,278 Z" fill={wrapColor} />
-              <path
-                d="M 118,162 Q 162,188 204,228 L 160,228 Q 136,196 118,162 Z"
-                fill={wrapShadow}
-                opacity="0.85"
-              />
-              <path
-                d="M 282,162 Q 238,188 196,228 L 240,228 Q 264,196 282,162 Z"
-                fill={wrapColor}
-                opacity="0.92"
-              />
-              <path
-                d="M 160,226 Q 170,232 180,226 Q 190,232 200,226 Q 210,232 220,226 Q 230,232 240,226"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="2.2"
-              />
-              <path
-                d="M 200,228 C 176,210 170,238 198,231 M 200,228 C 224,210 230,238 202,231"
-                fill="none"
-                stroke={ribbonColor}
-                strokeWidth="3.2"
-              />
-              <circle cx="200" cy="229" r="4.5" fill={ribbonColor} />
-            </g>
-          )}
         </g>
-      </svg>
-    );
-  }
-);
+      )}
+
+      {/* 2. GLASS CLOCHE DOME SILHOUETTE */}
+      {silhouette === 'cloche' && (
+        <g>
+          <path
+            d="M 116,238 L 116,136 A 84,84 0 0,1 284,136 L 284,238 Z"
+            fill="rgba(240, 249, 255, 0.34)"
+            stroke="rgba(255, 255, 255, 0.85)"
+            strokeWidth="2.5"
+          />
+          <g clipPath={`url(#${domeClipId})`}>
+            {renderStems(16, 0.88)}
+            <path
+              d="M 188,214 L 212,214 M 200,214 C 186,204 182,220 198,217 M 200,214 C 214,204 218,220 202,217"
+              stroke={ribbonColor}
+              strokeWidth="4"
+              fill="none"
+              strokeLinecap="round"
+            />
+            <ellipse cx="200" cy="238" rx="68" ry="9" fill="#86EFAC" opacity="0.45" />
+          </g>
+          <circle
+            cx="200"
+            cy="43"
+            r="9.5"
+            fill="rgba(240, 249, 255, 0.58)"
+            stroke="#FFFFFF"
+            strokeWidth="2.2"
+          />
+          <path
+            d="M 130,224 L 130,138 A 70,70 0 0,1 182,70"
+            fill="none"
+            stroke="#FFFFFF"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            opacity="0.72"
+          />
+          <ellipse cx="200" cy="240" rx="92" ry="9" fill={wrapColor} stroke={wrapShadow} strokeWidth="1.5" />
+          <path
+            d="M 104,240 L 296,240 L 302,254 C 302,259 294,262 284,262 L 116,262 C 106,262 98,259 98,254 Z"
+            fill={wrapShadow}
+          />
+        </g>
+      )}
+
+      {/* 3. PARISIAN VELVET HATBOX SILHOUETTE */}
+      {silhouette === 'hatbox' && (
+        <g>
+          <ellipse cx="200" cy="166" rx="68" ry="14" fill={wrapShadow} />
+          <ellipse cx="200" cy="164" rx="62" ry="11" fill="#FFFDF9" opacity="0.9" />
+          <g>{renderStems(8, 0.94)}</g>
+          <path
+            d="M 132,166 L 142,262 C 142,273 258,273 258,262 L 268,166 Z"
+            fill={wrapColor}
+            stroke="#D97706"
+            strokeWidth="1.5"
+          />
+          <rect
+            x="127"
+            y="158"
+            width="146"
+            height="16"
+            rx="5"
+            fill={wrapShadow}
+            stroke="#F59E0B"
+            strokeWidth="1.4"
+          />
+          <line
+            x1="134"
+            y1="166"
+            x2="266"
+            y2="166"
+            stroke="#FDE68A"
+            strokeWidth="1.5"
+            strokeDasharray="4 4"
+          />
+          <rect
+            x="170"
+            y="198"
+            width="60"
+            height="34"
+            rx="5"
+            fill="#FFFDF9"
+            stroke="#D97706"
+            strokeWidth="1.6"
+          />
+          <rect
+            x="174"
+            y="202"
+            width="52"
+            height="26"
+            rx="3"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="0.9"
+          />
+          <line x1="184" y1="212" x2="216" y2="212" stroke="#92400E" strokeWidth="1.6" strokeLinecap="round" />
+          <line x1="190" y1="220" x2="210" y2="220" stroke="#B45309" strokeWidth="1.2" strokeLinecap="round" />
+        </g>
+      )}
+
+      {/* 4. KOREAN SILK BUTTERFLY WINGS SILHOUETTE */}
+      {silhouette === 'butterfly' && (
+        <g>
+          <path
+            d="M 200,204 C 138,186 78,128 96,74 C 114,44 168,78 200,148 Z"
+            fill={wrapShadow}
+            opacity="0.88"
+            stroke="#FFFDF9"
+            strokeWidth="1.4"
+          />
+          <path
+            d="M 200,204 C 262,186 322,128 304,74 C 286,44 232,78 200,148 Z"
+            fill={wrapShadow}
+            opacity="0.88"
+            stroke="#FFFDF9"
+            strokeWidth="1.4"
+          />
+          <ellipse cx="200" cy="144" rx="58" ry="44" fill="#FFFDF9" opacity="0.88" />
+          <g>{renderStems(2, 0.96)}</g>
+          <path
+            d="M 200,214 C 142,212 104,174 114,136 C 124,116 168,150 200,196 Z"
+            fill={wrapColor}
+            stroke="#FFFDF9"
+            strokeWidth="1.4"
+          />
+          <path
+            d="M 200,214 C 258,212 296,174 286,136 C 276,116 232,150 200,196 Z"
+            fill={wrapColor}
+            stroke="#FFFDF9"
+            strokeWidth="1.4"
+          />
+          <path
+            d="M 164,200 L 236,200 L 224,266 C 216,272 184,272 176,266 Z"
+            fill={wrapColor}
+            stroke="#FFFDF9"
+            strokeWidth="1.4"
+          />
+          <g transform="translate(200, 208)">
+            <rect x="-34" y="-5" width="68" height="10" rx="5" fill={ribbonColor} />
+            <path
+              d="M 0,0 C -24,-18 -32,10 -4,6 M 0,0 C 24,-18 32,10 4,6"
+              fill="none"
+              stroke={ribbonColor}
+              strokeWidth="5"
+              strokeLinecap="round"
+            />
+            <circle cx="0" cy="0" r="5.5" fill={ribbonColor} />
+          </g>
+        </g>
+      )}
+
+      {/* Tucked Wax-Sealed Keepsake Envelope Asset (Just like the Saved PNG / Recipient Studio Canvas) */}
+      <g transform="translate(254, 224) rotate(-4)">
+        <rect
+          x="-28"
+          y="-19"
+          width="56"
+          height="38"
+          rx="5"
+          fill="#FFFDF9"
+          stroke="#D8C4B4"
+          strokeWidth="1.4"
+        />
+        {/* Envelope Flap Lines */}
+        <path
+          d="M -26,-17 L 0,3 L 26,-17"
+          fill="none"
+          stroke="#DECBB9"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M -26,17 L -8,2 M 26,17 L 8,2"
+          fill="none"
+          stroke="#EAE0D5"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+        />
+        {/* Rose-Gold / Crimson Wax Seal */}
+        <circle cx="0" cy="2" r="6.2" fill="#E11D48" stroke="#FFFDF9" strokeWidth="1.2" />
+        <path
+          d="M 0,4.5 C -3,2 -3.8,-0.5 -1.8,-1.8 C -0.6,-2.5 0,-1.2 0,-1.2 C 0,-1.2 0.6,-2.5 1.8,-1.8 C 3.8,-0.5 3,2 0,4.5 Z"
+          fill="#FFFDF9"
+        />
+      </g>
+    </svg>
+  );
+});
 
 /**
- * Miniature Botanical Lace Clothespin + Vertical Braided Cord suspending each card from the Catenary Lace Line.
- * When `extendCordTopPx` is provided, the vertical string extends up to meet the catenary curve at any height.
+ * Miniature Botanical Lace Clothespin + Vertical Braided Cord suspending each PNG-style bouquet keepsake from the Catenary Lace Line.
  */
-const LaceHangerClipSVG: React.FC<{
+export const LaceHangerClipSVG: React.FC<{
   stringLengthPx: number;
   isDarkMode: boolean;
   accentColor: string;
@@ -361,7 +381,7 @@ const LaceHangerClipSVG: React.FC<{
   const brassBody = isDarkMode ? '#D4A373' : '#C89666';
   const brassHighlight = isDarkMode ? '#FDE68A' : '#FEF3C7';
 
-  const dropCordPx = stringLengthPx + 24;
+  const dropCordPx = stringLengthPx + 22;
 
   return (
     <div
@@ -432,9 +452,9 @@ const LaceHangerClipSVG: React.FC<{
             cx="0"
             cy="11"
             r="3.2"
-            fill={isDarkMode ? '#2B2321' : '#FFFDF9'}
-            stroke={brassBody}
-            strokeWidth="1.4"
+            fill={isDarkMode ? '#2B2321' : '#FDF9F5'}
+            stroke={cordColor}
+            strokeWidth="1.2"
           />
         </g>
       </svg>
@@ -443,18 +463,16 @@ const LaceHangerClipSVG: React.FC<{
 });
 
 /**
- * Single Hanging Bouquet Parcel Card used on both the Hero Catenary Garland and the All Creations Gallery Page.
+ * Pure PNG-Style Hanging Bouquet Keepsake Frame:
+ * Looks just like a saved Studio PNG — no text headers, no quotes, no action bars, no clutter.
+ * Displays ONLY the crafted bouquet + envelope asset + optional voice keepsake asset.
  */
 const HangingCreationCard: React.FC<{
   entry: ShowcaseBouquetEntry;
-  nowMs: number;
   isDarkMode: boolean;
   onUnwrap: (entry: ShowcaseBouquetEntry) => void;
-  onCraftSimilar: (entry: ShowcaseBouquetEntry) => void;
   disableStaticTilt?: boolean;
-}> = React.memo(({ entry, nowMs, isDarkMode, onUnwrap, onCraftSimilar, disableStaticTilt }) => {
-  const freshness = getShowcaseFreshnessInfo(entry, nowMs);
-
+}> = React.memo(({ entry, isDarkMode, onUnwrap, disableStaticTilt }) => {
   return (
     <div className="w-full flex flex-col items-center group">
       <LaceHangerClipSVG
@@ -463,176 +481,83 @@ const HangingCreationCard: React.FC<{
         accentColor={entry.ribbonColor}
       />
 
-      <div
+      <button
+        type="button"
+        onClick={() => onUnwrap(entry)}
+        aria-label={`Unwrap bouquet for ${entry.to} from ${entry.from}`}
         style={disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }}
-        className={`w-full rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 ${
+        className={`w-full aspect-[1/1.05] rounded-[26px] sm:rounded-[30px] border p-2.5 sm:p-3.5 relative flex items-center justify-center overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 cursor-pointer focus:outline-none ${
           isDarkMode
-            ? 'bg-[#352C29] border-[#4E403B] group-hover:border-[#6A5750] shadow-[0_14px_34px_rgba(18,13,11,0.28)]'
-            : 'bg-[#FFFDF9] border-[#E5D7C8] group-hover:border-[#CFAF97] shadow-[0_12px_30px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_40px_rgba(122,75,58,0.12)]'
+            ? 'bg-[#28211F] border-[#4A3D39] group-hover:border-[#6A5750] shadow-[0_14px_32px_rgba(15,11,9,0.34)]'
+            : 'bg-[#F7F1E8] border-[#E5D7C8] group-hover:border-[#D2B59E] shadow-[0_12px_28px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_38px_rgba(122,75,58,0.12)]'
         }`}
       >
-        {/* Top Unboxed Freshness Line */}
+        {/* Subtle Inner Studio Mat Frame */}
         <div
-          className={`px-3.5 pt-2.5 pb-2 flex items-center justify-between gap-2 text-[10.5px] sm:text-[11px] border-b border-dashed ${
-            isDarkMode ? 'border-[#483B37] text-[#C8B6AC]' : 'border-[#EFE5DC] text-[#857267]'
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-2 sm:inset-2.5 rounded-[20px] sm:rounded-[22px] border border-dashed ${
+            isDarkMode ? 'border-[#3E3330]' : 'border-[#E9DDD0]'
           }`}
-        >
-          <span className="truncate">
-            {entry.isUserCreated ? 'Your shared bouquet' : freshness.sharedAgoLabel}
-          </span>
-          <span
-            className={`shrink-0 font-medium tabular-nums ${
-              entry.isPremium
-                ? isDarkMode
-                  ? 'text-[#F0C8B0]'
-                  : 'text-[#8A4B38]'
-                : freshness.isExpiringSoon
-                ? isDarkMode
-                  ? 'text-amber-300'
-                  : 'text-amber-700'
-                : isDarkMode
-                ? 'text-[#DFCFC6]'
-                : 'text-[#6E5D54]'
-            }`}
-          >
-            {entry.isPremium ? '✦ Eternal' : freshness.label}
-          </span>
+        />
+
+        {/* Bouquet + Envelope Asset SVG */}
+        <div className="w-full h-full flex items-center justify-center p-1 sm:p-1.5 group-hover:scale-105 transition-transform duration-500">
+          <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
         </div>
 
-        {/* Botanical Illustration Vitrine */}
-        <div
-          onClick={() => onUnwrap(entry)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onUnwrap(entry);
-            }
-          }}
-          aria-label={`Unwrap bouquet for ${entry.to} from ${entry.from}`}
-          className={`h-40 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b cursor-pointer ${
-            isDarkMode ? 'bg-[#241D1B] border-[#4A3D39]' : 'bg-[#EDE2D4] border-[#DFCFC0]'
-          }`}
-        >
+        {/* Attached Voice Keepsake Asset (No text, just the miniature keepsake icon asset) */}
+        {entry.hasVoice && entry.voiceStyle && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute w-32 h-32 rounded-full"
-            style={{
-              background: isDarkMode
-                ? 'radial-gradient(circle, rgba(230,184,156,0.14) 0%, rgba(36,29,27,0) 72%)'
-                : 'radial-gradient(circle, rgba(255,253,249,0.72) 0%, rgba(237,226,212,0) 72%)',
-            }}
-          />
-
-          <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
-            <ShowcaseBouquetIllustrationSVG entry={entry} />
-          </div>
-
-          {entry.hasVoice && entry.voiceStyle && (
-            <div
-              title={entry.voiceLabel || 'Includes voice keepsake'}
-              className={`absolute bottom-2 right-2.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center shadow-2xs [&>svg]:w-4.5 [&>svg]:h-4.5 sm:[&>svg]:w-5 sm:[&>svg]:h-5 ${
-                isDarkMode
-                  ? 'bg-[#352C29]/95 border-[#5E4E49]'
-                  : 'bg-[#FFFDF9]/95 border-[#DECBB9]'
-              }`}
-            >
-              <MiniVoiceKeepsakeSVG
-                styleType={entry.voiceStyle}
-                primaryColor="#D6A87C"
-                accentColor="#F43F5E"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Stitched Dedication Tag */}
-        <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between text-left">
-          <div>
-            <div className="flex items-baseline justify-between gap-2 flex-wrap">
-              <h3
-                className={`text-lg sm:text-[21px] font-semibold tracking-tight leading-tight ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                }`}
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                <span className="italic font-normal opacity-80">For </span>
-                {entry.to}
-              </h3>
-              <span
-                className={`text-xs sm:text-sm italic ${
-                  isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                }`}
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                from {entry.from}
-              </span>
-            </div>
-
-            <p
-              className={`mt-1.5 text-xs italic line-clamp-2 leading-relaxed ${
-                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7A685D]'
-              }`}
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '13.5px' }}
-            >
-              {entry.noteExcerpt}
-            </p>
-          </div>
-
-          <div
-            className={`mt-3 pt-2 border-t border-dashed flex items-center justify-between gap-2 ${
-              isDarkMode ? 'border-[#483B37]' : 'border-[#EFE5DC]'
+            className={`absolute bottom-3 left-3 sm:bottom-3.5 sm:left-3.5 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center shadow-2xs [&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-5.5 sm:[&>svg]:h-5.5 transition-transform duration-300 group-hover:scale-110 ${
+              isDarkMode
+                ? 'bg-[#352C29]/95 border-[#5E4E49]'
+                : 'bg-[#FFFDF9]/95 border-[#DECBB9]'
             }`}
           >
-            <button
-              type="button"
-              onClick={() => onUnwrap(entry)}
-              className={`text-[11.5px] sm:text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#F0C8B0] hover:text-[#FBF6F1]'
-                  : 'text-[#7A4B3A] hover:text-[#4A2C21]'
-              }`}
-            >
-              <span>Unwrap Keepsake</span>
-              <span aria-hidden="true">→</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onCraftSimilar(entry)}
-              className={`text-[11px] transition-colors cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#B8A59B] hover:text-[#E6D6CE]'
-                  : 'text-[#8C7A70] hover:text-[#4A382E]'
-              }`}
-            >
-              Craft Similar
-            </button>
+            <MiniVoiceKeepsakeSVG
+              styleType={entry.voiceStyle}
+              primaryColor="#D6A87C"
+              accentColor="#F43F5E"
+            />
           </div>
+        )}
+
+        {/* Whisper-Quiet Hover/Focus Dedication Tag (Hidden at rest so the card looks like a pure saved PNG) */}
+        <div
+          className={`pointer-events-none absolute bottom-2.5 inset-x-3 py-1 px-2.5 rounded-full text-[11px] truncate text-center opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:opacity-100 transition-all duration-300 backdrop-blur-xs ${
+            isDarkMode
+              ? 'bg-[#231C18]/88 text-[#F5ECE6]'
+              : 'bg-[#FFFDF9]/92 text-[#4A382E] shadow-2xs'
+          }`}
+          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+        >
+          <span className="italic opacity-75">For </span>
+          <span className="font-semibold">{entry.to}</span>
+          <span className="opacity-50"> · </span>
+          <span className="italic opacity-80">from {entry.from}</span>
         </div>
-      </div>
+      </button>
     </div>
   );
 });
 
 /**
- *Full-Bleed Sweeping Catenary Lace & Twine Curve SVG (`\_______/` as drawn in `screenshot_3.png`).
- * At x=0 and x=1440, y = edgeY (14). At x=720 (center), y dips down to midY (86), so control point Y = 2*86 - 14 = 158.
+ * Full-Bleed Sweeping Catenary Lace & Twine Curve SVG (`\_______/`).
  */
-const SweepingCatenaryLaceLineSVG: React.FC<{
+export const SweepingCatenaryLaceLineSVG: React.FC<{
   isDarkMode: boolean;
   edgeY?: number;
   midY?: number;
 }> = React.memo(({ isDarkMode, edgeY = 14, midY = 86 }) => {
-  const controlY = 2 * midY - edgeY; // 158 when edgeY=14, midY=86
+  const controlY = 2 * midY - edgeY;
   const viewHeight = midY + 26;
 
   return (
     <svg
       viewBox={`0 0 1440 ${viewHeight}`}
       preserveAspectRatio="none"
-      className="w-full h-[94px] sm:h-[112px] overflow-visible pointer-events-none select-none"
+      className="w-full h-[76px] sm:h-[96px] lg:h-[112px] overflow-visible pointer-events-none select-none"
       aria-hidden="true"
     >
       {/* Soft Drop Shadow Under the Draped Lace Line */}
@@ -674,9 +599,9 @@ const SweepingCatenaryLaceLineSVG: React.FC<{
 
 // ============================================================================
 // 1. HERO CATENARY LACE GARLAND PREVIEW (Right Below the Hero)
-//    Displays 4 limited creations hanging from the sweeping catenary lace line
-//    that glide along the curve with Lenis scroll, plus a CTA below to open
-//    the dedicated All Creations page!
+//    Displays 4 limited PNG-style bouquet keepsakes hanging from the sweeping
+//    catenary lace line that glide along the curve with Lenis scroll, plus a
+//    clean CTA below to open the dedicated All Creations page.
 // ============================================================================
 
 interface HeroLaceGarlandPreviewProps {
@@ -694,20 +619,32 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
   scrollContainerRef,
   onExploreAllCreations,
   onUnwrapShowcaseBouquet,
-  onCraftFromShowcaseBouquet,
 }) => {
   const [nowMs] = useState<number>(() => Date.now());
   const activeEntries = useActiveShowcaseBouquets(vaultCount, nowMs);
   const limitedEntries = useMemo(() => activeEntries.slice(0, 4), [activeEntries]);
 
+  const sectionRef = useRef<HTMLElement | null>(null);
   // Direct DOM refs for 120fps Lenis scroll-linked movement along the catenary curve
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     const wrapper = scrollContainerRef.current;
 
-    const applyGarlandScroll = (scrollTop: number) => {
+    const applyGarlandScroll = () => {
       const count = limitedEntries.length;
+      const sectionEl = sectionRef.current;
+      let centeredScrollTop = 450; // 450 corresponds to uShift = 0 (perfectly centered)
+
+      if (sectionEl && typeof window !== 'undefined') {
+        const rect = sectionEl.getBoundingClientRect();
+        const viewportMid = window.innerHeight * 0.5;
+        const sectionMid = rect.top + rect.height * 0.45;
+        // As section moves through viewport, map delta (-450..+450) around 450
+        const delta = viewportMid - sectionMid;
+        centeredScrollTop = Math.max(0, Math.min(900, 450 + delta * 0.75));
+      }
+
       for (let i = 0; i < count; i++) {
         const el = itemRefs.current[i];
         if (!el) continue;
@@ -715,48 +652,61 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
         const state = computeGarlandItemScrollTransform(
           i,
           count,
-          scrollTop,
+          centeredScrollTop,
           entry ? entry.tiltDeg : 0,
           14,
           86
         );
-        // Move along the catenary curve (xShiftPx, yCurvePx) and gently sway with Lenis scroll
         el.style.transform = `translate3d(${state.xShiftPx}px, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg)`;
       }
     };
 
-    applyGarlandScroll(wrapper ? wrapper.scrollTop : 0);
+    applyGarlandScroll();
 
     if (!wrapper) return;
     const onScroll = () => {
-      applyGarlandScroll(wrapper.scrollTop);
+      applyGarlandScroll();
     };
     wrapper.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
     return () => {
       wrapper.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
     };
   }, [limitedEntries, scrollContainerRef]);
 
   return (
     <section
       id="showcase"
+      ref={sectionRef}
       data-testid="hero-lace-garland-section"
-      className="relative w-full pt-0 pb-10 sm:pb-14 overflow-hidden select-none"
+      className="scroll-mt-24 relative w-full pt-4 sm:pt-6 pb-8 sm:pb-12 overflow-hidden select-none"
     >
-      {/* FULL-BLEED SWEEPING CATENARY LACE GARLAND & HANGING LIMITED CREATIONS */}
+      <div className="fluid-scroll-item text-center mb-1 sm:mb-2 px-4">
+        <h2
+          className={`text-3xl sm:text-4xl font-semibold ${
+            isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+          }`}
+          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+        >
+          Shared Creations
+        </h2>
+      </div>
+
+      {/* FULL-BLEED SWEEPING CATENARY LACE GARLAND & HANGING PNG-STYLE BOUQUETS */}
       <div className="relative w-full">
         {/* The Sweeping Catenary Lace Ribbon (`\_______/`) */}
         <div className="w-full relative z-0">
           <SweepingCatenaryLaceLineSVG isDarkMode={isDarkMode} edgeY={14} midY={86} />
         </div>
 
-        {/* Desktop & Tablet (md+): 4 Limited Creations Suspended Directly Along the Catenary Curve & Gliding with Lenis Scroll */}
-        <div className="hidden md:grid md:grid-cols-4 gap-5 lg:gap-7 max-w-6xl mx-auto px-6 lg:px-10 -mt-[112px] pb-24 relative z-10">
+        {/* Desktop (lg+): 4 Limited PNG-Style Creations Gliding Along the Catenary Curve with Lenis Scroll */}
+        <div className="hidden lg:grid lg:grid-cols-4 gap-7 max-w-5xl mx-auto px-8 -mt-[112px] pb-24 relative z-10">
           {limitedEntries.map((entry, idx) => {
             const initial = computeGarlandItemScrollTransform(
               idx,
               limitedEntries.length,
-              0,
+              450,
               entry.tiltDeg,
               14,
               86
@@ -772,14 +722,12 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                   transform: `translate3d(${initial.xShiftPx}px, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg)`,
                   willChange: 'transform',
                 }}
-                className="w-full max-w-[268px] mx-auto transition-shadow"
+                className="w-full max-w-[218px] mx-auto"
               >
                 <HangingCreationCard
                   entry={entry}
-                  nowMs={nowMs}
                   isDarkMode={isDarkMode}
                   onUnwrap={onUnwrapShowcaseBouquet}
-                  onCraftSimilar={onCraftFromShowcaseBouquet}
                   disableStaticTilt
                 />
               </div>
@@ -787,24 +735,46 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
           })}
         </div>
 
-        {/* Mobile (< md): Horizontal Swipeable Catenary Garland Strip */}
-        <div className="md:hidden flex items-start gap-4 overflow-x-auto no-scrollbar px-5 -mt-[82px] pb-8 snap-x snap-mandatory relative z-10">
-          {limitedEntries.map((entry, idx) => {
-            const mobileCurveY = idx === 1 || idx === 2 ? 36 : 18;
+        {/* Tablet (sm to lg): 3 Hanging PNG-Style Creations Properly Spaced Along the Catenary Curve */}
+        <div className="hidden sm:grid lg:hidden sm:grid-cols-3 gap-5 max-w-2xl mx-auto px-6 -mt-[96px] pb-16 relative z-10">
+          {limitedEntries.slice(0, 3).map((entry, idx) => {
+            const u = 0.2 + (idx / 2) * 0.6;
+            const curveY = evaluateCatenaryCurveY(u, 12, 68);
             return (
               <div
                 key={entry.id}
                 style={{
-                  transform: `translate3d(0px, ${mobileCurveY}px, 0)`,
+                  transform: `translate3d(0px, ${curveY}px, 0)`,
                 }}
-                className="snap-center shrink-0 w-[250px] pb-8"
+                className="w-full max-w-[196px] mx-auto"
               >
                 <HangingCreationCard
                   entry={entry}
-                  nowMs={nowMs}
                   isDarkMode={isDarkMode}
                   onUnwrap={onUnwrapShowcaseBouquet}
-                  onCraftSimilar={onCraftFromShowcaseBouquet}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Mobile (< sm): 2 Hanging PNG-Style Creations Side-by-Side Along the Catenary Curve */}
+        <div className="grid sm:hidden grid-cols-2 gap-3.5 max-w-[360px] mx-auto px-4 -mt-[76px] pb-12 relative z-10">
+          {limitedEntries.slice(0, 2).map((entry, idx) => {
+            const u = idx === 0 ? 0.28 : 0.72;
+            const curveY = evaluateCatenaryCurveY(u, 10, 50);
+            return (
+              <div
+                key={entry.id}
+                style={{
+                  transform: `translate3d(0px, ${curveY}px, 0)`,
+                }}
+                className="w-full max-w-[162px] mx-auto"
+              >
+                <HangingCreationCard
+                  entry={entry}
+                  isDarkMode={isDarkMode}
+                  onUnwrap={onUnwrapShowcaseBouquet}
                 />
               </div>
             );
@@ -812,35 +782,20 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
         </div>
       </div>
 
-      {/* CTA BELOW THE GARLAND TO OPEN THE DEDICATED "ALL CREATIONS" PAGE */}
-      <div className="fluid-scroll-item text-center px-4 mt-2 sm:mt-4">
-        <p
-          className={`text-xs sm:text-[13px] mb-3.5 ${
-            isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B61]'
-          }`}
-        >
-          Shared bouquets rest on the lace line for 30 days · Searchable by recipient &amp; sender
-        </p>
-
+      {/* CLEAN CTA BELOW THE GARLAND TO EXPLORE ALL CREATIONS */}
+      <div className="fluid-scroll-item text-center px-4 mt-1 sm:mt-2">
         <button
           type="button"
           onClick={onExploreAllCreations}
           data-testid="explore-all-creations-btn"
-          className={`px-7 sm:px-8 py-3 sm:py-3.5 rounded-full border border-dashed text-xs sm:text-sm font-medium inline-flex items-center gap-2 transition-all duration-300 active:scale-95 cursor-pointer shadow-[0_8px_24px_rgba(122,75,58,0.06)] ${
+          className={`px-6 sm:px-7 py-2.5 sm:py-3 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-2 transition-all duration-300 active:scale-95 cursor-pointer shadow-[0_8px_24px_rgba(122,75,58,0.05)] ${
             isDarkMode
               ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
               : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
           }`}
         >
           <span>Explore All Creations</span>
-          <span
-            className={`px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums ${
-              isDarkMode ? 'bg-[#E6B89C]/20 text-[#F0C8B0]' : 'bg-[#7A4B3A]/12 text-[#7A4B3A]'
-            }`}
-          >
-            {activeEntries.length}
-          </span>
-          <span aria-hidden="true">→</span>
+          <span aria-hidden="true" className="opacity-70">→</span>
         </button>
       </div>
     </section>
@@ -848,7 +803,10 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
 };
 
 // ============================================================================
-// 2. DEDICATED "ALL CREATIONS" GALLERY PAGE (With For/From Search & Category Filters)
+// 2. DEDICATED "ALL CREATIONS" GALLERY PAGE
+//    Rendered via Portal on `document.body` so `fixed inset-0` is never clipped
+//    by any parent transform, with a silky fade+scale transition and a single
+//    unified "For & From" search input (no noisy filter tabs).
 // ============================================================================
 
 interface CreationsGalleryPageViewProps {
@@ -862,16 +820,6 @@ interface CreationsGalleryPageViewProps {
   onCraftFromShowcaseBouquet: (entry: ShowcaseBouquetEntry) => void;
 }
 
-const CATEGORY_TABS: { id: ShowcaseCategoryFilter; label: string }[] = [
-  { id: 'all', label: 'All Creations' },
-  { id: 'voice', label: 'With Voice Note' },
-  { id: 'cloche', label: 'Glass Dome' },
-  { id: 'hatbox', label: 'Velvet Hatbox' },
-  { id: 'silk', label: 'Silk & Lace' },
-  { id: 'expiring_soon', label: 'Expiring Soon' },
-  { id: 'eternal', label: '✦ Eternal Keepsakes' },
-];
-
 export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> = ({
   isDarkMode,
   onToggleDarkMode,
@@ -880,11 +828,9 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   onBackToHome,
   onStartCrafting,
   onUnwrapShowcaseBouquet,
-  onCraftFromShowcaseBouquet,
 }) => {
-  const [forQuery, setForQuery] = useState('');
-  const [fromQuery, setFromQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<ShowcaseCategoryFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isClosing, setIsClosing] = useState(false);
   const [nowMs] = useState<number>(() => Date.now());
 
   const pageScrollWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -895,15 +841,13 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const filteredEntries = useMemo(
     () =>
       filterShowcaseBouquets(allActiveEntries, {
-        forQuery,
-        fromQuery,
-        category: activeCategory,
+        searchQuery,
         nowMs,
       }),
-    [allActiveEntries, forQuery, fromQuery, activeCategory, nowMs]
+    [allActiveEntries, searchQuery, nowMs]
   );
 
-  // Group filtered entries into rows of 4 so each row hangs from its own sweeping catenary lace line
+  // Group filtered entries into rows of 4 for the sweeping catenary garlands
   const garlandRows = useMemo(() => {
     const rows: ShowcaseBouquetEntry[][] = [];
     for (let i = 0; i < filteredEntries.length; i += 4) {
@@ -918,11 +862,13 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     const content = pageScrollContentRef.current;
     if (!wrapper || !content) return;
 
+    wrapper.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+
     const lenis = new Lenis({
       wrapper,
       content,
       lerp: 0.09,
-      duration: 1.2,
+      duration: 1.15,
       smoothWheel: true,
     });
 
@@ -939,22 +885,34 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     };
   }, []);
 
-  const isFiltering = Boolean(forQuery.trim() || fromQuery.trim() || activeCategory !== 'all');
-
-  const handleClearFilters = () => {
-    setForQuery('');
-    setFromQuery('');
-    setActiveCategory('all');
+  const triggerSmoothClose = (afterClose: () => void) => {
+    setIsClosing(true);
+    window.setTimeout(() => {
+      afterClose();
+    }, 240);
   };
 
-  return (
+  const pageContent = (
     <div
       ref={pageScrollWrapperRef}
       data-testid="creations-gallery-page"
-      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-hidden transition-[background-color,color] duration-300 ease-out ${
-        isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'
-      }`}
+      className={`fixed inset-0 z-[90] overflow-y-auto overflow-x-hidden transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        isClosing ? 'opacity-0 scale-[0.985]' : 'opacity-100 scale-100 animate-creations-page-enter'
+      } ${isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'}`}
+      style={{
+        fontFamily: "'Inter', system-ui, sans-serif",
+      }}
     >
+      <style>{`
+        @keyframes creationsPageEnter {
+          0% { opacity: 0; transform: scale(0.988) translate3d(0, 10px, 0); }
+          100% { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+        }
+        .animate-creations-page-enter {
+          animation: creationsPageEnter 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+      `}</style>
+
       {/* STICKY TOP NAVBAR FOR CREATIONS GALLERY PAGE */}
       <div className="sticky top-2 sm:top-3 z-40 px-3 sm:px-6 pt-1 sm:pt-2 pointer-events-none">
         <header
@@ -968,7 +926,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={onBackToHome}
+              onClick={() => triggerSmoothClose(onBackToHome)}
               data-testid="creations-back-home-btn"
               className={`px-3 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
                 isDarkMode
@@ -977,12 +935,12 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
               }`}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Home</span>
+              <span>Back</span>
             </button>
 
             <button
               type="button"
-              onClick={onBackToHome}
+              onClick={() => triggerSmoothClose(onBackToHome)}
               className="hidden sm:flex items-center gap-2 cursor-pointer"
             >
               <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
@@ -1016,7 +974,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
 
             <button
               type="button"
-              onClick={onOpenVault}
+              onClick={() => triggerSmoothClose(onOpenVault)}
               className={`hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
                 isDarkMode
                   ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
@@ -1039,7 +997,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
 
             <button
               type="button"
-              onClick={onStartCrafting}
+              onClick={() => triggerSmoothClose(onStartCrafting)}
               className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap ${
                 isDarkMode
                   ? 'bg-[#9A6550] hover:bg-[#875642]'
@@ -1053,185 +1011,102 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
       </div>
 
       {/* MAIN CONTENT ROOT */}
-      <div ref={pageScrollContentRef} className="w-full pt-8 sm:pt-12 pb-20">
-        {/* PAGE HEADER & SEARCH / FILTER LEDGER */}
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
+      <div ref={pageScrollContentRef} className="w-full pt-6 sm:pt-10 pb-24">
+        {/* QUIET EDITORIAL HEADER & SINGLE UNIFIED "FOR / FROM" SEARCH INPUT */}
+        <div className="max-w-xl mx-auto px-4 sm:px-6 text-center">
           <h1
-            className={`text-4xl sm:text-5xl md:text-6xl font-semibold tracking-tight ${
+            className={`text-3xl sm:text-5xl font-semibold tracking-tight ${
               isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
             }`}
             style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
           >
             On the <span className="italic font-normal">Lace Garland</span>
           </h1>
-          <p
-            className={`mt-2.5 text-xs sm:text-sm max-w-lg mx-auto leading-relaxed ${
-              isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-            }`}
-          >
-            Every shared bouquet rests on our lace drying line for 30 days before gently retiring—unless pinned as an eternal keepsake.
-          </p>
 
-          {/* Dual "For" (Recipient) and "From" (Sender) Stationery Search Capsule */}
-          <div
-            className={`mt-6 max-w-2xl mx-auto rounded-2xl sm:rounded-full border border-dashed p-1.5 sm:px-4 sm:py-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-3 transition-colors shadow-[0_8px_26px_rgba(122,75,58,0.05)] ${
+          {/* Single Unified Search Input for both "For" (Recipient) and "From" (Sender) */}
+          <label
+            className={`mt-5 max-w-md mx-auto rounded-full border border-dashed px-4 py-2.5 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
               isDarkMode
-                ? 'bg-[#352C29]/95 border-[#574843]'
-                : 'bg-[#FFFDF9]/95 border-[#DECBB9]'
+                ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
+                : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
             }`}
           >
-            {/* "For" (Recipient) Input */}
-            <label className="flex-1 flex items-center gap-2 px-3 py-1.5 sm:py-1 rounded-xl sm:rounded-full focus-within:bg-[#7A4B3A]/6 dark:focus-within:bg-white/5 transition-colors cursor-text">
-              <Search
-                className={`w-3.5 h-3.5 shrink-0 ${
-                  isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
-                }`}
-              />
-              <span
-                className={`text-sm italic font-medium shrink-0 select-none ${
-                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
-                }`}
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                For
-              </span>
-              <input
-                type="text"
-                value={forQuery}
-                onChange={(e) => setForQuery(e.target.value)}
-                placeholder="Search recipient (e.g. Sophia, Mom)…"
-                aria-label="Search bouquets by recipient (For)"
-                data-testid="showcase-search-for"
-                className={`w-full min-w-0 bg-transparent text-xs focus:outline-none ${
-                  isDarkMode
-                    ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
-                    : 'text-[#231C18] placeholder:text-[#A39084]'
-                }`}
-              />
-            </label>
-
-            <span
-              aria-hidden="true"
-              className={`hidden sm:block w-[1px] h-5 shrink-0 border-l border-dashed ${
-                isDarkMode ? 'border-[#574843]' : 'border-[#DECBB9]'
+            <Search
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
               }`}
             />
             <span
-              aria-hidden="true"
-              className={`sm:hidden h-[1px] w-full border-t border-dashed ${
-                isDarkMode ? 'border-[#4A3D39]' : 'border-[#EFE5DC]'
+              className={`text-sm italic font-medium shrink-0 select-none ${
+                isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
+              }`}
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+            >
+              For / From
+            </span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search recipient or sender…"
+              aria-label="Search bouquets by recipient (For) or sender (From)"
+              data-testid="showcase-search-unified"
+              className={`w-full min-w-0 bg-transparent text-xs focus:outline-none ${
+                isDarkMode
+                  ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
+                  : 'text-[#231C18] placeholder:text-[#A39084]'
               }`}
             />
-
-            {/* "From" (Sender) Input */}
-            <label className="flex-1 flex items-center gap-2 px-3 py-1.5 sm:py-1 rounded-xl sm:rounded-full focus-within:bg-[#7A4B3A]/6 dark:focus-within:bg-white/5 transition-colors cursor-text">
-              <span
-                className={`text-sm italic font-medium shrink-0 select-none ${
-                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
-                }`}
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                From
-              </span>
-              <input
-                type="text"
-                value={fromQuery}
-                onChange={(e) => setFromQuery(e.target.value)}
-                placeholder="Search sender (e.g. Julian, Noah)…"
-                aria-label="Search bouquets by sender (From)"
-                data-testid="showcase-search-from"
-                className={`w-full min-w-0 bg-transparent text-xs focus:outline-none ${
-                  isDarkMode
-                    ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
-                    : 'text-[#231C18] placeholder:text-[#A39084]'
-                }`}
-              />
-            </label>
-
-            {isFiltering && (
+            {searchQuery.trim() && (
               <button
                 type="button"
-                onClick={handleClearFilters}
-                aria-label="Clear search filters"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
                 data-testid="showcase-search-clear"
-                className={`self-center px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer shrink-0 ${
+                className={`p-1 rounded-full transition cursor-pointer shrink-0 ${
                   isDarkMode
-                    ? 'bg-[#463A36] text-[#F0C8B0] hover:bg-[#52443F]'
-                    : 'bg-[#F3ECE3] text-[#6E4434] hover:bg-[#EAE0D3]'
+                    ? 'text-[#D8C7BE] hover:bg-[#483C38]'
+                    : 'text-[#7A685D] hover:bg-[#F3ECE3]'
                 }`}
               >
-                <X className="w-3 h-3" />
-                <span>Clear</span>
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
-          </div>
-
-          {/* Category Filter Strip */}
-          <div className="mt-4 flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
-            {CATEGORY_TABS.map((tab) => {
-              const isSelected = activeCategory === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveCategory(tab.id)}
-                  data-testid={`showcase-filter-${tab.id}`}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition cursor-pointer whitespace-nowrap ${
-                    isSelected
-                      ? isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18] shadow-xs'
-                        : 'bg-[#7A4B3A] text-[#FFFDF9] shadow-xs'
-                      : isDarkMode
-                      ? 'bg-[#352C29] text-[#D8C7BE] border border-dashed border-[#544540] hover:bg-[#413632]'
-                      : 'bg-[#FFFDF9] text-[#6E5D54] border border-dashed border-[#DECBB9] hover:bg-[#FAF3EB]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
+          </label>
         </div>
 
-        {/* MULTI-ROW SWEEPING CATENARY LACE GARLANDS */}
+        {/* MULTI-ROW SWEEPING CATENARY LACE GARLANDS WITH PURE PNG-STYLE BOUQUETS */}
         {garlandRows.length === 0 ? (
           <div
             data-testid="showcase-empty-state"
-            className={`mt-12 max-w-md mx-auto rounded-[24px] border border-dashed py-12 px-6 text-center ${
+            className={`mt-12 max-w-sm mx-auto rounded-[24px] border border-dashed py-10 px-6 text-center ${
               isDarkMode
                 ? 'bg-[#352C29]/80 border-[#574843]'
                 : 'bg-[#FFFDF9]/90 border-[#DECBB9]'
             }`}
           >
             <p
-              className={`text-2xl font-semibold ${
-                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+              className={`text-xl font-semibold ${
+                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
               }`}
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              No bouquets on the lace line match that filter
-            </p>
-            <p
-              className={`mt-1.5 text-xs leading-relaxed ${
-                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B61]'
-              }`}
-            >
-              Shared bouquets gently fade after 30 days unless pinned as an eternal keepsake.
+              No bouquets found for “{searchQuery.trim()}”
             </p>
             <button
               type="button"
-              onClick={handleClearFilters}
+              onClick={() => setSearchQuery('')}
               className={`mt-4 px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
                 isDarkMode
                   ? 'border-[#66554F] bg-[#423734] text-[#FBF6F1] hover:bg-[#4D403C]'
                   : 'border-[#D8C4B4] bg-[#FAF4EE] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              Reset all filters
+              Show all creations
             </button>
           </div>
         ) : (
-          <div className="mt-6 space-y-6 sm:space-y-10">
+          <div className="mt-6 sm:mt-8 space-y-8 sm:space-y-12">
             {garlandRows.map((rowEntries, rowIdx) => (
               <div key={`garland-row-${rowIdx}`} className="relative w-full">
                 {/* Sweeping Catenary Lace Cord for this Row */}
@@ -1239,17 +1114,17 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   <SweepingCatenaryLaceLineSVG isDarkMode={isDarkMode} edgeY={12} midY={68} />
                 </div>
 
-                {/* Cards Suspended Along the Row's Catenary Curve */}
+                {/* PNG-Style Bouquets Suspended Along the Row's Catenary Curve */}
                 <div
-                  className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 -mt-[94px] sm:-mt-[106px] pb-14 grid grid-cols-1 sm:grid-cols-2 ${
+                  className={`max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-[76px] sm:-mt-[96px] lg:-mt-[108px] pb-10 sm:pb-14 grid grid-cols-2 sm:grid-cols-2 ${
                     rowEntries.length === 1
-                      ? 'lg:grid-cols-1 max-w-xs'
+                      ? 'lg:grid-cols-1 max-w-[220px]'
                       : rowEntries.length === 2
-                      ? 'lg:grid-cols-2 max-w-2xl'
+                      ? 'lg:grid-cols-2 max-w-lg'
                       : rowEntries.length === 3
-                      ? 'lg:grid-cols-3 max-w-4xl'
+                      ? 'lg:grid-cols-3 max-w-3xl'
                       : 'lg:grid-cols-4'
-                  } gap-6 relative z-10`}
+                  } gap-3.5 sm:gap-6 lg:gap-7 relative z-10`}
                 >
                   {rowEntries.map((entry, idxInRow) => {
                     const countInRow = rowEntries.length;
@@ -1266,14 +1141,14 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                         style={{
                           transform: `translate3d(0px, ${curveOffsetY}px, 0)`,
                         }}
-                        className="w-full max-w-[274px] mx-auto"
+                        className="w-full max-w-[164px] sm:max-w-[204px] lg:max-w-[218px] mx-auto"
                       >
                         <HangingCreationCard
                           entry={entry}
-                          nowMs={nowMs}
                           isDarkMode={isDarkMode}
-                          onUnwrap={onUnwrapShowcaseBouquet}
-                          onCraftSimilar={onCraftFromShowcaseBouquet}
+                          onUnwrap={(selected) =>
+                            triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
+                          }
                         />
                       </div>
                     );
@@ -1286,4 +1161,9 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(pageContent, document.body);
+  }
+  return pageContent;
 };

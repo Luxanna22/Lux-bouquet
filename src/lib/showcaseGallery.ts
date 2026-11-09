@@ -52,6 +52,7 @@ export type ShowcaseCategoryFilter =
   | 'silk';
 
 export interface ShowcaseFilterOptions {
+  searchQuery?: string;
   forQuery?: string;
   fromQuery?: string;
   category?: ShowcaseCategoryFilter;
@@ -198,6 +199,7 @@ export function filterShowcaseBouquets(
   options: ShowcaseFilterOptions = {}
 ): ShowcaseBouquetEntry[] {
   const nowMs = options.nowMs ?? Date.now();
+  const rawUnified = (options.searchQuery ?? '').trim().toLowerCase();
   const forQ = (options.forQuery ?? '').trim().toLowerCase();
   const fromQ = (options.fromQuery ?? '').trim().toLowerCase();
   const category = options.category ?? 'all';
@@ -206,10 +208,34 @@ export function filterShowcaseBouquets(
     if (!isShowcaseBouquetActive(entry, nowMs)) {
       return false;
     }
-    if (forQ && !entry.to.toLowerCase().includes(forQ)) {
+    const toLower = entry.to.toLowerCase();
+    const fromLower = entry.from.toLowerCase();
+
+    if (rawUnified) {
+      // Support optional "for: name" / "from: name" prefixes or free-text matching across For & From
+      const forPrefixMatch = rawUnified.match(/^(?:for|to)\s*:?\s+(.+)$/i);
+      const fromPrefixMatch = rawUnified.match(/^(?:from|by)\s*:?\s+(.+)$/i);
+      if (forPrefixMatch) {
+        if (!toLower.includes(forPrefixMatch[1].trim())) return false;
+      } else if (fromPrefixMatch) {
+        if (!fromLower.includes(fromPrefixMatch[1].trim())) return false;
+      } else {
+        const tokens = rawUnified.split(/[\s,·•]+/).filter(Boolean);
+        const matchesAllTokens = tokens.every(
+          (tok) =>
+            tok === 'for' ||
+            tok === 'from' ||
+            toLower.includes(tok) ||
+            fromLower.includes(tok)
+        );
+        if (!matchesAllTokens) return false;
+      }
+    }
+
+    if (forQ && !toLower.includes(forQ)) {
       return false;
     }
-    if (fromQ && !entry.from.toLowerCase().includes(fromQ)) {
+    if (fromQ && !fromLower.includes(fromQ)) {
       return false;
     }
     if (category !== 'all') {

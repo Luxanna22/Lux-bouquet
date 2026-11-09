@@ -94,15 +94,21 @@ test('filterShowcaseBouquets filters out >30d expired bouquets and searches by F
   assert.equal(fromNoah[0].from, 'Noah');
   assert.equal(fromNoah[0].to, 'Mom');
 
-  // Filter by category (cloche)
-  const clocheOnly = filterShowcaseBouquets(all, { category: 'cloche', nowMs: FIXED_NOW });
-  assert.equal(clocheOnly.length, 2);
-  assert.equal(clocheOnly.every((b) => b.wrapStyle === 'cloche'), true);
+  // Filter by unified single search input (matches either For or From or both)
+  const unifiedRecipient = filterShowcaseBouquets(all, { searchQuery: 'Sophia', nowMs: FIXED_NOW });
+  assert.equal(unifiedRecipient.length, 1);
+  assert.equal(unifiedRecipient[0].to, 'Sophia');
 
-  // Filter by category (eternal)
-  const eternalOnly = filterShowcaseBouquets(all, { category: 'eternal', nowMs: FIXED_NOW });
-  assert.equal(eternalOnly.length, 2);
-  assert.equal(eternalOnly.every((b) => Boolean(b.isPremium)), true);
+  const unifiedSender = filterShowcaseBouquets(all, { searchQuery: 'Mateo', nowMs: FIXED_NOW });
+  assert.equal(unifiedSender.length, 1);
+  assert.equal(unifiedSender[0].from, 'Mateo');
+
+  const unifiedCombined = filterShowcaseBouquets(all, {
+    searchQuery: 'Elena Mateo',
+    nowMs: FIXED_NOW,
+  });
+  assert.equal(unifiedCombined.length, 1);
+  assert.equal(unifiedCombined[0].code, 'shw_elena_mt');
 });
 
 test('evaluateCatenaryCurveY and computeGarlandItemScrollTransform trace a sweeping U-curve and move on scroll', () => {

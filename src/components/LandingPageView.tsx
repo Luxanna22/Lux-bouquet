@@ -26,7 +26,12 @@ import {
 } from '../types/bouquet';
 import { useBouquetStore } from '../store/useBouquetStore';
 import { computeForegroundPetalTransform } from '../lib/dofParallax';
-import { HeroLaceGarlandPreview, CreationsGalleryPageView } from './LaceGarlandShowcase';
+import {
+  HeroLaceGarlandPreview,
+  CreationsGalleryPageView,
+  SweepingCatenaryLaceLineSVG,
+  LaceHangerClipSVG,
+} from './LaceGarlandShowcase';
 import { ShowcaseBouquetEntry } from '../lib/showcaseGallery';
 
 interface LandingPageViewProps {
@@ -1431,15 +1436,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
       <div ref={scrollContentRef} className="w-full">
         {/* 2. FULL-SCREEN LUXURY HERO — Grand Background Bloom, Editorial Serif Tagline + Roman/Italic Headline */}
-        <section className="relative min-h-[68svh] sm:min-h-[72svh] flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-12 pb-4 sm:pb-6 overflow-hidden">
-          {/* Seamless GPU Radial Aura Centered Behind the Bloom */}
+        <section className="relative min-h-[78svh] sm:min-h-[82svh] flex flex-col items-center justify-center px-4 sm:px-8 pt-14 sm:pt-20 pb-8 sm:pb-12">
+          {/* Seamless GPU Radial Aura Centered Behind the Bloom (No overflow-hidden clip so it blends seamlessly into the Lace Garland below) */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] sm:w-[1180px] h-[620px] sm:h-[820px] rounded-full"
+            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[580px] sm:w-[1080px] h-[540px] sm:h-[720px] rounded-full"
             style={{
               background: isDarkMode
-                ? 'radial-gradient(closest-side at 50% 46%, rgba(164, 96, 116, 0.28) 0%, rgba(112, 82, 126, 0.13) 52%, rgba(43, 35, 33, 0) 100%)'
-                : 'radial-gradient(closest-side at 50% 46%, rgba(250, 210, 225, 0.68) 0%, rgba(235, 220, 250, 0.34) 52%, rgba(253, 249, 245, 0) 100%)',
+                ? 'radial-gradient(closest-side at 50% 48%, rgba(164, 96, 116, 0.26) 0%, rgba(112, 82, 126, 0.11) 46%, rgba(43, 35, 33, 0) 86%)'
+                : 'radial-gradient(closest-side at 50% 48%, rgba(250, 210, 225, 0.62) 0%, rgba(235, 220, 250, 0.28) 46%, rgba(253, 249, 245, 0) 86%)',
             }}
           />
 
@@ -1708,24 +1713,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
         </section>
 
-        {/* 2B. SWEEPING CATENARY LACE GARLAND RIGHT BELOW THE HERO — 4 Limited Hanging Creations Moving with Lenis Scroll + CTA to Dedicated All Creations Page */}
-        <HeroLaceGarlandPreview
-          isDarkMode={isDarkMode}
-          vaultCount={vaultCount}
-          scrollContainerRef={scrollWrapperRef}
-          onExploreAllCreations={() => setIsCreationsPageOpen(true)}
-          onUnwrapShowcaseBouquet={handleUnwrapShowcaseEntry}
-          onCraftFromShowcaseBouquet={handleCraftFromShowcaseEntry}
-        />
-
-        <ThinRopeLaceDivider isDarkMode={isDarkMode} />
-
-        {/* 3. COHESIVE, SINGLE-SURFACE 3-STEP "HOW IT WORKS" (Warm Cashmere-Latte Graphics Background) */}
+        {/* 3. "HOW IT WORKS" — CONNECTED DIRECTLY INTO THE SWEEPING CATENARY LACE LINE LIKE A HANGING ATELIER BOARD */}
         <section
           id="how-it-works"
-          className="scroll-mt-24 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-10 pb-10 sm:pb-12"
+          className="scroll-mt-24 relative w-full pt-2 sm:pt-4 pb-10 sm:pb-14 overflow-hidden"
         >
-          <div className="fluid-scroll-item text-center mb-7 sm:mb-10">
+          <div className="fluid-scroll-item text-center mb-1 sm:mb-2 px-4">
             <h2
               className={`text-3xl sm:text-4xl font-semibold ${
                 isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
@@ -1736,155 +1729,207 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </h2>
           </div>
 
-          <div className="relative grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 max-w-md md:max-w-none mx-auto">
-            {/* CARD 01: Pick & Wrap */}
-            <div
-              onClick={onStartCrafting}
-              className={`fluid-scroll-item fluid-delay-1 group rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-1 cursor-pointer ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#4D403C] hover:border-[#63524D] shadow-[0_10px_28px_rgba(20,15,13,0.2)]'
-                  : 'bg-white border-[#E6D9CC] shadow-[0_10px_30px_rgba(122,75,58,0.05)] hover:shadow-[0_16px_38px_rgba(122,75,58,0.09)]'
-              }`}
-            >
-              <div
-                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b ${
-                  isDarkMode
-                    ? 'bg-[#241D1B] border-[#4A3D39]'
-                    : 'bg-[#EDE2D4] border-[#DFCFC0]'
-                }`}
-              >
-                <span
-                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#574944] text-[#E6B89C]'
-                      : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#7A5C4B]'
-                  }`}
-                >
-                  01
-                </span>
-                <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
-                  <StepOneSceneSVG />
-                </div>
-              </div>
-
-              <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
-                <h3
-                  className={`text-xl sm:text-2xl font-semibold ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                  }`}
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  Pick &amp; Wrap
-                </h3>
-                <p
-                  className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
-                  }`}
-                >
-                  Arrange 31 blooms into couture wraps, velvet hatboxes &amp; lace bows.
-                </p>
-              </div>
+          {/* Full-Bleed Sweeping Catenary Lace Line (`\_______/`) Right Below the Hero */}
+          <div className="relative w-full">
+            <div className="w-full relative z-0">
+              <SweepingCatenaryLaceLineSVG isDarkMode={isDarkMode} edgeY={14} midY={86} />
             </div>
 
-            {/* CARD 02: Voice & Note */}
-            <div
-              onClick={onStartCrafting}
-              className={`fluid-scroll-item fluid-delay-2 group rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-1 cursor-pointer ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#4D403C] hover:border-[#63524D] shadow-[0_10px_28px_rgba(20,15,13,0.2)]'
-                  : 'bg-white border-[#E6D9CC] shadow-[0_10px_30px_rgba(122,75,58,0.05)] hover:shadow-[0_16px_38px_rgba(122,75,58,0.09)]'
-              }`}
-            >
+            {/* 3 Connected Atelier Step Boards Suspended Directly from the Catenary Lace Line */}
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-[76px] sm:-mt-[96px] lg:-mt-[112px] pb-6 sm:pb-10 relative z-10">
+              {/* Horizontal Stitched Board Connector Twine Linking Boards 01 ↔ 02 ↔ 03 on Tablet/Desktop */}
               <div
-                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b ${
-                  isDarkMode
-                    ? 'bg-[#241D1B] border-[#4A3D39]'
-                    : 'bg-[#EDE2D4] border-[#DFCFC0]'
+                aria-hidden="true"
+                className={`hidden md:block pointer-events-none absolute left-[18%] right-[18%] top-[235px] border-t-2 border-dashed z-0 ${
+                  isDarkMode ? 'border-[#5E4E49]' : 'border-[#D9C5B4]'
                 }`}
-              >
-                <span
-                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#574944] text-[#E6B89C]'
-                      : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#7A5C4B]'
-                  }`}
-                >
-                  02
-                </span>
-                <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
-                  <StepTwoSceneSVG />
+              />
+
+              <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-5 lg:gap-7 max-w-md md:max-w-none mx-auto items-start">
+                {/* BOARD 01: Pick & Wrap (Left Arc of Catenary Lace Line) */}
+                <div className="fluid-scroll-item fluid-delay-1 flex flex-col items-center pt-[58px] sm:pt-[74px] md:pt-[56px] lg:pt-[66px]">
+                  <LaceHangerClipSVG
+                    stringLengthPx={16}
+                    isDarkMode={isDarkMode}
+                    accentColor="#E11D48"
+                  />
+                  <div
+                    onClick={onStartCrafting}
+                    style={{ transform: 'rotate(-1.1deg)' }}
+                    className={`w-full group rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 hover:rotate-0 hover:-translate-y-1.5 cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#4D403C] hover:border-[#63524D] shadow-[0_12px_30px_rgba(20,15,13,0.24)]'
+                        : 'bg-white border-[#E6D9CC] shadow-[0_12px_30px_rgba(122,75,58,0.06)] hover:shadow-[0_18px_38px_rgba(122,75,58,0.11)]'
+                    }`}
+                  >
+                    <div
+                      className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b ${
+                        isDarkMode
+                          ? 'bg-[#241D1B] border-[#4A3D39]'
+                          : 'bg-[#EDE2D4] border-[#DFCFC0]'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#574944] text-[#E6B89C]'
+                            : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#7A5C4B]'
+                        }`}
+                      >
+                        01
+                      </span>
+                      <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
+                        <StepOneSceneSVG />
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
+                      <h3
+                        className={`text-xl sm:text-2xl font-semibold ${
+                          isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                        }`}
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        Pick &amp; Wrap
+                      </h3>
+                      <p
+                        className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
+                          isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
+                        }`}
+                      >
+                        Arrange 31 blooms into couture wraps, velvet hatboxes &amp; lace bows.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
-                <h3
-                  className={`text-xl sm:text-2xl font-semibold ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                  }`}
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  Voice &amp; Note
-                </h3>
-                <p
-                  className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
-                  }`}
-                >
-                  Tuck in a handwritten letter and record a voice keepsake.
-                </p>
-              </div>
-            </div>
+                {/* BOARD 02: Voice & Note (Center Dip of Catenary Lace Line) */}
+                <div className="fluid-scroll-item fluid-delay-2 flex flex-col items-center pt-1 md:pt-[74px] lg:pt-[86px]">
+                  <LaceHangerClipSVG
+                    stringLengthPx={16}
+                    isDarkMode={isDarkMode}
+                    accentColor="#D97706"
+                  />
+                  <div
+                    onClick={onStartCrafting}
+                    style={{ transform: 'rotate(0.8deg)' }}
+                    className={`w-full group rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 hover:rotate-0 hover:-translate-y-1.5 cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#4D403C] hover:border-[#63524D] shadow-[0_12px_30px_rgba(20,15,13,0.24)]'
+                        : 'bg-white border-[#E6D9CC] shadow-[0_12px_30px_rgba(122,75,58,0.06)] hover:shadow-[0_18px_38px_rgba(122,75,58,0.11)]'
+                    }`}
+                  >
+                    <div
+                      className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b ${
+                        isDarkMode
+                          ? 'bg-[#241D1B] border-[#4A3D39]'
+                          : 'bg-[#EDE2D4] border-[#DFCFC0]'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#574944] text-[#E6B89C]'
+                            : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#7A5C4B]'
+                        }`}
+                      >
+                        02
+                      </span>
+                      <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
+                        <StepTwoSceneSVG />
+                      </div>
+                    </div>
 
-            {/* CARD 03: Send or Time-Lock */}
-            <div
-              onClick={onStartCrafting}
-              className={`fluid-scroll-item fluid-delay-3 group rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-1 cursor-pointer ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#4D403C] hover:border-[#63524D] shadow-[0_10px_28px_rgba(20,15,13,0.2)]'
-                  : 'bg-white border-[#E6D9CC] shadow-[0_10px_30px_rgba(122,75,58,0.05)] hover:shadow-[0_16px_38px_rgba(122,75,58,0.09)]'
-              }`}
-            >
-              <div
-                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b ${
-                  isDarkMode
-                    ? 'bg-[#241D1B] border-[#4A3D39]'
-                    : 'bg-[#EDE2D4] border-[#DFCFC0]'
-                }`}
-              >
-                <span
-                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#574944] text-[#E6B89C]'
-                      : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#7A5C4B]'
-                  }`}
-                >
-                  03
-                </span>
-                <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
-                  <StepThreeSceneSVG />
+                    <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
+                      <h3
+                        className={`text-xl sm:text-2xl font-semibold ${
+                          isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                        }`}
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        Voice &amp; Note
+                      </h3>
+                      <p
+                        className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
+                          isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
+                        }`}
+                      >
+                        Tuck in a handwritten letter and record a voice keepsake.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
-                <h3
-                  className={`text-xl sm:text-2xl font-semibold ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                  }`}
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  Send or Time-Lock
-                </h3>
-                <p
-                  className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
-                  }`}
-                >
-                  Share an instant gift link, date countdown or secret key lock.
-                </p>
+                {/* BOARD 03: Send or Time-Lock (Right Arc of Catenary Lace Line) */}
+                <div className="fluid-scroll-item fluid-delay-3 flex flex-col items-center pt-1 md:pt-[56px] lg:pt-[66px]">
+                  <LaceHangerClipSVG
+                    stringLengthPx={16}
+                    isDarkMode={isDarkMode}
+                    accentColor="#9333EA"
+                  />
+                  <div
+                    onClick={onStartCrafting}
+                    style={{ transform: 'rotate(-0.9deg)' }}
+                    className={`w-full group rounded-[22px] sm:rounded-[24px] border overflow-hidden flex flex-col transition-all duration-500 hover:rotate-0 hover:-translate-y-1.5 cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#4D403C] hover:border-[#63524D] shadow-[0_12px_30px_rgba(20,15,13,0.24)]'
+                        : 'bg-white border-[#E6D9CC] shadow-[0_12px_30px_rgba(122,75,58,0.06)] hover:shadow-[0_18px_38px_rgba(122,75,58,0.11)]'
+                    }`}
+                  >
+                    <div
+                      className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b ${
+                        isDarkMode
+                          ? 'bg-[#241D1B] border-[#4A3D39]'
+                          : 'bg-[#EDE2D4] border-[#DFCFC0]'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#574944] text-[#E6B89C]'
+                            : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#7A5C4B]'
+                        }`}
+                      >
+                        03
+                      </span>
+                      <div className="w-full h-full flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
+                        <StepThreeSceneSVG />
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
+                      <h3
+                        className={`text-xl sm:text-2xl font-semibold ${
+                          isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                        }`}
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        Send or Time-Lock
+                      </h3>
+                      <p
+                        className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
+                          isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
+                        }`}
+                      >
+                        Share an instant gift link, date countdown or secret key lock.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </section>
+
+        {/* 3B. SHARED CREATIONS LACE GARLAND SHOWCASE (4 Limited PNG-Style Creations Moving with Lenis Scroll + CTA to Dedicated All Creations Page) */}
+        <HeroLaceGarlandPreview
+          isDarkMode={isDarkMode}
+          vaultCount={vaultCount}
+          scrollContainerRef={scrollWrapperRef}
+          onExploreAllCreations={() => setIsCreationsPageOpen(true)}
+          onUnwrapShowcaseBouquet={handleUnwrapShowcaseEntry}
+          onCraftFromShowcaseBouquet={handleCraftFromShowcaseEntry}
+        />
 
         <ThinRopeLaceDivider isDarkMode={isDarkMode} />
 
