@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildCuratedShowcaseBouquets,
   computeGarlandItemScrollTransform,
+  computeSingleLaceCarouselItemTransform,
   evaluateCatenaryCurveY,
   filterShowcaseBouquets,
   getShowcaseFreshnessInfo,
@@ -111,7 +112,7 @@ test('filterShowcaseBouquets filters out >30d expired bouquets and searches by F
   assert.equal(unifiedCombined[0].code, 'shw_elena_mt');
 });
 
-test('evaluateCatenaryCurveY and computeGarlandItemScrollTransform trace a sweeping U-curve and move on scroll', () => {
+test('evaluateCatenaryCurveY and computeGarlandItemScrollTransform trace a sweeping U-curve and move right-to-left on scroll', () => {
   const edgeY = 14;
   const midY = 86;
 
@@ -121,11 +122,29 @@ test('evaluateCatenaryCurveY and computeGarlandItemScrollTransform trace a sweep
   // At center (u=0.5), Y dips down to midY = 86
   assert.equal(evaluateCatenaryCurveY(0.5, edgeY, midY), 86);
 
-  // Scroll movement shifts xShiftPx and updates yCurvePx along the catenary arc
+  // Scroll movement shifts xShiftPx from right (+) to left (-) and updates yCurvePx along the catenary arc
   const startState = computeGarlandItemScrollTransform(1, 4, 0, -1.2, edgeY, midY);
-  const scrolledState = computeGarlandItemScrollTransform(1, 4, 450, -1.2, edgeY, midY);
+  const scrolledState = computeGarlandItemScrollTransform(1, 4, 900, -1.2, edgeY, midY);
 
-  assert.notEqual(startState.xShiftPx, scrolledState.xShiftPx);
+  assert.ok(
+    scrolledState.xShiftPx < startState.xShiftPx,
+    'Increasing scrollTop must glide items from right to left'
+  );
   assert.notEqual(startState.yCurvePx, scrolledState.yCurvePx);
   assert.ok(startState.yCurvePx > edgeY && startState.yCurvePx <= midY);
+});
+
+test('computeSingleLaceCarouselItemTransform moves creations from right to left along one catenary lace curve as scrollOffset increases', () => {
+  const item4AtStart = computeSingleLaceCarouselItemTransform(4, 8, 0, 4, -1.5, 14, 92);
+  const item4AfterScroll = computeSingleLaceCarouselItemTransform(4, 8, 2, 4, -1.5, 14, 92);
+  const item4FurtherScroll = computeSingleLaceCarouselItemTransform(4, 8, 4, 4, -1.5, 14, 92);
+
+  // Item 4 starts queued on the right (u > 0.9) and glides left as scrollOffset increases
+  assert.ok(item4AtStart.u > 0.9);
+  assert.ok(item4AfterScroll.u < item4AtStart.u);
+  assert.ok(item4FurtherScroll.u < item4AfterScroll.u);
+  assert.ok(item4AfterScroll.xPercent < item4AtStart.xPercent);
+
+  // Vertical Y follows the catenary curve: lower (larger Y) near center u=0.5 than near right edge u>0.9
+  assert.ok(item4AfterScroll.yCurvePx > item4AtStart.yCurvePx);
 });

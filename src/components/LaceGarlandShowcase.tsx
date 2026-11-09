@@ -1,15 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
-import { ArrowLeft, Moon, Search, Sun, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Moon, Search, Sun, X } from 'lucide-react';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
 import { MiniVoiceKeepsakeSVG } from './MiniThumbnails';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
   buildCuratedShowcaseBouquets,
-  computeGarlandItemScrollTransform,
+  computeSingleLaceCarouselItemTransform,
   convertVaultBouquetToShowcaseEntry,
-  evaluateCatenaryCurveY,
   filterShowcaseBouquets,
   ShowcaseBouquetEntry,
 } from '../lib/showcaseGallery';
@@ -463,9 +462,9 @@ export const LaceHangerClipSVG: React.FC<{
 });
 
 /**
- * Pure PNG-Style Hanging Bouquet Keepsake Frame:
- * Looks just like a saved Studio PNG — no text headers, no quotes, no action bars, no clutter.
- * Displays ONLY the crafted bouquet + envelope asset + optional voice keepsake asset.
+ * Pure PNG-Style Hanging Bouquet Keepsake Frame (View-Only / Unwrap-Only):
+ * Uses a SINGLE primary dashed border (zero double borders) and displays the crafted bouquet,
+ * wax-sealed envelope asset, optional voice keepsake asset, and a quiet For/From dedication tag.
  */
 const HangingCreationCard: React.FC<{
   entry: ShowcaseBouquetEntry;
@@ -484,24 +483,16 @@ const HangingCreationCard: React.FC<{
       <button
         type="button"
         onClick={() => onUnwrap(entry)}
-        aria-label={`Unwrap bouquet for ${entry.to} from ${entry.from}`}
+        aria-label={`Open bouquet for ${entry.to} from ${entry.from} (view-only)`}
         style={disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }}
-        className={`w-full aspect-[1/1.05] rounded-[26px] sm:rounded-[30px] border p-2.5 sm:p-3.5 relative flex items-center justify-center overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 cursor-pointer focus:outline-none ${
+        className={`w-full aspect-[1/1.05] rounded-[26px] sm:rounded-[30px] border border-dashed p-2.5 sm:p-3.5 relative flex items-center justify-center overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 cursor-pointer focus:outline-none ${
           isDarkMode
-            ? 'bg-[#28211F] border-[#4A3D39] group-hover:border-[#6A5750] shadow-[0_14px_32px_rgba(15,11,9,0.34)]'
-            : 'bg-[#F7F1E8] border-[#E5D7C8] group-hover:border-[#D2B59E] shadow-[0_12px_28px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_38px_rgba(122,75,58,0.12)]'
+            ? 'bg-[#28211F] border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_14px_32px_rgba(15,11,9,0.34)]'
+            : 'bg-[#F7F1E8] border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_12px_28px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_38px_rgba(122,75,58,0.12)]'
         }`}
       >
-        {/* Subtle Inner Studio Mat Frame */}
-        <div
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-2 sm:inset-2.5 rounded-[20px] sm:rounded-[22px] border border-dashed ${
-            isDarkMode ? 'border-[#3E3330]' : 'border-[#E9DDD0]'
-          }`}
-        />
-
         {/* Bouquet + Envelope Asset SVG */}
-        <div className="w-full h-full flex items-center justify-center p-1 sm:p-1.5 group-hover:scale-105 transition-transform duration-500">
+        <div className="w-full h-full flex items-center justify-center p-1 sm:p-1.5 pb-4 sm:pb-5 group-hover:scale-105 transition-transform duration-500">
           <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
         </div>
 
@@ -509,7 +500,7 @@ const HangingCreationCard: React.FC<{
         {entry.hasVoice && entry.voiceStyle && (
           <div
             aria-hidden="true"
-            className={`absolute bottom-3 left-3 sm:bottom-3.5 sm:left-3.5 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center shadow-2xs [&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-5.5 sm:[&>svg]:h-5.5 transition-transform duration-300 group-hover:scale-110 ${
+            className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center shadow-2xs [&>svg]:w-4.5 [&>svg]:h-4.5 sm:[&>svg]:w-5 sm:[&>svg]:h-5 transition-transform duration-300 group-hover:scale-110 ${
               isDarkMode
                 ? 'bg-[#352C29]/95 border-[#5E4E49]'
                 : 'bg-[#FFFDF9]/95 border-[#DECBB9]'
@@ -523,18 +514,18 @@ const HangingCreationCard: React.FC<{
           </div>
         )}
 
-        {/* Whisper-Quiet Hover/Focus Dedication Tag (Hidden at rest so the card looks like a pure saved PNG) */}
+        {/* Quiet Editorial Dedication Tag at Base of Card */}
         <div
-          className={`pointer-events-none absolute bottom-2.5 inset-x-3 py-1 px-2.5 rounded-full text-[11px] truncate text-center opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:opacity-100 transition-all duration-300 backdrop-blur-xs ${
+          className={`pointer-events-none absolute bottom-2 sm:bottom-2.5 inset-x-2.5 sm:inset-x-3 py-0.5 sm:py-1 px-2.5 rounded-full text-[11px] sm:text-xs truncate text-center transition-all duration-300 backdrop-blur-xs ${
             isDarkMode
-              ? 'bg-[#231C18]/88 text-[#F5ECE6]'
+              ? 'bg-[#231C18]/86 text-[#F5ECE6]'
               : 'bg-[#FFFDF9]/92 text-[#4A382E] shadow-2xs'
           }`}
           style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
         >
           <span className="italic opacity-75">For </span>
           <span className="font-semibold">{entry.to}</span>
-          <span className="opacity-50"> · </span>
+          <span className="opacity-45"> · </span>
           <span className="italic opacity-80">from {entry.from}</span>
         </div>
       </button>
@@ -598,10 +589,11 @@ export const SweepingCatenaryLaceLineSVG: React.FC<{
 });
 
 // ============================================================================
-// 1. HERO CATENARY LACE GARLAND PREVIEW (Right Below the Hero)
-//    Displays 4 limited PNG-style bouquet keepsakes hanging from the sweeping
-//    catenary lace line that glide along the curve with Lenis scroll, plus a
-//    clean CTA below to open the dedicated All Creations page.
+// 1. HERO CATENARY LACE GARLAND PREVIEW (On the Landing Page)
+//    Displays 4 limited PNG-style bouquet keepsakes hanging from the single
+//    sweeping catenary lace line that glide right-to-left along the curve with
+//    Lenis scroll, plus a clean CTA to open the All Creations page.
+//    All creations are strictly view-only / unwrap-only.
 // ============================================================================
 
 interface HeroLaceGarlandPreviewProps {
@@ -610,7 +602,6 @@ interface HeroLaceGarlandPreviewProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   onExploreAllCreations: () => void;
   onUnwrapShowcaseBouquet: (entry: ShowcaseBouquetEntry) => void;
-  onCraftFromShowcaseBouquet: (entry: ShowcaseBouquetEntry) => void;
 }
 
 export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
@@ -622,67 +613,112 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
 }) => {
   const [nowMs] = useState<number>(() => Date.now());
   const activeEntries = useActiveShowcaseBouquets(vaultCount, nowMs);
-  const limitedEntries = useMemo(() => activeEntries.slice(0, 4), [activeEntries]);
+  const previewEntries = useMemo(() => activeEntries.slice(0, 8), [activeEntries]);
+
+  const [visibleSlots, setVisibleSlots] = useState<number>(() => {
+    if (typeof window === 'undefined') return 4;
+    if (window.innerWidth < 640) return 2;
+    if (window.innerWidth < 1024) return 3;
+    return 4;
+  });
 
   const sectionRef = useRef<HTMLElement | null>(null);
-  // Direct DOM refs for 120fps Lenis scroll-linked movement along the catenary curve
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const manualOffsetRef = useRef<number>(0);
+  const scrollDrivenOffsetRef = useRef<number>(0);
+  const dragStartXRef = useRef<number | null>(null);
+  const dragStartManualRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      const w = window.innerWidth;
+      setVisibleSlots(w < 640 ? 2 : w < 1024 ? 3 : 4);
+    };
+    onResize();
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const maxOffset = useMemo(
+    () => Math.max(0.5, previewEntries.length - visibleSlots + 0.35),
+    [previewEntries.length, visibleSlots]
+  );
+
+  const edgeY = visibleSlots === 2 ? 12 : 14;
+  const midY = visibleSlots === 2 ? 56 : visibleSlots === 3 ? 72 : 86;
+
+  const updateGarlandDOM = useCallback(() => {
+    const count = previewEntries.length;
+    const rawTotal = scrollDrivenOffsetRef.current + manualOffsetRef.current;
+    // Wrap smoothly within [0, maxOffset] so both scroll and manual step/swipe cycle all creations right-to-left
+    const combinedOffset = Math.max(0, Math.min(maxOffset, rawTotal));
+
+    for (let i = 0; i < count; i++) {
+      const el = itemRefs.current[i];
+      if (!el) continue;
+      const entry = previewEntries[i];
+      const state = computeSingleLaceCarouselItemTransform(
+        i,
+        count,
+        combinedOffset,
+        visibleSlots,
+        entry ? entry.tiltDeg : 0,
+        edgeY,
+        midY
+      );
+      el.style.left = `${state.xPercent}%`;
+      el.style.transform = `translate3d(-50%, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+      el.style.opacity = String(state.opacity);
+      el.style.pointerEvents = state.isVisible ? 'auto' : 'none';
+      el.style.visibility = state.isVisible ? 'visible' : 'hidden';
+    }
+  }, [previewEntries, visibleSlots, maxOffset, edgeY, midY]);
 
   useEffect(() => {
     const wrapper = scrollContainerRef.current;
 
     const applyGarlandScroll = () => {
-      const count = limitedEntries.length;
       const sectionEl = sectionRef.current;
-      let centeredScrollTop = 450; // 450 corresponds to uShift = 0 (perfectly centered)
-
       if (sectionEl && typeof window !== 'undefined') {
         const rect = sectionEl.getBoundingClientRect();
-        const viewportMid = window.innerHeight * 0.5;
-        const sectionMid = rect.top + rect.height * 0.45;
-        // As section moves through viewport, map delta (-450..+450) around 450
-        const delta = viewportMid - sectionMid;
-        centeredScrollTop = Math.max(0, Math.min(900, 450 + delta * 0.75));
-      }
-
-      for (let i = 0; i < count; i++) {
-        const el = itemRefs.current[i];
-        if (!el) continue;
-        const entry = limitedEntries[i];
-        const state = computeGarlandItemScrollTransform(
-          i,
-          count,
-          centeredScrollTop,
-          entry ? entry.tiltDeg : 0,
-          14,
-          86
+        const vh = window.innerHeight || 800;
+        // Progress from 0 when section enters bottom of viewport to 1 as it scrolls past upper viewport
+        const progress = Math.max(
+          0,
+          Math.min(1, (vh * 0.85 - rect.top) / (vh * 0.95 + rect.height * 0.5))
         );
-        el.style.transform = `translate3d(${state.xShiftPx}px, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg)`;
+        scrollDrivenOffsetRef.current = progress * Math.min(maxOffset, 2.4);
       }
+      updateGarlandDOM();
     };
 
     applyGarlandScroll();
 
     if (!wrapper) return;
-    const onScroll = () => {
-      applyGarlandScroll();
-    };
-    wrapper.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
+    wrapper.addEventListener('scroll', applyGarlandScroll, { passive: true });
+    window.addEventListener('resize', applyGarlandScroll, { passive: true });
     return () => {
-      wrapper.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
+      wrapper.removeEventListener('scroll', applyGarlandScroll);
+      window.removeEventListener('resize', applyGarlandScroll);
     };
-  }, [limitedEntries, scrollContainerRef]);
+  }, [scrollContainerRef, maxOffset, updateGarlandDOM]);
+
+  const stepPreviewCarousel = (delta: number) => {
+    const currentTotal = scrollDrivenOffsetRef.current + manualOffsetRef.current;
+    const nextTotal = Math.max(0, Math.min(maxOffset, Math.round(currentTotal + delta)));
+    manualOffsetRef.current = nextTotal - scrollDrivenOffsetRef.current;
+    updateGarlandDOM();
+  };
 
   return (
     <section
       id="showcase"
       ref={sectionRef}
       data-testid="hero-lace-garland-section"
-      className="scroll-mt-24 relative w-full pt-4 sm:pt-6 pb-8 sm:pb-12 overflow-hidden select-none"
+      className="scroll-mt-24 relative w-full pt-4 sm:pt-6 pb-10 sm:pb-14 overflow-hidden select-none"
     >
-      <div className="fluid-scroll-item text-center mb-1 sm:mb-2 px-4">
+      <div className="fluid-scroll-item text-center mb-2 sm:mb-3 px-4">
         <h2
           className={`text-3xl sm:text-4xl font-semibold ${
             isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
@@ -693,23 +729,48 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
         </h2>
       </div>
 
-      {/* FULL-BLEED SWEEPING CATENARY LACE GARLAND & HANGING PNG-STYLE BOUQUETS */}
-      <div className="relative w-full">
-        {/* The Sweeping Catenary Lace Ribbon (`\_______/`) */}
-        <div className="w-full relative z-0">
-          <SweepingCatenaryLaceLineSVG isDarkMode={isDarkMode} edgeY={14} midY={86} />
+      {/* UNIFIED SINGLE-LACE RIGHT-TO-LEFT CAROUSEL PREVIEW ACROSS MOBILE, TABLET & DESKTOP */}
+      <div
+        className="relative w-full h-[285px] sm:h-[330px] lg:h-[360px] touch-pan-y"
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          dragStartXRef.current = e.clientX;
+          dragStartManualRef.current = manualOffsetRef.current;
+        }}
+        onPointerMove={(e) => {
+          if (dragStartXRef.current === null) return;
+          const deltaX = dragStartXRef.current - e.clientX;
+          const offsetDelta = deltaX / 140;
+          const nextManual = Math.max(
+            -scrollDrivenOffsetRef.current,
+            Math.min(maxOffset - scrollDrivenOffsetRef.current, dragStartManualRef.current + offsetDelta)
+          );
+          manualOffsetRef.current = nextManual;
+          updateGarlandDOM();
+        }}
+        onPointerUp={() => {
+          dragStartXRef.current = null;
+        }}
+        onPointerCancel={() => {
+          dragStartXRef.current = null;
+        }}
+      >
+        {/* The Single Sweeping Catenary Lace Ribbon (`\_______/`) */}
+        <div className="absolute top-0 inset-x-0 z-0">
+          <SweepingCatenaryLaceLineSVG isDarkMode={isDarkMode} edgeY={edgeY} midY={midY} />
         </div>
 
-        {/* Desktop (lg+): 4 Limited PNG-Style Creations Gliding Along the Catenary Curve with Lenis Scroll */}
-        <div className="hidden lg:grid lg:grid-cols-4 gap-7 max-w-5xl mx-auto px-8 -mt-[112px] pb-24 relative z-10">
-          {limitedEntries.map((entry, idx) => {
-            const initial = computeGarlandItemScrollTransform(
+        {/* Hanging Creations Gliding From Right to Left Along the Single Catenary Curve */}
+        <div className="absolute inset-0 z-10">
+          {previewEntries.map((entry, idx) => {
+            const initial = computeSingleLaceCarouselItemTransform(
               idx,
-              limitedEntries.length,
-              450,
+              previewEntries.length,
+              0,
+              visibleSlots,
               entry.tiltDeg,
-              14,
-              86
+              edgeY,
+              midY
             );
             return (
               <div
@@ -719,10 +780,14 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                 }}
                 data-testid={`hero-garland-card-${entry.code}`}
                 style={{
-                  transform: `translate3d(${initial.xShiftPx}px, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg)`,
-                  willChange: 'transform',
+                  left: `${initial.xPercent}%`,
+                  transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
+                  opacity: initial.opacity,
+                  pointerEvents: initial.isVisible ? 'auto' : 'none',
+                  visibility: initial.isVisible ? 'visible' : 'hidden',
+                  willChange: 'transform, left, opacity',
                 }}
-                className="w-full max-w-[218px] mx-auto"
+                className="absolute top-0 w-[154px] sm:w-[190px] lg:w-[214px] transition-[left,transform,opacity] duration-150 ease-out"
               >
                 <HangingCreationCard
                   entry={entry}
@@ -734,56 +799,24 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
             );
           })}
         </div>
-
-        {/* Tablet (sm to lg): 3 Hanging PNG-Style Creations Properly Spaced Along the Catenary Curve */}
-        <div className="hidden sm:grid lg:hidden sm:grid-cols-3 gap-5 max-w-2xl mx-auto px-6 -mt-[96px] pb-16 relative z-10">
-          {limitedEntries.slice(0, 3).map((entry, idx) => {
-            const u = 0.2 + (idx / 2) * 0.6;
-            const curveY = evaluateCatenaryCurveY(u, 12, 68);
-            return (
-              <div
-                key={entry.id}
-                style={{
-                  transform: `translate3d(0px, ${curveY}px, 0)`,
-                }}
-                className="w-full max-w-[196px] mx-auto"
-              >
-                <HangingCreationCard
-                  entry={entry}
-                  isDarkMode={isDarkMode}
-                  onUnwrap={onUnwrapShowcaseBouquet}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Mobile (< sm): 2 Hanging PNG-Style Creations Side-by-Side Along the Catenary Curve */}
-        <div className="grid sm:hidden grid-cols-2 gap-3.5 max-w-[360px] mx-auto px-4 -mt-[76px] pb-12 relative z-10">
-          {limitedEntries.slice(0, 2).map((entry, idx) => {
-            const u = idx === 0 ? 0.28 : 0.72;
-            const curveY = evaluateCatenaryCurveY(u, 10, 50);
-            return (
-              <div
-                key={entry.id}
-                style={{
-                  transform: `translate3d(0px, ${curveY}px, 0)`,
-                }}
-                className="w-full max-w-[162px] mx-auto"
-              >
-                <HangingCreationCard
-                  entry={entry}
-                  isDarkMode={isDarkMode}
-                  onUnwrap={onUnwrapShowcaseBouquet}
-                />
-              </div>
-            );
-          })}
-        </div>
       </div>
 
-      {/* CLEAN CTA BELOW THE GARLAND TO EXPLORE ALL CREATIONS */}
-      <div className="fluid-scroll-item text-center px-4 mt-1 sm:mt-2">
+      {/* GENEROUSLY SPACED STEP CONTROLS + EXPLORE ALL CREATIONS CTA BELOW THE GARLAND */}
+      <div className="fluid-scroll-item text-center px-4 mt-10 sm:mt-14 pt-2 flex items-center justify-center gap-2.5 sm:gap-3">
+        <button
+          type="button"
+          onClick={() => stepPreviewCarousel(-1)}
+          aria-label="Previous shared creation"
+          data-testid="hero-garland-prev"
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-dashed flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+            isDarkMode
+              ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
+              : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+          }`}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
         <button
           type="button"
           onClick={onExploreAllCreations}
@@ -797,16 +830,32 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
           <span>Explore All Creations</span>
           <span aria-hidden="true" className="opacity-70">→</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => stepPreviewCarousel(1)}
+          aria-label="Next shared creation"
+          data-testid="hero-garland-next"
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-dashed flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+            isDarkMode
+              ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
+              : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+          }`}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
     </section>
   );
 };
 
 // ============================================================================
-// 2. DEDICATED "ALL CREATIONS" GALLERY PAGE
-//    Rendered via Portal on `document.body` so `fixed inset-0` is never clipped
-//    by any parent transform, with a silky fade+scale transition and a single
-//    unified "For & From" search input (no noisy filter tabs).
+// 2. DEDICATED "ON THE LACE GARLAND" SINGLE-SCREEN, SINGLE-LACE CAROUSEL PAGE
+//    - Fits 100% in ONE single screen (`100dvh`) with ONE sweeping catenary lace line.
+//    - On-scroll: Smooth Lenis scroll glides every creation like a carousel from
+//      RIGHT to LEFT along the single catenary lace curve (`\_______/`).
+//    - Includes the unified "For / From" search bar to filter creations live.
+//    - All creations are strictly view-only / unwrap-only.
 // ============================================================================
 
 interface CreationsGalleryPageViewProps {
@@ -817,7 +866,6 @@ interface CreationsGalleryPageViewProps {
   onBackToHome: () => void;
   onStartCrafting: () => void;
   onUnwrapShowcaseBouquet: (entry: ShowcaseBouquetEntry) => void;
-  onCraftFromShowcaseBouquet: (entry: ShowcaseBouquetEntry) => void;
 }
 
 export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> = ({
@@ -832,9 +880,21 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const [searchQuery, setSearchQuery] = useState('');
   const [isClosing, setIsClosing] = useState(false);
   const [nowMs] = useState<number>(() => Date.now());
+  const [visibleSlots, setVisibleSlots] = useState<number>(() => {
+    if (typeof window === 'undefined') return 4;
+    if (window.innerWidth < 640) return 2;
+    if (window.innerWidth < 1024) return 3;
+    return 4;
+  });
+  const [activeCarouselStep, setActiveCarouselStep] = useState(0);
 
   const pageScrollWrapperRef = useRef<HTMLDivElement | null>(null);
   const pageScrollContentRef = useRef<HTMLDivElement | null>(null);
+  const lenisRef = useRef<Lenis | null>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const currentOffsetRef = useRef<number>(0);
+  const dragStartXRef = useRef<number | null>(null);
+  const dragStartScrollRef = useRef<number>(0);
 
   const allActiveEntries = useActiveShowcaseBouquets(vaultCount, nowMs);
 
@@ -847,30 +907,99 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     [allActiveEntries, searchQuery, nowMs]
   );
 
-  // Group filtered entries into rows of 4 for the sweeping catenary garlands
-  const garlandRows = useMemo(() => {
-    const rows: ShowcaseBouquetEntry[][] = [];
-    for (let i = 0; i < filteredEntries.length; i += 4) {
-      rows.push(filteredEntries.slice(i, i + 4));
-    }
-    return rows;
-  }, [filteredEntries]);
+  // Responsive slot count (2 on mobile, 3 on tablet, 4 on desktop)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      const w = window.innerWidth;
+      setVisibleSlots(w < 640 ? 2 : w < 1024 ? 3 : 4);
+    };
+    onResize();
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
-  // Smooth Lenis scrolling inside the dedicated Creations Page
+  // Maximum carousel offset in item units so scrolling moves every creation right-to-left across the single lace line
+  const maxCarouselOffset = useMemo(() => {
+    if (filteredEntries.length <= 1) return 0.5;
+    if (filteredEntries.length <= visibleSlots) {
+      return Math.max(0.65, filteredEntries.length - 1);
+    }
+    return filteredEntries.length - visibleSlots + 0.45;
+  }, [filteredEntries.length, visibleSlots]);
+
+  const scrollPerItemPx = 300;
+  const totalScrollRangePx = Math.max(320, Math.round(maxCarouselOffset * scrollPerItemPx));
+
+  const edgeY = visibleSlots === 2 ? 12 : 14;
+  const midY = visibleSlots === 2 ? 62 : visibleSlots === 3 ? 78 : 92;
+
+  const applySingleLaceTransforms = useCallback(
+    (scrollTopPx: number) => {
+      const progress =
+        totalScrollRangePx > 0
+          ? Math.max(0, Math.min(1, scrollTopPx / totalScrollRangePx))
+          : 0;
+      const scrollOffset = progress * maxCarouselOffset;
+      currentOffsetRef.current = scrollOffset;
+
+      const nextStep = Math.min(
+        Math.max(0, filteredEntries.length - 1),
+        Math.round(scrollOffset)
+      );
+      setActiveCarouselStep((prev) => (prev === nextStep ? prev : nextStep));
+
+      for (let i = 0; i < filteredEntries.length; i++) {
+        const el = itemRefs.current[i];
+        if (!el) continue;
+        const entry = filteredEntries[i];
+        const state = computeSingleLaceCarouselItemTransform(
+          i,
+          filteredEntries.length,
+          scrollOffset,
+          visibleSlots,
+          entry ? entry.tiltDeg : 0,
+          edgeY,
+          midY
+        );
+        el.style.left = `${state.xPercent}%`;
+        el.style.transform = `translate3d(-50%, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+        el.style.opacity = String(state.opacity);
+        el.style.pointerEvents = state.isVisible ? 'auto' : 'none';
+        el.style.visibility = state.isVisible ? 'visible' : 'hidden';
+      }
+    },
+    [filteredEntries, maxCarouselOffset, totalScrollRangePx, visibleSlots, edgeY, midY]
+  );
+
+  // Initialize smooth Lenis scroll on the single-screen sticky viewport
   useEffect(() => {
     const wrapper = pageScrollWrapperRef.current;
     const content = pageScrollContentRef.current;
     if (!wrapper || !content) return;
 
     wrapper.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    applySingleLaceTransforms(0);
 
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.09,
+      lerp: 0.085,
       duration: 1.15,
       smoothWheel: true,
+      wheelMultiplier: 0.95,
+      touchMultiplier: 1.4,
     });
+    lenisRef.current = lenis;
+
+    lenis.on('scroll', (e: { scroll: number }) => {
+      applySingleLaceTransforms(e.scroll);
+    });
+
+    const handleNativeScroll = () => {
+      applySingleLaceTransforms(wrapper.scrollTop);
+    };
+    wrapper.addEventListener('scroll', handleNativeScroll, { passive: true });
 
     let rafId = 0;
     const raf = (time: number) => {
@@ -880,10 +1009,42 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     rafId = requestAnimationFrame(raf);
 
     return () => {
+      wrapper.removeEventListener('scroll', handleNativeScroll);
       cancelAnimationFrame(rafId);
       lenis.destroy();
+      lenisRef.current = null;
     };
-  }, []);
+  }, [applySingleLaceTransforms]);
+
+  // Reset carousel to right-to-left start when search query changes
+  useEffect(() => {
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(0, { immediate: true });
+    } else if (pageScrollWrapperRef.current) {
+      pageScrollWrapperRef.current.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+    applySingleLaceTransforms(0);
+  }, [searchQuery, applySingleLaceTransforms]);
+
+  const scrollByStep = (deltaSteps: number) => {
+    const wrapper = pageScrollWrapperRef.current;
+    if (!wrapper) return;
+    const targetOffset = Math.max(
+      0,
+      Math.min(maxCarouselOffset, currentOffsetRef.current + deltaSteps)
+    );
+    const targetScrollTop =
+      maxCarouselOffset > 0 ? (targetOffset / maxCarouselOffset) * totalScrollRangePx : 0;
+
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(targetScrollTop, {
+        duration: 1.05,
+        easing: (t: number) => 1 - Math.pow(1 - t, 4),
+      });
+    } else {
+      wrapper.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+    }
+  };
 
   const triggerSmoothClose = (afterClose: () => void) => {
     setIsClosing(true);
@@ -896,7 +1057,21 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     <div
       ref={pageScrollWrapperRef}
       data-testid="creations-gallery-page"
-      className={`fixed inset-0 z-[90] overflow-y-auto overflow-x-hidden transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+      onWheel={(e) => {
+        // Also map horizontal trackpad swipes (deltaX) into smooth Lenis scroll along the single lace line
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && pageScrollWrapperRef.current) {
+          const nextTop = Math.max(
+            0,
+            Math.min(totalScrollRangePx, pageScrollWrapperRef.current.scrollTop + e.deltaX)
+          );
+          if (lenisRef.current) {
+            lenisRef.current.scrollTo(nextTop, { immediate: false });
+          } else {
+            pageScrollWrapperRef.current.scrollTop = nextTop;
+          }
+        }
+      }}
+      className={`fixed inset-0 z-[90] h-dvh overflow-y-auto overflow-x-hidden no-scrollbar transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
         isClosing ? 'opacity-0 scale-[0.985]' : 'opacity-100 scale-100 animate-creations-page-enter'
       } ${isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'}`}
       style={{
@@ -913,239 +1088,280 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
         }
       `}</style>
 
-      {/* STICKY TOP NAVBAR FOR CREATIONS GALLERY PAGE */}
-      <div className="sticky top-2 sm:top-3 z-40 px-3 sm:px-6 pt-1 sm:pt-2 pointer-events-none">
-        <header
-          className={`pointer-events-auto max-w-5xl mx-auto h-11 sm:h-14 px-3 sm:px-5 md:px-6 rounded-full border shadow-[0_8px_28px_rgba(35,28,24,0.06)] backdrop-blur-md flex items-center justify-between gap-2 sm:gap-3 transition-colors ${
-            isDarkMode
-              ? 'bg-[#362D2A]/92 border-[#4E423E] text-[#FBF6F1]'
-              : 'bg-white/92 border-[#EFE6DD] text-[#231C18]'
-          }`}
+      {/* LENIS VIRTUAL SCROLL TRACK: Locks visual stage to 100dvh while enabling native smooth Lenis wheel/touch scroll */}
+      <div
+        ref={pageScrollContentRef}
+        style={{ height: `calc(100dvh + ${totalScrollRangePx}px)` }}
+        className="w-full relative"
+      >
+        {/* SINGLE-SCREEN LOCKED STAGE (100dvh, 1 Sweeping Catenary Lace Line Only) */}
+        <div
+          data-testid="single-screen-lace-stage"
+          className="sticky top-0 h-dvh w-full overflow-hidden flex flex-col justify-between select-none"
         >
-          {/* Left: Back to Home + Brand */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={() => triggerSmoothClose(onBackToHome)}
-              data-testid="creations-back-home-btn"
-              className={`px-3 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+          {/* 1. TOP BAR + COMPACT HEADER & UNIFIED "FOR / FROM" SEARCH */}
+          <div className="w-full shrink-0 z-30 pt-2 sm:pt-3 px-3 sm:px-6">
+            <header
+              className={`max-w-5xl mx-auto h-12 sm:h-14 px-3.5 sm:px-5 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md flex items-center justify-between gap-2 sm:gap-3 transition-colors ${
                 isDarkMode
-                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                  ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
+                  : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
               }`}
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerSmoothClose(onBackToHome)}
-              className="hidden sm:flex items-center gap-2 cursor-pointer"
-            >
-              <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
-              <span
-                className="text-lg font-semibold tracking-tight whitespace-nowrap"
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                Send A Bouquet
-              </span>
-            </button>
-          </div>
-
-          {/* Right: Theme Toggle, Saved Bouquets & Craft CTA */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
-            <button
-              type="button"
-              onClick={onToggleDarkMode}
-              aria-label="Toggle theme"
-              className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#E6B89C] hover:bg-[#483C38]'
-                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
-              }`}
-            >
-              {isDarkMode ? (
-                <Sun className="w-3.5 h-3.5 text-amber-300" />
-              ) : (
-                <Moon className="w-3.5 h-3.5" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerSmoothClose(onOpenVault)}
-              className={`hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
-                isDarkMode
-                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-              }`}
-            >
-              <span>Saved Bouquets</span>
-              {vaultCount > 0 && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+              {/* Left: Back to Home + Brand */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onBackToHome)}
+                  data-testid="creations-back-home-btn"
+                  className={`px-3 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
                     isDarkMode
-                      ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
-                      : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                      ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                      : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                   }`}
                 >
-                  {vaultCount}
-                </span>
-              )}
-            </button>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => triggerSmoothClose(onStartCrafting)}
-              className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap ${
-                isDarkMode
-                  ? 'bg-[#9A6550] hover:bg-[#875642]'
-                  : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-              }`}
-            >
-              Craft a Bouquet
-            </button>
-          </div>
-        </header>
-      </div>
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onBackToHome)}
+                  className="hidden sm:flex items-center gap-2 cursor-pointer"
+                >
+                  <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
+                  <span
+                    className="text-lg font-semibold tracking-tight whitespace-nowrap"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Send A Bouquet
+                  </span>
+                </button>
+              </div>
 
-      {/* MAIN CONTENT ROOT */}
-      <div ref={pageScrollContentRef} className="w-full pt-6 sm:pt-10 pb-24">
-        {/* QUIET EDITORIAL HEADER & SINGLE UNIFIED "FOR / FROM" SEARCH INPUT */}
-        <div className="max-w-xl mx-auto px-4 sm:px-6 text-center">
-          <h1
-            className={`text-3xl sm:text-5xl font-semibold tracking-tight ${
-              isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-            }`}
-            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-          >
-            On the <span className="italic font-normal">Lace Garland</span>
-          </h1>
+              {/* Right: Theme Toggle, Saved Bouquets & Craft CTA */}
+              <div className="flex items-center gap-1.5 sm:gap-2.5">
+                <button
+                  type="button"
+                  onClick={onToggleDarkMode}
+                  aria-label="Toggle theme"
+                  className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
+                    isDarkMode
+                      ? 'text-[#E6B89C] hover:bg-[#483C38]'
+                      : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+                  }`}
+                >
+                  {isDarkMode ? (
+                    <Sun className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <Moon className="w-3.5 h-3.5" />
+                  )}
+                </button>
 
-          {/* Single Unified Search Input for both "For" (Recipient) and "From" (Sender) */}
-          <label
-            className={`mt-5 max-w-md mx-auto rounded-full border border-dashed px-4 py-2.5 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
-              isDarkMode
-                ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
-                : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
-            }`}
-          >
-            <Search
-              className={`w-3.5 h-3.5 shrink-0 ${
-                isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
-              }`}
-            />
-            <span
-              className={`text-sm italic font-medium shrink-0 select-none ${
-                isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
-              }`}
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            >
-              For / From
-            </span>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search recipient or sender…"
-              aria-label="Search bouquets by recipient (For) or sender (From)"
-              data-testid="showcase-search-unified"
-              className={`w-full min-w-0 bg-transparent text-xs focus:outline-none ${
-                isDarkMode
-                  ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
-                  : 'text-[#231C18] placeholder:text-[#A39084]'
-              }`}
-            />
-            {searchQuery.trim() && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear search"
-                data-testid="showcase-search-clear"
-                className={`p-1 rounded-full transition cursor-pointer shrink-0 ${
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onOpenVault)}
+                  className={`hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                      : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                  }`}
+                >
+                  <span>Saved Bouquets</span>
+                  {vaultCount > 0 && (
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                        isDarkMode
+                          ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
+                          : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                      }`}
+                    >
+                      {vaultCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onStartCrafting)}
+                  className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap ${
+                    isDarkMode
+                      ? 'bg-[#9A6550] hover:bg-[#875642]'
+                      : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                  }`}
+                >
+                  Craft a Bouquet
+                </button>
+              </div>
+            </header>
+
+            {/* Compact Editorial Title + Unified "For / From" Search Input */}
+            <div className="max-w-xl mx-auto px-2 pt-3 sm:pt-5 text-center">
+              <h1
+                className={`text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight leading-none ${
+                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                }`}
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                On the <span className="italic font-normal">Lace Garland</span>
+              </h1>
+
+              <label
+                className={`mt-3 sm:mt-4 max-w-md mx-auto rounded-full border border-dashed px-4 py-2 sm:py-2.5 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
                   isDarkMode
-                    ? 'text-[#D8C7BE] hover:bg-[#483C38]'
-                    : 'text-[#7A685D] hover:bg-[#F3ECE3]'
+                    ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
+                    : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
                 }`}
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </label>
-        </div>
-
-        {/* MULTI-ROW SWEEPING CATENARY LACE GARLANDS WITH PURE PNG-STYLE BOUQUETS */}
-        {garlandRows.length === 0 ? (
-          <div
-            data-testid="showcase-empty-state"
-            className={`mt-12 max-w-sm mx-auto rounded-[24px] border border-dashed py-10 px-6 text-center ${
-              isDarkMode
-                ? 'bg-[#352C29]/80 border-[#574843]'
-                : 'bg-[#FFFDF9]/90 border-[#DECBB9]'
-            }`}
-          >
-            <p
-              className={`text-xl font-semibold ${
-                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-              }`}
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            >
-              No bouquets found for “{searchQuery.trim()}”
-            </p>
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className={`mt-4 px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                isDarkMode
-                  ? 'border-[#66554F] bg-[#423734] text-[#FBF6F1] hover:bg-[#4D403C]'
-                  : 'border-[#D8C4B4] bg-[#FAF4EE] text-[#5C4438] hover:bg-[#F3E9DF]'
-              }`}
-            >
-              Show all creations
-            </button>
+                <Search
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
+                  }`}
+                />
+                <span
+                  className={`text-sm italic font-medium shrink-0 select-none ${
+                    isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
+                  }`}
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  For / From
+                </span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search recipient or sender…"
+                  aria-label="Search bouquets by recipient (For) or sender (From)"
+                  data-testid="showcase-search-unified"
+                  className={`w-full min-w-0 bg-transparent text-xs focus:outline-none ${
+                    isDarkMode
+                      ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
+                      : 'text-[#231C18] placeholder:text-[#A39084]'
+                  }`}
+                />
+                {searchQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    data-testid="showcase-search-clear"
+                    className={`p-1 rounded-full transition cursor-pointer shrink-0 ${
+                      isDarkMode
+                        ? 'text-[#D8C7BE] hover:bg-[#483C38]'
+                        : 'text-[#7A685D] hover:bg-[#F3ECE3]'
+                    }`}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </label>
+            </div>
           </div>
-        ) : (
-          <div className="mt-6 sm:mt-8 space-y-8 sm:space-y-12">
-            {garlandRows.map((rowEntries, rowIdx) => (
-              <div key={`garland-row-${rowIdx}`} className="relative w-full">
-                {/* Sweeping Catenary Lace Cord for this Row */}
-                <div className="w-full relative z-0">
-                  <SweepingCatenaryLaceLineSVG isDarkMode={isDarkMode} edgeY={12} midY={68} />
+
+          {/* 2. MIDDLE: ONE SINGLE SWEEPING CATENARY LACE LINE & RIGHT-TO-LEFT LENIS CAROUSEL */}
+          <div
+            className="relative flex-1 w-full flex flex-col justify-center overflow-hidden"
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('button, input, label')) return;
+              dragStartXRef.current = e.clientX;
+              dragStartScrollRef.current = pageScrollWrapperRef.current?.scrollTop || 0;
+            }}
+            onPointerMove={(e) => {
+              if (dragStartXRef.current === null || !pageScrollWrapperRef.current) return;
+              const deltaX = dragStartXRef.current - e.clientX; // Dragging right-to-left advances scroll
+              const nextTop = Math.max(
+                0,
+                Math.min(totalScrollRangePx, dragStartScrollRef.current + deltaX * 1.6)
+              );
+              if (lenisRef.current) {
+                lenisRef.current.scrollTo(nextTop, { immediate: false });
+              } else {
+                pageScrollWrapperRef.current.scrollTop = nextTop;
+              }
+            }}
+            onPointerUp={() => {
+              dragStartXRef.current = null;
+            }}
+            onPointerCancel={() => {
+              dragStartXRef.current = null;
+            }}
+          >
+            {filteredEntries.length === 0 ? (
+              <div
+                data-testid="showcase-empty-state"
+                className={`max-w-sm mx-auto rounded-[24px] border border-dashed py-9 px-6 text-center ${
+                  isDarkMode
+                    ? 'bg-[#352C29]/80 border-[#574843]'
+                    : 'bg-[#FFFDF9]/90 border-[#DECBB9]'
+                }`}
+              >
+                <p
+                  className={`text-xl font-semibold ${
+                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                  }`}
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  No bouquets found for “{searchQuery.trim()}”
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className={`mt-4 px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                    isDarkMode
+                      ? 'border-[#66554F] bg-[#423734] text-[#FBF6F1] hover:bg-[#4D403C]'
+                      : 'border-[#D8C4B4] bg-[#FAF4EE] text-[#5C4438] hover:bg-[#F3E9DF]'
+                  }`}
+                >
+                  Show all creations
+                </button>
+              </div>
+            ) : (
+              <div
+                data-testid="single-lace-carousel-track"
+                className="relative w-full h-[320px] sm:h-[370px] lg:h-[400px]"
+              >
+                {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
+                <div className="absolute top-0 inset-x-0 z-0">
+                  <SweepingCatenaryLaceLineSVG
+                    isDarkMode={isDarkMode}
+                    edgeY={edgeY}
+                    midY={midY}
+                  />
                 </div>
 
-                {/* PNG-Style Bouquets Suspended Along the Row's Catenary Curve */}
-                <div
-                  className={`max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-[76px] sm:-mt-[96px] lg:-mt-[108px] pb-10 sm:pb-14 grid grid-cols-2 sm:grid-cols-2 ${
-                    rowEntries.length === 1
-                      ? 'lg:grid-cols-1 max-w-[220px]'
-                      : rowEntries.length === 2
-                      ? 'lg:grid-cols-2 max-w-lg'
-                      : rowEntries.length === 3
-                      ? 'lg:grid-cols-3 max-w-3xl'
-                      : 'lg:grid-cols-4'
-                  } gap-3.5 sm:gap-6 lg:gap-7 relative z-10`}
-                >
-                  {rowEntries.map((entry, idxInRow) => {
-                    const countInRow = rowEntries.length;
-                    const u =
-                      countInRow === 1
-                        ? 0.5
-                        : 0.21 + (idxInRow / Math.max(1, countInRow - 1)) * 0.58;
-                    const curveOffsetY = evaluateCatenaryCurveY(u, 12, 68);
-
+                {/* Hanging Creations Gliding From Right to Left Along the Single Catenary Curve */}
+                <div className="absolute inset-0 z-10">
+                  {filteredEntries.map((entry, idx) => {
+                    const initial = computeSingleLaceCarouselItemTransform(
+                      idx,
+                      filteredEntries.length,
+                      0,
+                      visibleSlots,
+                      entry.tiltDeg,
+                      edgeY,
+                      midY
+                    );
                     return (
                       <div
                         key={entry.id}
+                        ref={(el) => {
+                          itemRefs.current[idx] = el;
+                        }}
                         data-testid={`showcase-card-${entry.code}`}
                         style={{
-                          transform: `translate3d(0px, ${curveOffsetY}px, 0)`,
+                          left: `${initial.xPercent}%`,
+                          transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
+                          opacity: initial.opacity,
+                          pointerEvents: initial.isVisible ? 'auto' : 'none',
+                          visibility: initial.isVisible ? 'visible' : 'hidden',
+                          willChange: 'transform, left, opacity',
                         }}
-                        className="w-full max-w-[164px] sm:max-w-[204px] lg:max-w-[218px] mx-auto"
+                        className="absolute top-0 w-[154px] sm:w-[192px] lg:w-[214px]"
                       >
                         <HangingCreationCard
                           entry={entry}
                           isDarkMode={isDarkMode}
+                          disableStaticTilt
                           onUnwrap={(selected) =>
                             triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
                           }
@@ -1155,9 +1371,57 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   })}
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        )}
+
+          {/* 3. MINIMAL BOTTOM CAROUSEL STEP CONTROLS */}
+          <div className="w-full shrink-0 pb-4 sm:pb-6 px-4 z-30 flex flex-col items-center">
+            {filteredEntries.length > 0 && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => scrollByStep(-1)}
+                  aria-label="Glide carousel right (previous creation)"
+                  data-testid="lace-carousel-prev"
+                  className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
+                      : 'bg-[#FFFDF9]/90 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+                  }`}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div
+                  className={`px-3.5 py-1 rounded-full border border-dashed text-xs tabular-nums ${
+                    isDarkMode
+                      ? 'bg-[#352C29]/85 border-[#574843] text-[#E5D6CE]'
+                      : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#5C4438]'
+                  }`}
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  <span className="font-semibold">
+                    {Math.min(filteredEntries.length, activeCarouselStep + 1)} / {filteredEntries.length}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => scrollByStep(1)}
+                  aria-label="Glide carousel left (next creation)"
+                  data-testid="lace-carousel-next"
+                  className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
+                      : 'bg-[#FFFDF9]/90 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+                  }`}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

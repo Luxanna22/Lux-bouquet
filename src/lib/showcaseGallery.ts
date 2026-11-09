@@ -74,19 +74,29 @@ export interface GarlandCurveItemTransform {
   rotateDeg: number;
 }
 
+export interface SingleLaceCarouselItemTransform {
+  u: number;
+  xPercent: number;
+  yCurvePx: number;
+  rotateDeg: number;
+  scale: number;
+  opacity: number;
+  isVisible: boolean;
+}
+
 /**
  * Evaluates the exact quadratic catenary curve Y coordinate at normalized horizontal position `u` (0..1).
  * Matches an SVG path `M 0,edgeY Q width/2,controlY width,edgeY` where `controlY = 2 * midY - edgeY`.
  */
 export function evaluateCatenaryCurveY(u: number, edgeY = 14, midY = 86): number {
-  const clampedU = Math.max(-0.15, Math.min(1.15, u));
+  const clampedU = Math.max(-0.25, Math.min(1.25, u));
   const sag = midY - edgeY;
   return Number((midY - 4 * sag * Math.pow(clampedU - 0.5, 2)).toFixed(2));
 }
 
 /**
  * Computes the Lenis scroll-linked position & gentle sway for a limited creation hanging
- * on the Hero catenary lace garland.
+ * on the Hero catenary lace garland (gliding right-to-left as scrollTop increases).
  */
 export function computeGarlandItemScrollTransform(
   index: number,
@@ -103,10 +113,10 @@ export function computeGarlandItemScrollTransform(
   const stepU = safeCount > 1 ? span / (safeCount - 1) : 0;
   const baseU = safeCount > 1 ? startU + index * stepU : 0.5;
 
-  // Smooth horizontal drift along the lace line as the user scrolls down with Lenis
+  // Smooth right-to-left horizontal drift along the lace line as the user scrolls down with Lenis
   const clampedScroll = Math.max(0, Math.min(1200, scrollTop));
   const scrollProgress = clampedScroll / 900; // 0 .. 1.33
-  const uShift = (0.5 - scrollProgress) * 0.09; // Glides from +4.5% to -4.5% across the curve
+  const uShift = (0.5 - scrollProgress) * 0.14; // Glides right-to-left (+7% to -7%) across the curve
   const currentU = baseU + uShift;
 
   // Horizontal pixel shift for smooth compositor transform
@@ -114,7 +124,7 @@ export function computeGarlandItemScrollTransform(
   const yCurvePx = evaluateCatenaryCurveY(currentU, edgeY, midY);
 
   // Subtle breeze pendulum sway linked to scroll
-  const breezeSway = Math.sin(clampedScroll * 0.0075 + index * 1.55) * 1.45;
+  const breezeSway = Math.sin(clampedScroll * 0.0085 + index * 1.55) * 1.65;
   const rotateDeg = Number((baseTiltDeg + breezeSway).toFixed(2));
 
   return {
@@ -122,6 +132,77 @@ export function computeGarlandItemScrollTransform(
     xShiftPx,
     yCurvePx,
     rotateDeg,
+  };
+}
+
+/**
+ * Computes the single-screen, single-lace horizontal carousel transform for each creation
+ * on the dedicated "On the Lace Garland" page.
+ * As `scrollOffset` increases (via smooth Lenis scroll), every creation glides from RIGHT to LEFT
+ * (`u` decreases from 1 -> 0) while its vertical `yCurvePx` follows the single catenary lace curve.
+ */
+export function computeSingleLaceCarouselItemTransform(
+  index: number,
+  totalCount: number,
+  scrollOffset: number,
+  visibleSlots = 4,
+  baseTiltDeg = 0,
+  edgeY = 14,
+  midY = 92
+): SingleLaceCarouselItemTransform {
+  const safeSlots = Math.max(1, Math.min(4, visibleSlots));
+  const effectiveSlots = Math.max(1, Math.min(safeSlots, totalCount));
+
+  const slotSpan =
+    effectiveSlots === 1
+      ? 0
+      : effectiveSlots === 2
+      ? 0.44
+      : effectiveSlots === 3
+      ? 0.58
+      : 0.66;
+
+  const slotStepU =
+    safeSlots === 1
+      ? 0.36
+      : safeSlots === 2
+      ? 0.44
+      : safeSlots === 3
+      ? 0.29
+      : 0.22;
+
+  const startU = (1 - slotSpan) / 2;
+  // As scrollOffset increases, `u` decreases -> creations move from right to left across the single lace line
+  const u = startU + (index - scrollOffset) * slotStepU;
+  const xPercent = Number((u * 100).toFixed(2));
+  const yCurvePx = evaluateCatenaryCurveY(u, edgeY, midY);
+
+  // Gentle pendulum breeze sway + subtle catenary tangent follow as the bouquet glides right-to-left
+  const breezeSway = Math.sin(scrollOffset * 2.35 + index * 1.45) * 1.85;
+  const ropeArcTilt = Math.max(-2.5, Math.min(2.5, (0.5 - u) * 3.2));
+  const rotateDeg = Number((baseTiltDeg * 0.65 + breezeSway + ropeArcTilt).toFixed(2));
+
+  // Slight perspective emphasis near the center dip of the catenary curve
+  const distFromCenter = Math.abs(u - 0.5);
+  const scale = Number(Math.max(0.88, Math.min(1.03, 1.02 - distFromCenter * 0.16)).toFixed(3));
+
+  // Smooth fade-in on the right edge (u: 1.12 -> 0.90) and fade-out on the left edge (u: 0.10 -> -0.12)
+  let opacity = 1;
+  if (u < 0.1) {
+    opacity = Math.max(0, Math.min(1, (u - -0.12) / 0.22));
+  } else if (u > 0.9) {
+    opacity = Math.max(0, Math.min(1, (1.12 - u) / 0.22));
+  }
+  opacity = Number(opacity.toFixed(3));
+
+  return {
+    u: Number(u.toFixed(4)),
+    xPercent,
+    yCurvePx,
+    rotateDeg,
+    scale,
+    opacity,
+    isVisible: opacity > 0.01 && u >= -0.15 && u <= 1.15,
   };
 }
 

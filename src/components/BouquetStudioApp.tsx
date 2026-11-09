@@ -778,7 +778,7 @@ export default function App() {
     setShowGiftCardReveal(true);
   }, [handleStopVoice]);
 
-  // When a recipient clicks "Create Yours" on a shared bouquet, start a fresh empty bouquet
+  // When a recipient clicks "Craft Yours" on a shared or showcase bouquet, start a fresh empty bouquet
   // so they can never edit or overwrite the sender's shared arrangement!
   const handleCreateOwnFromShared = useCallback(() => {
     if (bloomIntervalRef.current !== null) {
@@ -787,6 +787,7 @@ export default function App() {
     }
     handleStopVoice();
     setIsVoiceModalOpen(false);
+    setIsReactionPopoverOpen(false);
     try {
       window.history.replaceState(null, '', '/');
     } catch {
@@ -801,6 +802,30 @@ export default function App() {
     setShowGiftCardReveal(true);
     triggerToast('Started a fresh empty bouquet for you to arrange');
   }, [clearBouquet, selectItem, triggerToast, handleStopVoice]);
+
+  // Returns to the Landing Page from a view-only showcase/shared bouquet and resets the studio canvas
+  const handleReturnHomeFromGiftView = useCallback(() => {
+    if (bloomIntervalRef.current !== null) {
+      clearInterval(bloomIntervalRef.current);
+      bloomIntervalRef.current = null;
+    }
+    handleStopVoice();
+    setIsVoiceModalOpen(false);
+    setIsReactionPopoverOpen(false);
+    try {
+      window.history.replaceState(null, '', '/');
+    } catch {
+      // Ignore history error
+    }
+    clearBouquet();
+    selectItem(null);
+    setIsGiftEntranceOpen(false);
+    setIsGiftView(false);
+    setIsPreviewMode(false);
+    setBloomedCount(undefined);
+    setShowGiftCardReveal(true);
+    setShowLandingPage(true);
+  }, [clearBouquet, selectItem, handleStopVoice]);
 
   // Autosave to localStorage & Hydrate Shared Links (including first-party /<code> short links)
   useEffect(() => {
@@ -1298,7 +1323,8 @@ export default function App() {
           onPreviewShowcaseBouquet={() => {
             const currentItems = useBouquetStore.getState().items;
             setShowLandingPage(false);
-            startGiftBloomAnimation(currentItems.length, true);
+            // Strictly view-only recipient mode (fromEditorPreview = false) so showcase creations cannot be edited
+            startGiftBloomAnimation(currentItems.length, false);
           }}
           onOpenVault={() => setIsVaultModalOpen(true)}
           vaultCount={vaultCount}
@@ -1630,12 +1656,12 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={handleExitGiftViewToEditor}
+                onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
                 className="h-8 px-2.5 sm:h-9 sm:px-3.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shrink-0"
               >
                 <Flower2 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Make your own</span>
-                <span className="sm:hidden">Edit</span>
+                <span className="sm:hidden">Craft</span>
               </button>
             </>
           ) : (
@@ -1713,6 +1739,22 @@ export default function App() {
                   : 'bg-[#FDF9F5] text-[#231C18]'
               }`}
             >
+              {/* Subtle Top-Left Return Button (Returns to Home for view-only showcase/shared gifts, or Studio for sender preview) */}
+              <div className="absolute top-3 left-3 sm:top-5 sm:left-6 z-20">
+                <button
+                  type="button"
+                  onClick={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
+                  data-testid="gift-entrance-back-btn"
+                  className={`px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 backdrop-blur-md transition cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#423734]'
+                      : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#4A382E] hover:bg-[#FAF4EE]'
+                  }`}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>{isPreviewMode ? 'Back to Studio' : 'Home'}</span>
+                </button>
+              </div>
               {/* Seamless Radial Aura Behind the Living Watercolor Bloom (Scales with slide progress) */}
               <div
                 aria-hidden="true"
@@ -2802,7 +2844,15 @@ export default function App() {
                     : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
                 }`}
               >
-                <BrandLogoMark className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 shrink-0" isDarkMode={isDarkMode} />
+                <button
+                  type="button"
+                  onClick={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
+                  title={isPreviewMode ? 'Back to Studio' : 'Back to Send A Bouquet Home'}
+                  aria-label={isPreviewMode ? 'Back to Studio' : 'Back to Send A Bouquet Home'}
+                  className="shrink-0 hover:opacity-80 transition cursor-pointer flex items-center"
+                >
+                  <BrandLogoMark className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 shrink-0" isDarkMode={isDarkMode} />
+                </button>
                 <div
                   className="min-w-0 truncate text-xs sm:text-base leading-tight"
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
