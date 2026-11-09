@@ -14,7 +14,7 @@ import {
 const FIXED_NOW = Date.parse('2026-11-09T12:00:00.000Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-test('30-day expiration hides bouquets older than 30 days unless marked premium', () => {
+test('3-tier expiration: 30d free, 90d extended paid (+60 bonus days), and Eternal keepsakes', () => {
   const freshBouquet = {
     sharedAt: new Date(FIXED_NOW - 10 * DAY_MS).toISOString(),
     isPremium: false,
@@ -23,23 +23,37 @@ test('30-day expiration hides bouquets older than 30 days unless marked premium'
     sharedAt: new Date(FIXED_NOW - 30 * DAY_MS).toISOString(),
     isPremium: false,
   };
-  const expiredBouquet = {
+  const expiredFreeBouquet = {
     sharedAt: new Date(FIXED_NOW - 31 * DAY_MS).toISOString(),
     isPremium: false,
   };
+  const extendedPaidActiveBouquet = {
+    sharedAt: new Date(FIXED_NOW - 45 * DAY_MS).toISOString(),
+    isPremium: false,
+    retentionDays: 90,
+  };
+  const extendedPaidExpiredBouquet = {
+    sharedAt: new Date(FIXED_NOW - 91 * DAY_MS).toISOString(),
+    isPremium: false,
+    retentionDays: 90,
+  };
   const premiumOldBouquet = {
-    sharedAt: new Date(FIXED_NOW - 90 * DAY_MS).toISOString(),
+    sharedAt: new Date(FIXED_NOW - 180 * DAY_MS).toISOString(),
     isPremium: true,
   };
 
   assert.equal(isShowcaseBouquetActive(freshBouquet, FIXED_NOW), true);
   assert.equal(isShowcaseBouquetActive(boundaryBouquet, FIXED_NOW), true);
-  assert.equal(isShowcaseBouquetExpired(expiredBouquet, FIXED_NOW), true);
-  assert.equal(isShowcaseBouquetActive(expiredBouquet, FIXED_NOW), false);
+  assert.equal(isShowcaseBouquetExpired(expiredFreeBouquet, FIXED_NOW), true);
+  assert.equal(isShowcaseBouquetActive(expiredFreeBouquet, FIXED_NOW), false);
+  // Paid Single / 7-Day Pass gets 90 days (+60 bonus days) -> active at day 45, expires at day 91
+  assert.equal(isShowcaseBouquetActive(extendedPaidActiveBouquet, FIXED_NOW), true);
+  assert.equal(isShowcaseBouquetExpired(extendedPaidExpiredBouquet, FIXED_NOW), true);
+  // 30-Day Eternal Pass never expires even after 180 days
   assert.equal(isShowcaseBouquetActive(premiumOldBouquet, FIXED_NOW), true);
 });
 
-test('getShowcaseFreshnessInfo computes remaining days and eternal keepsake label', () => {
+test('getShowcaseFreshnessInfo computes remaining days for 30d, 90d extended, and eternal keepsake', () => {
   const twoDaysAgo = {
     sharedAt: new Date(FIXED_NOW - 2 * DAY_MS).toISOString(),
     isPremium: false,
@@ -48,6 +62,16 @@ test('getShowcaseFreshnessInfo computes remaining days and eternal keepsake labe
   assert.equal(info.daysLeft, 28);
   assert.equal(info.label, '28d left');
   assert.equal(info.isExpiringSoon, false);
+
+  const extendedFortyDaysAgo = {
+    sharedAt: new Date(FIXED_NOW - 40 * DAY_MS).toISOString(),
+    isPremium: false,
+    retentionDays: 90,
+  };
+  const extendedInfo = getShowcaseFreshnessInfo(extendedFortyDaysAgo, FIXED_NOW);
+  assert.equal(extendedInfo.daysLeft, 50);
+  assert.equal(extendedInfo.label, '50d left');
+  assert.equal(extendedInfo.isExtendedPaid, true);
 
   const twentyEightDaysAgo = {
     sharedAt: new Date(FIXED_NOW - 28 * DAY_MS).toISOString(),

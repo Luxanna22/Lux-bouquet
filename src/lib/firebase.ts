@@ -91,6 +91,8 @@ export interface SharedBouquetRecord {
   reaction?: string;
   recipientReply?: string;
   repliedAt?: string;
+  isPremium?: boolean;
+  retentionDays?: number;
   createdAt: string;
 }
 
@@ -167,13 +169,24 @@ function sanitizeRecordForFirestore(existing: Partial<SharedBouquetRecord> | nul
     record.repliedAt = repliedAt.slice(0, 64);
   }
 
+  const isPremium = patch.isPremium ?? existing?.isPremium;
+  if (typeof isPremium === 'boolean') {
+    record.isPremium = isPremium;
+  }
+
+  const retentionDays = patch.retentionDays ?? existing?.retentionDays;
+  if (typeof retentionDays === 'number' && Number.isFinite(retentionDays)) {
+    record.retentionDays = Math.max(1, Math.min(36500, Math.round(retentionDays)));
+  }
+
   return record;
 }
 
 export async function saveSharedBouquetToFirestore(
   code: string,
   payload: string,
-  snapshot?: BouquetSnapshot
+  snapshot?: BouquetSnapshot,
+  retentionMeta?: { isPremium?: boolean; retentionDays?: number }
 ): Promise<boolean> {
   if (!code || !CODE_REGEX.test(code)) return false;
   if (!payload || payload.length < 3 || payload.length > 900000) return false;
@@ -197,7 +210,9 @@ export async function saveSharedBouquetToFirestore(
         voiceTitle: voice?.title,
         voiceDurationSec: voice?.durationSec,
         openCount: existingData?.openCount ?? 0,
-        voicePlayCount: existingData?.voicePlayCount ?? 0
+        voicePlayCount: existingData?.voicePlayCount ?? 0,
+        isPremium: retentionMeta?.isPremium ?? existingData?.isPremium,
+        retentionDays: retentionMeta?.retentionDays ?? existingData?.retentionDays,
       },
       code
     );
@@ -418,3 +433,69 @@ export function removeBouquetFromLocalVault(code: string): SavedVaultBouquet[] {
     return [];
   }
 }
+
+const PASS_KEY_DOC_REGEX = /^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$/;
+
+export async function saveStudioPassToFirestore(pass: {
+  passKey: string;
+  tier: string;
+  region: string;
+  createdAt: string;
+  expiresAt: string;
+  retentionDays: number;
+  isEternalKeepsake: boolean;
+  primaryDeviceHash: string;
+  secondaryDeviceHash: string | null;
+  activeSessionNonce: string;
+  boundBouquetCode: string | null;
+  dailyUsageDate: string;
+  dailyUsageCount: number;
+  paymentProvider: string;
+  paymentReference: string;
+  signature: string;
+}): Promise<boolean> {
+  if (!pass || !PASS_KEY_DOC_REGEX.test(pass.passKey)) return false;
+  try {
+    const docRef = doc(db, 'studio_passes', pass.passKey);
+    await setDoc(docRef, {
+      passKey: pass.passKey,
+      tier: pass.tier,
+      region: pass.region,
+      createdAt: pass.createdAt,
+      expiresAt: pass.expiresAt,
+      retentionDays: pass.retentionDays,
+      isEternalKeepsake: Boolean(pass.isEternalKeepsake),
+      primaryDeviceHash: pass.primaryDeviceHash,
+      secondaryDeviceHash: pass.secondaryDeviceHash || '',
+      activeSessionNonce: pass.activeSessionNonce,
+      boundBouquetCode: pass.boundBouquetCode || '',
+      dailyUsageDate: pass.dailyUsageDate,
+      dailyUsageCount: pass.dailyUsageCount,
+      paymentProvider: pass.paymentProvider,
+      paymentReference: pass.paymentReference,
+      signature: pass.signature,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchStudioPassFromFirestore(
+  passKey: string
+): Promise<Record<string, unknown> | null> {
+  if (!passKey || !PASS_KEY_DOC_REGEX.test(passKey)) return null;
+  try {
+    const snap = await getDoc(doc(db, 'studio_passes', passKey));
+    if (!snap.exists()) return null;
+    const d = snap.data();
+    return {
+      ...d,
+      secondaryDeviceHash: d.secondaryDeviceHash || null,
+      boundBouquetCode: d.boundBouquetCode || null,
+    };
+  } catch {
+    return null;
+  }
+}
+

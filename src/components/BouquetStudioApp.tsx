@@ -47,7 +47,6 @@ import {
   Clock,
   KeyRound,
   Heart,
-  Sparkles,
   MessageSquareHeart,
   Home,
   BookOpen,
@@ -115,6 +114,26 @@ import { VoiceRecorderStudio, VoiceKeepsakePlayerModal } from './VoiceRecorderSt
 import { LandingPageView } from './LandingPageView';
 import { BouquetVaultModal } from './BouquetVaultModal';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
+import {
+  formatPassRemainingTime,
+  getActivePremiumAssetConfig,
+  getOrCreateDeviceTokenHash,
+  getRetentionPolicyForPassTier,
+  getStoredStudioPass,
+  inspectBouquetPremiumUsage,
+  isFlowerPremium,
+  isRibbonPremium,
+  isWrapPremium,
+  PremiumAssetConfig,
+  saveStoredStudioPass,
+  StudioPassRecord,
+  verifyActiveStudioPassForAction,
+} from '../lib/monetization';
+import {
+  StudioCheckoutModal,
+  CoutureBloomSeal,
+  CoutureItemBadge,
+} from './StudioCheckoutModal';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -249,6 +268,59 @@ export default function App() {
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
   const currentSessionVaultCodeRef = useRef<string | null>(null);
+  const [activeStudioPass, setActiveStudioPass] = useState<StudioPassRecord | null>(() =>
+    getStoredStudioPass()
+  );
+  const [premiumAssetConfig, setPremiumAssetConfig] = useState<PremiumAssetConfig>(() =>
+    getActivePremiumAssetConfig()
+  );
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [checkoutTriggerAction, setCheckoutTriggerAction] = useState<
+    'share' | 'png' | 'pass_menu'
+  >('pass_menu');
+
+  const currentPremiumInspection = useMemo(
+    () =>
+      inspectBouquetPremiumUsage(
+        { items, wrapStyle, ribbonStyle, voice, lock },
+        premiumAssetConfig
+      ),
+    [items, wrapStyle, ribbonStyle, voice, lock, premiumAssetConfig]
+  );
+
+  const currentBouquetShortCode = useMemo(() => {
+    const snap: BouquetSnapshot = {
+      items,
+      wrapStyle,
+      wrapColor,
+      ribbonColor,
+      ribbonStyle,
+      card,
+      voice,
+      lock,
+    };
+    return computeShortCode(encodeBouquetToCompactPayload(snap, true));
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]);
+
+  const currentPassCheck = useMemo(() => {
+    const devHash = getOrCreateDeviceTokenHash();
+    return verifyActiveStudioPassForAction({
+      pass: activeStudioPass,
+      deviceTokenHash: devHash,
+      clientSessionNonce: activeStudioPass?.activeSessionNonce,
+      bouquetCode: currentBouquetShortCode,
+      incrementUsage: false,
+    });
+  }, [activeStudioPass, currentBouquetShortCode]);
+
+  const isBouquetUnlockedByPass = currentPassCheck.valid;
+  const activeRetentionPolicy = useMemo(
+    () =>
+      getRetentionPolicyForPassTier(
+        isBouquetUnlockedByPass && activeStudioPass ? activeStudioPass.tier : 'free'
+      ),
+    [isBouquetUnlockedByPass, activeStudioPass]
+  );
 
   const updateStudioCarouselScrollState = useCallback(() => {
     const el = studioCarouselRef.current;
@@ -1015,9 +1087,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isGiftView, isPreviewMode, undo, redo, deleteSelected, duplicateSelected, triggerToast]);
 
-  const handleExportPng = async () => {
-    // When inside an in-app browser (Messenger, Instagram, TikTok, LINE, etc.),
-    // prompt the user to open the page in their external browser to save the PNG.
+  const performSvgPngDownload = useCallback(async () => {
     if (isInAppBrowser()) {
       setIsInAppBrowserModalOpen(true);
       return;
@@ -1025,7 +1095,9 @@ export default function App() {
 
     const targetSvg =
       svgRef.current ||
-      (document.querySelector('svg[aria-label="Interactive Flower Bouquet Canvas"]') as SVGSVGElement | null);
+      (document.querySelector(
+        'svg[aria-label="Interactive Flower Bouquet Canvas"]'
+      ) as SVGSVGElement | null);
 
     if (!targetSvg) {
       triggerToast('Bouquet canvas element not found.');
@@ -1035,11 +1107,23 @@ export default function App() {
     try {
       triggerToast('Generating high-res image...');
       await exportSvgElementToPng(targetSvg, 'flowers-for-you.png');
-      triggerToast('Saved image');
+      triggerToast('Saved high-res image ♥');
     } catch (err) {
       console.error('Failed to export image:', err);
       triggerToast('Could not export image.');
     }
+  }, [triggerToast]);
+
+  const handleExportPng = async () => {
+    // Recipients viewing a shared gift can save a snapshot directly; studio creators check Couture/PNG pass
+    if (!isGiftView && (currentPremiumInspection.isPremiumBouquet || premiumAssetConfig.requirePassForHighResPng)) {
+      if (!isBouquetUnlockedByPass) {
+        setCheckoutTriggerAction('png');
+        setIsCheckoutModalOpen(true);
+        return;
+      }
+    }
+    await performSvgPngDownload();
   };
 
   const getShareUrl = useCallback(
@@ -1060,7 +1144,7 @@ export default function App() {
   );
 
   const registerShortCodeOnServer = useCallback(
-    (asGift = true, persistToVault = false) => {
+    (asGift = true, persistToVault = false, overridePass?: StudioPassRecord | null) => {
       const snap: BouquetSnapshot = {
         items,
         wrapStyle,
@@ -1088,10 +1172,32 @@ export default function App() {
         return firstPartyUrl;
       }
 
-      // Persist directly to Firebase Firestore for instant cross-device & Vercel persistence
-      saveSharedBouquetToFirestore(code, hashPayload, snap).catch(() => {});
+      const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;
+      const devHash = getOrCreateDeviceTokenHash();
+      const passVerify = verifyActiveStudioPassForAction({
+        pass: effectivePass,
+        deviceTokenHash: devHash,
+        clientSessionNonce: effectivePass?.activeSessionNonce,
+        bouquetCode: code,
+        incrementUsage: true,
+      });
 
-      // Save to local account-free Bouquet Vault (replaces previous code from the same editing session so changing share info never duplicates!)
+      if (passVerify.valid && passVerify.updatedPass) {
+        saveStoredStudioPass(passVerify.updatedPass);
+        setActiveStudioPass(passVerify.updatedPass);
+      }
+
+      const policy = getRetentionPolicyForPassTier(
+        passVerify.valid && effectivePass ? effectivePass.tier : 'free'
+      );
+
+      // Persist directly to Firebase Firestore with 3-tier retention metadata (30d free, 90d paid extended, Eternal keepsake)
+      saveSharedBouquetToFirestore(code, hashPayload, snap, {
+        isPremium: policy.isPremiumEternal,
+        retentionDays: policy.retentionDays,
+      }).catch(() => {});
+
+      // Save to local account-free Bouquet Vault
       const updatedVault = saveBouquetToLocalVault(
         {
           code,
@@ -1104,6 +1210,8 @@ export default function App() {
           lockMode: lock?.mode || 'none',
           hasVoice: Boolean(voice?.audioDataUrl),
           flowerCount: items.length,
+          isPremium: policy.isPremiumEternal,
+          retentionDays: policy.retentionDays,
         },
         currentSessionVaultCodeRef.current
       );
@@ -1115,7 +1223,7 @@ export default function App() {
         incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
       }
 
-      // Also register via /api/shorten serverless endpoint (which also writes to Firestore REST API)
+      // Also register via /api/shorten serverless endpoint
       fetch('/api/shorten', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1126,13 +1234,15 @@ export default function App() {
           voiceAudioDataUrl: voice?.audioDataUrl || null,
           voiceStyle: voice?.style || null,
           voiceTitle: voice?.title || null,
-          voiceDurationSec: voice?.durationSec ?? null
+          voiceDurationSec: voice?.durationSec ?? null,
+          isPremium: policy.isPremiumEternal,
+          retentionDays: policy.retentionDays,
         })
       }).catch(() => {});
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, activeStudioPass]
   );
 
   // Compute preview short link when Share Modal is open without saving duplicate entries on every keystroke
@@ -1143,12 +1253,38 @@ export default function App() {
     setIsShorteningUrl(false);
   }, [isShareModalOpen, registerShortCodeOnServer]);
 
-  const handleShareLink = async (asGift = true) => {
-    const firstPartyUrl = registerShortCodeOnServer(asGift, true);
+  const handleShareLink = async (asGift = true, overridePass?: StudioPassRecord | null) => {
+    const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;
+    const devHash = getOrCreateDeviceTokenHash();
+    const passVerify = verifyActiveStudioPassForAction({
+      pass: effectivePass,
+      deviceTokenHash: devHash,
+      clientSessionNonce: effectivePass?.activeSessionNonce,
+      bouquetCode: currentBouquetShortCode,
+      incrementUsage: false,
+    });
+
+    if (currentPremiumInspection.isPremiumBouquet && !passVerify.valid) {
+      setIsShareModalOpen(false);
+      setCheckoutTriggerAction('share');
+      setIsCheckoutModalOpen(true);
+      return;
+    }
+
+    const firstPartyUrl = registerShortCodeOnServer(asGift, true, effectivePass);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
-    triggerToast('Link copied & saved to Saved Bouquets ♥');
+    const policy = getRetentionPolicyForPassTier(
+      passVerify.valid && effectivePass ? effectivePass.tier : 'free'
+    );
+    triggerToast(
+      policy.isPremiumEternal
+        ? 'Eternal Keepsake link copied & saved ♥'
+        : policy.retentionDays > 30
+        ? `Extended ${policy.retentionDays}-day link copied & saved ♥`
+        : 'Link copied & saved to Saved Bouquets ♥'
+    );
   };
 
   const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card' | 'voice') => {
@@ -1442,8 +1578,38 @@ export default function App() {
               </button>
             </div>
 
-            {/* Right: Saved Bouquets + Ambient Controls + Primary Share Button */}
+            {/* Right: Studio Pass + Saved Bouquets + Ambient Controls + Primary Share Button */}
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <button
+                type="button"
+                data-testid="studio-pass-header-btn"
+                onClick={() => {
+                  setCheckoutTriggerAction('pass_menu');
+                  setIsCheckoutModalOpen(true);
+                }}
+                aria-label="Open Studio Pass and Pass Key"
+                title={
+                  isBouquetUnlockedByPass && activeStudioPass
+                    ? `Active Pass (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
+                    : 'Studio Pass & Pass Key'
+                }
+                className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                  isBouquetUnlockedByPass
+                    ? isDarkMode
+                      ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
+                      : 'bg-[#FAF3EB] border-[#B4846C] text-[#6E4434]'
+                    : isDarkMode
+                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                }`}
+              >
+                <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                <span className="hidden md:inline">
+                  {isBouquetUnlockedByPass ? 'Pass Active' : 'Studio Pass'}
+                </span>
+                <span className="md:hidden">Pass</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsVaultModalOpen(true)}
@@ -3394,11 +3560,12 @@ export default function App() {
                 </>
               )}
 
-              {/* CATEGORY 2: WRAPPERS (9 Unique Architectural Wrapper Designs — No Color-Only Duplicates) */}
+              {/* CATEGORY 2: WRAPPERS (Architectural Wrapper Designs with Couture Badge) */}
               {mobileCategory === 'wrapping' && (
                 <>
                   {WRAPPER_CATALOG.map((ws) => {
                     const isSelected = wrapStyle === ws.id;
+                    const isPremWrap = isWrapPremium(ws.id, premiumAssetConfig);
                     return (
                       <button
                         key={ws.id}
@@ -3407,22 +3574,30 @@ export default function App() {
                           setWrapStyle(ws.id);
                           setActiveColorTarget('wrapper');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
                       >
-                        <div
-                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                              : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <MiniWrapConeSVG
-                            styleType={ws.id}
-                            color={ws.defaultHex}
-                            ribbon={ws.defaultRibbon}
-                          />
+                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                          <div
+                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                              isSelected
+                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                            }`}
+                          >
+                            <MiniWrapConeSVG
+                              styleType={ws.id}
+                              color={ws.defaultHex}
+                              ribbon={ws.defaultRibbon}
+                            />
+                          </div>
+                          {isPremWrap && (
+                            <CoutureItemBadge
+                              isDarkMode={isDarkMode}
+                              title="Couture wrap (free to try)"
+                            />
+                          )}
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {ws.label}
@@ -3435,77 +3610,100 @@ export default function App() {
 
               {/* CATEGORY 3: FOCAL FLOWERS */}
               {mobileCategory === 'flowers' &&
-                focalFlowers.map((entry) => (
-                  <button
-                    key={entry.type}
-                    type="button"
-                    onClick={() => {
-                      addFlower(entry.type);
-                      setActiveColorTarget('petal');
-                      triggerToast(`Added ${entry.name}`);
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
-                  >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-all group-active:scale-95 ${
-                        isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
+                focalFlowers.map((entry) => {
+                  const isPremFlower = isFlowerPremium(entry.type, premiumAssetConfig);
+                  return (
+                    <button
+                      key={entry.type}
+                      type="button"
+                      onClick={() => {
+                        addFlower(entry.type);
+                        setActiveColorTarget('petal');
+                        triggerToast(`Added ${entry.name}`);
+                      }}
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
                     >
-                      <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
-                        <FlowerRenderer
-                          type={entry.type}
-                          petalColor={entry.defaultPetalColor}
-                          centerColor={entry.defaultCenterColor}
-                        />
-                      </svg>
-                    </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                      {entry.shortName}
-                    </span>
-                  </button>
-                ))}
+                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                        <div
+                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                            isDarkMode
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                          }`}
+                        >
+                          <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
+                            <FlowerRenderer
+                              type={entry.type}
+                              petalColor={entry.defaultPetalColor}
+                              centerColor={entry.defaultCenterColor}
+                            />
+                          </svg>
+                        </div>
+                        {isPremFlower && (
+                          <CoutureItemBadge
+                            isDarkMode={isDarkMode}
+                            title="Couture bloom (free to try)"
+                          />
+                        )}
+                      </div>
+                      <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                        {entry.shortName}
+                      </span>
+                    </button>
+                  );
+                })}
 
               {/* CATEGORY 4: FILLERS & FOLIAGE */}
               {mobileCategory === 'fillers' &&
-                fillerFlowers.map((entry) => (
-                  <button
-                    key={entry.type}
-                    type="button"
-                    onClick={() => {
-                      addFlower(entry.type);
-                      setActiveColorTarget('petal');
-                      triggerToast(`Added ${entry.name}`);
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
-                  >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center overflow-hidden transition-all group-active:scale-95 ${
-                        isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
+                fillerFlowers.map((entry) => {
+                  const isPremFiller = isFlowerPremium(entry.type, premiumAssetConfig);
+                  return (
+                    <button
+                      key={entry.type}
+                      type="button"
+                      onClick={() => {
+                        addFlower(entry.type);
+                        setActiveColorTarget('petal');
+                        triggerToast(`Added ${entry.name}`);
+                      }}
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
                     >
-                      <svg viewBox="-55 -68 110 135" className="w-10 h-10 sm:w-12 sm:h-12">
-                        <FlowerRenderer
-                          type={entry.type}
-                          petalColor={entry.defaultPetalColor}
-                          centerColor={entry.defaultCenterColor}
-                        />
-                      </svg>
-                    </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
-                      {entry.shortName}
-                    </span>
-                  </button>
-                ))}
+                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                        <div
+                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                            isDarkMode
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                          }`}
+                        >
+                          <svg viewBox="-55 -68 110 135" className="w-10 h-10 sm:w-12 sm:h-12">
+                            <FlowerRenderer
+                              type={entry.type}
+                              petalColor={entry.defaultPetalColor}
+                              centerColor={entry.defaultCenterColor}
+                            />
+                          </svg>
+                        </div>
+                        {isPremFiller && (
+                          <CoutureItemBadge
+                            isDarkMode={isDarkMode}
+                            title="Couture botanical (free to try)"
+                          />
+                        )}
+                      </div>
+                      <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                        {entry.shortName}
+                      </span>
+                    </button>
+                  );
+                })}
 
               {/* CATEGORY 5: RIBBON & LACE DESIGNS (Colors are unified in the Color drawer tab) */}
               {mobileCategory === 'ribbon' && (
                 <>
                   {RIBBON_STYLE_CATALOG.map((rs) => {
                     const isSelected = ribbonStyle === rs.id;
+                    const isPremRibbon = isRibbonPremium(rs.id, premiumAssetConfig);
                     return (
                       <button
                         key={rs.id}
@@ -3514,18 +3712,26 @@ export default function App() {
                           setRibbonStyle(rs.id);
                           setActiveColorTarget('ribbon');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
                       >
-                        <div
-                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                              : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <MiniRibbonBowSVG hex={rs.defaultHex} styleType={rs.id} />
+                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                          <div
+                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                              isSelected
+                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                            }`}
+                          >
+                            <MiniRibbonBowSVG hex={rs.defaultHex} styleType={rs.id} />
+                          </div>
+                          {isPremRibbon && (
+                            <CoutureItemBadge
+                              isDarkMode={isDarkMode}
+                              title="Couture ribbon (free to try)"
+                            />
+                          )}
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {rs.label}
@@ -4568,19 +4774,89 @@ export default function App() {
               <X className="w-4 h-4" />
             </button>
 
+            <p className="text-[9.5px] uppercase tracking-[0.22em] font-semibold text-[#B4846C]">
+              Gift Delivery
+            </p>
             <h3
-              className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight"
+              className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight mt-0.5"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               Send Your Bouquet
             </h3>
-            <p
-              className={`text-xs mt-0.5 mb-4 ${
-                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
-              }`}
-            >
-              Share a private gift link with your recipient
-            </p>
+            <div className="flex items-center justify-between gap-2 mt-0.5 mb-3">
+              <p
+                className={`text-xs ${
+                  isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                }`}
+              >
+                Private link for your recipient
+              </p>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span
+                  data-testid="share-lifespan-badge"
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-dashed ${
+                    activeRetentionPolicy.isPremiumEternal
+                      ? 'border-amber-500/60 text-amber-600 dark:text-amber-300'
+                      : activeRetentionPolicy.retentionDays > 30
+                      ? isDarkMode
+                        ? 'border-[#E6B89C] text-[#F0C8B0]'
+                        : 'border-[#B4846C] text-[#6E4434]'
+                      : isDarkMode
+                      ? 'border-[#544540] text-[#C8B6AC]'
+                      : 'border-[#DECBB9] text-[#7D6B60]'
+                  }`}
+                >
+                  {activeRetentionPolicy.badgeLabel}
+                </span>
+                {!isBouquetUnlockedByPass && !currentPremiumInspection.isPremiumBouquet && (
+                  <button
+                    type="button"
+                    data-testid="upgrade-lifespan-btn"
+                    onClick={() => {
+                      setIsShareModalOpen(false);
+                      setCheckoutTriggerAction('share');
+                      setIsCheckoutModalOpen(true);
+                    }}
+                    className="text-[10.5px] font-medium text-[#B4846C] hover:underline cursor-pointer"
+                  >
+                    Extend
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Clean 1-line Couture Notice when Couture items are used */}
+            {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass && (
+              <div
+                data-testid="share-couture-unlock-banner"
+                className={`px-3 py-2 rounded-xl border border-dashed mb-3 flex items-center justify-between gap-2 ${
+                  isDarkMode
+                    ? 'bg-[#2B2321]/85 border-[#E6B89C]/55'
+                    : 'bg-[#FAF3EB] border-[#D8BFA8]'
+                }`}
+              >
+                <span className="text-xs font-medium flex items-center gap-1.5 min-w-0 truncate">
+                  <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                  <span className="truncate">
+                    {currentPremiumInspection.reasons.slice(0, 2).join(' · ')}
+                    {currentPremiumInspection.reasons.length > 2
+                      ? ` +${currentPremiumInspection.reasons.length - 2}`
+                      : ''}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsShareModalOpen(false);
+                    setCheckoutTriggerAction('share');
+                    setIsCheckoutModalOpen(true);
+                  }}
+                  className="text-[11px] font-semibold text-[#B4846C] hover:underline shrink-0 cursor-pointer"
+                >
+                  Have a Key?
+                </button>
+              </div>
+            )}
 
             {/* Primary Shortened Gift Link Bar */}
             <div
@@ -4594,16 +4870,33 @@ export default function App() {
                 type="text"
                 readOnly
                 aria-label="Short gift link"
-                value={isShorteningUrl ? 'Preparing link...' : shortShareUrl || getShareUrl(true)}
-                onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                value={
+                  currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass
+                    ? 'Unlock Couture Pass to copy gift link'
+                    : isShorteningUrl
+                    ? 'Preparing link...'
+                    : shortShareUrl || getShareUrl(true)
+                }
+                onClick={(e) => {
+                  if (!currentPremiumInspection.isPremiumBouquet || isBouquetUnlockedByPass) {
+                    (e.currentTarget as HTMLInputElement).select();
+                  }
+                }}
                 className={`flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none truncate ${
                   isDarkMode ? 'text-[#E6D6C7]' : 'text-[#5C4438]'
                 }`}
               />
               <button
                 type="button"
+                data-testid="share-modal-primary-btn"
                 disabled={isShorteningUrl}
                 onClick={() => {
+                  if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
+                    setIsShareModalOpen(false);
+                    setCheckoutTriggerAction('share');
+                    setIsCheckoutModalOpen(true);
+                    return;
+                  }
                   handleShareLink(true);
                   setIsShareModalOpen(false);
                 }}
@@ -4613,8 +4906,17 @@ export default function App() {
                     : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
                 }`}
               >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy Link</span>
+                {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass ? (
+                  <>
+                    <CoutureBloomSeal className="w-3.5 h-3.5" />
+                    <span>Unlock &amp; Send</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Link</span>
+                  </>
+                )}
               </button>
             </div>
 
@@ -4908,6 +5210,32 @@ export default function App() {
           setIsVaultModalOpen(false);
           setVaultCount(getSavedVaultBouquets().length);
         }}
+      />
+
+      {/* COUTURE STUDIO PASS, PPP CHECKOUT & SINGLE-USER PASS KEY MODAL */}
+      <StudioCheckoutModal
+        isOpen={isCheckoutModalOpen}
+        isDarkMode={isDarkMode}
+        triggerAction={checkoutTriggerAction}
+        bouquetCode={currentBouquetShortCode}
+        premiumInspection={currentPremiumInspection}
+        activePass={activeStudioPass}
+        onClose={() => setIsCheckoutModalOpen(false)}
+        onPassActivated={(newPass, resumeAction) => {
+          saveStoredStudioPass(newPass);
+          setActiveStudioPass(newPass);
+          if (resumeAction === 'share') {
+            setIsCheckoutModalOpen(false);
+            handleShareLink(true, newPass);
+          } else if (resumeAction === 'png') {
+            setIsCheckoutModalOpen(false);
+            performSvgPngDownload();
+          } else {
+            triggerToast(`Studio Pass ${newPass.passKey} activated ♥`);
+          }
+        }}
+        onPremiumConfigChanged={(nextCfg) => setPremiumAssetConfig(nextCfg)}
+        onToast={triggerToast}
       />
 
       {/* TOAST NOTIFICATION PILL */}

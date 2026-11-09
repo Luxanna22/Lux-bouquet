@@ -8,6 +8,7 @@ import {
 } from '../types/bouquet';
 
 export const SHOWCASE_EXPIRY_DAYS = 30;
+export const SHOWCASE_EXTENDED_EXPIRY_DAYS = 90;
 export const SHOWCASE_EXPIRY_MS = SHOWCASE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
 
 export interface ShowcaseStem {
@@ -27,7 +28,8 @@ export interface ShowcaseBouquetEntry {
   from: string; // Sender ("From ...")
   noteExcerpt: string;
   sharedAt: string; // ISO timestamp
-  isPremium?: boolean; // Eternal keepsakes never expire after 30 days
+  isPremium?: boolean; // Eternal keepsakes (30-Day Pass) never expire
+  retentionDays?: number; // 30 for standard free, 90 for paid Single Unlock / 7-Day Pass
   hasVoice?: boolean;
   voiceStyle?: VoiceKeepsakeStyle;
   voiceLabel?: string;
@@ -65,6 +67,7 @@ export interface ShowcaseFreshnessInfo {
   label: string;
   sharedAgoLabel: string;
   isExpiringSoon: boolean;
+  isExtendedPaid?: boolean;
 }
 
 export interface GarlandCurveItemTransform {
@@ -207,25 +210,32 @@ export function computeSingleLaceCarouselItemTransform(
 }
 
 /**
- * Determines whether a shared bouquet has passed its 30-day showcase window.
- * Bouquets marked `isPremium: true` never expire.
+ * Determines whether a shared bouquet has passed its showcase lifespan window:
+ * - Free bouquet (`retentionDays`: 30 default): expires after 30 days.
+ * - Paid Single Unlock / 7-Day Pass (`retentionDays`: 90): gets +60 bonus days and expires after 90 days.
+ * - 30-Day Eternal Pass (`isPremium: true`): never expires.
  */
 export function isShowcaseBouquetExpired(
-  entry: Pick<ShowcaseBouquetEntry, 'sharedAt' | 'isPremium'>,
+  entry: Pick<ShowcaseBouquetEntry, 'sharedAt' | 'isPremium' | 'retentionDays'>,
   nowMs: number = Date.now()
 ): boolean {
   if (entry.isPremium) return false;
   const sharedMs = Date.parse(entry.sharedAt);
   if (!Number.isFinite(sharedMs)) return false;
   const elapsedMs = nowMs - sharedMs;
-  return elapsedMs > SHOWCASE_EXPIRY_MS;
+  const retentionDays =
+    typeof entry.retentionDays === 'number' && entry.retentionDays > 0
+      ? entry.retentionDays
+      : SHOWCASE_EXPIRY_DAYS;
+  const expiryMs = retentionDays * 24 * 60 * 60 * 1000;
+  return elapsedMs > expiryMs;
 }
 
 /**
  * Returns true if the bouquet should be displayed on the Lace Garland Showcase.
  */
 export function isShowcaseBouquetActive(
-  entry: Pick<ShowcaseBouquetEntry, 'sharedAt' | 'isPremium'>,
+  entry: Pick<ShowcaseBouquetEntry, 'sharedAt' | 'isPremium' | 'retentionDays'>,
   nowMs: number = Date.now()
 ): boolean {
   return !isShowcaseBouquetExpired(entry, nowMs);
@@ -235,7 +245,7 @@ export function isShowcaseBouquetActive(
  * Computes human-readable freshness metadata for a bouquet on the drying line.
  */
 export function getShowcaseFreshnessInfo(
-  entry: Pick<ShowcaseBouquetEntry, 'sharedAt' | 'isPremium'>,
+  entry: Pick<ShowcaseBouquetEntry, 'sharedAt' | 'isPremium' | 'retentionDays'>,
   nowMs: number = Date.now()
 ): ShowcaseFreshnessInfo {
   const sharedMs = Date.parse(entry.sharedAt);
@@ -253,11 +263,18 @@ export function getShowcaseFreshnessInfo(
       label: 'Eternal keepsake',
       sharedAgoLabel,
       isExpiringSoon: false,
+      isExtendedPaid: true,
     };
   }
 
-  const remainingMs = Math.max(0, SHOWCASE_EXPIRY_MS - elapsedMs);
+  const retentionDays =
+    typeof entry.retentionDays === 'number' && entry.retentionDays > 0
+      ? entry.retentionDays
+      : SHOWCASE_EXPIRY_DAYS;
+  const expiryMs = retentionDays * 24 * 60 * 60 * 1000;
+  const remainingMs = Math.max(0, expiryMs - elapsedMs);
   const daysLeft = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+  const isExtendedPaid = retentionDays > SHOWCASE_EXPIRY_DAYS;
 
   return {
     daysLeft,
@@ -265,6 +282,7 @@ export function getShowcaseFreshnessInfo(
     label: `${daysLeft}d left`,
     sharedAgoLabel,
     isExpiringSoon: daysLeft <= 5,
+    isExtendedPaid,
   };
 }
 
@@ -406,7 +424,8 @@ export function convertVaultBouquetToShowcaseEntry(
       ? `“${rawMessage.slice(0, 68)}${rawMessage.length > 68 ? '…' : ''}”`
       : '“Wrapped by hand and hung on the lace line just for you.”',
     sharedAt: vaultItem.createdAt || new Date().toISOString(),
-    isPremium: false,
+    isPremium: Boolean(vaultItem.isPremium),
+    retentionDays: vaultItem.retentionDays ?? SHOWCASE_EXPIRY_DAYS,
     hasVoice: Boolean(vaultItem.hasVoice || snapshot?.voice?.audioDataUrl),
     voiceStyle: snapshot?.voice?.style || 'mixtape',
     voiceLabel: snapshot?.voice?.title || 'Voice Note',

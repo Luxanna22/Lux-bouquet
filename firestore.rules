@@ -1,49 +1,84 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: shared_bouquets
+    // Document ID: {code} (7-24 char alphanumeric short code)
+    // Fields:
+    //   - code: string (required, matches document ID)
+    //   - payload: string (required, compact #g=... or #b=... hash payload, max 900,000 chars)
+    //   - voiceAudioDataUrl: string (optional, base64 audio data URL, max 900,000 chars)
+    //   - voiceStyle: string (optional, max 32 chars)
+    //   - voiceTitle: string (optional, max 64 chars)
+    //   - voiceDurationSec: number (optional, 0..600)
+    //   - openCount: number (optional, 0..1000000)
+    //   - voicePlayCount: number (optional, 0..1000000)
+    //   - reaction: string (optional, max 32 chars)
+    //   - recipientReply: string (optional, max 240 chars)
+    //   - repliedAt: string (optional, max 64 chars)
+    //   - isPremium: bool (optional)
+    //   - retentionDays: number (optional, 1..36500)
+    //   - createdAt: string (required, ISO timestamp string, max 64 chars)
+    //
+    // Collection: studio_stats
+    // Document ID: global
+    //
+    // Collection: studio_passes
+    // Document ID: {passKey} (BLOOM-XXXX-XXXX)
+    // Fields:
+    //   - passKey: string (required, matches document ID)
+    //   - tier: string ('single' | 'pass_7d' | 'pass_30d')
+    //   - region: string ('PH' | 'INTL')
+    //   - createdAt: string (immutable)
+    //   - expiresAt: string (immutable)
+    //   - retentionDays: number (immutable)
+    //   - isEternalKeepsake: bool (immutable)
+    //   - primaryDeviceHash: string
+    //   - secondaryDeviceHash: string
+    //   - activeSessionNonce: string
+    //   - boundBouquetCode: string
+    //   - dailyUsageDate: string
+    //   - dailyUsageCount: number
+    //   - paymentProvider: string (immutable)
+    //   - paymentReference: string (immutable)
+    //   - signature: string
+    // ===============================================================
+
+    function isValidShortCode(code) {
+      return code is string && code.size() >= 7 && code.size() <= 24 && code.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function isValidId(id) {
-      return id is string && id.size() >= 7 && id.size() <= 24 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    function isValidSharedBouquet(data, docId) {
+    function isValidSharedBouquet(data, code) {
+      let allowedKeys = [
+        'code',
+        'payload',
+        'voiceAudioDataUrl',
+        'voiceStyle',
+        'voiceTitle',
+        'voiceDurationSec',
+        'openCount',
+        'voicePlayCount',
+        'reaction',
+        'recipientReply',
+        'repliedAt',
+        'isPremium',
+        'retentionDays',
+        'createdAt'
+      ];
       return data.keys().hasAll(['code', 'payload', 'createdAt']) &&
-        data.keys().hasOnly([
-          'code',
-          'payload',
-          'voiceAudioDataUrl',
-          'voiceStyle',
-          'voiceTitle',
-          'voiceDurationSec',
-          'openCount',
-          'voicePlayCount',
-          'reaction',
-          'recipientReply',
-          'repliedAt',
-          'createdAt'
-        ]) &&
-        data.code is string &&
-        data.code == docId &&
-        data.code.size() >= 7 &&
-        data.code.size() <= 24 &&
-        data.code.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.code == code &&
         data.payload is string &&
         data.payload.size() >= 3 &&
         data.payload.size() <= 900000 &&
+        data.createdAt is string &&
+        data.createdAt.size() >= 10 &&
+        data.createdAt.size() <= 64 &&
         (!('voiceAudioDataUrl' in data) || (data.voiceAudioDataUrl is string && data.voiceAudioDataUrl.size() <= 900000)) &&
-        (!('voiceStyle' in data) || (data.voiceStyle is string && data.voiceStyle.size() >= 1 && data.voiceStyle.size() <= 32)) &&
+        (!('voiceStyle' in data) || (data.voiceStyle is string && data.voiceStyle.size() <= 32)) &&
         (!('voiceTitle' in data) || (data.voiceTitle is string && data.voiceTitle.size() <= 64)) &&
         (!('voiceDurationSec' in data) || (data.voiceDurationSec is number && data.voiceDurationSec >= 0 && data.voiceDurationSec <= 600)) &&
         (!('openCount' in data) || (data.openCount is number && data.openCount >= 0 && data.openCount <= 1000000)) &&
@@ -51,26 +86,20 @@ service cloud.firestore {
         (!('reaction' in data) || (data.reaction is string && data.reaction.size() <= 32)) &&
         (!('recipientReply' in data) || (data.recipientReply is string && data.recipientReply.size() <= 240)) &&
         (!('repliedAt' in data) || (data.repliedAt is string && data.repliedAt.size() <= 64)) &&
-        data.createdAt is string &&
-        data.createdAt.size() >= 10 &&
-        data.createdAt.size() <= 64;
+        (!('isPremium' in data) || data.isPremium is bool) &&
+        (!('retentionDays' in data) || (data.retentionDays is number && data.retentionDays >= 1 && data.retentionDays <= 36500));
     }
 
     function isValidStudioStats(data) {
-      return data.keys().hasAll([
-          'bouquetsCreated',
-          'voiceNotesRecorded',
-          'bouquetsOpened',
-          'reactionsSent',
-          'updatedAt'
-        ]) &&
-        data.keys().hasOnly([
-          'bouquetsCreated',
-          'voiceNotesRecorded',
-          'bouquetsOpened',
-          'reactionsSent',
-          'updatedAt'
-        ]) &&
+      let allowedKeys = [
+        'bouquetsCreated',
+        'voiceNotesRecorded',
+        'bouquetsOpened',
+        'reactionsSent',
+        'updatedAt'
+      ];
+      return data.keys().hasAll(allowedKeys) &&
+        data.keys().hasOnly(allowedKeys) &&
         data.bouquetsCreated is number && data.bouquetsCreated >= 0 && data.bouquetsCreated <= 100000000 &&
         data.voiceNotesRecorded is number && data.voiceNotesRecorded >= 0 && data.voiceNotesRecorded <= 100000000 &&
         data.bouquetsOpened is number && data.bouquetsOpened >= 0 && data.bouquetsOpened <= 100000000 &&
@@ -78,33 +107,91 @@ service cloud.firestore {
         data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 64;
     }
 
+    function isValidStudioPass(data, passKey) {
+      let allowedKeys = [
+        'passKey',
+        'tier',
+        'region',
+        'createdAt',
+        'expiresAt',
+        'retentionDays',
+        'isEternalKeepsake',
+        'primaryDeviceHash',
+        'secondaryDeviceHash',
+        'activeSessionNonce',
+        'boundBouquetCode',
+        'dailyUsageDate',
+        'dailyUsageCount',
+        'paymentProvider',
+        'paymentReference',
+        'signature'
+      ];
+      return passKey is string &&
+        passKey.matches('^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$') &&
+        data.keys().hasAll(allowedKeys) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.passKey == passKey &&
+        (data.tier == 'single' || data.tier == 'pass_7d' || data.tier == 'pass_30d') &&
+        (data.region == 'PH' || data.region == 'INTL') &&
+        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64 &&
+        data.expiresAt is string && data.expiresAt.size() >= 10 && data.expiresAt.size() <= 64 &&
+        data.retentionDays is number && data.retentionDays >= 1 && data.retentionDays <= 36500 &&
+        data.isEternalKeepsake is bool &&
+        data.primaryDeviceHash is string && data.primaryDeviceHash.size() <= 64 &&
+        data.secondaryDeviceHash is string && data.secondaryDeviceHash.size() <= 64 &&
+        data.activeSessionNonce is string && data.activeSessionNonce.size() >= 8 && data.activeSessionNonce.size() <= 64 &&
+        data.boundBouquetCode is string && data.boundBouquetCode.size() <= 48 &&
+        data.dailyUsageDate is string && data.dailyUsageDate.size() == 10 &&
+        data.dailyUsageCount is number && data.dailyUsageCount >= 0 && data.dailyUsageCount <= 100 &&
+        data.paymentProvider is string && data.paymentProvider.size() <= 32 &&
+        data.paymentReference is string && data.paymentReference.size() <= 64 &&
+        data.signature is string && data.signature.size() >= 16 && data.signature.size() <= 128;
+    }
+
     match /shared_bouquets/{code} {
-      allow get: if isValidId(code);
+      // Public read by short code so any recipient can open their gift link without logging in
+      allow get: if isValidShortCode(code);
       allow list: if false;
-      allow create: if isValidId(code) && isValidSharedBouquet(incoming(), code);
-      allow update: if isValidId(code) &&
-        isValidSharedBouquet(incoming(), code) &&
-        incoming().code == existing().code &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'payload',
-          'voiceAudioDataUrl',
-          'voiceStyle',
-          'voiceTitle',
-          'voiceDurationSec',
-          'openCount',
-          'voicePlayCount',
-          'reaction',
-          'recipientReply',
-          'repliedAt'
-        ]);
+
+      // Anyone can register a valid short link payload; updates preserve immutable code/payload/createdAt
+      allow create: if isValidShortCode(code) && isValidSharedBouquet(request.resource.data, code);
+      allow update: if isValidShortCode(code) &&
+        isValidSharedBouquet(request.resource.data, code) &&
+        request.resource.data.code == resource.data.code &&
+        request.resource.data.payload == resource.data.payload &&
+        request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if false;
     }
 
     match /studio_stats/{statId} {
       allow get: if statId == 'global';
       allow list: if false;
-      allow create, update: if statId == 'global' && isValidStudioStats(incoming());
+      allow create: if statId == 'global' && isValidStudioStats(request.resource.data);
+      allow update: if statId == 'global' &&
+        isValidStudioStats(request.resource.data) &&
+        request.resource.data.bouquetsCreated >= resource.data.bouquetsCreated &&
+        request.resource.data.voiceNotesRecorded >= resource.data.voiceNotesRecorded &&
+        request.resource.data.bouquetsOpened >= resource.data.bouquetsOpened &&
+        request.resource.data.reactionsSent >= resource.data.reactionsSent;
+      allow delete: if false;
+    }
+
+    match /studio_passes/{passKey} {
+      // Exact Pass Key lookup only — never allow listing all passes!
+      allow get: if passKey.matches('^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$');
+      allow list: if false;
+
+      allow create: if isValidStudioPass(request.resource.data, passKey);
+      // Updates cannot escalate tier, extend expiresAt, or overwrite primaryDeviceHash once bound
+      allow update: if isValidStudioPass(request.resource.data, passKey) &&
+        request.resource.data.passKey == resource.data.passKey &&
+        request.resource.data.tier == resource.data.tier &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.expiresAt == resource.data.expiresAt &&
+        request.resource.data.retentionDays == resource.data.retentionDays &&
+        request.resource.data.isEternalKeepsake == resource.data.isEternalKeepsake &&
+        (resource.data.primaryDeviceHash == '' || request.resource.data.primaryDeviceHash == resource.data.primaryDeviceHash) &&
+        (resource.data.secondaryDeviceHash == '' || request.resource.data.secondaryDeviceHash == resource.data.secondaryDeviceHash);
       allow delete: if false;
     }
   }

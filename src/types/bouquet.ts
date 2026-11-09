@@ -480,6 +480,8 @@ export interface SavedVaultBouquet {
   recipientName?: string;
   senderName?: string;
   flowerCount?: number;
+  isPremium?: boolean;
+  retentionDays?: number;
 }
 
 export interface BouquetSnapshot {

@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { handlePaymentApiMiddleware } from './src/server/paymentApiMiddleware';
 
 const imageMemoryStore = new Map<string, Buffer>();
 
@@ -306,14 +307,30 @@ function handleShortenMiddleware(
   next();
 }
 
+function handlePaymentsMiddleware(
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: () => void
+) {
+  handlePaymentApiMiddleware(req, res)
+    .then((handled) => {
+      if (!handled) next();
+    })
+    .catch(() => {
+      next();
+    });
+}
+
 function bouquetImageApiPlugin(): Plugin {
   return {
     name: 'bouquet-image-api',
     configureServer(server) {
+      server.middlewares.use(handlePaymentsMiddleware);
       server.middlewares.use(handleBouquetImageMiddleware);
       server.middlewares.use(handleShortenMiddleware);
     },
     configurePreviewServer(server) {
+      server.middlewares.use(handlePaymentsMiddleware);
       server.middlewares.use(handleBouquetImageMiddleware);
       server.middlewares.use(handleShortenMiddleware);
     }
