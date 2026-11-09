@@ -266,17 +266,18 @@ export const RIBBON_STYLE_CATALOG: {
   id: RibbonStyle;
   label: string;
   subtitle: string;
+  defaultHex: string;
 }[] = [
-  { id: 'satin', label: 'Satin Bow', subtitle: 'Classic tailored loops' },
-  { id: 'lace', label: 'Eyelet Lace', subtitle: 'Scalloped bridal lace & pearl' },
-  { id: 'corset', label: 'Corset Tie', subtitle: 'Criss-cross ribbon waist' },
-  { id: 'double', label: 'Couture Rosette', subtitle: 'Multi-loop Parisian bow' },
-  { id: 'waxCord', label: 'Twine & Seal', subtitle: 'Artisan cord & wax emblem' },
-  { id: 'organza', label: 'Sheer Chiffon', subtitle: 'Billowy translucent veil' },
-  { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp' },
-  { id: 'chiffon', label: 'Chiffon Fringe', subtitle: 'Frayed raw-edge silk drape' },
-  { id: 'goldchain', label: 'Gold Chain', subtitle: 'Golden links & heart charm' },
-  { id: 'raffia', label: 'Botanical Raffia', subtitle: 'Woven palm knot & dried sprig' }
+  { id: 'satin', label: 'Satin Bow', subtitle: 'Classic tailored loops', defaultHex: '#E11D48' },
+  { id: 'lace', label: 'Eyelet Lace', subtitle: 'Scalloped bridal lace & pearl', defaultHex: '#F472B6' },
+  { id: 'corset', label: 'Corset Tie', subtitle: 'Criss-cross ribbon waist', defaultHex: '#BE185D' },
+  { id: 'double', label: 'Couture Rosette', subtitle: 'Multi-loop Parisian bow', defaultHex: '#EC4899' },
+  { id: 'waxCord', label: 'Twine & Seal', subtitle: 'Artisan cord & wax emblem', defaultHex: '#B4846C' },
+  { id: 'organza', label: 'Sheer Chiffon', subtitle: 'Billowy translucent veil', defaultHex: '#F9A8D4' },
+  { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp', defaultHex: '#9F1239' },
+  { id: 'chiffon', label: 'Chiffon Fringe', subtitle: 'Frayed raw-edge silk drape', defaultHex: '#D48C70' },
+  { id: 'goldchain', label: 'Gold Chain', subtitle: 'Golden links & heart charm', defaultHex: '#D97706' },
+  { id: 'raffia', label: 'Botanical Raffia', subtitle: 'Woven palm knot & dried sprig', defaultHex: '#C69C6D' }
 ];
 
 export type typeWrapStyle =

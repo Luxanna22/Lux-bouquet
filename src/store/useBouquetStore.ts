@@ -14,6 +14,8 @@ import {
   BouquetSnapshot,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
+  RIBBON_STYLE_CATALOG,
+  VOICE_KEEPSAKE_CATALOG,
   STARTER_TEMPLATES,
   INITIAL_ITEMS,
 } from '../types/bouquet';
@@ -27,6 +29,10 @@ import { decodeBouquetFromHash, isGiftShareHash } from '../lib/shareAndExport';
 export interface BouquetStoreState extends BouquetSnapshot {
   selectedId: string | null;
   lastNonPlainWrapStyle: typeWrapStyle;
+  hasCustomWrapColor: boolean;
+  hasCustomRibbonColor: boolean;
+  hasCustomCardColor: boolean;
+  hasCustomVoiceColor: boolean;
   past: BouquetSnapshot[];
   future: BouquetSnapshot[];
   // Actions
@@ -152,6 +158,10 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   wrapColor: INITIAL_STORE_STATE.wrapColor,
   ribbonColor: INITIAL_STORE_STATE.ribbonColor,
   ribbonStyle: INITIAL_STORE_STATE.ribbonStyle,
+  hasCustomWrapColor: false,
+  hasCustomRibbonColor: false,
+  hasCustomCardColor: Boolean(INITIAL_STORE_STATE.card?.customBg || INITIAL_STORE_STATE.card?.customAccent),
+  hasCustomVoiceColor: false,
   card: INITIAL_STORE_STATE.card,
   voice: INITIAL_STORE_STATE.voice,
   lock: INITIAL_STORE_STATE.lock,
@@ -440,10 +450,13 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
 
   setWrapStyle: (wrapStyle) => {
     const snap = takeSnapshot(get());
+    const meta = WRAPPER_CATALOG.find((w) => w.id === wrapStyle);
     set((state) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
       wrapStyle,
+      wrapColor: state.hasCustomWrapColor ? state.wrapColor : (meta?.defaultHex ?? state.wrapColor),
+      ribbonColor: state.hasCustomRibbonColor ? state.ribbonColor : (meta?.defaultRibbon ?? state.ribbonColor),
       lastNonPlainWrapStyle: wrapStyle !== 'plain' ? wrapStyle : state.lastNonPlainWrapStyle
     }));
   },
@@ -453,7 +466,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     set((state) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
-      wrapColor
+      wrapColor,
+      hasCustomWrapColor: true
     }));
   },
 
@@ -462,29 +476,59 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     set((state) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
-      ribbonColor
+      ribbonColor,
+      hasCustomRibbonColor: true
     }));
   },
 
   setRibbonStyle: (ribbonStyle) => {
     const snap = takeSnapshot(get());
+    const meta = RIBBON_STYLE_CATALOG.find((r) => r.id === ribbonStyle);
     set((state) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
-      ribbonStyle
+      ribbonStyle,
+      ribbonColor: state.hasCustomRibbonColor ? state.ribbonColor : (meta?.defaultHex ?? state.ribbonColor)
     }));
   },
 
   updateCard: (patch) => {
-    set((state) => ({
-      card: { ...state.card, ...patch }
-    }));
+    set((state) => {
+      const nextCard = { ...state.card, ...patch };
+      const touchedCustomColor = 'customBg' in patch || 'customAccent' in patch;
+      const nextHasCustomCardColor = touchedCustomColor
+        ? Boolean(nextCard.customBg || nextCard.customAccent)
+        : state.hasCustomCardColor;
+      if (patch.theme !== undefined && !nextHasCustomCardColor) {
+        nextCard.customBg = undefined;
+        nextCard.customAccent = undefined;
+      }
+      return {
+        card: nextCard,
+        hasCustomCardColor: nextHasCustomCardColor
+      };
+    });
   },
 
   updateVoice: (patch) => {
-    set((state) => ({
-      voice: { ...(state.voice || DEFAULT_VOICE_KEEPSAKE), ...patch }
-    }));
+    set((state) => {
+      const currentVoice = state.voice || DEFAULT_VOICE_KEEPSAKE;
+      const nextVoice = { ...currentVoice, ...patch };
+      const isStyleSwitch = patch.style !== undefined && patch.style !== currentVoice.style;
+      const touchedCustomColor = !isStyleSwitch && ('primaryColor' in patch || 'accentColor' in patch);
+      const nextHasCustomVoiceColor = touchedCustomColor ? true : state.hasCustomVoiceColor;
+      if (patch.style !== undefined && !nextHasCustomVoiceColor) {
+        const meta = VOICE_KEEPSAKE_CATALOG.find((v) => v.id === patch.style);
+        if (meta) {
+          nextVoice.primaryColor = meta.defaultPrimary;
+          nextVoice.accentColor = meta.defaultAccent;
+        }
+      }
+      return {
+        voice: nextVoice,
+        hasCustomVoiceColor: nextHasCustomVoiceColor
+      };
+    });
   },
 
   updateLock: (patch) => {
@@ -612,6 +656,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       wrapStyle: theme.wrapStyle,
       wrapColor: theme.wrapColor,
       ribbonColor: theme.ribbon,
+      hasCustomWrapColor: false,
+      hasCustomRibbonColor: false,
       selectedId: generated[generated.length - 1].id
     }));
   },
@@ -622,6 +668,14 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
       items: [],
+      wrapStyle: 'kraft',
+      wrapColor: '#C8B9AE',
+      ribbonStyle: 'satin',
+      ribbonColor: '#E11D48',
+      hasCustomWrapColor: false,
+      hasCustomRibbonColor: false,
+      hasCustomCardColor: false,
+      hasCustomVoiceColor: false,
       voice: { ...DEFAULT_VOICE_KEEPSAKE },
       lock: { ...DEFAULT_BOUQUET_LOCK },
       selectedId: null
@@ -661,6 +715,10 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   loadSnapshot: (snap) => {
     set({
       ...snap,
+      hasCustomWrapColor: false,
+      hasCustomRibbonColor: false,
+      hasCustomCardColor: Boolean(snap.card?.customBg || snap.card?.customAccent),
+      hasCustomVoiceColor: false,
       voice: snap.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...snap.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       lock: snap.lock ? { ...DEFAULT_BOUQUET_LOCK, ...snap.lock } : { ...DEFAULT_BOUQUET_LOCK },
       selectedId: snap.items[0]?.id ?? null,

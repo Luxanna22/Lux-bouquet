@@ -240,13 +240,23 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     // Default / fallback mode when not flower, card, voice, or ribbon is wrapper
     const isWrapperMode = !isFlowerMode && !isCardMode && !isVoiceMode && !isRibbonMode;
 
+    const simplifiedCategoryLabel = isFlowerMode
+      ? 'Flower'
+      : isCardMode
+      ? 'Card'
+      : isVoiceMode
+      ? 'Voice'
+      : isRibbonMode
+      ? 'Ribbon'
+      : 'Wrapper';
+
     return (
       <div className="space-y-3" role="region" aria-label="Unified Color Picker">
-        {/* SINGLE DYNAMIC DETECTED-COLOR BAR (Shows just the active item's pic + its detected colors!) */}
-        <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-2xl bg-stone-50/90 dark:bg-stone-800/60 border border-stone-200/80 dark:border-stone-700/80">
-          {/* Left: Just the active item's miniature picture (no long name label) */}
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-white dark:bg-[#1E1C1A] border border-stone-200/80 dark:border-stone-700 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+        {/* SINGLE DYNAMIC DETECTED-COLOR BAR (Shows the active item's thumbnail, simplified category label, and detected colors) */}
+        <div className="flex items-center justify-between gap-2.5 px-3 py-2 rounded-2xl bg-[#FAF4EE]/80 dark:bg-[#2E2522]/90 border border-dashed border-[#DECBB9] dark:border-[#5C4B47]">
+          {/* Left: Miniature picture + simplified category label (Flower, Card, Voice, Ribbon, Wrapper) */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#FFFDF9] dark:bg-[#231C19] border border-[#E6D6C7] dark:border-[#4E403B] flex items-center justify-center shrink-0 overflow-hidden">
               {isFlowerMode && targetFlower ? (
                 <svg viewBox="-55 -62 110 124" className="w-7 h-7">
                   <FlowerRenderer
@@ -280,6 +290,9 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
                 />
               )}
             </div>
+            <span className="text-xs font-medium text-[#2A201D] dark:text-[#FBF6F1] truncate">
+              {simplifiedCategoryLabel}
+            </span>
           </div>
 
           {/* Right: Detected Color Circles for that Active Item */}

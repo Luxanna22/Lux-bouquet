@@ -1156,19 +1156,19 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               )}
             </button>
 
-            {/* Mobile Navigation Drawer Toggle (< 640px) */}
+            {/* Mobile Navigation Drawer Toggle (< 640px) — Quiet borderless icon so Saved Bouquets is the only pill */}
             <button
               type="button"
               onClick={() => setIsMobileNavOpen((prev) => !prev)}
               aria-label="Toggle navigation menu"
               aria-expanded={isMobileNavOpen}
-              className={`sm:hidden w-8 h-8 rounded-full border border-dashed flex items-center justify-center transition-colors cursor-pointer ${
+              className={`sm:hidden p-1.5 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
                 isDarkMode
-                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                  ? 'text-[#E6B89C] hover:bg-[#483C38]'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
               }`}
             >
-              <svg viewBox="0 0 18 18" className="w-3.5 h-3.5 stroke-current" fill="none" strokeWidth="1.5" strokeLinecap="round">
+              <svg viewBox="0 0 18 18" className="w-4 h-4 stroke-current" fill="none" strokeWidth="1.5" strokeLinecap="round">
                 {isMobileNavOpen ? (
                   <>
                     <path d="M 4.5,4.5 L 13.5,13.5" />
@@ -1189,7 +1189,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {isMobileNavOpen && (
           <nav
             aria-label="Mobile navigation"
-            className={`sm:hidden pointer-events-auto mt-2 mx-auto max-w-xs rounded-[20px] border border-dashed px-4 py-3 shadow-[0_12px_32px_rgba(35,28,24,0.12)] backdrop-blur-md flex items-center justify-around gap-2 transition-all ${
+            className={`sm:hidden pointer-events-auto mt-2 mx-auto max-w-xs rounded-[20px] border border-dashed px-4 py-2.5 shadow-[0_12px_32px_rgba(35,28,24,0.12)] backdrop-blur-md flex items-center justify-around gap-2 transition-all ${
               isDarkMode
                 ? 'bg-[#362D2A]/96 border-[#5E4E49] text-[#FBF6F1]'
                 : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#231C18]'

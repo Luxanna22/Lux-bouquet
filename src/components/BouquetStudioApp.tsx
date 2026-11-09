@@ -1224,47 +1224,109 @@ export default function App() {
               so the recipient focuses purely on the bouquet and card.
               ===================================================================== */}
           {!isGiftView && !isPreviewMode && (
-        <div className="px-2.5 sm:px-4 pt-2 pb-1 shrink-0 z-30">
+        <div className="px-2.5 sm:px-5 pt-2 pb-1 shrink-0 z-30">
           <div
-            className={`h-11 sm:h-12 px-2.5 sm:px-3.5 rounded-full border shadow-sm flex items-center justify-between gap-1.5 transition-colors ${
+            className={`h-11 sm:h-12 px-3 sm:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-2 transition-colors ${
               isDarkMode
                 ? 'bg-[#352C29]/95 border-[#4E423E] text-[#FBF6F1]'
-                : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
+                : 'bg-[#FFFDF9]/95 border-[#EFE6DD] text-[#231C18]'
             }`}
           >
-            {/* Left Brand Logo + Home & My Bouquets Vault + Compact Utility Icon Cluster */}
-            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+            {/* Left: Brand Wordmark (Returns to Home) */}
+            <button
+              type="button"
+              onClick={() => setShowLandingPage(true)}
+              title="Back to Send A Bouquet Home"
+              aria-label="Open Send A Bouquet Home Page"
+              className="flex items-center gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
+            >
+              <BrandLogoMark className="w-6 h-6 sm:w-7 sm:h-7" isDarkMode={isDarkMode} />
+              <span
+                className="hidden sm:inline text-lg font-semibold tracking-tight whitespace-nowrap"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                Send A Bouquet
+              </span>
+            </button>
+
+            {/* Center: Quiet History & Reset Capsule */}
+            <div
+              className={`flex items-center gap-0.5 rounded-full px-1 py-0.5 border border-dashed shrink-0 ${
+                isDarkMode
+                  ? 'bg-[#2B2321]/80 border-[#52433E]'
+                  : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
+              }`}
+            >
               <button
                 type="button"
-                onClick={() => setShowLandingPage(true)}
-                title="Back to Send A Bouquet Home"
-                aria-label="Open Send A Bouquet Home Page"
-                className="flex items-center gap-2 pl-1 pr-2 sm:pr-3 mr-0.5 sm:mr-1 border-r border-stone-200/80 dark:border-stone-800 select-none hover:opacity-85 transition cursor-pointer"
+                onClick={() => {
+                  undo();
+                  triggerToast('Undid last change');
+                }}
+                disabled={past.length === 0}
+                aria-label="Undo"
+                title="Undo"
+                className="w-7 h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
               >
-                <BrandLogoMark className="w-7 h-7 sm:w-8 sm:h-8" isDarkMode={isDarkMode} />
-                <span
-                  className="hidden lg:inline text-base font-semibold tracking-tight text-[#1C1917] dark:text-stone-100 whitespace-nowrap"
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                >
-                  Send A Bouquet
-                </span>
+                <Undo2 className="w-3.5 h-3.5" />
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  redo();
+                  triggerToast('Redid change');
+                }}
+                disabled={future.length === 0}
+                aria-label="Redo"
+                title="Redo"
+                className="w-7 h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </button>
+              <span
+                aria-hidden="true"
+                className={`w-[1px] h-3.5 mx-0.5 ${
+                  isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  clearBouquet();
+                  triggerToast('Started over with an empty bouquet');
+                }}
+                aria-label="Reset bouquet and start over"
+                title="Start Over"
+                className="h-7 px-2 rounded-full text-[11px] font-medium flex items-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span className="hidden md:inline">Reset</span>
+              </button>
+            </div>
 
+            {/* Right: Saved Bouquets + Ambient Controls + Primary Share Button */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsVaultModalOpen(true)}
-                aria-label="Open My Sent Bouquets and Open Receipts"
-                title="My Sent Bouquets & Open Receipts"
-                className={`h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 border shrink-0 active:scale-95 transition cursor-pointer ${
+                aria-label="Open Saved Bouquets"
+                title="Saved Bouquets"
+                className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1.5 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
-                    ? 'bg-[#292524] border-stone-700 text-stone-200 hover:border-[#B4846C]'
-                    : 'bg-stone-100/90 border-stone-200/90 text-stone-700 hover:border-[#B4846C]'
+                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                <BookOpen className="w-3 h-3 text-[#B4846C]" />
-                <span className="hidden md:inline">My Bouquets</span>
+                <span className="sm:hidden">Saved</span>
+                <span className="hidden sm:inline">Saved Bouquets</span>
                 {vaultCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-[#B4846C] text-white text-[10px] font-semibold">
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                      isDarkMode
+                        ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
+                        : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                    }`}
+                  >
                     {vaultCount}
                   </span>
                 )}
@@ -1272,153 +1334,45 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={handleExportPng}
-                aria-label="Save PNG image"
-                title="Save PNG image"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
                 onClick={handleToggleMusic}
                 aria-pressed={isMusicPlaying}
                 aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                 title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition ${
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
                   isMusicPlaying
                     ? 'bg-[#B4846C]/15 text-[#B4846C]'
-                    : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
+                    : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36]'
                 }`}
               >
-                {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               </button>
+
               <button
                 type="button"
                 onClick={() => setIsDarkMode((prev) => !prev)}
                 aria-label="Toggle theme"
                 title="Toggle theme"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
               >
                 <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
-                  {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
+                  {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
                 </span>
               </button>
-            </div>
-
-            {/* Grouped Undo / Redo Pill + Prominent Start Over Button */}
-            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              <div
-                className={`flex items-center rounded-full p-0.5 shrink-0 ${
-                  isDarkMode ? 'bg-[#292524]' : 'bg-stone-100'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    undo();
-                    triggerToast('Undid last change');
-                  }}
-                  disabled={past.length === 0}
-                  aria-label="Undo"
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 disabled:opacity-30 active:scale-95 transition"
-                >
-                  <Undo2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    redo();
-                    triggerToast('Redid change');
-                  }}
-                  disabled={future.length === 0}
-                  aria-label="Redo"
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-300 disabled:opacity-30 active:scale-95 transition"
-                >
-                  <Redo2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
 
               <button
                 type="button"
-                onClick={() => {
-                  clearBouquet();
-                  triggerToast('Started over with an empty bouquet');
-                }}
-                aria-label="Start over and clear bouquet"
-                title="Start Over (Reset Bouquet)"
-                className={`h-7 px-2.5 rounded-full text-[11px] font-medium flex items-center gap-1 border shrink-0 active:scale-95 transition ${
+                onClick={() => setIsShareModalOpen(true)}
+                aria-label="Share bouquet"
+                title="Share bouquet"
+                className={`h-7 sm:h-8 px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
-                    ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-red-400 hover:text-red-300'
-                    : 'bg-stone-100/90 border-stone-200/90 text-stone-600 hover:border-red-300 hover:text-red-600'
+                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
                 }`}
               >
-                <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">Start Over</span>
+                <span>Share</span>
               </button>
             </div>
-
-            {/* Contextual Selection Hint / Active Stem Pill */}
-            <div className="flex-1 min-w-0 flex items-center justify-center px-1">
-              {selectedItem ? (
-                <button
-                  type="button"
-                  onClick={() => handleMobileFloatingTool('stem')}
-                  className={`max-w-full px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 truncate transition ${
-                    mobilePopover === 'stem' || mobilePopover === 'color'
-                      ? 'bg-[#B4846C] text-white'
-                      : 'bg-stone-100/80 dark:bg-[#292524] text-stone-700 dark:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-stone-700'
-                  }`}
-                  title="Tap to adjust stem length, size & tilt"
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15"
-                    style={{ backgroundColor: selectedItem.petalColor }}
-                  />
-                  <span className="truncate">{selectedMeta?.name || selectedItem.type}</span>
-                </button>
-              ) : mobilePopover === 'color' ? (
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 bg-stone-100/80 dark:bg-[#292524] text-stone-700 dark:text-stone-200 select-none">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/15"
-                    style={{
-                      backgroundColor:
-                        activeColorTarget === 'ribbon'
-                          ? ribbonColor
-                          : activeColorTarget === 'card' || activeColorTarget === 'cardAccent'
-                          ? card.customBg || getCardThemePalette(card.theme).bg
-                          : activeColorTarget === 'voicePrimary' || activeColorTarget === 'voiceAccent'
-                          ? voice.primaryColor
-                          : wrapColor
-                    }}
-                  />
-                  <span>
-                    {activeColorTarget === 'ribbon'
-                      ? 'Ribbon'
-                      : activeColorTarget === 'card' || activeColorTarget === 'cardAccent'
-                      ? 'Card'
-                      : activeColorTarget === 'voicePrimary' || activeColorTarget === 'voiceAccent'
-                      ? 'Voice'
-                      : 'Wrapper'}
-                  </span>
-                </span>
-              ) : (
-                <span className="text-[11px] sm:text-xs text-stone-400 dark:text-stone-500 truncate select-none">
-                  Select item to edit
-                </span>
-              )}
-            </div>
-
-            {/* Right Primary Share Pill Button */}
-            <button
-              type="button"
-              onClick={() => setIsShareModalOpen(true)}
-              aria-label="Share bouquet"
-              title="Share bouquet"
-              className="h-8 px-4 rounded-full bg-gradient-to-b from-[#c5967e] to-[#B4846C] hover:from-[#B4846C] hover:to-[#9e7059] text-white shadow-sm flex items-center justify-center shrink-0 active:scale-95 transition"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
       )}
@@ -2018,15 +1972,6 @@ export default function App() {
                       }`}
                     >
                       <PenLine className="w-4 h-4" />
-                      <span
-                        className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold shadow-xs ${
-                          mobilePopover === 'card'
-                            ? 'bg-white text-[#B4846C]'
-                            : 'bg-[#B4846C] text-white'
-                        }`}
-                      >
-                        ✦
-                      </span>
                     </button>
 
                     <button
@@ -2121,87 +2066,47 @@ export default function App() {
                 aria-hidden={!mobilePopover}
                 className={`absolute left-2.5 sm:left-4 top-2 sm:top-3 ${
                   mobilePopover === 'layers' ? 'bottom-3 sm:bottom-4' : 'max-h-[calc(100%-1.5rem)]'
-                } z-30 w-[282px] sm:w-[320px] max-w-[calc(100vw-4.5rem)] rounded-2xl border shadow-xl backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
+                } z-30 w-[276px] sm:w-[310px] max-w-[calc(100vw-4.5rem)] rounded-[22px] border border-dashed shadow-[0_16px_42px_rgba(28,20,16,0.14)] backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
                   isDarkMode
-                    ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
-                    : 'bg-white/95 border-stone-200/90 text-[#1C1917]'
+                    ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#2A201D]'
                 } ${
                   mobilePopover
                     ? 'translate-x-0 opacity-100'
                     : '-translate-x-[calc(100%+1.5rem)] opacity-0 pointer-events-none'
                 }`}
               >
-                {/* Side Drawer Top Bar: Mode Switcher Pills (Color | Stem | Layers | Card | Voice) + Slide-Left Collapse Button */}
-                <div className="flex items-center justify-between gap-1 px-2 py-2 border-b border-stone-200/80 dark:border-stone-800 shrink-0">
-                  <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('color')}
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
-                        mobilePopover === 'color'
-                          ? 'bg-[#B4846C] text-white'
-                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                      }`}
-                    >
-                      <Palette className="w-3 h-3" />
-                      <span>Color</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('stem')}
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
-                        mobilePopover === 'stem'
-                          ? 'bg-[#B4846C] text-white'
-                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                      }`}
-                    >
-                      <Sliders className="w-3 h-3" />
-                      <span>Stem</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('layers')}
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
-                        mobilePopover === 'layers'
-                          ? 'bg-[#B4846C] text-white'
-                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                      }`}
-                    >
-                      <Layers className="w-3 h-3" />
-                      <span>Layers</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('card')}
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
-                        mobilePopover === 'card'
-                          ? 'bg-[#B4846C] text-white'
-                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                      }`}
-                    >
-                      <PenLine className="w-3 h-3" />
-                      <span>Card</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('voice')}
-                      className={`px-2 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
-                        mobilePopover === 'voice'
-                          ? 'bg-[#B4846C] text-white'
-                          : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                      }`}
-                    >
-                      <Mic className="w-3 h-3" />
-                      <span>Voice</span>
-                    </button>
-                  </div>
+                {/* Clean Stationary Header: Active Tool Title + Slide-Closed Button */}
+                <div
+                  className={`flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-dashed shrink-0 ${
+                    isDarkMode ? 'border-[#4E403B]' : 'border-[#EADFD4]'
+                  }`}
+                >
+                  <h3
+                    className="text-lg font-medium tracking-tight"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    {mobilePopover === 'color'
+                      ? 'Palette & Colors'
+                      : mobilePopover === 'stem'
+                      ? 'Stem Adjustment'
+                      : mobilePopover === 'layers'
+                      ? 'Bouquet Layers'
+                      : mobilePopover === 'card'
+                      ? 'Greeting Card'
+                      : 'Voice Keepsake'}
+                  </h3>
 
                   <button
                     type="button"
                     onClick={() => setMobilePopover(null)}
                     aria-label="Slide drawer closed"
-                    title="Slide panel closed"
-                    className="p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-[#1C1917] dark:text-stone-400 dark:hover:text-white shrink-0 transition"
+                    title="Close panel"
+                    className={`p-1.5 rounded-full transition cursor-pointer ${
+                      isDarkMode
+                        ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                        : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4]'
+                    }`}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
@@ -2230,54 +2135,52 @@ export default function App() {
                   )}
 
                   {mobilePopover === 'layers' && (
-                    <LayerManagerPanel
-                      isEmbeddedInSidebar
-                      onClose={() => setMobilePopover(null)}
-                    />
+                    <LayerManagerPanel isEmbeddedInSidebar />
                   )}
 
                   {mobilePopover === 'card' && (
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-stone-500 dark:text-stone-400">
-                          Card Note
+                        <span className="text-xs font-medium text-[#7D6B60] dark:text-[#C2B0A6]">
+                          Note on bouquet
                         </span>
                         <button
                           type="button"
                           onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
                           title={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
                           aria-label={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
-                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium flex items-center gap-1 shrink-0 transition ${
+                          className={`px-2.5 py-0.5 rounded-full border border-dashed text-[11px] font-medium flex items-center gap-1 shrink-0 transition cursor-pointer ${
                             !card.visibleOnStage
-                              ? 'bg-rose-50 border-rose-200 text-rose-500 dark:bg-rose-950/50 dark:border-rose-800 dark:text-rose-400'
+                              ? 'border-rose-300/80 text-rose-600 dark:border-rose-800 dark:text-rose-300'
                               : isDarkMode
-                              ? 'border-stone-700 bg-[#292524] text-stone-300'
-                              : 'border-stone-200 bg-stone-50 text-stone-600'
+                              ? 'border-[#5C4B47] bg-[#2B2321] text-[#E6D6C7]'
+                              : 'border-[#DECBB9] bg-[#FAF4EE] text-[#5C4438]'
                           }`}
                         >
                           {card.visibleOnStage ? (
                             <>
-                              <Eye className="w-3.5 h-3.5" />
+                              <Eye className="w-3 h-3" />
                               <span>Visible</span>
                             </>
                           ) : (
                             <>
-                              <EyeOff className="w-3.5 h-3.5" />
+                              <EyeOff className="w-3 h-3" />
                               <span>Hidden</span>
                             </>
                           )}
                         </button>
                       </div>
 
-                      {/* Card Text Inputs — No Placeholders or Labels for For, Message, and From */}
+                      {/* Card Text Inputs with Placeholders for Recipient, Message Body, and Sender */}
                       <div className="space-y-2">
                         <input
                           type="text"
                           maxLength={32}
                           value={card.to}
+                          placeholder="Recipient (e.g., My Dearest)"
                           onChange={(e) => updateCard({ to: e.target.value })}
                           aria-label="Recipient"
-                          className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
+                          className="w-full px-3 py-1.5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] placeholder:text-[#9A877B]/75"
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                         />
 
@@ -2286,12 +2189,13 @@ export default function App() {
                             rows={4}
                             maxLength={600}
                             value={card.message}
+                            placeholder="Write your heartfelt message..."
                             onChange={(e) => updateCard({ message: e.target.value })}
                             aria-label="Card message"
-                            className="w-full px-3 py-1.5 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto"
+                            className="w-full px-3 py-1.5 pb-5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto placeholder:text-[#9A877B]/75"
                             style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                           />
-                          <span className="absolute bottom-1.5 right-2.5 text-[10px] text-stone-400 dark:text-stone-500 pointer-events-none">
+                          <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
                             {card.message.length}/600
                           </span>
                         </div>
@@ -2300,9 +2204,10 @@ export default function App() {
                           type="text"
                           maxLength={32}
                           value={card.from}
+                          placeholder="Sender (e.g., Yours Always)"
                           onChange={(e) => updateCard({ from: e.target.value })}
                           aria-label="Sender"
-                          className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
+                          className="w-full px-3 py-1.5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] placeholder:text-[#9A877B]/75"
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                         />
                       </div>
@@ -2593,26 +2498,8 @@ export default function App() {
                 })}
               </div>
 
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearBouquet();
-                    triggerToast('Started over with an empty bouquet');
-                  }}
-                  aria-label="Reset bouquet and start over"
-                  title="Reset / Start Over"
-                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border shrink-0 transition active:scale-95 ${
-                    isDarkMode
-                      ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-red-400 hover:text-red-300'
-                      : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-red-300 hover:text-red-600'
-                  }`}
-                >
-                  <RotateCcw className="w-3 h-3 text-[#B4846C]" />
-                  <span>Reset</span>
-                </button>
-
-                {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section (Phone & Desktop) */}
+              <div className="flex items-center shrink-0">
+                {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section */}
                 <button
                   type="button"
                   onClick={() => setIsDesktopDockCollapsed((prev) => !prev)}
@@ -2627,13 +2514,13 @@ export default function App() {
                       ? 'Expand tray'
                       : 'Collapse tray down'
                   }
-                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border shrink-0 transition ${
+                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border border-dashed shrink-0 transition cursor-pointer ${
                     isDarkMode
-                      ? 'bg-[#292524] border-stone-700 text-stone-300 hover:border-[#B4846C] hover:text-white'
-                      : 'bg-stone-50 border-stone-200 text-stone-600 hover:border-[#B4846C] hover:text-[#1C1917]'
+                      ? 'bg-[#2B2321] border-[#52433E] text-[#D8C7BE] hover:border-[#B4846C] hover:text-white'
+                      : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#6E5D54] hover:border-[#B4846C] hover:text-[#1C1917]'
                   }`}
                 >
-                  <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show Tray' : 'Hide Tray'}</span>
+                  <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show' : 'Hide'}</span>
                   {isDesktopDockCollapsed ? (
                     <ChevronUp className="w-3.5 h-3.5 text-[#B4846C]" />
                   ) : (
@@ -2836,7 +2723,7 @@ export default function App() {
                               : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
                           }`}
                         >
-                          <MiniRibbonBowSVG hex="#B4846C" styleType={rs.id} />
+                          <MiniRibbonBowSVG hex={rs.defaultHex} styleType={rs.id} />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
                           {rs.label}
@@ -2904,8 +2791,6 @@ export default function App() {
                         >
                           <MiniCardShapeSVG
                             theme={th.id}
-                            customBg="#FFFDF9"
-                            customAccent="#B4846C"
                           />
                         </div>
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
@@ -2986,13 +2871,7 @@ export default function App() {
                           const isSwitchingStyle = voice.style !== vk.id;
                           updateVoice({
                             style: vk.id,
-                            ...(isSwitchingStyle
-                              ? {
-                                  primaryColor: vk.defaultPrimary,
-                                  accentColor: vk.defaultAccent,
-                                  title: vk.defaultTitle,
-                                }
-                              : {}),
+                            ...(isSwitchingStyle ? { title: vk.defaultTitle } : {}),
                             visibleOnStage: true,
                           });
                           setActiveColorTarget('voicePrimary');
@@ -3417,13 +3296,14 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* Card Text Inputs — No Placeholders or Labels for For, Message, and From */}
+                  {/* Card Text Inputs with Placeholders for Recipient, Message Body, and Sender */}
                   <div className="space-y-3 p-3.5 rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1C1A]">
                     <div>
                       <input
                         type="text"
                         maxLength={22}
                         value={card.to}
+                        placeholder="Recipient (e.g., My Dearest)"
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ to: e.target.value })}
                         aria-label="Recipient"
@@ -3437,6 +3317,7 @@ export default function App() {
                         rows={3}
                         maxLength={86}
                         value={card.message}
+                        placeholder="Write your heartfelt message..."
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ message: e.target.value })}
                         aria-label="Card message"
@@ -3450,6 +3331,7 @@ export default function App() {
                         type="text"
                         maxLength={20}
                         value={card.from}
+                        placeholder="Sender (e.g., Yours Always)"
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ from: e.target.value })}
                         aria-label="Sender"
@@ -3751,13 +3633,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Card Text Inputs — No Placeholders or Labels for For, Message, and From */}
+            {/* Card Text Inputs with Placeholders */}
             <div className="space-y-2.5">
               <div>
                 <input
                   type="text"
                   maxLength={22}
                   value={card.to}
+                  placeholder="Recipient (e.g., My Dearest)"
                   onChange={(e) => updateCard({ to: e.target.value })}
                   aria-label="Recipient"
                   className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
@@ -3769,6 +3652,7 @@ export default function App() {
                   rows={3}
                   maxLength={86}
                   value={card.message}
+                  placeholder="Write your heartfelt message..."
                   onChange={(e) => updateCard({ message: e.target.value })}
                   aria-label="Card message"
                   className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
@@ -3780,6 +3664,7 @@ export default function App() {
                   type="text"
                   maxLength={20}
                   value={card.from}
+                  placeholder="Sender (e.g., Yours Always)"
                   onChange={(e) => updateCard({ from: e.target.value })}
                   aria-label="Sender"
                   className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
@@ -3799,65 +3684,112 @@ export default function App() {
         </div>
       )}
 
-      {/* SHARE / SEND MODAL DIALOG (Includes Unwrap Lock Rituals & Short Link UI) */}
+      {/* SHARE / SEND MODAL DIALOG — Minimal Luxury Stationery Design */}
       {isShareModalOpen && (
         <div
           role="dialog"
           aria-modal="true"
+          aria-label="Send Your Bouquet"
           onClick={() => setIsShareModalOpen(false)}
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-md rounded-2xl p-5 shadow-xl border border-stone-200 dark:border-stone-800 relative max-h-[90vh] overflow-y-auto ${
+            className={`w-full max-w-md rounded-[26px] p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.18)] border border-dashed relative max-h-[88vh] overflow-y-auto transition-colors ${
               isDarkMode
-                ? 'bg-[#1E1C1A] text-stone-100'
-                : 'bg-white text-[#1C1917]'
+                ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
+                : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
             }`}
           >
             <button
               type="button"
               onClick={() => setIsShareModalOpen(false)}
-              className="absolute top-3.5 right-3.5 p-1.5 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
+              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+                isDarkMode
+                  ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                  : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4]'
+              }`}
               aria-label="Close dialog"
             >
               <X className="w-4 h-4" />
             </button>
 
             <h3
-              className="text-xl font-medium tracking-tight"
-              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight"
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              Save &amp; Send Bouquet
+              Send Your Bouquet
             </h3>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 mb-4">
-              100% free &amp; account-free gift link — choose when your recipient can unwrap it
+            <p
+              className={`text-xs mt-0.5 mb-4 ${
+                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+              }`}
+            >
+              Share a private gift link with your recipient
             </p>
 
-            {/* UNWRAP LOCK RITUAL SELECTOR */}
+            {/* Primary Shortened Gift Link Bar */}
             <div
-              className={`p-3 rounded-xl border mb-4 space-y-3 ${
+              className={`flex items-center gap-1.5 p-1.5 rounded-2xl border border-dashed mb-4 ${
                 isDarkMode
-                  ? 'bg-[#141211] border-stone-800'
-                  : 'bg-stone-50/80 border-stone-200/80'
+                  ? 'bg-[#2B2321] border-[#544540]'
+                  : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
+              }`}
+            >
+              <input
+                type="text"
+                readOnly
+                aria-label="Short gift link"
+                value={isShorteningUrl ? 'Preparing link...' : shortShareUrl || getShareUrl(true)}
+                onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                className={`flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none truncate ${
+                  isDarkMode ? 'text-[#E6D6C7]' : 'text-[#5C4438]'
+                }`}
+              />
+              <button
+                type="button"
+                disabled={isShorteningUrl}
+                onClick={() => {
+                  handleShareLink(true);
+                  setIsShareModalOpen(false);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 disabled:opacity-50 cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                }`}
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Link</span>
+              </button>
+            </div>
+
+            {/* Quiet Unwrap Timing Selector */}
+            <div
+              className={`p-3.5 rounded-2xl border border-dashed mb-4 space-y-3 ${
+                isDarkMode
+                  ? 'bg-[#2D2421]/75 border-[#544540]'
+                  : 'bg-[#FAF4EE]/55 border-[#E2D1C1]'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-[#B4846C]" />
-                  <span>Unwrap Lock (Card, Voice &amp; Bouquet)</span>
+                <span
+                  className={`text-xs font-medium ${
+                    isDarkMode ? 'text-[#DFD1C8]' : 'text-[#5C4438]'
+                  }`}
+                >
+                  When can they unwrap it?
                 </span>
               </div>
 
               <div className="grid grid-cols-3 gap-1.5">
                 {(
                   [
-                    { id: 'none', label: 'Open Anytime', icon: Unlock },
-                    { id: 'countdown', label: 'Time-Capsule', icon: Clock },
-                    { id: 'passcode', label: 'Secret Question', icon: KeyRound },
-                  ] as { id: BouquetLockMode; label: string; icon: React.ElementType }[]
+                    { id: 'none', label: 'Anytime' },
+                    { id: 'countdown', label: 'Date Lock' },
+                    { id: 'passcode', label: 'Secret Hint' },
+                  ] as { id: BouquetLockMode; label: string }[]
                 ).map((tab) => {
-                  const Icon = tab.icon;
                   const active = (lock?.mode || 'none') === tab.id;
                   return (
                     <button
@@ -3880,35 +3812,40 @@ export default function App() {
                           updateLock({ mode: tab.id });
                         }
                       }}
-                      className={`py-2 px-2 rounded-lg border text-[11px] font-medium flex flex-col items-center gap-1 transition cursor-pointer ${
+                      className={`py-2 px-2 rounded-xl border text-xs font-medium text-center transition cursor-pointer ${
                         active
-                          ? 'border-[#B4846C] bg-[#B4846C] text-white shadow-xs'
+                          ? isDarkMode
+                            ? 'border-[#E6B89C] bg-[#E6B89C] text-[#231C18]'
+                            : 'border-[#6E4434] bg-[#6E4434] text-[#FFFDF9]'
                           : isDarkMode
-                          ? 'border-stone-800 bg-[#1E1C1A] text-stone-300 hover:border-stone-700'
-                          : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
+                          ? 'border-dashed border-[#544540] bg-[#352C29] text-[#D8C7BE] hover:border-[#6E5B54]'
+                          : 'border-dashed border-[#DECBB9] bg-[#FFFDF9] text-[#5C4438] hover:border-[#C5A892]'
                       }`}
                     >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span className="truncate w-full text-center">{tab.label}</span>
+                      {tab.label}
                     </button>
                   );
                 })}
               </div>
 
               {lock?.mode === 'countdown' && (
-                <div className="space-y-2 pt-1 animate-in fade-in duration-150">
-                  <label className="block text-[11px] text-stone-500 dark:text-stone-400">
-                    Unwraps automatically on this date &amp; time (locks bouquet, card &amp; voice until then):
+                <div className="space-y-1.5 pt-1 animate-in fade-in duration-150">
+                  <label
+                    className={`block text-[11px] ${
+                      isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                    }`}
+                  >
+                    Unlocks automatically on:
                   </label>
                   <input
                     type="datetime-local"
                     aria-label="Unlock date and time"
                     value={lock.unlockAtIso ? lock.unlockAtIso.slice(0, 16) : ''}
                     onChange={(e) => updateLock({ unlockAtIso: e.target.value })}
-                    className={`w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-[#B4846C] ${
+                    className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                       isDarkMode
-                        ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
-                        : 'bg-white border-stone-200 text-[#1C1917]'
+                        ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
                     }`}
                   />
                 </div>
@@ -3917,36 +3854,44 @@ export default function App() {
               {lock?.mode === 'passcode' && (
                 <div className="space-y-2 pt-1 animate-in fade-in duration-150">
                   <div>
-                    <label className="block text-[11px] text-stone-500 dark:text-stone-400 mb-1">
-                      Question or romantic hint for recipient:
+                    <label
+                      className={`block text-[11px] mb-1 ${
+                        isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                      }`}
+                    >
+                      Question or hint for your recipient:
                     </label>
                     <input
                       type="text"
                       maxLength={80}
-                      placeholder="e.g. The special date we first met"
+                      placeholder="e.g., The special date we first met"
                       value={lock.questionPrompt || ''}
                       onChange={(e) => updateLock({ questionPrompt: e.target.value })}
-                      className={`w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-[#B4846C] ${
+                      className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                         isDarkMode
-                          ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
-                          : 'bg-white border-stone-200 text-[#1C1917]'
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
                       }`}
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-stone-500 dark:text-stone-400 mb-1">
-                      Secret answer required to unlock (case-insensitive):
+                    <label
+                      className={`block text-[11px] mb-1 ${
+                        isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                      }`}
+                    >
+                      Answer to unlock:
                     </label>
                     <input
                       type="text"
                       maxLength={40}
-                      placeholder="e.g. October 14"
+                      placeholder="e.g., October 14"
                       value={lock.passcodeAnswer || ''}
                       onChange={(e) => updateLock({ passcodeAnswer: e.target.value })}
-                      className={`w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:border-[#B4846C] ${
+                      className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                         isDarkMode
-                          ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
-                          : 'bg-white border-stone-200 text-[#1C1917]'
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
                       }`}
                     />
                   </div>
@@ -3954,52 +3899,21 @@ export default function App() {
               )}
             </div>
 
-            {/* Shortened URL Input Bar + Copy Button */}
-            <div
-              className={`flex items-center gap-1.5 p-1.5 rounded-xl border ${
-                isDarkMode
-                  ? 'bg-[#141211] border-stone-800'
-                  : 'bg-stone-50 border-stone-200/90'
-              }`}
-            >
-              <input
-                type="text"
-                readOnly
-                aria-label="Short gift link"
-                value={isShorteningUrl ? 'Shortening link...' : shortShareUrl || getShareUrl(true)}
-                onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
-                className="flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs font-mono text-stone-700 dark:text-stone-300 focus:outline-none truncate"
-              />
-              <button
-                type="button"
-                disabled={isShorteningUrl}
-                onClick={() => {
-                  handleShareLink(true);
-                  setIsShareModalOpen(false);
-                }}
-                className="px-3.5 py-2 rounded-lg bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center gap-1.5 transition shrink-0 disabled:opacity-50 cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy Link</span>
-              </button>
-            </div>
-
-            {/* Secondary Actions: Preview Bloom, Save PNG & View Open Receipts */}
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            {/* Quiet Secondary Actions Row */}
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setIsShareModalOpen(false);
                   startGiftBloomAnimation(items.length, true);
                 }}
-                className={`py-2 px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                className={`py-2 px-2.5 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
                   isDarkMode
-                    ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                    ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
+                    : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
                 }`}
               >
-                <Play className="w-3.5 h-3.5 text-[#B4846C]" />
-                <span>Preview bloom</span>
+                Preview Bloom
               </button>
 
               <button
@@ -4008,14 +3922,13 @@ export default function App() {
                   handleExportPng();
                   setIsShareModalOpen(false);
                 }}
-                className={`py-2 px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                className={`py-2 px-2.5 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
                   isDarkMode
-                    ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                    ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
+                    : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
                 }`}
               >
-                <Download className="w-3.5 h-3.5 text-[#B4846C]" />
-                <span>Save PNG</span>
+                Save PNG
               </button>
 
               <button
@@ -4024,14 +3937,13 @@ export default function App() {
                   setIsShareModalOpen(false);
                   setIsVaultModalOpen(true);
                 }}
-                className={`py-2 px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                className={`py-2 px-2.5 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
                   isDarkMode
-                    ? 'border-stone-800 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                    ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
+                    : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
                 }`}
               >
-                <BookOpen className="w-3.5 h-3.5 text-[#B4846C]" />
-                <span>My Bouquets</span>
+                Saved Bouquets
               </button>
             </div>
           </div>
@@ -4137,6 +4049,7 @@ export default function App() {
       {/* ACCOUNT-FREE MY BOUQUETS & OPEN RECEIPTS VAULT MODAL */}
       <BouquetVaultModal
         isOpen={isVaultModalOpen}
+        isDarkMode={isDarkMode}
         onClose={() => {
           setIsVaultModalOpen(false);
           setVaultCount(getSavedVaultBouquets().length);
