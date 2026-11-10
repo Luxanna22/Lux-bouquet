@@ -337,45 +337,76 @@ test('Ko-fi Shop Order verification strictly requires type "Shop Order", matches
   assert.notEqual(slot7d, slot30d);
   assert.notEqual(slotSingle, slotOtherEmail);
 
-  // 5. Universal $0 test product code (KOFI_SHOP_TEST_CODE) unlocks all 3 tiers simultaneously for testing
-  process.env.KOFI_SHOP_TEST_CODE = 'https://ko-fi.com/s/free00test';
+  // 5. Per-tier test product keys (KOFI_SHOP_TEST_SINGLE_CODE / KOFI_SHOP_TEST_CODE, KOFI_SHOP_TEST_7D_CODE, KOFI_SHOP_TEST_30D_CODE)
+  // strictly unlock ONLY their matching tier and NEVER unlock all 3 tiers!
+  process.env.KOFI_SHOP_SINGLE_CODE = 'https://ko-fi.com/s/1a2b3c4d5e';
+  process.env.KOFI_SHOP_7D_CODE = 'https://ko-fi.com/s/7d8e9f0a1b';
+  process.env.KOFI_SHOP_30D_CODE = 'https://ko-fi.com/s/30d9988776';
+  process.env.KOFI_SHOP_TEST_CODE = 'https://ko-fi.com/s/free00single';
+  process.env.KOFI_SHOP_TEST_7D_CODE = 'https://ko-fi.com/s/free00pass7d';
+  process.env.KOFI_SHOP_TEST_30D_CODE = 'https://ko-fi.com/s/free00pass30';
+
   try {
     const activeCodes = paymentLib.getActiveKofiShopCodes();
-    assert.equal(activeCodes.test, 'free00test');
-    assert.equal(activeCodes.single, 'free00test');
-    assert.equal(activeCodes.pass_7d, 'free00test');
-    assert.equal(activeCodes.pass_30d, 'free00test');
+    assert.deepEqual(activeCodes.allowedByTier.single, ['1a2b3c4d5e', 'free00single']);
+    assert.deepEqual(activeCodes.allowedByTier.pass_7d, ['7d8e9f0a1b', 'free00pass7d']);
+    assert.deepEqual(activeCodes.allowedByTier.pass_30d, ['30d9988776', 'free00pass30']);
 
-    const sharedTestOrder = paymentLib.resolveKofiShopOrderTier(
-      {
-        type: 'Shop Order',
-        from_name: 'Ignored Nickname',
-        email: 'tester@example.com',
-        shop_items: [{ direct_link_code: 'free00test' }],
-      },
-      activeCodes,
-    );
-    assert.equal(sharedTestOrder.valid, true);
-    assert.deepEqual(sharedTestOrder.matchedTiers, ['single', 'pass_7d', 'pass_30d']);
-  } finally {
-    delete process.env.KOFI_SHOP_TEST_CODE;
-  }
-
-  // 6. Any $0.00 Shop Order (e.g. "Single Bouquet Test ($0.00)") unlocks all 3 tiers even when paid item codes are configured
-  const zeroDollarTestItemOrder = paymentLib.resolveKofiShopOrderTier(
-    {
+    // Buying the $0 Single Bouquet Test item unlocks ONLY 'single' (never 'pass_7d' or 'pass_30d')
+    const singleTestOrder = paymentLib.resolveKofiShopOrderTier({
       type: 'Shop Order',
       amount: '0.00',
       currency: 'USD',
-      email: 'bloom@gmail.com',
-      shop_items: [{ direct_link_code: 'e194d8c6aa' }],
-    },
-    shopConfig,
-  );
-  assert.equal(zeroDollarTestItemOrder.valid, true);
-  assert.deepEqual(zeroDollarTestItemOrder.matchedTiers, ['single', 'pass_7d', 'pass_30d']);
+      email: 'tester@example.com',
+      shop_items: [{ direct_link_code: 'free00single' }],
+    });
+    assert.equal(singleTestOrder.valid, true);
+    assert.equal(singleTestOrder.tier, 'single');
+    assert.deepEqual(singleTestOrder.matchedTiers, ['single']);
+    assert.equal(singleTestOrder.directLinkCode, 'free00single');
+
+    // Buying the $0 7-Day Pass Test item unlocks ONLY 'pass_7d'
+    const pass7dTestOrder = paymentLib.resolveKofiShopOrderTier({
+      type: 'Shop Order',
+      amount: '0.00',
+      currency: 'USD',
+      email: 'tester@example.com',
+      shop_items: [{ direct_link_code: 'free00pass7d' }],
+    });
+    assert.equal(pass7dTestOrder.valid, true);
+    assert.equal(pass7dTestOrder.tier, 'pass_7d');
+    assert.deepEqual(pass7dTestOrder.matchedTiers, ['pass_7d']);
+    assert.equal(pass7dTestOrder.directLinkCode, 'free00pass7d');
+
+    // Buying the $0 30-Day Eternal Test item unlocks ONLY 'pass_30d'
+    const pass30dTestOrder = paymentLib.resolveKofiShopOrderTier({
+      type: 'Shop Order',
+      amount: '0.00',
+      currency: 'USD',
+      email: 'tester@example.com',
+      shop_items: [{ direct_link_code: 'free00pass30' }],
+    });
+    assert.equal(pass30dTestOrder.valid, true);
+    assert.equal(pass30dTestOrder.tier, 'pass_30d');
+    assert.deepEqual(pass30dTestOrder.matchedTiers, ['pass_30d']);
+    assert.equal(pass30dTestOrder.directLinkCode, 'free00pass30');
+
+    // Unrecognized $0.00 item code is strictly rejected when shop codes are configured
+    const unknownZeroOrder = paymentLib.resolveKofiShopOrderTier({
+      type: 'Shop Order',
+      amount: '0.00',
+      currency: 'USD',
+      email: 'tester@example.com',
+      shop_items: [{ direct_link_code: 'unlisted00' }],
+    });
+    assert.equal(unknownZeroOrder.valid, false);
+    assert.equal(unknownZeroOrder.reason, 'UNRECOGNIZED_DIRECT_LINK_CODE');
+  } finally {
+    delete process.env.KOFI_SHOP_SINGLE_CODE;
+    delete process.env.KOFI_SHOP_7D_CODE;
+    delete process.env.KOFI_SHOP_30D_CODE;
+    delete process.env.KOFI_SHOP_TEST_CODE;
+    delete process.env.KOFI_SHOP_TEST_7D_CODE;
+    delete process.env.KOFI_SHOP_TEST_30D_CODE;
+  }
 });
-
-
-
-

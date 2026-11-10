@@ -163,37 +163,80 @@ export function buildKofiShopItemUrl(directLinkCode, fallbackPageUrl) {
 }
 
 /**
- * Resolves the 3 Ko-fi Shop `direct_link_code`s from environment variables + owner fallback.
+ * Resolves the Ko-fi Shop `direct_link_code`s from environment variables + owner fallback.
+ * Strictly isolates production and test codes per tier (`single`, `pass_7d`, `pass_30d`):
+ * - Single Bouquet (`single`): `KOFI_SHOP_SINGLE_CODE` (prod) + `KOFI_SHOP_TEST_SINGLE_CODE` / `KOFI_SHOP_TEST_CODE` (test)
+ * - 7-Day Pass (`pass_7d`): `KOFI_SHOP_7D_CODE` (prod) + `KOFI_SHOP_TEST_7D_CODE` (test)
+ * - 30-Day Eternal (`pass_30d`): `KOFI_SHOP_30D_CODE` (prod) + `KOFI_SHOP_TEST_30D_CODE` (test)
  */
 export function getActiveKofiShopCodes(clientOverride) {
+  let overrideSingle = '';
+  let override7d = '';
+  let override30d = '';
+  let overrideTestSingle = '';
+  let overrideTest7d = '';
+  let overrideTest30d = '';
+
   if (clientOverride && typeof clientOverride === 'object') {
-    const s = extractKofiShopCode(clientOverride.single);
-    const p7 = extractKofiShopCode(clientOverride.pass_7d);
-    const p30 = extractKofiShopCode(clientOverride.pass_30d);
-    if (s) cachedOwnerShopCodes.single = s;
-    if (p7) cachedOwnerShopCodes.pass_7d = p7;
-    if (p30) cachedOwnerShopCodes.pass_30d = p30;
+    overrideSingle = extractKofiShopCode(clientOverride.single);
+    override7d = extractKofiShopCode(clientOverride.pass_7d);
+    override30d = extractKofiShopCode(clientOverride.pass_30d);
+    overrideTestSingle = extractKofiShopCode(clientOverride.test_single || clientOverride.test);
+    overrideTest7d = extractKofiShopCode(clientOverride.test_pass_7d || clientOverride.test_7d);
+    overrideTest30d = extractKofiShopCode(clientOverride.test_pass_30d || clientOverride.test_30d);
+
+    if (overrideSingle) cachedOwnerShopCodes.single = overrideSingle;
+    if (override7d) cachedOwnerShopCodes.pass_7d = override7d;
+    if (override30d) cachedOwnerShopCodes.pass_30d = override30d;
   }
 
-  const sharedTestCode = extractKofiShopCode(process.env.KOFI_SHOP_TEST_CODE);
+  const prodSingle =
+    extractKofiShopCode(process.env.KOFI_SHOP_SINGLE_CODE) ||
+    overrideSingle ||
+    cachedOwnerShopCodes.single ||
+    '';
+  const prod7d =
+    extractKofiShopCode(process.env.KOFI_SHOP_7D_CODE) ||
+    override7d ||
+    cachedOwnerShopCodes.pass_7d ||
+    '';
+  const prod30d =
+    extractKofiShopCode(process.env.KOFI_SHOP_30D_CODE) ||
+    override30d ||
+    cachedOwnerShopCodes.pass_30d ||
+    '';
+
+  const testSingle =
+    extractKofiShopCode(process.env.KOFI_SHOP_TEST_SINGLE_CODE) ||
+    extractKofiShopCode(process.env.KOFI_SHOP_TEST_CODE) ||
+    overrideTestSingle ||
+    '';
+  const test7d =
+    extractKofiShopCode(process.env.KOFI_SHOP_TEST_7D_CODE) ||
+    overrideTest7d ||
+    '';
+  const test30d =
+    extractKofiShopCode(process.env.KOFI_SHOP_TEST_30D_CODE) ||
+    overrideTest30d ||
+    '';
+
+  const allowedSingle = Array.from(new Set([prodSingle, testSingle].filter(Boolean)));
+  const allowed7d = Array.from(new Set([prod7d, test7d].filter(Boolean)));
+  const allowed30d = Array.from(new Set([prod30d, test30d].filter(Boolean)));
 
   return {
-    test: sharedTestCode || '',
-    single:
-      extractKofiShopCode(process.env.KOFI_SHOP_SINGLE_CODE) ||
-      sharedTestCode ||
-      cachedOwnerShopCodes.single ||
-      '',
-    pass_7d:
-      extractKofiShopCode(process.env.KOFI_SHOP_7D_CODE) ||
-      sharedTestCode ||
-      cachedOwnerShopCodes.pass_7d ||
-      '',
-    pass_30d:
-      extractKofiShopCode(process.env.KOFI_SHOP_30D_CODE) ||
-      sharedTestCode ||
-      cachedOwnerShopCodes.pass_30d ||
-      '',
+    single: prodSingle || testSingle || '',
+    pass_7d: prod7d || test7d || '',
+    pass_30d: prod30d || test30d || '',
+    test: testSingle || '',
+    test_single: testSingle || '',
+    test_pass_7d: test7d || '',
+    test_pass_30d: test30d || '',
+    allowedByTier: {
+      single: allowedSingle,
+      pass_7d: allowed7d,
+      pass_30d: allowed30d,
+    },
   };
 }
 
@@ -828,26 +871,38 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
       ? String(parsedWebhook.amount).trim()
       : '';
   const parsedAmount = rawAmountStr !== '' ? Number.parseFloat(rawAmountStr) : NaN;
-  const isExplicitZeroDollarTest = Number.isFinite(parsedAmount) && parsedAmount <= 0;
 
   const codes = getActiveKofiShopCodes(configuredShopCodes);
-  const hasAnyConfiguredCode = Boolean(codes.test || codes.single || codes.pass_7d || codes.pass_30d);
+  const allowedSingle = codes.allowedByTier?.single || [codes.single].filter(Boolean);
+  const allowed7d = codes.allowedByTier?.pass_7d || [codes.pass_7d].filter(Boolean);
+  const allowed30d = codes.allowedByTier?.pass_30d || [codes.pass_30d].filter(Boolean);
+  const hasAnyConfiguredCode =
+    allowedSingle.length > 0 || allowed7d.length > 0 || allowed30d.length > 0;
 
   if (hasAnyConfiguredCode) {
     const matchedTiers = [];
+    const matchedCodeByTier = {};
     let primaryDirectLinkCode = '';
 
-    if (codes.single && itemCodes.includes(codes.single)) {
+    const matchedSingleCode = itemCodes.find((c) => allowedSingle.includes(c));
+    if (matchedSingleCode) {
       matchedTiers.push('single');
-      if (!primaryDirectLinkCode) primaryDirectLinkCode = codes.single;
+      matchedCodeByTier.single = matchedSingleCode;
+      if (!primaryDirectLinkCode) primaryDirectLinkCode = matchedSingleCode;
     }
-    if (codes.pass_7d && itemCodes.includes(codes.pass_7d)) {
+
+    const matched7dCode = itemCodes.find((c) => allowed7d.includes(c));
+    if (matched7dCode) {
       matchedTiers.push('pass_7d');
-      if (!primaryDirectLinkCode) primaryDirectLinkCode = codes.pass_7d;
+      matchedCodeByTier.pass_7d = matched7dCode;
+      if (!primaryDirectLinkCode) primaryDirectLinkCode = matched7dCode;
     }
-    if (codes.pass_30d && itemCodes.includes(codes.pass_30d)) {
+
+    const matched30dCode = itemCodes.find((c) => allowed30d.includes(c));
+    if (matched30dCode) {
       matchedTiers.push('pass_30d');
-      primaryDirectLinkCode = codes.pass_30d;
+      matchedCodeByTier.pass_30d = matched30dCode;
+      primaryDirectLinkCode = matched30dCode;
     }
 
     if (matchedTiers.length > 0) {
@@ -855,16 +910,8 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
         valid: true,
         tier: matchedTiers[matchedTiers.length - 1],
         matchedTiers,
+        matchedCodeByTier,
         directLinkCode: primaryDirectLinkCode,
-      };
-    }
-
-    if ((codes.test && itemCodes.includes(codes.test)) || isExplicitZeroDollarTest) {
-      return {
-        valid: true,
-        tier: 'pass_30d',
-        matchedTiers: ['single', 'pass_7d', 'pass_30d'],
-        directLinkCode: '',
       };
     }
 
@@ -875,28 +922,22 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
     };
   }
 
-  // Fallback when owner hasn't configured specific codes yet: still strictly requires type === 'Shop Order'
-  // and a valid direct_link_code, resolving tier by amount/currency (or unlocking all 3 tiers if $0 test product)
+  // Fallback when no shop codes are configured yet: resolve strictly to a single tier by amount
   const amount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
   const cur = String(parsedWebhook?.currency || 'USD').toUpperCase();
-  if (amount <= 0) {
-    return {
-      valid: true,
-      tier: 'pass_30d',
-      matchedTiers: ['single', 'pass_7d', 'pass_30d'],
-      directLinkCode: '',
-    };
-  }
   let tier = 'single';
-  if (cur === 'PHP' || amount >= 35) {
-    tier = amount >= 180 ? 'pass_30d' : amount >= 85 ? 'pass_7d' : 'single';
-  } else {
-    tier = amount >= 8.0 ? 'pass_30d' : amount >= 4.5 ? 'pass_7d' : 'single';
+  if (amount > 0) {
+    if (cur === 'PHP' || amount >= 35) {
+      tier = amount >= 180 ? 'pass_30d' : amount >= 85 ? 'pass_7d' : 'single';
+    } else {
+      tier = amount >= 8.0 ? 'pass_30d' : amount >= 4.5 ? 'pass_7d' : 'single';
+    }
   }
   return {
     valid: true,
     tier,
     matchedTiers: [tier],
+    matchedCodeByTier: { [tier]: itemCodes[0] },
     directLinkCode: itemCodes[0],
   };
 }
@@ -932,7 +973,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       const tier = isValidTier(parsed.tier) ? parsed.tier : 'pass_7d';
-      const region = isValidRegion(parsed.region) ? parsed.region : 'PH';
+      const region = isValidRegion(parsed.region) ? parsed.region : 'INTL';
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
 
@@ -1173,7 +1214,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
       }
 
-      // Case B: Ko-fi Shop Order Verification by Buyer Email + Tier
+      // Case B: Ko-fi Shop Order Verification by Buyer Email + Exact Tier + Item Code
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
       const isKofiLiveRequired =
         pending.provider === 'kofi' &&
@@ -1192,27 +1233,61 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
+        const activeShopCodes = getActiveKofiShopCodes();
+        const doesReceiptMatchTierCode = (slot, targetTier) => {
+          if (!slot || slot.tier !== targetTier) return false;
+          const allowedForTier = activeShopCodes.allowedByTier?.[targetTier] || [];
+          if (allowedForTier.length > 0) {
+            if (!slot.boundBouquetCode) {
+              return false;
+            }
+            return allowedForTier.includes(slot.boundBouquetCode);
+          }
+          if (
+            targetTier === pending.tier &&
+            pending.directLinkCode &&
+            slot.boundBouquetCode &&
+            slot.boundBouquetCode !== pending.directLinkCode
+          ) {
+            return false;
+          }
+          return true;
+        };
+
         const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, pending.tier);
         const receiptSlot =
           SERVER_PASS_STORE.get(emailTierSlotKey) ||
           (await fetchStudioPassFromFirestoreRest(emailTierSlotKey));
 
-        // If no receipt exists in the requested tier slot, check if the buyer ordered a different tier
-        if (!receiptSlot) {
+        // If no valid receipt exists for the requested tier, check if the buyer ordered a different tier
+        if (!receiptSlot || !doesReceiptMatchTierCode(receiptSlot, pending.tier)) {
           const otherTiers = ['single', 'pass_7d', 'pass_30d'].filter((t) => t !== pending.tier);
           for (const otherTier of otherTiers) {
             const otherSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, otherTier);
             const candidate =
               SERVER_PASS_STORE.get(otherSlotKey) ||
               (await fetchStudioPassFromFirestoreRest(otherSlotKey));
-            if (candidate && candidate.secondaryDeviceHash !== 'CLAIMED') {
+            if (
+              candidate &&
+              candidate.secondaryDeviceHash !== 'CLAIMED' &&
+              doesReceiptMatchTierCode(candidate, otherTier)
+            ) {
               sendJson(res, 403, {
                 ok: false,
                 status: 'TIER_MISMATCH',
-                message: `Your Ko-fi Shop order was for "${PRICING_CATALOG.INTL[otherTier]?.name || otherTier}", which does not match "${pending.plan?.name || pending.tier}". Please select the matching tier.`,
+                message: `Your Ko-fi Shop order was for "${PRICING_CATALOG.INTL[otherTier]?.name || otherTier}", which does not match "${pending.plan?.name || pending.tier}". Please select "${PRICING_CATALOG.INTL[otherTier]?.name || otherTier}" to unlock your order.`,
               });
               return true;
             }
+          }
+
+          if (receiptSlot && !doesReceiptMatchTierCode(receiptSlot, pending.tier)) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'SHOP_ITEM_CODE_MISMATCH',
+              message: `The purchased Ko-fi Shop item does not match "${pending.plan?.name || pending.tier}". Please select the exact plan you ordered on Ko-fi Shop.`,
+            });
+            return true;
           }
 
           sendJson(res, 402, {
@@ -1239,21 +1314,6 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             status: 'ORDER_ALREADY_CLAIMED',
             message:
               'This Ko-fi Shop order has already been claimed. Check "My Key" or place a new order on Ko-fi Shop.',
-          });
-          return true;
-        }
-
-        const activeShopCodes = getActiveKofiShopCodes();
-        if (
-          pending.directLinkCode &&
-          receiptSlot.boundBouquetCode &&
-          receiptSlot.boundBouquetCode !== pending.directLinkCode &&
-          receiptSlot.boundBouquetCode !== activeShopCodes.test
-        ) {
-          sendJson(res, 403, {
-            ok: false,
-            status: 'SHOP_ITEM_CODE_MISMATCH',
-            message: 'The purchased Ko-fi Shop item does not match this pass tier.',
           });
           return true;
         }
@@ -1539,6 +1599,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       // Store unclaimed receipt in deterministic `(buyerEmail, matchedTier)` slot(s) `BLOOM-KSXX-XXXX`
       const writtenSlots = [];
       for (const matchedTier of matchedTiers) {
+        const tierSpecificCode =
+          resolution.matchedCodeByTier?.[matchedTier] || directLinkCode;
         const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);
         const receiptRecord = createSignedStudioPassServer({
           passKey: slotKey,
@@ -1546,7 +1608,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           region: currency === 'PHP' ? 'PH' : 'INTL',
           deviceTokenHash: '',
           secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
-          boundBouquetCode: directLinkCode,
+          boundBouquetCode: tierSpecificCode,
           paymentProvider: 'kofi',
           paymentReference: `kfs_${kofiTxId.slice(0, 12)}`,
         });

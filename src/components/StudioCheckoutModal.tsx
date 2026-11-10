@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Check, Copy, QrCode, X } from 'lucide-react';
 import {
   BouquetPremiumInspection,
-  detectPricingRegion,
   formatPassRemainingTime,
   getActivePremiumAssetConfig,
   getOrCreateDeviceTokenHash,
@@ -120,11 +119,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   onPremiumConfigChanged,
   onToast,
 }) => {
-  const [region, setRegion] = useState<PricingRegion>(() => detectPricingRegion());
+  const [region, setRegion] = useState<PricingRegion>('INTL');
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
-  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>(() =>
-    detectPricingRegion() === 'PH' ? 'paymongo' : 'kofi'
-  );
+  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>('kofi');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card' | 'asset_config'>(
     () => (activePass ? 'pass_card' : 'plans')
   );
@@ -502,18 +499,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             >
               <button
                 type="button"
+                disabled
+                aria-disabled="true"
+                title="PHP payments temporarily unavailable"
                 data-testid="region-switch-ph"
-                onClick={() => {
-                  setRegion('PH');
-                  setPaymentGateway('paymongo');
-                }}
-                className={`px-2.5 py-0.5 rounded-full transition cursor-pointer ${
-                  region === 'PH'
-                    ? isDarkMode
-                      ? 'bg-[#E6B89C] text-[#231C18]'
-                      : 'bg-[#6E4434] text-[#FFFDF9]'
-                    : 'opacity-65 hover:opacity-100'
-                }`}
+                className="px-2.5 py-0.5 rounded-full opacity-35 cursor-not-allowed select-none line-through"
               >
                 PHP ₱
               </button>
