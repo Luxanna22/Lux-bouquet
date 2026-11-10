@@ -50,6 +50,7 @@ import {
   MessageSquareHeart,
   Home,
   BookOpen,
+  Bookmark,
 } from 'lucide-react';
 import {
   FlowerType,
@@ -1623,9 +1624,9 @@ export default function App() {
               </span>
             </button>
 
-            {/* Center: Quiet History & Reset Capsule */}
+            {/* Center: Icon-Only History, Save Draft & Reset Capsule */}
             <div
-              className={`flex items-center gap-0 sm:gap-0.5 rounded-full px-0.5 sm:px-1 py-0.5 border border-dashed shrink-0 ${
+              className={`flex items-center gap-0 sm:gap-1 rounded-full px-0.5 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${
                 isDarkMode
                   ? 'bg-[#2B2321]/80 border-[#52433E]'
                   : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
@@ -1659,7 +1660,7 @@ export default function App() {
               </button>
               <span
                 aria-hidden="true"
-                className={`hidden sm:block w-[1px] h-3.5 mx-0.5 ${
+                className={`w-[1px] h-3 mx-0.5 ${
                   isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                 }`}
               />
@@ -1669,14 +1670,13 @@ export default function App() {
                 onClick={handleSaveDraftOnDevice}
                 aria-label="Save bouquet draft on this device"
                 title="Save Draft on Device"
-                className="w-5.5 sm:w-auto h-5.5 sm:h-7 sm:px-2 rounded-full text-[11px] font-medium flex items-center justify-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white active:scale-95 transition cursor-pointer"
+                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white active:scale-95 transition cursor-pointer"
               >
-                <Check className="w-3 h-3 text-[#B4846C]" />
-                <span className="hidden xl:inline">Save Draft</span>
+                <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C]" />
               </button>
               <span
                 aria-hidden="true"
-                className={`hidden sm:block w-[1px] h-3.5 mx-0.5 ${
+                className={`w-[1px] h-3 mx-0.5 ${
                   isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                 }`}
               />
@@ -1689,14 +1689,13 @@ export default function App() {
                 }}
                 aria-label="Reset bouquet and start over"
                 title="Start Over"
-                className="w-5.5 sm:w-auto h-5.5 sm:h-7 sm:px-2 rounded-full text-[11px] font-medium flex items-center justify-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
+                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
               >
-                <RotateCcw className="w-3 h-3" />
-                <span className="hidden xl:inline">Reset</span>
+                <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
             </div>
 
-            {/* Right: Premium + Saved Bouquets + Ambient Controls + Primary Share Button */}
+            {/* Right: Premium + Icon-Only Utility Controls + Primary Share Button */}
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               <button
                 type="button"
@@ -1711,7 +1710,7 @@ export default function App() {
                     ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
                     : 'Premium Studio Pass & Pass Key'
                 }
-                className={`h-6.5 sm:h-8 px-1.5 sm:px-2.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-6.5 sm:h-8 px-1.75 sm:px-2.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isBouquetUnlockedByPass
                     ? isDarkMode
                       ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
@@ -1722,29 +1721,28 @@ export default function App() {
                 }`}
               >
                 <CoutureBloomSeal className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C] shrink-0" />
-                <span className="hidden min-[410px]:inline">Premium</span>
-                <span className="min-[410px]:hidden">Pass</span>
+                <span>Premium</span>
               </button>
 
               <button
                 type="button"
+                data-testid="open-vault-header-btn"
                 onClick={() => setIsVaultModalOpen(true)}
                 aria-label="Open Saved Bouquets"
                 title="Saved Bouquets"
-                className={`h-6.5 sm:h-8 px-1.5 sm:px-2.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-6.5 sm:h-8 ${
+                  vaultCount > 0 ? 'px-1.5 sm:px-2' : 'w-6.5 sm:w-8 justify-center'
+                } rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-0.5 sm:gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
                     ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                     : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                <span className="lg:hidden">Saved</span>
-                <span className="hidden lg:inline">Saved Bouquets</span>
+                <Bookmark className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C] shrink-0" />
                 {vaultCount > 0 && (
                   <span
-                    className={`px-1 sm:px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-semibold tabular-nums ${
-                      isDarkMode
-                        ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
-                        : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                    className={`text-[9px] sm:text-[10px] font-semibold tabular-nums ${
+                      isDarkMode ? 'text-[#F0C8B0]' : 'text-[#7A4B3A]'
                     }`}
                   >
                     {vaultCount}
@@ -1775,7 +1773,7 @@ export default function App() {
                 className="w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
               >
                 <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
-                  {isDarkMode ? <Sun className="w-3.25 h-3.25 sm:w-3.5 sm:h-3.5 text-amber-300" /> : <Moon className="w-3.25 h-3.25 sm:w-3.5 sm:h-3.5" />}
+                  {isDarkMode ? <Sun className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" /> : <Moon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                 </span>
               </button>
 
@@ -3065,45 +3063,21 @@ export default function App() {
                         </button>
                       </div>
 
-                      {/* Card Text Inputs with Placeholders for Recipient, Message Body, and Sender */}
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          maxLength={32}
-                          value={card.to}
-                          placeholder="Recipient (e.g., My Dearest)"
-                          onChange={(e) => updateCard({ to: e.target.value })}
-                          aria-label="Recipient"
-                          className="w-full px-3 py-1.5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] placeholder:text-[#9A877B]/75"
+                      {/* Card Note Input Only (Recipient & Sender are added when sealing/sending) */}
+                      <div className="relative">
+                        <textarea
+                          rows={4}
+                          maxLength={86}
+                          value={card.message}
+                          placeholder="Write your heartfelt note..."
+                          onChange={(e) => updateCard({ message: e.target.value })}
+                          aria-label="Card message"
+                          className="w-full px-3 py-2 pb-5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto placeholder:text-[#9A877B]/75"
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                         />
-
-                        <div className="relative">
-                          <textarea
-                            rows={4}
-                            maxLength={600}
-                            value={card.message}
-                            placeholder="Write your heartfelt message..."
-                            onChange={(e) => updateCard({ message: e.target.value })}
-                            aria-label="Card message"
-                            className="w-full px-3 py-1.5 pb-5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto placeholder:text-[#9A877B]/75"
-                            style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                          />
-                          <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
-                            {card.message.length}/600
-                          </span>
-                        </div>
-
-                        <input
-                          type="text"
-                          maxLength={32}
-                          value={card.from}
-                          placeholder="Sender (e.g., Yours Always)"
-                          onChange={(e) => updateCard({ from: e.target.value })}
-                          aria-label="Sender"
-                          className="w-full px-3 py-1.5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] placeholder:text-[#9A877B]/75"
-                          style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                        />
+                        <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
+                          {card.message.length}/86
+                        </span>
                       </div>
                     </div>
                   )}
@@ -4467,48 +4441,23 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* Card Text Inputs with Placeholders for Recipient, Message Body, and Sender */}
-                  <div className="space-y-3 p-3.5 rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1C1A]">
-                    <div>
-                      <input
-                        type="text"
-                        maxLength={22}
-                        value={card.to}
-                        placeholder="Recipient (e.g., My Dearest)"
-                        onFocus={handleCardInputFocus}
-                        onChange={(e) => updateCard({ to: e.target.value })}
-                        aria-label="Recipient"
-                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 transition"
-                        style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                      />
-                    </div>
-
-                    <div>
+                  {/* Card Note Input Only (Recipient & Sender are added when sealing/sending) */}
+                  <div className="p-3.5 rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1C1A]">
+                    <div className="relative">
                       <textarea
-                        rows={3}
+                        rows={4}
                         maxLength={86}
                         value={card.message}
-                        placeholder="Write your heartfelt message..."
+                        placeholder="Write your heartfelt note..."
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ message: e.target.value })}
                         aria-label="Card message"
-                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
+                        className="w-full px-3 py-2 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
                         style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                       />
-                    </div>
-
-                    <div>
-                      <input
-                        type="text"
-                        maxLength={20}
-                        value={card.from}
-                        placeholder="Sender (e.g., Yours Always)"
-                        onFocus={handleCardInputFocus}
-                        onChange={(e) => updateCard({ from: e.target.value })}
-                        aria-label="Sender"
-                        className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 transition"
-                        style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                      />
+                      <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
+                        {card.message.length}/86
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4835,44 +4784,21 @@ export default function App() {
               </div>
             </div>
 
-            {/* Card Text Inputs with Placeholders */}
-            <div className="space-y-2.5">
-              <div>
-                <input
-                  type="text"
-                  maxLength={22}
-                  value={card.to}
-                  placeholder="Recipient (e.g., My Dearest)"
-                  onChange={(e) => updateCard({ to: e.target.value })}
-                  aria-label="Recipient"
-                  className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
-                  style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                />
-              </div>
-              <div>
-                <textarea
-                  rows={3}
-                  maxLength={86}
-                  value={card.message}
-                  placeholder="Write your heartfelt message..."
-                  onChange={(e) => updateCard({ message: e.target.value })}
-                  aria-label="Card message"
-                  className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
-                  style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                />
-              </div>
-              <div>
-                <input
-                  type="text"
-                  maxLength={20}
-                  value={card.from}
-                  placeholder="Sender (e.g., Yours Always)"
-                  onChange={(e) => updateCard({ from: e.target.value })}
-                  aria-label="Sender"
-                  className="w-full px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C]"
-                  style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                />
-              </div>
+            {/* Card Note Input Only */}
+            <div className="relative">
+              <textarea
+                rows={4}
+                maxLength={86}
+                value={card.message}
+                placeholder="Write your heartfelt note..."
+                onChange={(e) => updateCard({ message: e.target.value })}
+                aria-label="Card message"
+                className="w-full px-3 py-2 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
+                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
+              />
+              <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
+                {card.message.length}/86
+              </span>
             </div>
 
             <button
@@ -4916,40 +4842,18 @@ export default function App() {
               <X className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center justify-between pr-8">
-              <div>
-                <p className="text-[9.5px] uppercase tracking-[0.22em] font-semibold text-[#B4846C]">
-                  {shareStep === 'ready' ? 'Sealed & Ready' : 'Wrap Your Bouquet'}
-                </p>
-                <h3
-                  className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight mt-0.5"
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  {shareStep === 'ready' ? 'Your Gift Is Sealed' : 'Send Your Bouquet'}
-                </h3>
-              </div>
-
-              {shareStep !== 'ready' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsShareModalOpen(false);
-                    startGiftBloomAnimation(items.length, true);
-                  }}
-                  className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium transition cursor-pointer shrink-0 ${
-                    isDarkMode
-                      ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
-                      : 'border-[#DECBB9] bg-[#FAF4EE]/80 hover:bg-[#F3E9DF] text-[#5C4438]'
-                  }`}
-                >
-                  Preview Bloom
-                </button>
-              )}
+            <div className="pr-8">
+              <h3
+                className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                {shareStep === 'ready' ? 'Your Gift Is Sealed' : 'Send Your Bouquet'}
+              </h3>
             </div>
 
             {/* 3-Step Dashed Lace Progress Tracker */}
             {shareStep !== 'ready' && (
-              <div className="mt-4 mb-4 flex items-center justify-between gap-1.5">
+              <div className="mt-3.5 mb-4 flex items-center justify-between gap-1.5">
                 {(
                   [
                     { id: 'dedication', num: '1', label: 'Dedication' },
@@ -5020,7 +4924,7 @@ export default function App() {
             )}
 
             {/* ===============================================================
-                STEP 1: DEDICATION (To & From)
+                STEP 1: DEDICATION (To & From Only — Note is edited in Studio)
                 =============================================================== */}
             {shareStep === 'dedication' && (
               <div className="space-y-3.5 animate-in fade-in duration-150">
@@ -5031,21 +4935,22 @@ export default function App() {
                       : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
                   }`}
                 >
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
                       <label
                         className={`block text-[11px] font-medium mb-1 ${
                           isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
                         }`}
                       >
-                        For
+                        To (Recipient)
                       </label>
                       <input
                         type="text"
                         maxLength={22}
                         value={card.to}
                         onChange={(e) => updateCard({ to: e.target.value })}
-                        placeholder="Recipient"
+                        placeholder="e.g., My Dearest"
+                        aria-label="Recipient"
                         className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                           isDarkMode
                             ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
@@ -5059,7 +4964,7 @@ export default function App() {
                           isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
                         }`}
                       >
-                        From
+                        From (Optional)
                       </label>
                       <input
                         type="text"
@@ -5067,6 +4972,7 @@ export default function App() {
                         value={card.from}
                         onChange={(e) => updateCard({ from: e.target.value })}
                         placeholder="Your name"
+                        aria-label="Sender"
                         className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                           isDarkMode
                             ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
@@ -5076,26 +4982,29 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div>
-                    <label
-                      className={`block text-[11px] font-medium mb-1 ${
-                        isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
-                      }`}
+                  {/* Quiet 1-line summary of attached Studio Card Note */}
+                  <div
+                    className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 text-[11px] ${
+                      isDarkMode
+                        ? 'bg-[#352C29]/60 border-[#544540] text-[#D8C7BE]'
+                        : 'bg-[#FFFDF9]/80 border-[#DECBB9] text-[#6E5D54]'
+                    }`}
+                  >
+                    <span className="truncate italic" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '14px' }}>
+                      {card.visibleOnStage && card.message.trim()
+                        ? `“${card.message.trim()}”`
+                        : 'Card note hidden on bouquet'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsShareModalOpen(false);
+                        setMobilePopover('card');
+                      }}
+                      className="text-[11px] font-medium text-[#B4846C] hover:underline shrink-0 cursor-pointer"
                     >
-                      Card Note
-                    </label>
-                    <textarea
-                      rows={2}
-                      maxLength={86}
-                      value={card.message}
-                      onChange={(e) => updateCard({ message: e.target.value })}
-                      placeholder="Write a short note..."
-                      className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs resize-none focus:outline-none focus:border-[#B4846C] ${
-                        isDarkMode
-                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                      }`}
-                    />
+                      Edit note
+                    </button>
                   </div>
                 </div>
 

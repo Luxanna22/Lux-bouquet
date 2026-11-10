@@ -419,7 +419,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     setErrorMessage(null);
     setCheckoutStep('select');
     setPendingCheckout(null);
-    if (activePass && triggerAction === 'pass_menu') {
+    if (activePass) {
       setActiveView('pass_card');
     } else {
       setActiveView('plans');
@@ -626,6 +626,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     pass_30d: '30-Day Eternal',
   };
 
+  const hasActiveSubscriptionPass = Boolean(activePass && activePass.tier !== 'single');
+
   return (
     <div
       role="dialog"
@@ -657,99 +659,26 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Eyebrow */}
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.22em] font-medium text-[#B4846C]">
-          <CoutureBloomSeal className="w-3.5 h-3.5" />
-          <span>
+        {/* Editorial Title (No uppercase eyebrow label per AI_CONTEXT.md) */}
+        <div className="flex items-center gap-2 pr-8">
+          <CoutureBloomSeal className="w-4.5 h-4.5 text-[#B4846C] shrink-0" />
+          <h3
+            className="text-2xl sm:text-[27px] font-medium tracking-tight leading-tight"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
             {activeView === 'pass_card'
-              ? 'Active Pass'
+              ? 'Your Studio Pass'
               : activeView === 'redeem'
-              ? 'Pass Key'
+              ? 'Enter Pass Key'
               : activeView === 'asset_config'
-              ? 'Studio Config'
-              : 'Premium'}
-          </span>
+              ? 'Couture Pieces'
+              : 'Unlock Premium'}
+          </h3>
         </div>
 
-        {/* Editorial Title */}
-        <h3
-          className="text-2xl sm:text-[27px] font-medium tracking-tight leading-tight mt-0.5"
-          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-        >
-          {activeView === 'pass_card'
-            ? 'Your Studio Pass'
-            : activeView === 'redeem'
-            ? 'Enter Pass Key'
-            : activeView === 'asset_config'
-            ? 'Couture Pieces'
-            : 'Unlock Premium'}
-        </h3>
-
-        {/* Clean Top Switcher + Currency Pill */}
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <div
-            className={`inline-flex items-center p-0.5 rounded-full border border-dashed text-[11px] font-medium ${
-              isDarkMode
-                ? 'bg-[#2B2321] border-[#544540]'
-                : 'bg-[#FAF4EE] border-[#DECBB9]'
-            }`}
-          >
-            <button
-              type="button"
-              data-testid="checkout-tab-plans"
-              onClick={() => {
-                setActiveView('plans');
-                setErrorMessage(null);
-              }}
-              className={`px-3 py-1 rounded-full transition cursor-pointer ${
-                activeView === 'plans'
-                  ? isDarkMode
-                    ? 'bg-[#E6B89C] text-[#231C18]'
-                    : 'bg-[#6E4434] text-[#FFFDF9]'
-                  : 'opacity-70 hover:opacity-100'
-              }`}
-            >
-              Passes
-            </button>
-            <button
-              type="button"
-              data-testid="checkout-tab-redeem"
-              onClick={() => {
-                setActiveView('redeem');
-                setErrorMessage(null);
-              }}
-              className={`px-3 py-1 rounded-full transition cursor-pointer ${
-                activeView === 'redeem'
-                  ? isDarkMode
-                    ? 'bg-[#E6B89C] text-[#231C18]'
-                    : 'bg-[#6E4434] text-[#FFFDF9]'
-                  : 'opacity-70 hover:opacity-100'
-              }`}
-            >
-              Have a Key?
-            </button>
-            {activePass && activePass.tier !== 'single' && (
-              <button
-                type="button"
-                data-testid="checkout-tab-active-pass"
-                onClick={() => {
-                  setActiveView('pass_card');
-                  setErrorMessage(null);
-                }}
-                className={`px-3 py-1 rounded-full transition cursor-pointer ${
-                  activeView === 'pass_card'
-                    ? isDarkMode
-                      ? 'bg-[#E6B89C] text-[#231C18]'
-                      : 'bg-[#6E4434] text-[#FFFDF9]'
-                    : 'opacity-70 hover:opacity-100'
-                }`}
-              >
-                My Key
-              </button>
-            )}
-          </div>
-
-          {activeView === 'plans' && checkoutStep === 'select' && (
+        {/* Clean Top Switcher + Currency Pill — Hidden when user is already on an active pass */}
+        {!hasActiveSubscriptionPass && activeView !== 'pass_card' && activeView !== 'asset_config' && (
+          <div className="mt-3 flex items-center justify-between gap-2">
             <div
               className={`inline-flex items-center p-0.5 rounded-full border border-dashed text-[11px] font-medium ${
                 isDarkMode
@@ -759,34 +688,79 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             >
               <button
                 type="button"
-                disabled
-                aria-disabled="true"
-                title="PHP payments temporarily unavailable"
-                data-testid="region-switch-ph"
-                className="px-2.5 py-0.5 rounded-full opacity-35 cursor-not-allowed select-none line-through"
-              >
-                PHP ₱
-              </button>
-              <button
-                type="button"
-                data-testid="region-switch-intl"
+                data-testid="checkout-tab-plans"
                 onClick={() => {
-                  setRegion('INTL');
-                  setPaymentGateway('kofi');
+                  setActiveView('plans');
+                  setErrorMessage(null);
                 }}
-                className={`px-2.5 py-0.5 rounded-full transition cursor-pointer ${
-                  region === 'INTL'
+                className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                  activeView === 'plans'
                     ? isDarkMode
                       ? 'bg-[#E6B89C] text-[#231C18]'
                       : 'bg-[#6E4434] text-[#FFFDF9]'
-                    : 'opacity-65 hover:opacity-100'
+                    : 'opacity-70 hover:opacity-100'
                 }`}
               >
-                USD $
+                Passes
+              </button>
+              <button
+                type="button"
+                data-testid="checkout-tab-redeem"
+                onClick={() => {
+                  setActiveView('redeem');
+                  setErrorMessage(null);
+                }}
+                className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                  activeView === 'redeem'
+                    ? isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18]'
+                      : 'bg-[#6E4434] text-[#FFFDF9]'
+                    : 'opacity-70 hover:opacity-100'
+                }`}
+              >
+                Have a Key?
               </button>
             </div>
-          )}
-        </div>
+
+            {activeView === 'plans' && checkoutStep === 'select' && (
+              <div
+                className={`inline-flex items-center p-0.5 rounded-full border border-dashed text-[11px] font-medium ${
+                  isDarkMode
+                    ? 'bg-[#2B2321] border-[#544540]'
+                    : 'bg-[#FAF4EE] border-[#DECBB9]'
+                }`}
+              >
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="PHP payments temporarily unavailable"
+                  data-testid="region-switch-ph"
+                  className="px-2.5 py-0.5 rounded-full opacity-35 cursor-not-allowed select-none line-through"
+                >
+                  PHP ₱
+                </button>
+                <button
+                  type="button"
+                  data-testid="region-switch-intl"
+                  onClick={() => {
+                    setRegion('INTL');
+                    setPaymentGateway('kofi');
+                  }}
+                  className={`px-2.5 py-0.5 rounded-full transition cursor-pointer ${
+                    region === 'INTL'
+                      ? isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18]'
+                        : 'bg-[#6E4434] text-[#FFFDF9]'
+                      : 'opacity-65 hover:opacity-100'
+                  }`}
+                >
+                  USD $
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Compact Couture Items Pill Strip (Only when triggered by Couture items) */}
         {activeView === 'plans' &&
@@ -973,16 +947,16 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   size="thumb"
                 />
                 <div className="text-left">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#B4846C] font-semibold">
-                    {pendingCheckout.provider === 'paymongo'
-                      ? 'QR Ph · GCash · Maya'
-                      : 'Ko-fi Shop Order'}
-                  </div>
                   <div
                     className="text-xl font-medium"
                     style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                   >
                     {pendingCheckout.plan.name} · {pendingCheckout.plan.displayPrice}
+                  </div>
+                  <div className="text-[11px] opacity-75">
+                    {pendingCheckout.provider === 'paymongo'
+                      ? 'QR Ph · GCash · Maya'
+                      : 'Ko-fi Shop Order'}
                   </div>
                 </div>
               </div>
@@ -1129,10 +1103,10 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            VIEW 3: ACTIVE PASS KEEPSAKE TICKET
+            VIEW 3: ACTIVE PASS KEEPSAKE TICKET + SWEET THANK-YOU MESSAGE
             =================================================================== */}
         {activeView === 'pass_card' && activePass && (
-          <div className="mt-4 space-y-3 animate-in fade-in duration-150">
+          <div className="mt-3.5 space-y-3 animate-in fade-in duration-150">
             <div
               data-testid="active-pass-keepsake-card"
               className={`p-4 rounded-2xl border border-dashed space-y-3 ${
@@ -1141,17 +1115,35 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   : 'bg-[#FAF4EE] border-[#DECBB9]'
               }`}
             >
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium">
-                  {activePass.tier === 'pass_30d'
-                    ? '30-Day Eternal Pass'
-                    : activePass.tier === 'pass_7d'
-                    ? '7-Day Pass'
-                    : 'Single Bouquet Pass'}
-                </span>
-                <span className="text-[11px] text-[#B4846C] font-medium">
-                  {formatPassRemainingTime(activePass.expiresAt)}
-                </span>
+              <div className="flex items-center gap-3">
+                <StudioPassLineartSymbol
+                  tier={activePass.tier}
+                  isDarkMode={isDarkMode}
+                  isSelected
+                  size="thumb"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className="text-lg sm:text-xl font-semibold leading-tight"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      {activePass.tier === 'pass_30d'
+                        ? '30-Day Eternal Pass'
+                        : activePass.tier === 'pass_7d'
+                        ? '7-Day Pass'
+                        : 'Single Bouquet Pass'}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full border border-dashed border-[#B4846C]/60 text-[10.5px] text-[#B4846C] font-medium shrink-0">
+                      {formatPassRemainingTime(activePass.expiresAt)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] opacity-75 mt-0.5">
+                    {activePass.isEternalKeepsake
+                      ? 'All Couture flowers, wraps, ribbons & eternal gift links unlocked'
+                      : `All Couture pieces & ${activePass.retentionDays}-day extended gift links unlocked`}
+                  </p>
+                </div>
               </div>
 
               <div
@@ -1191,13 +1183,21 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 </button>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] opacity-70">
-                <span>
-                  {activePass.isEternalKeepsake
-                    ? 'Links never expire'
-                    : `${activePass.retentionDays}-day extended links`}
-                </span>
-                <span>1 active session</span>
+              {/* Sweet Botanical Thank-You Message */}
+              <div
+                data-testid="active-pass-thank-you-note"
+                className={`px-3.5 py-2.5 rounded-xl border border-dashed text-center ${
+                  isDarkMode
+                    ? 'bg-[#352C29]/70 border-[#544540] text-[#EBDAD0]'
+                    : 'bg-[#FFFDF9]/90 border-[#E2D1C1] text-[#5C4438]'
+                }`}
+              >
+                <p
+                  className="text-sm sm:text-[15px] italic leading-snug"
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  “Thank you from the bottom of our hearts for supporting Send A Bouquet. Every bloom and keepsake you craft helps keep this quiet floral studio alive.”
+                </p>
               </div>
             </div>
 
@@ -1212,6 +1212,18 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             >
               Done
             </button>
+
+            <div className="flex items-center justify-between text-[10px] opacity-65 pt-0.5">
+              <span>Bound to this device · 1 active session</span>
+              <button
+                type="button"
+                data-testid="checkout-tab-asset-config"
+                onClick={() => setActiveView('asset_config')}
+                className="underline hover:opacity-100 cursor-pointer"
+              >
+                Customize items
+              </button>
+            </div>
           </div>
         )}
 
@@ -1295,7 +1307,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               </div>
 
               <div>
-                <div className="text-[10px] uppercase tracking-wider opacity-65 mb-1.5">
+                <div className="text-[10px] tracking-wider opacity-65 mb-1.5">
                   Flowers ({customConfig.flowers.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -1324,7 +1336,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               </div>
 
               <div>
-                <div className="text-[10px] uppercase tracking-wider opacity-65 mb-1.5">
+                <div className="text-[10px] tracking-wider opacity-65 mb-1.5">
                   Wraps ({customConfig.wraps.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -1353,7 +1365,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               </div>
 
               <div>
-                <div className="text-[10px] uppercase tracking-wider opacity-65 mb-1.5">
+                <div className="text-[10px] tracking-wider opacity-65 mb-1.5">
                   Ribbons ({customConfig.ribbons.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -1384,14 +1396,14 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 
             <button
               type="button"
-              onClick={() => setActiveView('plans')}
+              onClick={() => setActiveView(activePass ? 'pass_card' : 'plans')}
               className={`w-full py-2 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
                 isDarkMode
                   ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
                   : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              Back to Passes
+              {activePass ? 'Back to My Pass' : 'Back to Passes'}
             </button>
           </div>
         )}

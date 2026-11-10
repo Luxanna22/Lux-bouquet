@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import {
+  Bookmark,
   ChevronDown,
   Heart,
   Sun,
@@ -1188,13 +1189,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             ))}
           </nav>
 
-          {/* Zone 3: Right Controls — Theme Toggle, Saved Bouquets & Mobile/Tablet Editorial Menu Trigger */}
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Zone 3: Right Controls — Icon-Only Theme Toggle, Saved Bouquets & Mobile Menu Trigger */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onToggleDarkMode}
               aria-label="Toggle theme"
-              className={`w-7 h-7 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
+              title="Toggle theme"
+              className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
                 isDarkMode
                   ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
@@ -1209,20 +1211,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               type="button"
               onClick={onOpenVault}
               aria-label="Saved Bouquets"
-              className={`h-7 sm:h-8.5 px-2 sm:px-3.5 rounded-full border border-dashed text-[10.5px] sm:text-xs font-medium inline-flex items-center gap-1 sm:gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap shrink-0 ${
+              title="Saved Bouquets"
+              className={`h-8 sm:h-8.5 ${
+                vaultCount > 0 ? 'px-2.5' : 'w-8 sm:w-8.5 justify-center'
+              } rounded-full border border-dashed text-[10.5px] sm:text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
                 isDarkMode
                   ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              <span className="hidden lg:inline">Saved Bouquets</span>
-              <span className="lg:hidden">Saved</span>
+              <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
               {vaultCount > 0 && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[9.5px] sm:text-[10px] font-semibold tabular-nums ${
+                  className={`px-1 py-0.2 rounded-full text-[9.5px] sm:text-[10px] font-semibold tabular-nums ${
                     isDarkMode
-                      ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
-                      : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                      ? 'text-[#F0C8B0]'
+                      : 'text-[#7A4B3A]'
                   }`}
                 >
                   {vaultCount}
@@ -1230,14 +1234,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               )}
             </button>
 
-            {/* Mobile & Small Tablet Editorial Menu Trigger (< 768px) — Contained cleanly inside the header pill */}
+            {/* Mobile & Small Tablet Editorial Menu Trigger (< 768px) — Icon-only button */}
             <button
               type="button"
               onClick={() => setIsMobileNavOpen((prev) => !prev)}
               aria-label="Toggle navigation menu"
+              title={isMobileNavOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={isMobileNavOpen}
               data-testid="mobile-nav-trigger"
-              className={`md:hidden h-7 sm:h-8.5 px-2 sm:px-3 rounded-full border border-dashed text-[10.5px] sm:text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+              className={`md:hidden w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
                 isMobileNavOpen
                   ? isDarkMode
                     ? 'bg-[#9A6550] border-[#B47E68] text-white'
@@ -1247,10 +1252,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              <span>{isMobileNavOpen ? 'Close' : 'Menu'}</span>
               <svg
                 viewBox="0 0 18 18"
-                className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-current"
+                className="w-3.5 h-3.5 stroke-current"
                 fill="none"
                 strokeWidth="1.5"
                 strokeLinecap="round"
