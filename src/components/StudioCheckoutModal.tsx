@@ -3,17 +3,13 @@ import { Check, Copy, QrCode, X } from 'lucide-react';
 import {
   BouquetPremiumInspection,
   formatPassRemainingTime,
-  getActivePremiumAssetConfig,
   getOrCreateDeviceTokenHash,
   getPricingCatalog,
   getStoredKofiShopConfig,
-  KofiShopItemConfig,
   normalizePassKey,
-  PREMIUM_ASSET_CONFIG,
   PremiumAssetConfig,
   PricingRegion,
   PricingTierPlan,
-  saveStoredKofiShopConfig,
   StudioPassRecord,
   StudioPassTier,
 } from '../lib/monetization';
@@ -21,11 +17,6 @@ import {
   fetchStudioPassFromFirestore,
   saveStudioPassToFirestore,
 } from '../lib/firebase';
-import {
-  FLOWER_CATALOG,
-  RIBBON_STYLE_CATALOG,
-  WRAPPER_CATALOG,
-} from '../types/bouquet';
 
 /**
  * Bespoke 5-petal botanical wax-seal floweret icon matching Send A Bouquet's
@@ -382,13 +373,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   activePass,
   onClose,
   onPassActivated,
-  onPremiumConfigChanged,
   onToast,
 }) => {
   const [region, setRegion] = useState<PricingRegion>('INTL');
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
   const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>('kofi');
-  const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card' | 'asset_config'>(
+  const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : 'plans')
   );
   const [checkoutStep, setCheckoutStep] = useState<'select' | 'qr_confirm'>('select');
@@ -407,12 +397,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const [buyerEmail, setBuyerEmail] = useState('');
   const [redeemInput, setRedeemInput] = useState('');
   const [copiedPassKey, setCopiedPassKey] = useState(false);
-  const [customConfig, setCustomConfig] = useState<PremiumAssetConfig>(() =>
-    getActivePremiumAssetConfig()
-  );
-  const [shopConfig, setShopConfig] = useState<KofiShopItemConfig>(() =>
-    getStoredKofiShopConfig()
-  );
+  const shopConfig = getStoredKofiShopConfig();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -516,21 +501,6 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     }
   };
 
-  const handleSaveShopConfig = async () => {
-    const saved = saveStoredKofiShopConfig(shopConfig);
-    setShopConfig(saved);
-    try {
-      await fetch('/api/payments/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ syncShopCodes: saved }),
-      });
-      onToast('Ko-fi Shop codes saved');
-    } catch {
-      onToast('Ko-fi Shop codes saved locally');
-    }
-  };
-
   const handleRedeemPassKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -577,41 +547,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       navigator.clipboard.writeText(keyToCopy).catch(() => {});
     }
     setCopiedPassKey(true);
-    onToast('Pass Key copied');
+    onToast('Key copied!');
     setTimeout(() => setCopiedPassKey(false), 2000);
-  };
-
-  const handleToggleAssetInConfig = <K extends 'flowers' | 'wraps' | 'ribbons'>(
-    category: K,
-    itemValue: PremiumAssetConfig[K][number]
-  ) => {
-    const currentList = customConfig[category] as string[];
-    const exists = currentList.includes(itemValue as string);
-    const nextList = exists
-      ? currentList.filter((x) => x !== itemValue)
-      : [...currentList, itemValue as string];
-    const nextConfig: PremiumAssetConfig = {
-      ...customConfig,
-      [category]: nextList as PremiumAssetConfig[K],
-    };
-    setCustomConfig(nextConfig);
-    try {
-      window.localStorage.setItem('sab_custom_premium_config_v1', JSON.stringify(nextConfig));
-    } catch {
-      // Ignore storage quota
-    }
-    onPremiumConfigChanged?.(nextConfig);
-  };
-
-  const handleResetDefaultAssetConfig = () => {
-    setCustomConfig(PREMIUM_ASSET_CONFIG);
-    try {
-      window.localStorage.removeItem('sab_custom_premium_config_v1');
-    } catch {
-      // Ignore
-    }
-    onPremiumConfigChanged?.(PREMIUM_ASSET_CONFIG);
-    onToast('Couture defaults restored');
   };
 
   const planShortSubtitles: Record<StudioPassTier, string> = {
@@ -670,14 +607,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               ? 'Your Studio Pass'
               : activeView === 'redeem'
               ? 'Enter Pass Key'
-              : activeView === 'asset_config'
-              ? 'Couture Pieces'
               : 'Unlock Premium'}
           </h3>
         </div>
 
         {/* Clean Top Switcher + Currency Pill — Hidden when user is already on an active pass */}
-        {!hasActiveSubscriptionPass && activeView !== 'pass_card' && activeView !== 'asset_config' && (
+        {!hasActiveSubscriptionPass && activeView !== 'pass_card' && (
           <div className="mt-3 flex items-center justify-between gap-2">
             <div
               className={`inline-flex items-center p-0.5 rounded-full border border-dashed text-[11px] font-medium ${
@@ -912,17 +847,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 : `Continue · ${currentPlan.displayPrice}`}
             </button>
 
-            {/* Quiet Footer Note + Discreet Owner Asset Link */}
-            <div className="flex items-center justify-between text-[10px] opacity-65 pt-0.5">
-              <span>No account needed</span>
-              <button
-                type="button"
-                data-testid="checkout-tab-asset-config"
-                onClick={() => setActiveView('asset_config')}
-                className="underline hover:opacity-100 cursor-pointer"
-              >
-                Customize items
-              </button>
+            {/* Quiet Footer Note */}
+            <div className="flex items-center justify-center text-[10px] opacity-65 pt-0.5">
+              <span>No account needed · Instant unlock</span>
             </div>
           </div>
         )}
@@ -1183,7 +1110,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 </button>
               </div>
 
-              {/* Sweet Botanical Thank-You Message */}
+              {/* Humble Solo-Dev Thank-You Note */}
               <div
                 data-testid="active-pass-thank-you-note"
                 className={`px-3.5 py-2.5 rounded-xl border border-dashed text-center ${
@@ -1196,7 +1123,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   className="text-sm sm:text-[15px] italic leading-snug"
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
-                  “Thank you from the bottom of our hearts for supporting Send A Bouquet. Every bloom and keepsake you craft helps keep this quiet floral studio alive.”
+                  “Thank you so much for supporting this little project. Every pass helps me keep the page running and continue crafting new blooms for everyone.”
                 </p>
               </div>
             </div>
@@ -1213,198 +1140,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               Done
             </button>
 
-            <div className="flex items-center justify-between text-[10px] opacity-65 pt-0.5">
+            <div className="flex items-center justify-center text-[10px] opacity-65 pt-0.5">
               <span>Bound to this device · 1 active session</span>
-              <button
-                type="button"
-                data-testid="checkout-tab-asset-config"
-                onClick={() => setActiveView('asset_config')}
-                className="underline hover:opacity-100 cursor-pointer"
-              >
-                Customize items
-              </button>
             </div>
-          </div>
-        )}
-
-        {/* ===================================================================
-            VIEW 4: OWNER COUTURE ASSET & KO-FI SHOP CONFIGURATOR
-            =================================================================== */}
-        {activeView === 'asset_config' && (
-          <div className="mt-3.5 space-y-3 animate-in fade-in duration-150">
-            <div
-              className={`p-3.5 rounded-2xl border border-dashed space-y-3 max-h-[54vh] overflow-y-auto ${
-                isDarkMode
-                  ? 'bg-[#2B2321]/80 border-[#544540]'
-                  : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
-              }`}
-            >
-              {/* Owner Ko-fi Shop Direct Link Codes */}
-              <div className="space-y-2 pb-2.5 border-b border-dashed border-[#DECBB9]/60 dark:border-[#544540]">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">Ko-fi Shop Item Links / Codes</span>
-                  <button
-                    type="button"
-                    data-testid="save-kofi-shop-codes-btn"
-                    onClick={handleSaveShopConfig}
-                    className="text-[11px] font-semibold text-[#B4846C] underline cursor-pointer"
-                  >
-                    Save Codes
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 gap-1.5 text-[11px]">
-                  <input
-                    type="text"
-                    value={shopConfig.single}
-                    onChange={(e) =>
-                      setShopConfig((prev) => ({ ...prev, single: e.target.value }))
-                    }
-                    placeholder="Single Bouquet URL or direct_link_code (e.g. ko-fi.com/s/xxxx)"
-                    className={`w-full px-2.5 py-1.5 rounded-lg border border-dashed font-mono text-[11px] focus:outline-none ${
-                      isDarkMode
-                        ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
-                        : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
-                    }`}
-                  />
-                  <input
-                    type="text"
-                    value={shopConfig.pass_7d}
-                    onChange={(e) =>
-                      setShopConfig((prev) => ({ ...prev, pass_7d: e.target.value }))
-                    }
-                    placeholder="7-Day Pass URL or direct_link_code (e.g. ko-fi.com/s/yyyy)"
-                    className={`w-full px-2.5 py-1.5 rounded-lg border border-dashed font-mono text-[11px] focus:outline-none ${
-                      isDarkMode
-                        ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
-                        : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
-                    }`}
-                  />
-                  <input
-                    type="text"
-                    value={shopConfig.pass_30d}
-                    onChange={(e) =>
-                      setShopConfig((prev) => ({ ...prev, pass_30d: e.target.value }))
-                    }
-                    placeholder="30-Day Eternal URL or direct_link_code (e.g. ko-fi.com/s/zzzz)"
-                    className={`w-full px-2.5 py-1.5 rounded-lg border border-dashed font-mono text-[11px] focus:outline-none ${
-                      isDarkMode
-                        ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
-                        : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs">
-                <span className="opacity-75">Tap to toggle Couture vs. Free</span>
-                <button
-                  type="button"
-                  onClick={handleResetDefaultAssetConfig}
-                  className="text-[11px] text-[#B4846C] underline cursor-pointer"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <div>
-                <div className="text-[10px] tracking-wider opacity-65 mb-1.5">
-                  Flowers ({customConfig.flowers.length})
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {FLOWER_CATALOG.map((f) => {
-                    const isPrem = customConfig.flowers.includes(f.type);
-                    return (
-                      <button
-                        key={f.type}
-                        type="button"
-                        onClick={() => handleToggleAssetInConfig('flowers', f.type)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] border border-dashed flex items-center gap-1 transition cursor-pointer ${
-                          isPrem
-                            ? isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C] font-medium'
-                              : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434] font-medium'
-                            : isDarkMode
-                            ? 'bg-[#352C29] text-[#C8B6AC] border-[#544540]'
-                            : 'bg-[#FFFDF9] text-[#6E5D54] border-[#DECBB9]'
-                        }`}
-                      >
-                        <span>{f.shortName}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] tracking-wider opacity-65 mb-1.5">
-                  Wraps ({customConfig.wraps.length})
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {WRAPPER_CATALOG.map((w) => {
-                    const isPrem = customConfig.wraps.includes(w.id);
-                    return (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => handleToggleAssetInConfig('wraps', w.id)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] border border-dashed transition cursor-pointer ${
-                          isPrem
-                            ? isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C] font-medium'
-                              : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434] font-medium'
-                            : isDarkMode
-                            ? 'bg-[#352C29] text-[#C8B6AC] border-[#544540]'
-                            : 'bg-[#FFFDF9] text-[#6E5D54] border-[#DECBB9]'
-                        }`}
-                      >
-                        {w.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] tracking-wider opacity-65 mb-1.5">
-                  Ribbons ({customConfig.ribbons.length})
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {RIBBON_STYLE_CATALOG.map((r) => {
-                    const isPrem = customConfig.ribbons.includes(r.id);
-                    return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => handleToggleAssetInConfig('ribbons', r.id)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] border border-dashed transition cursor-pointer ${
-                          isPrem
-                            ? isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C] font-medium'
-                              : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434] font-medium'
-                            : isDarkMode
-                            ? 'bg-[#352C29] text-[#C8B6AC] border-[#544540]'
-                            : 'bg-[#FFFDF9] text-[#6E5D54] border-[#DECBB9]'
-                        }`}
-                      >
-                        {r.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveView(activePass ? 'pass_card' : 'plans')}
-              className={`w-full py-2 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                isDarkMode
-                  ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
-                  : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
-              }`}
-            >
-              {activePass ? 'Back to My Pass' : 'Back to Passes'}
-            </button>
           </div>
         )}
       </div>

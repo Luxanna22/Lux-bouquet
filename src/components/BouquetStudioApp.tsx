@@ -135,6 +135,7 @@ import {
   CoutureBloomSeal,
   CoutureItemBadge,
 } from './StudioCheckoutModal';
+import { BotanicalQrCard } from './BotanicalQrCard';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -251,6 +252,8 @@ export default function App() {
   const isSealedBouquetPaidRef = useRef<boolean>(false);
   const [shortShareUrl, setShortShareUrl] = useState<string | null>(null);
   const [isShorteningUrl, setIsShorteningUrl] = useState(false);
+  const [copiedSealedLink, setCopiedSealedLink] = useState(false);
+  const [savedDraftPulse, setSavedDraftPulse] = useState(false);
   const [isInAppBrowserModalOpen, setIsInAppBrowserModalOpen] = useState(false);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving'>('saved');
@@ -521,7 +524,7 @@ export default function App() {
   const handleToggleMusic = () => {
     const playing = musicBox.toggle();
     setIsMusicPlaying(playing);
-    triggerToast(playing ? 'Playing soft music-box melody ♪' : 'Music paused');
+    triggerToast(playing ? 'Music playing' : 'Music paused');
   };
 
   const handleStopVoice = useCallback(() => {
@@ -569,11 +572,11 @@ export default function App() {
 
   const handleTogglePlayVoice = useCallback(() => {
     if ((isGiftView || isPreviewMode) && (isGiftEntranceOpen || isGiftCurrentlyLocked)) {
-      triggerToast('Unlock and unwrap the bouquet first to listen to the voice keepsake');
+      triggerToast('Unwrap bouquet first to listen');
       return;
     }
     if (!voice?.audioDataUrl) {
-      triggerToast('No voice recording yet — tap Record Voice to add one');
+      triggerToast('Tap Record Voice to add a note');
       return;
     }
     if (isVoicePlaying && voiceAudioRef.current) {
@@ -795,7 +798,7 @@ export default function App() {
 
   const handleSubmitRecipientReaction = useCallback(async () => {
     if (!selectedReactionId && !recipientReplyText.trim()) {
-      triggerToast('Choose a reaction or write a short note first');
+      triggerToast('Pick a reaction or write a note');
       return;
     }
     setIsSubmittingReaction(true);
@@ -824,9 +827,9 @@ export default function App() {
       );
       setHasSubmittedReaction(true);
       setIsReactionPopoverOpen(false);
-      triggerToast('Reaction & note sent to sender ♥');
+      triggerToast('Reaction sent!');
     } catch {
-      triggerToast('Saved reaction ♥');
+      triggerToast('Reaction saved!');
     } finally {
       setIsSubmittingReaction(false);
     }
@@ -882,7 +885,7 @@ export default function App() {
     setIsPreviewMode(false);
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
-    triggerToast('Started a fresh empty bouquet for you to arrange');
+    triggerToast('Canvas reset');
   }, [clearBouquet, selectItem, triggerToast, handleStopVoice]);
 
   // Returns to the Landing Page from a view-only showcase/shared bouquet and resets the studio canvas
@@ -1074,15 +1077,15 @@ export default function App() {
         e.preventDefault();
         if (e.shiftKey) {
           redo();
-          triggerToast('Redid action');
+          triggerToast('Redone');
         } else {
           undo();
-          triggerToast('Undid last change');
+          triggerToast('Undone');
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
-        triggerToast('Redid action');
+        triggerToast('Redone');
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelected();
@@ -1110,17 +1113,17 @@ export default function App() {
       ) as SVGSVGElement | null);
 
     if (!targetSvg) {
-      triggerToast('Bouquet canvas element not found.');
+      triggerToast('Canvas not found');
       return;
     }
 
     try {
-      triggerToast('Generating high-res image...');
+      triggerToast('Saving image...');
       await exportSvgElementToPng(targetSvg, 'flowers-for-you.png');
-      triggerToast('Saved high-res image ♥');
+      triggerToast('Image saved!');
     } catch (err) {
       console.error('Failed to export image:', err);
-      triggerToast('Could not export image.');
+      triggerToast('Could not save image');
     }
   }, [triggerToast]);
 
@@ -1301,14 +1304,16 @@ export default function App() {
     );
     currentSessionVaultCodeRef.current = code;
     setVaultCount(updatedVault.length);
-    triggerToast('Draft saved on this device ♥');
+    setSavedDraftPulse(true);
+    setTimeout(() => setSavedDraftPulse(false), 1600);
+    triggerToast('Draft saved!');
   }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, triggerToast]);
 
   const handleResumeDraftFromDevice = useCallback(
     (draftPayload: string) => {
       const decoded = decodeBouquetFromHash(draftPayload);
       if (!decoded) {
-        triggerToast('Could not load saved draft');
+        triggerToast('Could not load draft');
         return;
       }
       loadSnapshot(decoded);
@@ -1316,7 +1321,7 @@ export default function App() {
       setIsPreviewMode(false);
       setIsGiftEntranceOpen(false);
       setShowLandingPage(false);
-      triggerToast('Loaded draft onto studio canvas ♥');
+      triggerToast('Draft loaded!');
     },
     [loadSnapshot, triggerToast]
   );
@@ -1377,16 +1382,7 @@ export default function App() {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
-    const policy = getRetentionPolicyForPassTier(
-      passVerify.valid && effectivePass ? effectivePass.tier : 'free'
-    );
-    triggerToast(
-      policy.isPremiumEternal
-        ? 'Eternal Keepsake link sealed & copied ♥'
-        : policy.retentionDays > 30
-        ? `Extended ${policy.retentionDays}-day link sealed & copied ♥`
-        : 'Gift link sealed & copied ♥'
-    );
+    triggerToast('Gift sealed & link copied!');
   };
 
   const handleMobileFloatingTool = (mode: 'color' | 'stem' | 'layers' | 'card' | 'voice') => {
@@ -1636,7 +1632,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   undo();
-                  triggerToast('Undid last change');
+                  triggerToast('Undone');
                 }}
                 disabled={past.length === 0}
                 aria-label="Undo"
@@ -1649,7 +1645,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   redo();
-                  triggerToast('Redid change');
+                  triggerToast('Redone');
                 }}
                 disabled={future.length === 0}
                 aria-label="Redo"
@@ -1670,9 +1666,17 @@ export default function App() {
                 onClick={handleSaveDraftOnDevice}
                 aria-label="Save bouquet draft on this device"
                 title="Save Draft on Device"
-                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white active:scale-95 transition cursor-pointer"
+                className={`w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
+                  savedDraftPulse
+                    ? 'bg-emerald-500/20 text-emerald-500 scale-105'
+                    : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
+                }`}
               >
-                <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C]" />
+                <Check
+                  className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
+                    savedDraftPulse ? 'text-emerald-500' : 'text-[#B4846C]'
+                  }`}
+                />
               </button>
               <span
                 aria-hidden="true"
@@ -1685,7 +1689,7 @@ export default function App() {
                 onClick={() => {
                   currentSessionVaultCodeRef.current = null;
                   clearBouquet();
-                  triggerToast('Started over with an empty bouquet');
+                  triggerToast('Canvas reset');
                 }}
                 aria-label="Reset bouquet and start over"
                 title="Start Over"
@@ -1831,7 +1835,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 undo();
-                triggerToast('Undid last change');
+                triggerToast('Undone');
               }}
               disabled={past.length === 0}
               aria-label="Undo (Ctrl+Z)"
@@ -1848,7 +1852,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 redo();
-                triggerToast('Redid change');
+                triggerToast('Redone');
               }}
               disabled={future.length === 0}
               aria-label="Redo (Ctrl+Shift+Z)"
@@ -3626,7 +3630,7 @@ export default function App() {
                     onClick={() => {
                       currentSessionVaultCodeRef.current = null;
                       clearBouquet();
-                      triggerToast('Started over with an empty bouquet');
+                      triggerToast('Canvas reset');
                     }}
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                   >
@@ -4258,7 +4262,7 @@ export default function App() {
                         type="button"
                         onClick={() => {
                           clearBouquet();
-                          triggerToast('Cleared bouquet');
+                          triggerToast('Canvas reset');
                         }}
                         className="text-[11px] font-medium text-stone-500 hover:text-red-600 dark:text-stone-400 dark:hover:text-red-400 flex items-center gap-1 transition"
                       >
@@ -5340,10 +5344,10 @@ export default function App() {
             )}
 
             {/* ===============================================================
-                STEP 4 (READY): SEALED GIFT LINK & PNG DOWNLOAD
+                STEP 4 (READY): SEALED GIFT LINK, CUSTOM SOFT QR & PNG DOWNLOAD
                 =============================================================== */}
             {shareStep === 'ready' && (
-              <div className="mt-4 space-y-3.5 animate-in fade-in duration-150">
+              <div className="mt-3.5 space-y-3 animate-in fade-in duration-150">
                 <div
                   className={`flex items-center gap-1.5 p-1.5 rounded-2xl border border-dashed ${
                     isDarkMode
@@ -5369,18 +5373,39 @@ export default function App() {
                       if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(urlToCopy).catch(() => {});
                       }
-                      triggerToast('Gift link copied ♥');
+                      setCopiedSealedLink(true);
+                      setTimeout(() => setCopiedSealedLink(false), 1800);
+                      triggerToast('Link copied!');
                     }}
-                    className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
-                      isDarkMode
+                    className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
+                      copiedSealedLink
+                        ? 'bg-emerald-600 text-white'
+                        : isDarkMode
                         ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
                         : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
                     }`}
                   >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy Link</span>
+                    {copiedSealedLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Link</span>
+                      </>
+                    )}
                   </button>
                 </div>
+
+                {/* Custom Lineart / Soft Botanical QR Code with Center Logo & Top-Left Download Icon */}
+                <BotanicalQrCard
+                  url={sealedGiftUrl || shortShareUrl || getShareUrl(true)}
+                  recipientName={card.to}
+                  isDarkMode={isDarkMode}
+                  onToast={triggerToast}
+                />
 
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -5398,7 +5423,7 @@ export default function App() {
                         : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
                     }`}
                   >
-                    Save PNG
+                    Save Bouquet PNG
                   </button>
 
                   <button
@@ -5480,7 +5505,7 @@ export default function App() {
                   if (navigator.clipboard && navigator.clipboard.writeText) {
                     navigator.clipboard.writeText(currentUrl).catch(() => {});
                   }
-                  triggerToast('Link copied — paste in Safari or Chrome');
+                  triggerToast('Link copied!');
                   setIsInAppBrowserModalOpen(false);
                 }}
                 className="flex-1 py-2.5 px-4 rounded-full bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-stone-100 dark:text-[#1C1917] dark:hover:bg-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
@@ -5554,7 +5579,7 @@ export default function App() {
             setIsCheckoutModalOpen(false);
             performSvgPngDownload();
           } else {
-            triggerToast(`Studio Pass ${newPass.passKey} activated ♥`);
+            triggerToast('Bloom Pass Activated!');
           }
         }}
         onPremiumConfigChanged={(nextCfg) => setPremiumAssetConfig(nextCfg)}
@@ -5566,8 +5591,9 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#1C1917]/90 text-white dark:bg-stone-100 dark:text-[#1C1917] px-5 py-2.5 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm animate-[fadeIn_200ms_ease-out]"
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#1C1917]/92 text-white dark:bg-stone-100 dark:text-[#1C1917] px-4 py-2 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm flex items-center gap-1.5 animate-[fadeIn_200ms_ease-out]"
         >
+          <Check className="w-3.5 h-3.5 text-[#E6B89C] dark:text-[#6E4434] shrink-0" />
           <span>{toast}</span>
         </div>
       )}

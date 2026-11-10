@@ -65,7 +65,7 @@ test('inspectBouquetPremiumUsage distinguishes free classic bouquets from coutur
       ...freeSnapshot.items,
       {
         id: '3',
-        type: 'peony' as const,
+        type: 'callalily' as const,
         x: 310,
         y: 240,
         scale: 1,
@@ -96,7 +96,7 @@ test('inspectBouquetPremiumUsage distinguishes free classic bouquets from coutur
   assert.equal(coutureInspection.hasCoutureRibbon, true);
   assert.equal(coutureInspection.hasVoiceKeepsake, true);
   assert.equal(coutureInspection.hasSecretOrDateLock, true);
-  assert.deepEqual(coutureInspection.premiumFlowerTypes, ['peony']);
+  assert.deepEqual(coutureInspection.premiumFlowerTypes, ['callalily']);
 });
 
 test('PPP region detection and pricing catalog return accurate PH (PHP) and INTL (USD) tiers', () => {

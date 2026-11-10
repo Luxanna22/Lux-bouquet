@@ -25,24 +25,25 @@ export interface PremiumAssetConfig {
 }
 
 export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
-  // Couture Blooms & Rare Botanicals (Classic blooms like rose, tulip, daisy, sunflower, lily, lavender, babysBreath, eucalyptus remain Free)
+  // Couture Blooms & Rare Botanicals (12 items selected per user configuration)
   flowers: [
-    'peony',
-    'orchid',
-    'ranunculus',
+    'iris',
+    'camellia',
     'lotus',
     'callalily',
     'poppy',
+    'sweetpea',
+    'freesia',
+    'oliveBranch',
+    'monstera',
     'pampas',
     'queenanneslace',
     'astilbe',
-    'anemone',
-    'camellia',
   ],
-  // Couture Vessels & Architectural Wraps (kraft, tissue, plain, chalice, basket, vintage, vase remain Free)
-  wraps: ['hatbox', 'cloche', 'koreanmesh', 'lace', 'celestial'],
-  // Specialty Ribbons & Hardware (satin, corset, waxCord, organza, raffia remain Free)
-  ribbons: ['lace', 'double', 'velvet', 'chiffon', 'goldchain'],
+  // Couture Vessels & Architectural Wraps (4 items selected: Ceramic Vase, Velvet Hatbox, Glass Cloche, Korean Mesh)
+  wraps: ['vase', 'hatbox', 'cloche', 'koreanmesh'],
+  // Specialty Ribbons & Hardware (6 items selected: Twine & Seal, Sheer Chiffon, Cameo Velvet, Chiffon Fringe, Gold Chain, Botanical Raffia)
+  ribbons: ['waxCord', 'organza', 'velvet', 'chiffon', 'goldchain', 'raffia'],
   // All 5 Voice Keepsake styles are Couture keepsakes when a voice note is attached or displayed
   voiceStyles: ['mixtape', 'vinyl', 'plushie', 'musicbox', 'locket'],
   // Time-Capsule Countdown & Secret Question Locks are Couture keepsakes ('none' is Free)
@@ -51,32 +52,8 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
   requirePassForHighResPng: true,
 };
 
-const CUSTOM_PREMIUM_CONFIG_STORAGE_KEY = 'sab_custom_premium_config_v1';
-
 export function getActivePremiumAssetConfig(): PremiumAssetConfig {
-  if (typeof window === 'undefined') return PREMIUM_ASSET_CONFIG;
-  try {
-    const raw = window.localStorage.getItem(CUSTOM_PREMIUM_CONFIG_STORAGE_KEY);
-    if (!raw) return PREMIUM_ASSET_CONFIG;
-    const parsed = JSON.parse(raw) as Partial<PremiumAssetConfig>;
-    return {
-      flowers: Array.isArray(parsed.flowers) ? parsed.flowers : PREMIUM_ASSET_CONFIG.flowers,
-      wraps: Array.isArray(parsed.wraps) ? parsed.wraps : PREMIUM_ASSET_CONFIG.wraps,
-      ribbons: Array.isArray(parsed.ribbons) ? parsed.ribbons : PREMIUM_ASSET_CONFIG.ribbons,
-      voiceStyles: Array.isArray(parsed.voiceStyles)
-        ? parsed.voiceStyles
-        : PREMIUM_ASSET_CONFIG.voiceStyles,
-      lockModes: Array.isArray(parsed.lockModes)
-        ? parsed.lockModes
-        : PREMIUM_ASSET_CONFIG.lockModes,
-      requirePassForHighResPng:
-        typeof parsed.requirePassForHighResPng === 'boolean'
-          ? parsed.requirePassForHighResPng
-          : PREMIUM_ASSET_CONFIG.requirePassForHighResPng,
-    };
-  } catch {
-    return PREMIUM_ASSET_CONFIG;
-  }
+  return PREMIUM_ASSET_CONFIG;
 }
 
 export function isFlowerPremium(
@@ -133,33 +110,34 @@ export interface BouquetPremiumInspection {
 }
 
 const FLOWER_LABELS: Record<string, string> = {
-  peony: 'Blush Peony',
-  orchid: 'Phalaenopsis Orchid',
-  ranunculus: 'Persian Ranunculus',
-  lotus: 'Sacred Lotus',
-  callalily: 'Sculptural Calla Lily',
-  poppy: 'Icelandic Silk Poppy',
-  pampas: 'Velvet Pampas Plume',
-  queenanneslace: "Queen Anne's Lace",
-  astilbe: 'Feathered Astilbe',
-  anemone: 'French Anemone',
-  camellia: 'Japonica Camellia',
+  iris: 'Iris',
+  camellia: 'Camellia',
+  lotus: 'Lotus',
+  callalily: 'Calla Lily',
+  poppy: 'Poppy',
+  sweetpea: 'Sweet Pea',
+  freesia: 'Freesia',
+  oliveBranch: 'Olive',
+  monstera: 'Monstera',
+  pampas: 'Pampas',
+  queenanneslace: 'Lace Umbel',
+  astilbe: 'Astilbe',
 };
 
 const WRAP_LABELS: Record<string, string> = {
-  hatbox: 'Velvet Hatbox Vessel',
-  cloche: 'Botanical Glass Cloche',
-  koreanmesh: 'Korean Tulle Mesh Wrap',
-  lace: 'Eyelet Lace Trim Wrap',
-  celestial: 'Starlit Noir Couture Wrap',
+  vase: 'Ceramic Vase',
+  hatbox: 'Velvet Hatbox',
+  cloche: 'Glass Cloche',
+  koreanmesh: 'Korean Mesh',
 };
 
 const RIBBON_LABELS: Record<string, string> = {
-  lace: 'Eyelet Lace Bow',
-  double: 'Couture Rosette Ribbon',
-  velvet: 'Cameo Velvet Ribbon',
-  chiffon: 'Silk Chiffon Fringe',
-  goldchain: 'Botanical Gold Chain',
+  waxCord: 'Twine & Seal',
+  organza: 'Sheer Chiffon',
+  velvet: 'Cameo Velvet',
+  chiffon: 'Chiffon Fringe',
+  goldchain: 'Gold Chain',
+  raffia: 'Botanical Raffia',
 };
 
 /**

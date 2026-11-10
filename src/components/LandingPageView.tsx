@@ -2330,7 +2330,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                       }`}
                     >
-                      Thank you for writing{contactName ? `, ${contactName}` : ''}. We’ll read it soon.
+                      Thank you for writing{contactName ? `, ${contactName}` : ''}. I’ll read it soon.
                     </p>
                     <button
                       type="button"
@@ -2504,21 +2504,35 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 Help keep this floral studio blooming and free for everyone.
               </p>
 
-              <div className="mt-3.5 flex flex-wrap items-center justify-center lg:justify-start gap-3">
+              <div className="mt-3.5 flex flex-wrap items-center justify-center lg:justify-start gap-2.5">
+                <a
+                  href="https://ko-fi.com/luxinnamon"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="kofi-support-link"
+                  className={`px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
+                    isDarkMode
+                      ? 'bg-[#E6B89C] border-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] border-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                  }`}
+                >
+                  ko-fi.com/luxinnamon ↗
+                </a>
+
                 <button
                   type="button"
                   onClick={() => setIsMaintainNoteOpen((prev) => !prev)}
                   aria-expanded={isMaintainNoteOpen}
-                  className={`px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
+                  className={`px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
                     isDarkMode
                       ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                       : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                   }`}
                 >
-                  {isMaintainNoteOpen ? 'Hide Support Info' : 'Help Maintain'}
+                  {isMaintainNoteOpen ? 'Hide Note' : 'About Support'}
                 </button>
 
-                {/* Placeholder Socials Inline */}
+                {/* Socials Inline */}
                 <div
                   className={`flex flex-wrap items-center justify-center lg:justify-start gap-x-2 text-xs font-medium ${
                     isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
@@ -2565,7 +2579,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
                   }`}
                 >
-                  Direct tipping links are coming soon—for now, sharing a bouquet or sending a kind note helps keep the page alive.
+                  Every tip or pass on{' '}
+                  <a
+                    href="https://ko-fi.com/luxinnamon"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 font-medium"
+                  >
+                    ko-fi.com/luxinnamon
+                  </a>{' '}
+                  helps me keep this page running and craft new blooms for everyone.
                 </p>
               )}
             </div>
