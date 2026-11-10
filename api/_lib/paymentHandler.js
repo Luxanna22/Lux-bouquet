@@ -175,17 +175,23 @@ export function getActiveKofiShopCodes(clientOverride) {
     if (p30) cachedOwnerShopCodes.pass_30d = p30;
   }
 
+  const sharedTestCode = extractKofiShopCode(process.env.KOFI_SHOP_TEST_CODE);
+
   return {
+    test: sharedTestCode || '',
     single:
       extractKofiShopCode(process.env.KOFI_SHOP_SINGLE_CODE) ||
+      sharedTestCode ||
       cachedOwnerShopCodes.single ||
       '',
     pass_7d:
       extractKofiShopCode(process.env.KOFI_SHOP_7D_CODE) ||
+      sharedTestCode ||
       cachedOwnerShopCodes.pass_7d ||
       '',
     pass_30d:
       extractKofiShopCode(process.env.KOFI_SHOP_30D_CODE) ||
+      sharedTestCode ||
       cachedOwnerShopCodes.pass_30d ||
       '',
   };
@@ -815,19 +821,43 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
   }
 
   const codes = getActiveKofiShopCodes(configuredShopCodes);
-  const hasAnyConfiguredCode = Boolean(codes.single || codes.pass_7d || codes.pass_30d);
+  const hasAnyConfiguredCode = Boolean(codes.test || codes.single || codes.pass_7d || codes.pass_30d);
 
   if (hasAnyConfiguredCode) {
-    // Check highest tier first if multiple items in cart
-    if (codes.pass_30d && itemCodes.includes(codes.pass_30d)) {
-      return { valid: true, tier: 'pass_30d', directLinkCode: codes.pass_30d };
+    if (codes.test && itemCodes.includes(codes.test)) {
+      return {
+        valid: true,
+        tier: 'pass_30d',
+        matchedTiers: ['single', 'pass_7d', 'pass_30d'],
+        directLinkCode: codes.test,
+      };
+    }
+
+    const matchedTiers = [];
+    let primaryDirectLinkCode = '';
+
+    if (codes.single && itemCodes.includes(codes.single)) {
+      matchedTiers.push('single');
+      if (!primaryDirectLinkCode) primaryDirectLinkCode = codes.single;
     }
     if (codes.pass_7d && itemCodes.includes(codes.pass_7d)) {
-      return { valid: true, tier: 'pass_7d', directLinkCode: codes.pass_7d };
+      matchedTiers.push('pass_7d');
+      if (!primaryDirectLinkCode) primaryDirectLinkCode = codes.pass_7d;
     }
-    if (codes.single && itemCodes.includes(codes.single)) {
-      return { valid: true, tier: 'single', directLinkCode: codes.single };
+    if (codes.pass_30d && itemCodes.includes(codes.pass_30d)) {
+      matchedTiers.push('pass_30d');
+      primaryDirectLinkCode = codes.pass_30d;
     }
+
+    if (matchedTiers.length > 0) {
+      return {
+        valid: true,
+        tier: matchedTiers[matchedTiers.length - 1],
+        matchedTiers,
+        directLinkCode: primaryDirectLinkCode,
+      };
+    }
+
     return {
       valid: false,
       reason: 'UNRECOGNIZED_DIRECT_LINK_CODE',
@@ -836,9 +866,17 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
   }
 
   // Fallback when owner hasn't configured specific codes yet: still strictly requires type === 'Shop Order'
-  // and a valid direct_link_code, resolving tier by amount/currency
+  // and a valid direct_link_code, resolving tier by amount/currency (or unlocking all 3 tiers if $0 test product)
   const amount = Number.parseFloat(String(parsedWebhook?.amount || '0'));
   const cur = String(parsedWebhook?.currency || 'USD').toUpperCase();
+  if (amount <= 0) {
+    return {
+      valid: true,
+      tier: 'pass_30d',
+      matchedTiers: ['single', 'pass_7d', 'pass_30d'],
+      directLinkCode: itemCodes[0],
+    };
+  }
   let tier = 'single';
   if (cur === 'PHP' || amount >= 35) {
     tier = amount >= 180 ? 'pass_30d' : amount >= 85 ? 'pass_7d' : 'single';
@@ -848,6 +886,7 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
   return {
     valid: true,
     tier,
+    matchedTiers: [tier],
     directLinkCode: itemCodes[0],
   };
 }
@@ -1455,28 +1494,38 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const kofiTxId = String(parsed.kofi_transaction_id || `kofi_${Date.now()}`);
       const tier = resolution.tier;
       const directLinkCode = resolution.directLinkCode || '';
+      const matchedTiers =
+        Array.isArray(resolution.matchedTiers) && resolution.matchedTiers.length > 0
+          ? resolution.matchedTiers
+          : [tier];
 
-      // Store unclaimed receipt in deterministic `(buyerEmail, tier)` slot `BLOOM-KSXX-XXXX`
-      const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, tier);
-      const receiptRecord = createSignedStudioPassServer({
-        passKey: emailTierSlotKey,
-        tier,
-        region: currency === 'PHP' ? 'PH' : 'INTL',
-        deviceTokenHash: '',
-        secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
-        boundBouquetCode: directLinkCode,
-        paymentProvider: 'kofi',
-        paymentReference: `kfs_${kofiTxId.slice(0, 12)}`,
-      });
+      // Store unclaimed receipt in deterministic `(buyerEmail, matchedTier)` slot(s) `BLOOM-KSXX-XXXX`
+      const writtenSlots = [];
+      for (const matchedTier of matchedTiers) {
+        const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);
+        const receiptRecord = createSignedStudioPassServer({
+          passKey: slotKey,
+          tier: matchedTier,
+          region: currency === 'PHP' ? 'PH' : 'INTL',
+          deviceTokenHash: '',
+          secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
+          boundBouquetCode: directLinkCode,
+          paymentProvider: 'kofi',
+          paymentReference: `kfs_${kofiTxId.slice(0, 12)}`,
+        });
 
-      SERVER_PASS_STORE.set(emailTierSlotKey, receiptRecord);
-      await saveStudioPassToFirestoreRest(receiptRecord);
+        SERVER_PASS_STORE.set(slotKey, receiptRecord);
+        await saveStudioPassToFirestoreRest(receiptRecord);
+        writtenSlots.push(slotKey);
+      }
 
       sendJson(res, 200, {
         ok: true,
         type: 'Shop Order',
-        emailTierSlotKey,
+        emailTierSlotKey: writtenSlots[0],
+        writtenSlots,
         tier,
+        matchedTiers,
         directLinkCode,
       });
       return true;

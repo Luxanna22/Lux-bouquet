@@ -482,6 +482,8 @@ export interface SavedVaultBouquet {
   flowerCount?: number;
   isPremium?: boolean;
   retentionDays?: number;
+  isDraft?: boolean;
+  draftPayload?: string;
 }
 
 export interface BouquetSnapshot {

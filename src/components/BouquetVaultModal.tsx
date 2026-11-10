@@ -18,6 +18,8 @@ interface BouquetVaultModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenGiftUrl?: (url: string) => void;
+  onSaveCurrentDraft?: () => void;
+  onResumeDraft?: (draftPayload: string) => void;
   isDarkMode?: boolean;
 }
 
@@ -25,6 +27,8 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
   isOpen,
   onClose,
   onOpenGiftUrl,
+  onSaveCurrentDraft,
+  onResumeDraft,
   isDarkMode = false,
 }) => {
   const [vault, setVault] = useState<SavedVaultBouquet[]>([]);
@@ -39,6 +43,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
     const results: Record<string, SharedBouquetRecord> = {};
     await Promise.all(
       list.slice(0, 12).map(async (item) => {
+        if (item.isDraft) return;
         try {
           const rec = await fetchSharedBouquetFromFirestore(item.code);
           if (rec) {
@@ -106,7 +111,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
       >
         {/* Minimal Luxury Header */}
         <div
-          className={`px-5 sm:px-6 pt-5 pb-4 border-b border-dashed flex items-start justify-between gap-4 shrink-0 ${
+          className={`px-5 sm:px-6 pt-5 pb-4 border-b border-dashed flex items-start justify-between gap-3 shrink-0 ${
             isDarkMode
               ? 'border-[#4E403B]'
               : 'border-[#EADFD4] dark:border-[#4E403B]'
@@ -126,21 +131,40 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                   : 'text-[#8C7A70] dark:text-[#C8B6AC]'
               }`}
             >
-              Keepsakes saved quietly in this browser
+              Drafts &amp; keepsakes saved on this device
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close saved bouquets"
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-              isDarkMode
-                ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4] dark:text-[#C8B6AC] dark:hover:text-[#FBF6F1] dark:hover:bg-[#463A36]'
-            }`}
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onSaveCurrentDraft && (
+              <button
+                type="button"
+                data-testid="vault-save-current-draft-btn"
+                onClick={() => {
+                  onSaveCurrentDraft();
+                  refreshVault();
+                }}
+                className={`px-3 py-1.5 rounded-full border border-dashed text-[11px] font-medium transition cursor-pointer ${
+                  isDarkMode
+                    ? 'border-[#E6B89C]/70 bg-[#E6B89C]/15 text-[#F0C8B0] hover:bg-[#E6B89C]/25'
+                    : 'border-[#B4846C] bg-[#FAF4EE] text-[#6E4434] hover:bg-[#F3E9DF]'
+                }`}
+              >
+                + Save Draft
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close saved bouquets"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+                isDarkMode
+                  ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                  : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4] dark:text-[#C8B6AC] dark:hover:text-[#FBF6F1] dark:hover:bg-[#463A36]'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body */}
@@ -238,7 +262,9 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
               if (entry.flowerCount) {
                 statusParts.push(`${entry.flowerCount} stems`);
               }
-              if (openCount > 0) {
+              if (entry.isDraft) {
+                statusParts.push('Saved draft');
+              } else if (openCount > 0) {
                 statusParts.push(`Unwrapped ${openCount}×`);
               } else if (entry.lockMode === 'countdown') {
                 statusParts.push('Date lock');
@@ -250,6 +276,12 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
               if (voicePlays > 0) {
                 statusParts.push(`Voice played ${voicePlays}×`);
               }
+
+              const resolvedDraftPayload =
+                entry.draftPayload ||
+                (typeof window !== 'undefined'
+                  ? localStorage.getItem(`bq_short_${entry.code}`) || ''
+                  : '');
 
               return (
                 <div
@@ -338,48 +370,74 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                     </span>
 
                     <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(entry)}
-                        className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
-                          isCopied
-                            ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                            : isDarkMode
-                            ? 'border-[#66554F] bg-[#3B302C] text-[#FBF6F1] hover:bg-[#473A35]'
-                            : 'border-[#D5BFA9] bg-[#FFFDF9] text-[#5C4438] hover:bg-[#F5EBE1] dark:border-[#66554F] dark:bg-[#3B302C] dark:text-[#FBF6F1]'
-                        }`}
-                      >
-                        {isCopied ? (
-                          <>
-                            <Check className="w-3 h-3" />
-                            <span>Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copy Link</span>
-                          </>
-                        )}
-                      </button>
-
-                      <a
-                        href={entry.shareUrl}
-                        onClick={(e) => {
-                          if (onOpenGiftUrl) {
-                            e.preventDefault();
-                            onOpenGiftUrl(entry.shareUrl);
+                      {onResumeDraft && resolvedDraftPayload && (
+                        <button
+                          type="button"
+                          data-testid={`resume-draft-${entry.code}`}
+                          onClick={() => {
+                            onResumeDraft(resolvedDraftPayload);
                             onClose();
-                          }
-                        }}
-                        className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
-                          isDarkMode
-                            ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                            : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729] dark:bg-[#E6B89C] dark:text-[#231C18]'
-                        }`}
-                      >
-                        <span>Open</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                          }}
+                          className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
+                            entry.isDraft
+                              ? isDarkMode
+                                ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                                : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                              : isDarkMode
+                              ? 'border border-dashed border-[#66554F] bg-[#3B302C] text-[#FBF6F1] hover:bg-[#473A35]'
+                              : 'border border-dashed border-[#D5BFA9] bg-[#FFFDF9] text-[#5C4438] hover:bg-[#F5EBE1]'
+                          }`}
+                        >
+                          <span>{entry.isDraft ? 'Resume Draft' : 'Edit Draft'}</span>
+                        </button>
+                      )}
+
+                      {!entry.isDraft && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(entry)}
+                            className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
+                              isCopied
+                                ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                : isDarkMode
+                                ? 'border-[#66554F] bg-[#3B302C] text-[#FBF6F1] hover:bg-[#473A35]'
+                                : 'border-[#D5BFA9] bg-[#FFFDF9] text-[#5C4438] hover:bg-[#F5EBE1] dark:border-[#66554F] dark:bg-[#3B302C] dark:text-[#FBF6F1]'
+                            }`}
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Copy Link</span>
+                              </>
+                            )}
+                          </button>
+
+                          <a
+                            href={entry.shareUrl}
+                            onClick={(e) => {
+                              if (onOpenGiftUrl) {
+                                e.preventDefault();
+                                onOpenGiftUrl(entry.shareUrl);
+                                onClose();
+                              }
+                            }}
+                            className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
+                              isDarkMode
+                                ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                                : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729] dark:bg-[#E6B89C] dark:text-[#231C18]'
+                            }`}
+                          >
+                            <span>Open</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

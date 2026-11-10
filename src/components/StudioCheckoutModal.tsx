@@ -122,7 +122,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 }) => {
   const [region, setRegion] = useState<PricingRegion>(() => detectPricingRegion());
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
-  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>('kofi');
+  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>(() =>
+    detectPricingRegion() === 'PH' ? 'paymongo' : 'kofi'
+  );
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card' | 'asset_config'>(
     () => (activePass ? 'pass_card' : 'plans')
   );
@@ -177,7 +179,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         body: JSON.stringify({
           tier: selectedTier,
           region,
-          provider: paymentGateway,
+          provider: region === 'PH' ? 'paymongo' : paymentGateway,
           deviceTokenHash,
           bouquetCode,
           shopCodes: shopConfig,
@@ -212,7 +214,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     if (pendingCheckout.provider === 'kofi' && pendingCheckout.liveGatewayConfigured) {
       const trimmedEmail = buyerEmail.trim();
       if (!trimmedEmail || !trimmedEmail.includes('@')) {
-        setErrorMessage('Enter the email you used on Ko-fi Shop.');
+        setErrorMessage('Enter the email address you typed on Ko-fi checkout (not your name).');
         return;
       }
     }
@@ -356,9 +358,15 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   };
 
   const planShortSubtitles: Record<StudioPassTier, string> = {
-    single: '1 bouquet · 90-day link',
-    pass_7d: 'Unlimited · 90-day links',
-    pass_30d: 'Unlimited · Never expires',
+    single: '1 bouquet · 90d link',
+    pass_7d: 'Unlimited · 90d links',
+    pass_30d: 'Unlimited · Forever',
+  };
+
+  const planCompactNames: Record<StudioPassTier, string> = {
+    single: 'Single',
+    pass_7d: '7-Day Pass',
+    pass_30d: '30-Day Eternal',
   };
 
   return (
@@ -368,11 +376,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       aria-label="Studio Pass"
       data-testid="studio-checkout-modal"
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-5 animate-in fade-in duration-200"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md rounded-[28px] p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.2)] border border-dashed relative max-h-[88vh] overflow-y-auto transition-colors ${
+        className={`w-full max-w-lg rounded-[26px] p-4 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.2)] border border-dashed relative max-h-[90dvh] overflow-y-auto transition-colors ${
           isDarkMode
             ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
             : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18]'
@@ -402,7 +410,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               ? 'Pass Key'
               : activeView === 'asset_config'
               ? 'Studio Config'
-              : 'Couture Pass'}
+              : 'Premium'}
           </span>
         </div>
 
@@ -417,7 +425,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             ? 'Enter Pass Key'
             : activeView === 'asset_config'
             ? 'Couture Pieces'
-            : 'Unlock Couture'}
+            : 'Unlock Premium'}
         </h3>
 
         {/* Clean Top Switcher + Currency Pill */}
@@ -512,7 +520,10 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               <button
                 type="button"
                 data-testid="region-switch-intl"
-                onClick={() => setRegion('INTL')}
+                onClick={() => {
+                  setRegion('INTL');
+                  setPaymentGateway('kofi');
+                }}
                 className={`px-2.5 py-0.5 rounded-full transition cursor-pointer ${
                   region === 'INTL'
                     ? isDarkMode
@@ -574,12 +585,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            VIEW 1: ILLUSTRATED LINE-ART PASS CARDS & PAYMENT
+            VIEW 1: 3 HORIZONTAL ILLUSTRATED LINE-ART PASS CARDS & PAYMENT
             =================================================================== */}
         {activeView === 'plans' && checkoutStep === 'select' && (
           <div className="mt-3.5 space-y-3">
-            {/* 3 Visual Line-Art Stationery Cards */}
-            <div className="space-y-2">
+            {/* 3 Horizontal Visual Line-Art Stationery Cards */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
               {plans.map((plan) => {
                 const isSelected = selectedTier === plan.tier;
                 return (
@@ -588,94 +599,78 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     type="button"
                     data-testid={`plan-card-${plan.tier}`}
                     onClick={() => setSelectedTier(plan.tier)}
-                    className={`w-full text-left p-2.5 pr-4 rounded-2xl border border-dashed transition cursor-pointer flex items-center justify-between gap-3 ${
+                    className={`text-center p-2 sm:p-2.5 rounded-2xl border border-dashed transition cursor-pointer flex flex-col items-center justify-between gap-2 ${
                       isSelected
                         ? isDarkMode
-                          ? 'bg-[#423632] border-[#E6B89C]'
-                          : 'bg-[#FAF3EB] border-[#6E4434]'
+                          ? 'bg-[#423632] border-[#E6B89C] ring-1 ring-[#E6B89C]/50'
+                          : 'bg-[#FAF3EB] border-[#6E4434] ring-1 ring-[#6E4434]/35'
                         : isDarkMode
                         ? 'bg-[#2B2321]/70 border-[#544540] hover:border-[#7A655D]'
                         : 'bg-[#FFFDF9] border-[#DECBB9] hover:border-[#B4846C]'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-full space-y-1.5">
                       <img
                         src={planCoverImages[plan.tier]}
                         alt={plan.name}
-                        className={`w-14 h-14 rounded-xl object-cover border border-dashed shrink-0 ${
+                        className={`w-full aspect-square rounded-xl object-cover border border-dashed ${
                           isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
                         }`}
                       />
-                      <div className="min-w-0">
-                        <div
-                          className="text-lg font-medium leading-tight"
-                          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                        >
-                          {plan.name}
-                        </div>
-                        <div
-                          className={`text-[11px] mt-0.5 ${
-                            isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
-                          }`}
-                        >
-                          {planShortSubtitles[plan.tier]}
-                        </div>
+                      <div
+                        className="text-sm sm:text-base font-semibold leading-tight"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        {planCompactNames[plan.tier]}
+                      </div>
+                      <div
+                        className={`text-[10px] leading-tight ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                        }`}
+                      >
+                        {planShortSubtitles[plan.tier]}
                       </div>
                     </div>
 
-                    <div className="text-right shrink-0">
-                      <div
-                        className="text-2xl font-semibold tracking-tight"
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                      >
-                        {plan.displayPrice}
-                      </div>
+                    <div
+                      className="text-lg sm:text-xl font-semibold tracking-tight pt-0.5"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      {plan.displayPrice}
                     </div>
                   </button>
                 );
               })}
             </div>
 
-            {/* Minimal Payment Method Pill Row */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                data-testid="gateway-kofi"
-                onClick={() => setPaymentGateway('kofi')}
-                className={`py-2 px-3 rounded-xl border border-dashed text-left transition cursor-pointer ${
-                  paymentGateway === 'kofi'
-                    ? isDarkMode
-                      ? 'border-[#E6B89C] bg-[#3B302C]'
-                      : 'border-[#6E4434] bg-[#FAF3EB]'
-                    : isDarkMode
-                    ? 'border-[#544540] opacity-75 hover:opacity-100'
-                    : 'border-[#DECBB9] opacity-75 hover:opacity-100'
-                }`}
-              >
-                <div className="text-[11px] font-semibold">PayPal · Card · Ko-fi</div>
-                <div className="text-[10px] opacity-70">Instant Unlock</div>
-              </button>
-
-              <button
-                type="button"
+            {/* Region-Matched Payment Method (Single Method for PH, Ko-fi for International) */}
+            {region === 'PH' ? (
+              <div
                 data-testid="gateway-paymongo"
                 onClick={() => setPaymentGateway('paymongo')}
-                className={`py-2 px-3 rounded-xl border border-dashed text-left transition cursor-pointer ${
-                  paymentGateway === 'paymongo'
-                    ? isDarkMode
-                      ? 'border-[#E6B89C] bg-[#3B302C]'
-                      : 'border-[#6E4434] bg-[#FAF3EB]'
-                    : isDarkMode
-                    ? 'border-[#544540] opacity-70 hover:opacity-95'
-                    : 'border-[#DECBB9] opacity-70 hover:opacity-95'
+                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between cursor-pointer ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#3B302C]'
+                    : 'border-[#6E4434] bg-[#FAF3EB]'
                 }`}
               >
-                <div className="text-[11px] font-semibold">
-                  {region === 'PH' ? 'QR Ph · GCash · Maya' : 'Card · Apple / Google Pay'}
-                </div>
-                <div className="text-[10px] opacity-70">PayMongo · Soon</div>
-              </button>
-            </div>
+                <div className="text-xs font-semibold">QR Ph · GCash · Maya</div>
+                <div className="text-[10.5px] opacity-75">Instant Unlock</div>
+              </div>
+            ) : (
+              <div
+                data-testid="gateway-kofi"
+                onClick={() => setPaymentGateway('kofi')}
+                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between cursor-pointer ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#3B302C]'
+                    : 'border-[#6E4434] bg-[#FAF3EB]'
+                }`}
+              >
+                <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
+                <div className="text-[10.5px] opacity-75">Instant Unlock</div>
+              </div>
+            )}
 
             {/* Primary Action Button */}
             <button
@@ -732,7 +727,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 <div className="text-left">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-[#B4846C] font-semibold">
                     {pendingCheckout.provider === 'paymongo'
-                      ? 'QR Ph · GCash · Maya · Card'
+                      ? 'QR Ph · GCash · Maya'
                       : 'Ko-fi Shop Order'}
                   </div>
                   <div
@@ -765,9 +760,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   <div className="space-y-1">
                     <label
                       htmlFor="kofi-buyer-email"
-                      className="block text-[10.5px] font-medium opacity-75 text-center"
+                      className="block text-[10.5px] font-medium opacity-80 text-center"
                     >
-                      Ko-fi checkout email
+                      Email typed on Ko-fi checkout (not your name)
                     </label>
                     <input
                       id="kofi-buyer-email"

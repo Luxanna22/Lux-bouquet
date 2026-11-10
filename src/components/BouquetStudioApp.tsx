@@ -1226,6 +1226,8 @@ export default function App() {
           flowerCount: items.length,
           isPremium: policy.isPremiumEternal,
           retentionDays: policy.retentionDays,
+          isDraft: false,
+          draftPayload: hashPayload,
         },
         currentSessionVaultCodeRef.current
       );
@@ -1257,6 +1259,64 @@ export default function App() {
       return firstPartyUrl;
     },
     [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, activeStudioPass]
+  );
+
+  const handleSaveDraftOnDevice = useCallback(() => {
+    const snap: BouquetSnapshot = {
+      items,
+      wrapStyle,
+      wrapColor,
+      ribbonColor,
+      ribbonStyle,
+      card,
+      voice,
+      lock,
+    };
+    const hashPayload = encodeBouquetToCompactPayload(snap, false);
+    const code = computeShortCode(hashPayload);
+    try {
+      localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
+      localStorage.setItem(`bq_short_${code}`, hashPayload);
+    } catch {
+      // Ignore quota errors
+    }
+    const updatedVault = saveBouquetToLocalVault(
+      {
+        code,
+        to: card.to || 'Draft Bouquet',
+        from: card.from || 'Yours',
+        recipientName: card.to || 'Draft Bouquet',
+        senderName: card.from || 'Yours',
+        createdAt: new Date().toISOString(),
+        shareUrl: '',
+        lockMode: lock?.mode || 'none',
+        hasVoice: Boolean(voice?.audioDataUrl),
+        flowerCount: items.length,
+        isDraft: true,
+        draftPayload: hashPayload,
+      },
+      currentSessionVaultCodeRef.current
+    );
+    currentSessionVaultCodeRef.current = code;
+    setVaultCount(updatedVault.length);
+    triggerToast('Draft saved on this device ♥');
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, triggerToast]);
+
+  const handleResumeDraftFromDevice = useCallback(
+    (draftPayload: string) => {
+      const decoded = decodeBouquetFromHash(draftPayload);
+      if (!decoded) {
+        triggerToast('Could not load saved draft');
+        return;
+      }
+      loadSnapshot(decoded);
+      setIsGiftView(false);
+      setIsPreviewMode(false);
+      setIsGiftEntranceOpen(false);
+      setShowLandingPage(false);
+      triggerToast('Loaded draft onto studio canvas ♥');
+    },
+    [loadSnapshot, triggerToast]
   );
 
   useEffect(() => {
@@ -1602,6 +1662,23 @@ export default function App() {
               />
               <button
                 type="button"
+                data-testid="save-draft-device-btn"
+                onClick={handleSaveDraftOnDevice}
+                aria-label="Save bouquet draft on this device"
+                title="Save Draft on Device"
+                className="h-7 px-2 rounded-full text-[11px] font-medium flex items-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white active:scale-95 transition cursor-pointer"
+              >
+                <Check className="w-3 h-3 text-[#B4846C]" />
+                <span className="hidden sm:inline">Save Draft</span>
+              </button>
+              <span
+                aria-hidden="true"
+                className={`w-[1px] h-3.5 mx-0.5 ${
+                  isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                }`}
+              />
+              <button
+                type="button"
                 onClick={() => {
                   currentSessionVaultCodeRef.current = null;
                   clearBouquet();
@@ -1616,7 +1693,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Right: Studio Pass + Saved Bouquets + Ambient Controls + Primary Share Button */}
+            {/* Right: Premium + Saved Bouquets + Ambient Controls + Primary Share Button */}
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               <button
                 type="button"
@@ -1625,11 +1702,11 @@ export default function App() {
                   setCheckoutTriggerAction('pass_menu');
                   setIsCheckoutModalOpen(true);
                 }}
-                aria-label="Open Studio Pass and Pass Key"
+                aria-label="Open Premium Studio Pass and Pass Key"
                 title={
                   isBouquetUnlockedByPass && activeStudioPass
-                    ? `Active Pass (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
-                    : 'Studio Pass & Pass Key'
+                    ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
+                    : 'Premium Studio Pass & Pass Key'
                 }
                 className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isBouquetUnlockedByPass
@@ -1642,10 +1719,7 @@ export default function App() {
                 }`}
               >
                 <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                <span className="hidden md:inline">
-                  {isBouquetUnlockedByPass ? 'Pass Active' : 'Studio Pass'}
-                </span>
-                <span className="md:hidden">Pass</span>
+                <span>Premium</span>
               </button>
 
               <button
@@ -5502,6 +5576,8 @@ export default function App() {
       <BouquetVaultModal
         isOpen={isVaultModalOpen}
         isDarkMode={isDarkMode}
+        onSaveCurrentDraft={!isGiftView && !isPreviewMode ? handleSaveDraftOnDevice : undefined}
+        onResumeDraft={handleResumeDraftFromDevice}
         onClose={() => {
           setIsVaultModalOpen(false);
           setVaultCount(getSavedVaultBouquets().length);

@@ -336,6 +336,31 @@ test('Ko-fi Shop Order verification strictly requires type "Shop Order", matches
   assert.notEqual(slotSingle, slot7d);
   assert.notEqual(slot7d, slot30d);
   assert.notEqual(slotSingle, slotOtherEmail);
+
+  // 5. Universal $0 test product code (KOFI_SHOP_TEST_CODE) unlocks all 3 tiers simultaneously for testing
+  process.env.KOFI_SHOP_TEST_CODE = 'https://ko-fi.com/s/free00test';
+  try {
+    const activeCodes = paymentLib.getActiveKofiShopCodes();
+    assert.equal(activeCodes.test, 'free00test');
+    assert.equal(activeCodes.single, 'free00test');
+    assert.equal(activeCodes.pass_7d, 'free00test');
+    assert.equal(activeCodes.pass_30d, 'free00test');
+
+    const sharedTestOrder = paymentLib.resolveKofiShopOrderTier(
+      {
+        type: 'Shop Order',
+        from_name: 'Ignored Nickname',
+        email: 'tester@example.com',
+        shop_items: [{ direct_link_code: 'free00test' }],
+      },
+      activeCodes,
+    );
+    assert.equal(sharedTestOrder.valid, true);
+    assert.deepEqual(sharedTestOrder.matchedTiers, ['single', 'pass_7d', 'pass_30d']);
+  } finally {
+    delete process.env.KOFI_SHOP_TEST_CODE;
+  }
 });
+
 
 
