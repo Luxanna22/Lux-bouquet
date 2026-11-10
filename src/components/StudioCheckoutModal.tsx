@@ -7,11 +7,14 @@ import {
   getActivePremiumAssetConfig,
   getOrCreateDeviceTokenHash,
   getPricingCatalog,
+  getStoredKofiShopConfig,
+  KofiShopItemConfig,
   normalizePassKey,
   PREMIUM_ASSET_CONFIG,
   PremiumAssetConfig,
   PricingRegion,
   PricingTierPlan,
+  saveStoredKofiShopConfig,
   StudioPassRecord,
   StudioPassTier,
 } from '../lib/monetization';
@@ -136,10 +139,14 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [buyerEmail, setBuyerEmail] = useState('');
   const [redeemInput, setRedeemInput] = useState('');
   const [copiedPassKey, setCopiedPassKey] = useState(false);
   const [customConfig, setCustomConfig] = useState<PremiumAssetConfig>(() =>
     getActivePremiumAssetConfig()
+  );
+  const [shopConfig, setShopConfig] = useState<KofiShopItemConfig>(() =>
+    getStoredKofiShopConfig()
   );
 
   useEffect(() => {
@@ -173,6 +180,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           provider: paymentGateway,
           deviceTokenHash,
           bouquetCode,
+          shopCodes: shopConfig,
           origin: typeof window !== 'undefined' ? window.location.origin : '',
         }),
       });
@@ -201,6 +209,13 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 
   const handleCompleteVerification = async () => {
     if (!pendingCheckout) return;
+    if (pendingCheckout.provider === 'kofi' && pendingCheckout.liveGatewayConfigured) {
+      const trimmedEmail = buyerEmail.trim();
+      if (!trimmedEmail || !trimmedEmail.includes('@')) {
+        setErrorMessage('Enter the email you used on Ko-fi Shop.');
+        return;
+      }
+    }
     setErrorMessage(null);
     setIsProcessing(true);
     try {
@@ -212,6 +227,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           checkoutId: pendingCheckout.checkoutId,
           checkoutToken: pendingCheckout.checkoutToken,
           deviceTokenHash,
+          buyerEmail: buyerEmail.trim().toLowerCase(),
         }),
       });
       const data = await res.json();
@@ -223,11 +239,30 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       const issuedPass = data.pass as StudioPassRecord;
       await saveStudioPassToFirestore(issuedPass).catch(() => {});
       onPassActivated(issuedPass, triggerAction);
-      setActiveView('pass_card');
+      if (issuedPass.tier === 'single') {
+        onClose();
+      } else {
+        setActiveView('pass_card');
+      }
     } catch {
       setErrorMessage('Could not verify pass.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleSaveShopConfig = async () => {
+    const saved = saveStoredKofiShopConfig(shopConfig);
+    setShopConfig(saved);
+    try {
+      await fetch('/api/payments/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ syncShopCodes: saved }),
+      });
+      onToast('Ko-fi Shop codes saved');
+    } catch {
+      onToast('Ko-fi Shop codes saved locally');
     }
   };
 
@@ -312,6 +347,18 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     }
     onPremiumConfigChanged?.(PREMIUM_ASSET_CONFIG);
     onToast('Couture defaults restored');
+  };
+
+  const planCoverImages: Record<StudioPassTier, string> = {
+    single: '/assets/kofi-shop/single-bouquet-lineart.jpg',
+    pass_7d: '/assets/kofi-shop/7-day-pass-lineart.jpg',
+    pass_30d: '/assets/kofi-shop/30-day-eternal-lineart.jpg',
+  };
+
+  const planShortSubtitles: Record<StudioPassTier, string> = {
+    single: '1 bouquet · 90-day link',
+    pass_7d: 'Unlimited · 90-day links',
+    pass_30d: 'Unlimited · Never expires',
   };
 
   return (
@@ -416,7 +463,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             >
               Have a Key?
             </button>
-            {activePass && (
+            {activePass && activePass.tier !== 'single' && (
               <button
                 type="button"
                 data-testid="checkout-tab-active-pass"
@@ -527,11 +574,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            VIEW 1: MINIMAL PASS CARDS & PAYMENT
+            VIEW 1: ILLUSTRATED LINE-ART PASS CARDS & PAYMENT
             =================================================================== */}
         {activeView === 'plans' && checkoutStep === 'select' && (
           <div className="mt-3.5 space-y-3">
-            {/* 3 Scannable Stationery Cards */}
+            {/* 3 Visual Line-Art Stationery Cards */}
             <div className="space-y-2">
               {plans.map((plan) => {
                 const isSelected = selectedTier === plan.tier;
@@ -541,7 +588,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     type="button"
                     data-testid={`plan-card-${plan.tier}`}
                     onClick={() => setSelectedTier(plan.tier)}
-                    className={`w-full text-left px-3.5 py-3 rounded-2xl border border-dashed transition cursor-pointer flex items-center justify-between gap-3 ${
+                    className={`w-full text-left p-2.5 pr-4 rounded-2xl border border-dashed transition cursor-pointer flex items-center justify-between gap-3 ${
                       isSelected
                         ? isDarkMode
                           ? 'bg-[#423632] border-[#E6B89C]'
@@ -551,22 +598,28 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                         : 'bg-[#FFFDF9] border-[#DECBB9] hover:border-[#B4846C]'
                     }`}
                   >
-                    <div className="min-w-0">
-                      <div className="text-[9px] uppercase tracking-[0.18em] font-semibold text-[#B4846C]">
-                        {plan.eyebrow}
-                      </div>
-                      <div
-                        className="text-lg font-medium leading-snug"
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                      >
-                        {plan.name}
-                      </div>
-                      <div
-                        className={`text-[11px] mt-0.5 ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={planCoverImages[plan.tier]}
+                        alt={plan.name}
+                        className={`w-14 h-14 rounded-xl object-cover border border-dashed shrink-0 ${
+                          isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
                         }`}
-                      >
-                        {plan.tagline}
+                      />
+                      <div className="min-w-0">
+                        <div
+                          className="text-lg font-medium leading-tight"
+                          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                        >
+                          {plan.name}
+                        </div>
+                        <div
+                          className={`text-[11px] mt-0.5 ${
+                            isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                          }`}
+                        >
+                          {planShortSubtitles[plan.tier]}
+                        </div>
                       </div>
                     </div>
 
@@ -600,7 +653,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 }`}
               >
                 <div className="text-[11px] font-semibold">PayPal · Card · Ko-fi</div>
-                <div className="text-[10px] opacity-70">Instant Pass Key</div>
+                <div className="text-[10px] opacity-70">Instant Unlock</div>
               </button>
 
               <button
@@ -643,7 +696,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 
             {/* Quiet Footer Note + Discreet Owner Asset Link */}
             <div className="flex items-center justify-between text-[10px] opacity-65 pt-0.5">
-              <span>No account needed · 1 device session</span>
+              <span>No account needed</span>
               <button
                 type="button"
                 data-testid="checkout-tab-asset-config"
@@ -668,67 +721,68 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   : 'bg-[#FAF4EE] border-[#DECBB9]'
               }`}
             >
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-[#B4846C] font-semibold">
-                  {pendingCheckout.provider === 'paymongo'
-                    ? 'QR Ph · GCash · Maya · Card'
-                    : 'Ko-fi Checkout'}
-                </div>
-                <div
-                  className="text-xl font-medium mt-0.5"
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  {pendingCheckout.plan.name} · {pendingCheckout.plan.displayPrice}
+              <div className="flex items-center justify-center gap-3">
+                <img
+                  src={planCoverImages[pendingCheckout.plan.tier]}
+                  alt={pendingCheckout.plan.name}
+                  className={`w-12 h-12 rounded-xl object-cover border border-dashed shrink-0 ${
+                    isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
+                  }`}
+                />
+                <div className="text-left">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#B4846C] font-semibold">
+                    {pendingCheckout.provider === 'paymongo'
+                      ? 'QR Ph · GCash · Maya · Card'
+                      : 'Ko-fi Shop Order'}
+                  </div>
+                  <div
+                    className="text-xl font-medium"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    {pendingCheckout.plan.name} · {pendingCheckout.plan.displayPrice}
+                  </div>
                 </div>
               </div>
 
               {pendingCheckout.provider === 'kofi' ? (
-                <div className="space-y-2.5">
-                  <div
-                    className={`mx-auto max-w-[260px] px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 ${
-                      isDarkMode
-                        ? 'bg-[#221B19] border-[#66554F]'
-                        : 'bg-[#FFFDF9] border-[#D8C4B4]'
-                    }`}
-                  >
-                    <span className="font-mono text-xs font-semibold tracking-wider text-[#B4846C]">
-                      {pendingCheckout.passKeyPreview}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPassKey(pendingCheckout.passKeyPreview)}
-                      className="text-[11px] font-medium underline opacity-80 hover:opacity-100 flex items-center gap-1 cursor-pointer"
+                <div className="space-y-3 text-left">
+                  <div className="text-center">
+                    <a
+                      href={pendingCheckout.checkoutUrl || 'https://ko-fi.com/luxinnamon/shop'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="open-kofi-shop-btn"
+                      className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium border border-dashed transition ${
+                        isDarkMode
+                          ? 'border-[#E6B89C] text-[#F0C8B0] hover:bg-[#3B302C]'
+                          : 'border-[#6E4434] text-[#6E4434] bg-[#FFFDF9] hover:bg-[#F3E9DF]'
+                      }`}
                     >
-                      {copiedPassKey ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedPassKey ? 'Copied' : 'Copy'}</span>
-                    </button>
+                      <span>Open {pendingCheckout.plan.name} on Ko-fi Shop ↗</span>
+                    </a>
                   </div>
 
-                  <p className="text-[11px] opacity-75">
-                    Paste this key in your Ko-fi note when paying {pendingCheckout.plan.displayPrice}.
-                  </p>
-
-                  <a
-                    href={pendingCheckout.checkoutUrl || 'https://ko-fi.com/luxinnamon'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => {
-                      if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard
-                          .writeText(pendingCheckout.passKeyPreview)
-                          .catch(() => {});
-                      }
-                      setCopiedPassKey(true);
-                      onToast('Key copied — paste in your Ko-fi note');
-                    }}
-                    className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium border border-dashed transition ${
-                      isDarkMode
-                        ? 'border-[#E6B89C] text-[#F0C8B0] hover:bg-[#3B302C]'
-                        : 'border-[#6E4434] text-[#6E4434] bg-[#FFFDF9] hover:bg-[#F3E9DF]'
-                    }`}
-                  >
-                    <span>Copy Key &amp; Open Ko-fi ↗</span>
-                  </a>
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="kofi-buyer-email"
+                      className="block text-[10.5px] font-medium opacity-75 text-center"
+                    >
+                      Ko-fi checkout email
+                    </label>
+                    <input
+                      id="kofi-buyer-email"
+                      type="email"
+                      data-testid="kofi-buyer-email-input"
+                      value={buyerEmail}
+                      onChange={(e) => setBuyerEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className={`w-full px-3.5 py-2 rounded-xl border border-dashed text-xs text-center focus:outline-none focus:border-[#B4846C] ${
+                        isDarkMode
+                          ? 'bg-[#221B19] border-[#66554F] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
+                      }`}
+                    />
+                  </div>
                 </div>
               ) : (
                 <>
@@ -779,7 +833,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 {isProcessing
                   ? 'Verifying...'
                   : pendingCheckout.provider === 'kofi'
-                  ? "I've Paid · Verify Pass"
+                  ? "I've Paid · Verify Order"
                   : 'Complete & Unlock'}
               </button>
             </div>
@@ -919,17 +973,73 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            VIEW 4: OWNER COUTURE ASSET CONFIGURATOR
+            VIEW 4: OWNER COUTURE ASSET & KO-FI SHOP CONFIGURATOR
             =================================================================== */}
         {activeView === 'asset_config' && (
           <div className="mt-3.5 space-y-3 animate-in fade-in duration-150">
             <div
-              className={`p-3.5 rounded-2xl border border-dashed space-y-3 max-h-[50vh] overflow-y-auto ${
+              className={`p-3.5 rounded-2xl border border-dashed space-y-3 max-h-[54vh] overflow-y-auto ${
                 isDarkMode
                   ? 'bg-[#2B2321]/80 border-[#544540]'
                   : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
               }`}
             >
+              {/* Owner Ko-fi Shop Direct Link Codes */}
+              <div className="space-y-2 pb-2.5 border-b border-dashed border-[#DECBB9]/60 dark:border-[#544540]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium">Ko-fi Shop Item Links / Codes</span>
+                  <button
+                    type="button"
+                    data-testid="save-kofi-shop-codes-btn"
+                    onClick={handleSaveShopConfig}
+                    className="text-[11px] font-semibold text-[#B4846C] underline cursor-pointer"
+                  >
+                    Save Codes
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+                  <input
+                    type="text"
+                    value={shopConfig.single}
+                    onChange={(e) =>
+                      setShopConfig((prev) => ({ ...prev, single: e.target.value }))
+                    }
+                    placeholder="Single Bouquet URL or direct_link_code (e.g. ko-fi.com/s/xxxx)"
+                    className={`w-full px-2.5 py-1.5 rounded-lg border border-dashed font-mono text-[11px] focus:outline-none ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    value={shopConfig.pass_7d}
+                    onChange={(e) =>
+                      setShopConfig((prev) => ({ ...prev, pass_7d: e.target.value }))
+                    }
+                    placeholder="7-Day Pass URL or direct_link_code (e.g. ko-fi.com/s/yyyy)"
+                    className={`w-full px-2.5 py-1.5 rounded-lg border border-dashed font-mono text-[11px] focus:outline-none ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    value={shopConfig.pass_30d}
+                    onChange={(e) =>
+                      setShopConfig((prev) => ({ ...prev, pass_30d: e.target.value }))
+                    }
+                    placeholder="30-Day Eternal URL or direct_link_code (e.g. ko-fi.com/s/zzzz)"
+                    className={`w-full px-2.5 py-1.5 rounded-lg border border-dashed font-mono text-[11px] focus:outline-none ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'
+                    }`}
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between text-xs">
                 <span className="opacity-75">Tap to toggle Couture vs. Free</span>
                 <button

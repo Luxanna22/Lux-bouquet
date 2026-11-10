@@ -12,6 +12,13 @@ const MAX_DAILY_PASS_BOUQUETS = 15;
 export const SERVER_PASS_STORE = new Map();
 export const PENDING_CHECKOUT_STORE = new Map();
 
+// In-memory cache of owner-configured Ko-fi Shop direct_link_codes (synced with Firestore BLOOM-KCFG-SHOP)
+let cachedOwnerShopCodes = {
+  single: '',
+  pass_7d: '',
+  pass_30d: '',
+};
+
 export const PRICING_CATALOG = {
   PH: {
     single: {
@@ -120,7 +127,92 @@ export function resolveKofiPageUrl(rawUrl) {
   if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
     return `https://${cleaned.replace(/^\/+/, '')}`;
   }
-  return cleaned;
+  return cleaned.replace(/\/+$/, '');
+}
+
+/**
+ * Extracts a clean Ko-fi Shop `direct_link_code` from either a full URL
+ * (`https://ko-fi.com/s/1a2b3c4d5e`) or a raw code (`1a2b3c4d5e`).
+ */
+export function extractKofiShopCode(rawInput) {
+  const str = String(rawInput || '').trim();
+  if (!str) return '';
+  const urlMatch = str.match(/ko-fi\.com\/s\/([a-zA-Z0-9]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    return urlMatch[1].toLowerCase();
+  }
+  if (/^[a-zA-Z0-9]{6,16}$/.test(str)) {
+    return str.toLowerCase();
+  }
+  return '';
+}
+
+/**
+ * Builds the direct Ko-fi Shop item checkout URL for a given tier.
+ */
+export function buildKofiShopItemUrl(directLinkCode, fallbackPageUrl) {
+  const cleanCode = extractKofiShopCode(directLinkCode);
+  if (cleanCode) {
+    return `https://ko-fi.com/s/${cleanCode}`;
+  }
+  const basePage = resolveKofiPageUrl(fallbackPageUrl);
+  if (basePage.includes('/s/')) {
+    return basePage;
+  }
+  return `${basePage}/shop`;
+}
+
+/**
+ * Resolves the 3 Ko-fi Shop `direct_link_code`s from environment variables + owner fallback.
+ */
+export function getActiveKofiShopCodes(clientOverride) {
+  if (clientOverride && typeof clientOverride === 'object') {
+    const s = extractKofiShopCode(clientOverride.single);
+    const p7 = extractKofiShopCode(clientOverride.pass_7d);
+    const p30 = extractKofiShopCode(clientOverride.pass_30d);
+    if (s) cachedOwnerShopCodes.single = s;
+    if (p7) cachedOwnerShopCodes.pass_7d = p7;
+    if (p30) cachedOwnerShopCodes.pass_30d = p30;
+  }
+
+  return {
+    single:
+      extractKofiShopCode(process.env.KOFI_SHOP_SINGLE_CODE) ||
+      cachedOwnerShopCodes.single ||
+      '',
+    pass_7d:
+      extractKofiShopCode(process.env.KOFI_SHOP_7D_CODE) ||
+      cachedOwnerShopCodes.pass_7d ||
+      '',
+    pass_30d:
+      extractKofiShopCode(process.env.KOFI_SHOP_30D_CODE) ||
+      cachedOwnerShopCodes.pass_30d ||
+      '',
+  };
+}
+
+/**
+ * Derives a deterministic, Firestore-valid `BLOOM-KSXX-XXXX` receipt document key
+ * from `(buyerEmail, tier)` so a Ko-fi Shop purchase can ONLY be claimed by the
+ * buyer with that exact email AND for that exact tier (`single`, `pass_7d`, or `pass_30d`).
+ */
+export function deriveKofiEmailTierSlotKey(rawEmail, tier) {
+  const cleanEmail = String(rawEmail || '').trim().toLowerCase();
+  const cleanTier = String(tier || 'single').trim();
+  const digest = crypto
+    .createHash('sha256')
+    .update(`sab_kofi_email_tier_v1:${cleanEmail}:${cleanTier}`)
+    .digest();
+
+  let p1 = 'KS';
+  for (let i = 0; i < 2; i++) {
+    p1 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  let p2 = '';
+  for (let i = 2; i < 6; i++) {
+    p2 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  return `BLOOM-${p1}-${p2}`;
 }
 
 export function timingSafeMatch(a, b) {
@@ -215,7 +307,6 @@ export function verifyPassIntegritySignature(record) {
   if (record.signature === computePassIntegritySignature(record, CLIENT_SIGNATURE_SALT)) {
     return true;
   }
-  // Backward compatibility if a record was signed directly with PASS_SIGNING_SECRET
   const serverSalt = getServerSigningSalt();
   if (serverSalt !== CLIENT_SIGNATURE_SALT) {
     return record.signature === computePassIntegritySignature(record, serverSalt);
@@ -266,17 +357,20 @@ export function createSignedStudioPassServer(params) {
     retentionDays,
     isEternalKeepsake,
     primaryDeviceHash: params.deviceTokenHash || '',
-    secondaryDeviceHash: null,
+    secondaryDeviceHash: params.secondaryDeviceHash || null,
     activeSessionNonce,
-    boundBouquetCode: params.tier === 'single' ? params.boundBouquetCode || null : null,
+    boundBouquetCode:
+      params.boundBouquetCode !== undefined
+        ? params.boundBouquetCode
+        : params.tier === 'single'
+        ? params.boundBouquetCode || null
+        : null,
     dailyUsageDate: todayIso,
     dailyUsageCount: 0,
     paymentProvider: params.paymentProvider || 'verified_checkout',
     paymentReference,
   };
 
-  // Always sign `signature` with CLIENT_SIGNATURE_SALT so the browser client's
-  // getStoredStudioPass() and verifyActiveStudioPassForAction() succeed seamlessly.
   const signature = computePassIntegritySignature(draft, CLIENT_SIGNATURE_SALT);
   return {
     ...draft,
@@ -445,10 +539,6 @@ export function verifyActiveStudioPassForActionServer(params) {
   };
 }
 
-/**
- * Stateless HMAC-signed Checkout Token so Vercel Serverless cold starts
- * never lose checkout state between `create-checkout` and `verify-and-issue`.
- */
 export function createSignedCheckoutToken(payloadObj) {
   const jsonStr = JSON.stringify(payloadObj);
   const b64 = Buffer.from(jsonStr, 'utf8').toString('base64url');
@@ -475,9 +565,6 @@ export function verifySignedCheckoutToken(tokenStr) {
   }
 }
 
-/**
- * Firestore REST API persistence for `studio_passes/{passKey}` across stateless Vercel Lambdas.
- */
 export async function saveStudioPassToFirestoreRest(pass) {
   if (!pass || !isValidPassKeyFormat(pass.passKey)) return false;
   try {
@@ -553,6 +640,47 @@ export async function fetchStudioPassFromFirestoreRest(passKey) {
   }
 }
 
+/**
+ * Syncs owner-configured Ko-fi Shop item codes (`single:pass_7d:pass_30d`) to/from Firestore `BLOOM-KCFG-SHOP`
+ * so serverless webhook invocations on Vercel can read owner-configured codes even if set via UI.
+ */
+async function syncOwnerShopCodesWithFirestore(newCodes) {
+  if (newCodes && (newCodes.single || newCodes.pass_7d || newCodes.pass_30d)) {
+    const s = extractKofiShopCode(newCodes.single) || cachedOwnerShopCodes.single || '';
+    const p7 = extractKofiShopCode(newCodes.pass_7d) || cachedOwnerShopCodes.pass_7d || '';
+    const p30 = extractKofiShopCode(newCodes.pass_30d) || cachedOwnerShopCodes.pass_30d || '';
+    cachedOwnerShopCodes = { single: s, pass_7d: p7, pass_30d: p30 };
+    const packed = `${s}:${p7}:${p30}`.slice(0, 48);
+    const cfgRecord = createSignedStudioPassServer({
+      passKey: 'BLOOM-KCFG-SHOP',
+      tier: 'single',
+      region: 'INTL',
+      deviceTokenHash: 'owner_config',
+      boundBouquetCode: packed,
+      paymentProvider: 'kofi',
+      paymentReference: 'cfg',
+    });
+    SERVER_PASS_STORE.set('BLOOM-KCFG-SHOP', cfgRecord);
+    await saveStudioPassToFirestoreRest(cfgRecord);
+    return cachedOwnerShopCodes;
+  }
+
+  if (!cachedOwnerShopCodes.single && !cachedOwnerShopCodes.pass_7d && !cachedOwnerShopCodes.pass_30d) {
+    const remoteCfg =
+      SERVER_PASS_STORE.get('BLOOM-KCFG-SHOP') ||
+      (await fetchStudioPassFromFirestoreRest('BLOOM-KCFG-SHOP'));
+    if (remoteCfg && typeof remoteCfg.boundBouquetCode === 'string' && remoteCfg.boundBouquetCode.includes(':')) {
+      const [s, p7, p30] = remoteCfg.boundBouquetCode.split(':');
+      cachedOwnerShopCodes = {
+        single: extractKofiShopCode(s),
+        pass_7d: extractKofiShopCode(p7),
+        pass_30d: extractKofiShopCode(p30),
+      };
+    }
+  }
+  return cachedOwnerShopCodes;
+}
+
 export function verifyPaymongoWebhookSignature(rawBody, signatureHeader, webhookSecret) {
   if (!signatureHeader || !webhookSecret) return false;
   const parts = {};
@@ -574,7 +702,6 @@ export function verifyPaymongoWebhookSignature(rawBody, signatureHeader, webhook
 }
 
 async function readRequestBody(req) {
-  // 1. Check if Vercel/Express already parsed `req.body`
   if (req.body !== undefined && req.body !== null) {
     if (typeof req.body === 'string') {
       const trimmed = req.body.trim();
@@ -594,7 +721,6 @@ async function readRequestBody(req) {
       }
     }
     if (typeof req.body === 'object') {
-      // Ko-fi application/x-www-form-urlencoded parsed by Vercel as { data: "{...}" }
       if (typeof req.body.data === 'string' && req.body.data.trim().startsWith('{')) {
         try {
           return { raw: req.body.data, parsed: JSON.parse(req.body.data) };
@@ -607,7 +733,6 @@ async function readRequestBody(req) {
     }
   }
 
-  // 2. Otherwise read from Node IncomingMessage stream
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
@@ -653,19 +778,78 @@ function isValidRegion(region) {
 }
 
 /**
- * Resolves Ko-fi tier from amount and currency (supports both USD and PHP on Ko-fi!).
+ * Strictly maps a Ko-fi `Shop Order` webhook payload (`shop_items: [{ direct_link_code }]`)
+ * to its exact tier (`single`, `pass_7d`, or `pass_30d`).
+ * Returns `{ valid: false, reason }` if `type !== 'Shop Order'` or if the `direct_link_code`
+ * does not match the configured Shop items!
  */
-function resolveKofiTier(amountNum, currencyStr) {
-  const cur = String(currencyStr || 'USD').toUpperCase();
-  const amt = Number.isFinite(amountNum) ? amountNum : 0;
-  if (cur === 'PHP' || amt >= 35) {
-    if (amt >= 180) return 'pass_30d';
-    if (amt >= 85) return 'pass_7d';
-    return 'single';
+export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
+  const webhookType = String(parsedWebhook?.type || '').trim();
+  if (webhookType !== 'Shop Order') {
+    return {
+      valid: false,
+      reason: 'NON_SHOP_ORDER_REJECTED',
+      message: `Ignored Ko-fi "${webhookType || 'unknown'}" event — only "Shop Order" events unlock Studio Passes.`,
+    };
   }
-  if (amt >= 8.0) return 'pass_30d';
-  if (amt >= 4.5) return 'pass_7d';
-  return 'single';
+
+  const shopItems = Array.isArray(parsedWebhook?.shop_items) ? parsedWebhook.shop_items : [];
+  if (shopItems.length === 0) {
+    return {
+      valid: false,
+      reason: 'EMPTY_SHOP_ITEMS',
+      message: 'Ko-fi Shop Order contains no shop_items.',
+    };
+  }
+
+  const itemCodes = shopItems
+    .map((item) => extractKofiShopCode(item?.direct_link_code))
+    .filter(Boolean);
+
+  if (itemCodes.length === 0) {
+    return {
+      valid: false,
+      reason: 'MISSING_DIRECT_LINK_CODE',
+      message: 'Ko-fi Shop Order is missing direct_link_code.',
+    };
+  }
+
+  const codes = getActiveKofiShopCodes(configuredShopCodes);
+  const hasAnyConfiguredCode = Boolean(codes.single || codes.pass_7d || codes.pass_30d);
+
+  if (hasAnyConfiguredCode) {
+    // Check highest tier first if multiple items in cart
+    if (codes.pass_30d && itemCodes.includes(codes.pass_30d)) {
+      return { valid: true, tier: 'pass_30d', directLinkCode: codes.pass_30d };
+    }
+    if (codes.pass_7d && itemCodes.includes(codes.pass_7d)) {
+      return { valid: true, tier: 'pass_7d', directLinkCode: codes.pass_7d };
+    }
+    if (codes.single && itemCodes.includes(codes.single)) {
+      return { valid: true, tier: 'single', directLinkCode: codes.single };
+    }
+    return {
+      valid: false,
+      reason: 'UNRECOGNIZED_DIRECT_LINK_CODE',
+      message: `Shop item direct_link_code (${itemCodes.join(', ')}) does not match configured Single, 7-Day, or 30-Day Shop items.`,
+    };
+  }
+
+  // Fallback when owner hasn't configured specific codes yet: still strictly requires type === 'Shop Order'
+  // and a valid direct_link_code, resolving tier by amount/currency
+  const amount = Number.parseFloat(String(parsedWebhook?.amount || '0'));
+  const cur = String(parsedWebhook?.currency || 'USD').toUpperCase();
+  let tier = 'single';
+  if (cur === 'PHP' || amount >= 35) {
+    tier = amount >= 180 ? 'pass_30d' : amount >= 85 ? 'pass_7d' : 'single';
+  } else {
+    tier = amount >= 8.0 ? 'pass_30d' : amount >= 4.5 ? 'pass_7d' : 'single';
+  }
+  return {
+    valid: true,
+    tier,
+    directLinkCode: itemCodes[0],
+  };
 }
 
 export async function handlePaymentEndpoint(req, res, forcedPathname) {
@@ -690,16 +874,32 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
     // 1. POST /api/payments/create-checkout
     if (pathname === '/api/payments/create-checkout' && req.method === 'POST') {
       const { parsed } = await readRequestBody(req);
+
+      // Allow owner to sync their 3 Ko-fi Shop direct_link_codes
+      if (parsed.syncShopCodes && typeof parsed.syncShopCodes === 'object') {
+        const synced = await syncOwnerShopCodesWithFirestore(parsed.syncShopCodes);
+        sendJson(res, 200, { ok: true, shopCodes: synced });
+        return true;
+      }
+
       const tier = isValidTier(parsed.tier) ? parsed.tier : 'pass_7d';
       const region = isValidRegion(parsed.region) ? parsed.region : 'PH';
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
-      const kofiUrl = resolveKofiPageUrl(process.env.KOFI_PAGE_URL);
+
+      await syncOwnerShopCodesWithFirestore(parsed.shopCodes);
+      const shopCodes = getActiveKofiShopCodes(parsed.shopCodes);
+      const tierDirectLinkCode = shopCodes[tier] || '';
+      const kofiShopItemUrl = buildKofiShopItemUrl(tierDirectLinkCode, process.env.KOFI_PAGE_URL);
+
       const isProductionEnv = Boolean(
-        process.env.VERCEL || paymongoSecret || kofiVerificationToken || process.env.KOFI_PAGE_URL
+        process.env.VERCEL ||
+          paymongoSecret ||
+          kofiVerificationToken ||
+          process.env.KOFI_PAGE_URL ||
+          tierDirectLinkCode
       );
 
-      // If PayMongo is not configured in production, gracefully route checkout to Ko-fi
       let provider = parsed.provider === 'kofi' ? 'kofi' : 'paymongo';
       if (provider === 'paymongo' && !paymongoSecret && isProductionEnv) {
         provider = 'kofi';
@@ -781,7 +981,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
       } else if (provider === 'kofi') {
         liveGatewayConfigured = Boolean(isProductionEnv);
-        checkoutUrl = kofiUrl;
+        checkoutUrl = kofiShopItemUrl;
       }
 
       const checkoutToken = createSignedCheckoutToken({
@@ -792,6 +992,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         p: provider,
         d: deviceTokenHash,
         b: boundBouquetCode,
+        dlc: tierDirectLinkCode || null,
         pmId: paymongoSessionId || null,
         live: liveGatewayConfigured,
         ts: Date.now(),
@@ -805,6 +1006,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         region,
         deviceTokenHash,
         boundBouquetCode,
+        directLinkCode: tierDirectLinkCode || null,
         provider,
         paymongoSessionId,
         checkoutUrl,
@@ -821,6 +1023,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         plan,
         provider,
         checkoutUrl,
+        directLinkCode: tierDirectLinkCode || null,
         liveGatewayConfigured,
       });
       return true;
@@ -833,8 +1036,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const checkoutToken = typeof parsed.checkoutToken === 'string' ? parsed.checkoutToken : '';
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' ? parsed.deviceTokenHash : '';
+      const buyerEmail =
+        typeof parsed.buyerEmail === 'string' ? parsed.buyerEmail.trim().toLowerCase() : '';
 
-      // Recover checkout state from either in-memory map OR stateless signed checkoutToken
       let pending = PENDING_CHECKOUT_STORE.get(checkoutId) || null;
       const decodedToken = verifySignedCheckoutToken(checkoutToken);
 
@@ -848,6 +1052,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           provider: decodedToken.p,
           deviceTokenHash: decodedToken.d,
           boundBouquetCode: decodedToken.b || null,
+          directLinkCode: decodedToken.dlc || null,
           paymongoSessionId: decodedToken.pmId || undefined,
           liveGatewayConfigured: Boolean(decodedToken.live),
           status: 'pending',
@@ -915,76 +1120,91 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
       }
 
-      // Case B: Live Ko-fi Webhook Verification (via Firestore REST + In-Memory Store)
+      // Case B: Strict Ko-fi Shop Order Verification by Buyer Email + Exact Tier (`direct_link_code`)
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
       const isKofiLiveRequired =
-        pending.provider === 'kofi' && (Boolean(kofiVerificationToken) || Boolean(process.env.VERCEL));
+        pending.provider === 'kofi' &&
+        (Boolean(kofiVerificationToken) ||
+          Boolean(process.env.VERCEL) ||
+          Boolean(pending.liveGatewayConfigured) ||
+          Boolean(buyerEmail));
 
       if (isKofiLiveRequired && pending.status !== 'paid') {
-        // 1. Check if webhook already activated their exact `pending.passKey`
-        let webhookPass =
-          SERVER_PASS_STORE.get(pending.passKey) ||
-          (await fetchStudioPassFromFirestoreRest(pending.passKey));
-
-        // 2. If buyer forgot to paste `BLOOM-XXXX-XXXX` in the Ko-fi message, check `BLOOM-KF99-LAST`
-        if (!webhookPass) {
-          const latestSlot =
-            SERVER_PASS_STORE.get('BLOOM-KF99-LAST') ||
-            (await fetchStudioPassFromFirestoreRest('BLOOM-KF99-LAST'));
-
-          if (latestSlot && latestSlot.secondaryDeviceHash !== 'CLAIMED') {
-            const slotCreatedMs = Date.parse(latestSlot.createdAt);
-            const isRecent =
-              Number.isFinite(slotCreatedMs) &&
-              Date.now() - slotCreatedMs < 25 * 60 * 1000 &&
-              slotCreatedMs >= pending.createdAtMs - 10 * 60 * 1000;
-
-            if (isRecent) {
-              // Claim the slot so it can never be claimed twice
-              const claimedSlot = {
-                ...latestSlot,
-                secondaryDeviceHash: 'CLAIMED',
-              };
-              claimedSlot.signature = computePassIntegritySignature(
-                claimedSlot,
-                CLIENT_SIGNATURE_SALT
-              );
-              SERVER_PASS_STORE.set('BLOOM-KF99-LAST', claimedSlot);
-              await saveStudioPassToFirestoreRest(claimedSlot);
-
-              webhookPass = createSignedStudioPassServer({
-                passKey: pending.passKey,
-                tier: latestSlot.tier || pending.tier,
-                region: pending.region,
-                deviceTokenHash: pending.deviceTokenHash,
-                boundBouquetCode: pending.boundBouquetCode,
-                paymentProvider: 'kofi',
-                paymentReference: latestSlot.paymentReference || 'kofi',
-              });
-            }
-          }
-        }
-
-        if (!webhookPass) {
-          sendJson(res, 402, {
+        if (!buyerEmail || !buyerEmail.includes('@')) {
+          sendJson(res, 400, {
             ok: false,
-            status: 'PENDING_PAYMENT',
-            message: `Waiting for Ko-fi payment confirmation. Include ${pending.passKey} in your Ko-fi message, complete payment, then tap Verify again.`,
+            status: 'EMAIL_REQUIRED',
+            message: 'Please enter the same email address you used on Ko-fi Shop.',
           });
           return true;
         }
 
-        // Bind webhookPass to this buyer's device & bouquet code if not yet bound
+        const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, pending.tier);
+        const receiptSlot =
+          SERVER_PASS_STORE.get(emailTierSlotKey) ||
+          (await fetchStudioPassFromFirestoreRest(emailTierSlotKey));
+
+        if (!receiptSlot) {
+          sendJson(res, 402, {
+            ok: false,
+            status: 'PENDING_PAYMENT',
+            message: `No confirmed Ko-fi Shop order for "${pending.plan?.name || pending.tier}" found for ${buyerEmail} yet. Make sure you bought the exact ${pending.plan?.name || pending.tier} item on Ko-fi Shop.`,
+          });
+          return true;
+        }
+
+        // Strictly verify the Shop Order receipt matches the requested tier!
+        if (receiptSlot.tier !== pending.tier) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'TIER_MISMATCH',
+            message: `Your Ko-fi Shop order was for "${receiptSlot.tier}", which does not match "${pending.tier}". Please select the matching tier.`,
+          });
+          return true;
+        }
+
+        if (receiptSlot.secondaryDeviceHash === 'CLAIMED') {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'ORDER_ALREADY_CLAIMED',
+            message:
+              'This Ko-fi Shop order has already been claimed. Check "My Key" or place a new order on Ko-fi Shop.',
+          });
+          return true;
+        }
+
+        // If a specific direct_link_code was configured for this tier, verify the receipt's direct_link_code matches
+        if (
+          pending.directLinkCode &&
+          receiptSlot.boundBouquetCode &&
+          receiptSlot.boundBouquetCode !== pending.directLinkCode
+        ) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'SHOP_ITEM_CODE_MISMATCH',
+            message: 'The purchased Ko-fi Shop item does not match this pass tier.',
+          });
+          return true;
+        }
+
+        // Mark this `(buyerEmail, tier)` receipt slot as CLAIMED so it cannot be reused
+        const claimedSlot = {
+          ...receiptSlot,
+          secondaryDeviceHash: 'CLAIMED',
+        };
+        claimedSlot.signature = computePassIntegritySignature(claimedSlot, CLIENT_SIGNATURE_SALT);
+        SERVER_PASS_STORE.set(emailTierSlotKey, claimedSlot);
+        await saveStudioPassToFirestoreRest(claimedSlot);
+
+        // Issue the buyer's device-bound Pass Key (`BLOOM-XXXX-XXXX`)
         const boundPass = createSignedStudioPassServer({
           passKey: pending.passKey,
-          tier: webhookPass.tier || pending.tier,
+          tier: pending.tier,
           region: pending.region,
           deviceTokenHash: pending.deviceTokenHash,
           boundBouquetCode: pending.boundBouquetCode,
           paymentProvider: 'kofi',
-          paymentReference: 'kofi_verified',
-          createdAt: webhookPass.createdAt,
-          expiresAt: webhookPass.expiresAt,
+          paymentReference: receiptSlot.paymentReference || 'kofi_shop',
         });
 
         SERVER_PASS_STORE.set(boundPass.passKey, boundPass);
@@ -996,7 +1216,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      // Case C: Sandbox / Local Preview or Verified PayMongo
+      // Case C: Local Sandbox Preview (only when no live tokens / Vercel env / email is active)
       pending.status = 'paid';
       let passRecord = SERVER_PASS_STORE.get(pending.passKey);
       if (!passRecord) {
@@ -1030,7 +1250,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ? parsed.deviceTokenHash
           : '';
 
-      if (!isValidPassKeyFormat(passKey) || !deviceTokenHash) {
+      // Prevent internal Ko-fi receipt slots (`BLOOM-KS...` or `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
+      if (
+        !isValidPassKeyFormat(passKey) ||
+        !deviceTokenHash ||
+        passKey.startsWith('BLOOM-KS') ||
+        passKey === 'BLOOM-KCFG-SHOP'
+      ) {
         sendJson(res, 400, {
           ok: false,
           status: 'INVALID_FORMAT',
@@ -1187,7 +1413,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       return true;
     }
 
-    // 6. POST /api/webhooks/kofi — Real-time Ko-fi Webhook Listener
+    // 6. POST /api/webhooks/kofi — Strict Ko-fi Shop Order (`direct_link_code` + Buyer Email) Listener
     if (pathname === '/api/webhooks/kofi' && req.method === 'POST') {
       const { parsed } = await readRequestBody(req);
       const expectedToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
@@ -1199,43 +1425,59 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      const amount = Number.parseFloat(String(parsed.amount || '0'));
-      const currency = String(parsed.currency || 'USD');
-      const message = String(parsed.message || '');
+      // Sync owner-configured Shop direct_link_codes from Firestore if not already cached
+      const ownerCodes = await syncOwnerShopCodesWithFirestore();
+      const resolution = resolveKofiShopOrderTier(parsed, ownerCodes);
+
+      // Strictly reject non-Shop Orders (e.g. "Donation" / "Subscription" test clicks) or unknown item codes
+      if (!resolution.valid) {
+        sendJson(res, 200, {
+          ok: false,
+          ignored: true,
+          reason: resolution.reason,
+          message: resolution.message,
+        });
+        return true;
+      }
+
+      const buyerEmail = String(parsed.email || '').trim().toLowerCase();
+      if (!buyerEmail || !buyerEmail.includes('@')) {
+        sendJson(res, 200, {
+          ok: false,
+          ignored: true,
+          reason: 'MISSING_BUYER_EMAIL',
+          message: 'Ko-fi Shop Order is missing buyer email.',
+        });
+        return true;
+      }
+
+      const currency = String(parsed.currency || 'USD').toUpperCase();
       const kofiTxId = String(parsed.kofi_transaction_id || `kofi_${Date.now()}`);
+      const tier = resolution.tier;
+      const directLinkCode = resolution.directLinkCode || '';
 
-      const tier = resolveKofiTier(amount, currency);
-      const extractedKey = extractPassKeyFromText(message);
-      const passKey = extractedKey || generatePassKeyCode();
-
-      const signedPass = createSignedStudioPassServer({
-        passKey,
+      // Store unclaimed receipt in deterministic `(buyerEmail, tier)` slot `BLOOM-KSXX-XXXX`
+      const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, tier);
+      const receiptRecord = createSignedStudioPassServer({
+        passKey: emailTierSlotKey,
         tier,
-        region: currency.toUpperCase() === 'PHP' ? 'PH' : 'INTL',
-        deviceTokenHash: '', // Binds to first device that verifies/redeems this Pass Key
-        paymentProvider: 'kofi',
-        paymentReference: `kf_${kofiTxId.slice(0, 12)}`,
-      });
-
-      SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
-      await saveStudioPassToFirestoreRest(signedPass);
-
-      // Also record in `BLOOM-KF99-LAST` fallback slot in case the buyer forgot to paste their BLOOM key in the Ko-fi note
-      const fallbackSlot = createSignedStudioPassServer({
-        passKey: 'BLOOM-KF99-LAST',
-        tier,
-        region: currency.toUpperCase() === 'PHP' ? 'PH' : 'INTL',
+        region: currency === 'PHP' ? 'PH' : 'INTL',
         deviceTokenHash: '',
+        secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
+        boundBouquetCode: directLinkCode,
         paymentProvider: 'kofi',
-        paymentReference: `kf_${kofiTxId.slice(0, 12)}`,
+        paymentReference: `kfs_${kofiTxId.slice(0, 12)}`,
       });
-      SERVER_PASS_STORE.set('BLOOM-KF99-LAST', fallbackSlot);
-      await saveStudioPassToFirestoreRest(fallbackSlot);
+
+      SERVER_PASS_STORE.set(emailTierSlotKey, receiptRecord);
+      await saveStudioPassToFirestoreRest(receiptRecord);
 
       sendJson(res, 200, {
         ok: true,
-        passKey: signedPass.passKey,
-        tier: signedPass.tier,
+        type: 'Shop Order',
+        emailTierSlotKey,
+        tier,
+        directLinkCode,
       });
       return true;
     }

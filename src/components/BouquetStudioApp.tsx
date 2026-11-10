@@ -241,6 +241,12 @@ export default function App() {
   const [letterTypedChars, setLetterTypedChars] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareStep, setShareStep] = useState<'dedication' | 'lock' | 'seal' | 'ready'>('dedication');
+  const [sealedGiftUrl, setSealedGiftUrl] = useState<string>('');
+  const [sealedBouquetCode, setSealedBouquetCode] = useState<string | null>(null);
+  const [isFinalDesignChecked, setIsFinalDesignChecked] = useState<boolean>(true);
+  const [pinToShowcaseChecked, setPinToShowcaseChecked] = useState<boolean>(true);
+  const shouldResetStudioOnShareCloseRef = useRef<boolean>(false);
   const [shortShareUrl, setShortShareUrl] = useState<string | null>(null);
   const [isShorteningUrl, setIsShorteningUrl] = useState(false);
   const [isInAppBrowserModalOpen, setIsInAppBrowserModalOpen] = useState(false);
@@ -313,13 +319,15 @@ export default function App() {
     });
   }, [activeStudioPass, currentBouquetShortCode]);
 
-  const isBouquetUnlockedByPass = currentPassCheck.valid;
+  const isBouquetUnlockedByPass =
+    currentPassCheck.valid ||
+    Boolean(sealedBouquetCode && sealedBouquetCode === currentBouquetShortCode);
   const activeRetentionPolicy = useMemo(
     () =>
       getRetentionPolicyForPassTier(
-        isBouquetUnlockedByPass && activeStudioPass ? activeStudioPass.tier : 'free'
+        currentPassCheck.valid && activeStudioPass ? activeStudioPass.tier : 'free'
       ),
-    [isBouquetUnlockedByPass, activeStudioPass]
+    [currentPassCheck.valid, activeStudioPass]
   );
 
   const updateStudioCarouselScrollState = useCallback(() => {
@@ -1251,23 +1259,20 @@ export default function App() {
     [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, activeStudioPass]
   );
 
-  // Compute preview short link when Share Modal is open without saving duplicate entries on every keystroke
   useEffect(() => {
-    if (!isShareModalOpen) return;
-    if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
-      setShortShareUrl('');
-      setIsShorteningUrl(false);
-      return;
+    if (!isShareModalOpen) {
+      if (shouldResetStudioOnShareCloseRef.current) {
+        shouldResetStudioOnShareCloseRef.current = false;
+        setSealedBouquetCode(null);
+        setSealedGiftUrl('');
+        setShareStep('dedication');
+        currentSessionVaultCodeRef.current = null;
+        clearBouquet();
+      } else if (shareStep === 'ready') {
+        setShareStep('dedication');
+      }
     }
-    const firstPartyUrl = registerShortCodeOnServer(true, false);
-    setShortShareUrl(firstPartyUrl);
-    setIsShorteningUrl(false);
-  }, [
-    isShareModalOpen,
-    registerShortCodeOnServer,
-    currentPremiumInspection.isPremiumBouquet,
-    isBouquetUnlockedByPass,
-  ]);
+  }, [isShareModalOpen, shareStep, clearBouquet]);
 
   const handleShareLink = async (asGift = true, overridePass?: StudioPassRecord | null) => {
     const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;
@@ -1288,6 +1293,23 @@ export default function App() {
     }
 
     const firstPartyUrl = registerShortCodeOnServer(asGift, true, effectivePass);
+    setShortShareUrl(firstPartyUrl);
+    setSealedGiftUrl(firstPartyUrl);
+    setSealedBouquetCode(currentBouquetShortCode);
+    setIsShorteningUrl(false);
+    setShareStep('ready');
+    setIsShareModalOpen(true);
+
+    if (isFinalDesignChecked || effectivePass?.tier === 'single') {
+      shouldResetStudioOnShareCloseRef.current = true;
+    }
+
+    // Single Bouquet unlocks ONLY this sealed gift link + PNG — do not leave a reusable studio pass active
+    if (effectivePass?.tier === 'single') {
+      saveStoredStudioPass(null);
+      setActiveStudioPass(null);
+    }
+
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
@@ -1296,10 +1318,10 @@ export default function App() {
     );
     triggerToast(
       policy.isPremiumEternal
-        ? 'Eternal Keepsake link copied & saved ♥'
+        ? 'Eternal Keepsake link sealed & copied ♥'
         : policy.retentionDays > 30
-        ? `Extended ${policy.retentionDays}-day link copied & saved ♥`
-        : 'Link copied & saved to Saved Bouquets ♥'
+        ? `Extended ${policy.retentionDays}-day link sealed & copied ♥`
+        : 'Gift link sealed & copied ♥'
     );
   };
 
@@ -4760,7 +4782,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SHARE / SEND MODAL DIALOG — Minimal Luxury Stationery Design */}
+      {/* SHARE / SEND MODAL DIALOG — 3-Step Stationery Progress Flow */}
       {isShareModalOpen && (
         <div
           role="dialog"
@@ -4790,334 +4812,592 @@ export default function App() {
               <X className="w-4 h-4" />
             </button>
 
-            <p className="text-[9.5px] uppercase tracking-[0.22em] font-semibold text-[#B4846C]">
-              Gift Delivery
-            </p>
-            <h3
-              className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight mt-0.5"
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            >
-              Send Your Bouquet
-            </h3>
-            <div className="flex items-center justify-between gap-2 mt-0.5 mb-3">
-              <p
-                className={`text-xs ${
-                  isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
-                }`}
-              >
-                Private link for your recipient
-              </p>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span
-                  data-testid="share-lifespan-badge"
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-dashed ${
-                    activeRetentionPolicy.isPremiumEternal
-                      ? 'border-amber-500/60 text-amber-600 dark:text-amber-300'
-                      : activeRetentionPolicy.retentionDays > 30
-                      ? isDarkMode
-                        ? 'border-[#E6B89C] text-[#F0C8B0]'
-                        : 'border-[#B4846C] text-[#6E4434]'
-                      : isDarkMode
-                      ? 'border-[#544540] text-[#C8B6AC]'
-                      : 'border-[#DECBB9] text-[#7D6B60]'
-                  }`}
+            <div className="flex items-center justify-between pr-8">
+              <div>
+                <p className="text-[9.5px] uppercase tracking-[0.22em] font-semibold text-[#B4846C]">
+                  {shareStep === 'ready' ? 'Sealed & Ready' : 'Wrap Your Bouquet'}
+                </p>
+                <h3
+                  className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight mt-0.5"
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
-                  {activeRetentionPolicy.badgeLabel}
-                </span>
-                {!isBouquetUnlockedByPass && !currentPremiumInspection.isPremiumBouquet && (
-                  <button
-                    type="button"
-                    data-testid="upgrade-lifespan-btn"
-                    onClick={() => {
-                      setIsShareModalOpen(false);
-                      setCheckoutTriggerAction('share');
-                      setIsCheckoutModalOpen(true);
-                    }}
-                    className="text-[10.5px] font-medium text-[#B4846C] hover:underline cursor-pointer"
-                  >
-                    Extend
-                  </button>
-                )}
+                  {shareStep === 'ready' ? 'Your Gift Is Sealed' : 'Send Your Bouquet'}
+                </h3>
               </div>
-            </div>
 
-            {/* Clean 1-line Couture Notice when Couture items are used */}
-            {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass && (
-              <div
-                data-testid="share-couture-unlock-banner"
-                className={`px-3 py-2 rounded-xl border border-dashed mb-3 flex items-center justify-between gap-2 ${
-                  isDarkMode
-                    ? 'bg-[#2B2321]/85 border-[#E6B89C]/55'
-                    : 'bg-[#FAF3EB] border-[#D8BFA8]'
-                }`}
-              >
-                <span className="text-xs font-medium flex items-center gap-1.5 min-w-0 truncate">
-                  <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                  <span className="truncate">
-                    {currentPremiumInspection.reasons.slice(0, 2).join(' · ')}
-                    {currentPremiumInspection.reasons.length > 2
-                      ? ` +${currentPremiumInspection.reasons.length - 2}`
-                      : ''}
-                  </span>
-                </span>
+              {shareStep !== 'ready' && (
                 <button
                   type="button"
                   onClick={() => {
                     setIsShareModalOpen(false);
-                    setCheckoutTriggerAction('share');
-                    setIsCheckoutModalOpen(true);
+                    startGiftBloomAnimation(items.length, true);
                   }}
-                  className="text-[11px] font-semibold text-[#B4846C] hover:underline shrink-0 cursor-pointer"
+                  className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium transition cursor-pointer shrink-0 ${
+                    isDarkMode
+                      ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
+                      : 'border-[#DECBB9] bg-[#FAF4EE]/80 hover:bg-[#F3E9DF] text-[#5C4438]'
+                  }`}
                 >
-                  Have a Key?
+                  Preview Bloom
+                </button>
+              )}
+            </div>
+
+            {/* 3-Step Dashed Lace Progress Tracker */}
+            {shareStep !== 'ready' && (
+              <div className="mt-4 mb-4 flex items-center justify-between gap-1.5">
+                {(
+                  [
+                    { id: 'dedication', num: '1', label: 'Dedication' },
+                    { id: 'lock', num: '2', label: 'Unwrap' },
+                    { id: 'seal', num: '3', label: 'Seal Gift' },
+                  ] as const
+                ).map((st, idx) => {
+                  const stepOrder = ['dedication', 'lock', 'seal'] as const;
+                  const currentIdx = stepOrder.indexOf(shareStep);
+                  const isActive = shareStep === st.id;
+                  const isDone = idx < currentIdx;
+                  return (
+                    <React.Fragment key={st.id}>
+                      {idx > 0 && (
+                        <div
+                          className={`flex-1 border-t border-dashed ${
+                            idx <= currentIdx
+                              ? isDarkMode
+                                ? 'border-[#E6B89C]'
+                                : 'border-[#8C5E47]'
+                              : isDarkMode
+                              ? 'border-[#544540]'
+                              : 'border-[#E2D1C1]'
+                          }`}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        data-testid={`share-step-tab-${st.id}`}
+                        onClick={() => setShareStep(st.id)}
+                        className="flex items-center gap-1.5 cursor-pointer group"
+                      >
+                        <span
+                          className={`w-6 h-6 rounded-full text-[11px] font-semibold flex items-center justify-center border transition ${
+                            isActive
+                              ? isDarkMode
+                                ? 'bg-[#E6B89C] border-[#E6B89C] text-[#231C18]'
+                                : 'bg-[#6E4434] border-[#6E4434] text-[#FFFDF9]'
+                              : isDone
+                              ? isDarkMode
+                                ? 'bg-[#463A36] border-[#E6B89C]/70 text-[#E6B89C]'
+                                : 'bg-[#FAF3EB] border-[#B4846C] text-[#6E4434]'
+                              : isDarkMode
+                              ? 'border-dashed border-[#5E4E49] text-[#A8968C]'
+                              : 'border-dashed border-[#DECBB9] text-[#8C7A70]'
+                          }`}
+                        >
+                          {isDone ? <Check className="w-3 h-3" /> : st.num}
+                        </span>
+                        <span
+                          className={`text-xs font-medium ${
+                            isActive
+                              ? isDarkMode
+                                ? 'text-[#FBF6F1]'
+                                : 'text-[#2A201D]'
+                              : isDarkMode
+                              ? 'text-[#A8968C]'
+                              : 'text-[#8C7A70]'
+                          }`}
+                        >
+                          {st.label}
+                        </span>
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ===============================================================
+                STEP 1: DEDICATION (To & From)
+                =============================================================== */}
+            {shareStep === 'dedication' && (
+              <div className="space-y-3.5 animate-in fade-in duration-150">
+                <div
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${
+                    isDarkMode
+                      ? 'bg-[#2B2321]/75 border-[#544540]'
+                      : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
+                  }`}
+                >
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label
+                        className={`block text-[11px] font-medium mb-1 ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                        }`}
+                      >
+                        For
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={22}
+                        value={card.to}
+                        onChange={(e) => updateCard({ to: e.target.value })}
+                        placeholder="Recipient"
+                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-[11px] font-medium mb-1 ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                        }`}
+                      >
+                        From
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={20}
+                        value={card.from}
+                        onChange={(e) => updateCard({ from: e.target.value })}
+                        placeholder="Your name"
+                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      className={`block text-[11px] font-medium mb-1 ${
+                        isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                      }`}
+                    >
+                      Card Note
+                    </label>
+                    <textarea
+                      rows={2}
+                      maxLength={86}
+                      value={card.message}
+                      onChange={(e) => updateCard({ message: e.target.value })}
+                      placeholder="Write a short note..."
+                      className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs resize-none focus:outline-none focus:border-[#B4846C] ${
+                        isDarkMode
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="share-step-next-btn"
+                  onClick={() => setShareStep('lock')}
+                  className={`w-full py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
+                    isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                  }`}
+                >
+                  Next · Unwrap Timing
                 </button>
               </div>
             )}
 
-            {/* Primary Shortened Gift Link Bar */}
-            <div
-              className={`flex items-center gap-1.5 p-1.5 rounded-2xl border border-dashed mb-4 ${
-                isDarkMode
-                  ? 'bg-[#2B2321] border-[#544540]'
-                  : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
-              }`}
-            >
-              <input
-                type="text"
-                readOnly
-                aria-label="Short gift link"
-                value={
-                  currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass
-                    ? 'Unlock Couture Pass to copy gift link'
-                    : isShorteningUrl
-                    ? 'Preparing link...'
-                    : shortShareUrl || getShareUrl(true)
-                }
-                onClick={(e) => {
-                  if (!currentPremiumInspection.isPremiumBouquet || isBouquetUnlockedByPass) {
-                    (e.currentTarget as HTMLInputElement).select();
-                  }
-                }}
-                className={`flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none truncate ${
-                  isDarkMode ? 'text-[#E6D6C7]' : 'text-[#5C4438]'
-                }`}
-              />
-              <button
-                type="button"
-                data-testid="share-modal-primary-btn"
-                disabled={isShorteningUrl}
-                onClick={() => {
-                  if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
-                    setIsShareModalOpen(false);
-                    setCheckoutTriggerAction('share');
-                    setIsCheckoutModalOpen(true);
-                    return;
-                  }
-                  handleShareLink(true);
-                  setIsShareModalOpen(false);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 disabled:opacity-50 cursor-pointer ${
-                  isDarkMode
-                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                }`}
-              >
-                {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass ? (
-                  <>
-                    <CoutureBloomSeal className="w-3.5 h-3.5" />
-                    <span>Unlock &amp; Send</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy Link</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Quiet Unwrap Timing Selector */}
-            <div
-              className={`p-3.5 rounded-2xl border border-dashed mb-4 space-y-3 ${
-                isDarkMode
-                  ? 'bg-[#2D2421]/75 border-[#544540]'
-                  : 'bg-[#FAF4EE]/55 border-[#E2D1C1]'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`text-xs font-medium ${
-                    isDarkMode ? 'text-[#DFD1C8]' : 'text-[#5C4438]'
+            {/* ===============================================================
+                STEP 2: UNWRAP LOCK (Anytime / Date Lock / Secret Hint)
+                =============================================================== */}
+            {shareStep === 'lock' && (
+              <div className="space-y-3.5 animate-in fade-in duration-150">
+                <div
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${
+                    isDarkMode
+                      ? 'bg-[#2D2421]/75 border-[#544540]'
+                      : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
                   }`}
                 >
-                  When can they unwrap it?
-                </span>
-              </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { id: 'none', label: 'Anytime', sub: 'Instant' },
+                        { id: 'countdown', label: 'Date Lock', sub: 'Countdown' },
+                        { id: 'passcode', label: 'Secret Hint', sub: 'Passcode' },
+                      ] as { id: BouquetLockMode; label: string; sub: string }[]
+                    ).map((tab) => {
+                      const active = (lock?.mode || 'none') === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => {
+                            if (tab.id === 'countdown' && !lock?.unlockAtIso) {
+                              const tomorrow = new Date(Date.now() + 86400000);
+                              tomorrow.setMinutes(
+                                tomorrow.getMinutes() - tomorrow.getTimezoneOffset()
+                              );
+                              updateLock({
+                                mode: 'countdown',
+                                unlockAtIso: tomorrow.toISOString().slice(0, 16),
+                              });
+                            } else if (tab.id === 'passcode' && !lock?.questionPrompt) {
+                              updateLock({
+                                mode: 'passcode',
+                                questionPrompt: 'The special date we first met',
+                              });
+                            } else {
+                              updateLock({ mode: tab.id });
+                            }
+                          }}
+                          className={`py-2.5 px-2 rounded-xl border text-center transition cursor-pointer ${
+                            active
+                              ? isDarkMode
+                                ? 'border-[#E6B89C] bg-[#E6B89C] text-[#231C18]'
+                                : 'border-[#6E4434] bg-[#6E4434] text-[#FFFDF9]'
+                              : isDarkMode
+                              ? 'border-dashed border-[#544540] bg-[#352C29] text-[#D8C7BE] hover:border-[#6E5B54]'
+                              : 'border-dashed border-[#DECBB9] bg-[#FFFDF9] text-[#5C4438] hover:border-[#C5A892]'
+                          }`}
+                        >
+                          <div className="text-xs font-medium">{tab.label}</div>
+                          <div className="text-[10px] opacity-75 mt-0.5">{tab.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
-                  [
-                    { id: 'none', label: 'Anytime' },
-                    { id: 'countdown', label: 'Date Lock' },
-                    { id: 'passcode', label: 'Secret Hint' },
-                  ] as { id: BouquetLockMode; label: string }[]
-                ).map((tab) => {
-                  const active = (lock?.mode || 'none') === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        if (tab.id === 'countdown' && !lock?.unlockAtIso) {
-                          const tomorrow = new Date(Date.now() + 86400000);
-                          tomorrow.setMinutes(tomorrow.getMinutes() - tomorrow.getTimezoneOffset());
-                          updateLock({
-                            mode: 'countdown',
-                            unlockAtIso: tomorrow.toISOString().slice(0, 16),
-                          });
-                        } else if (tab.id === 'passcode' && !lock?.questionPrompt) {
-                          updateLock({
-                            mode: 'passcode',
-                            questionPrompt: 'The special date we first met',
-                          });
-                        } else {
-                          updateLock({ mode: tab.id });
-                        }
-                      }}
-                      className={`py-2 px-2 rounded-xl border text-xs font-medium text-center transition cursor-pointer ${
-                        active
-                          ? isDarkMode
-                            ? 'border-[#E6B89C] bg-[#E6B89C] text-[#231C18]'
-                            : 'border-[#6E4434] bg-[#6E4434] text-[#FFFDF9]'
-                          : isDarkMode
-                          ? 'border-dashed border-[#544540] bg-[#352C29] text-[#D8C7BE] hover:border-[#6E5B54]'
-                          : 'border-dashed border-[#DECBB9] bg-[#FFFDF9] text-[#5C4438] hover:border-[#C5A892]'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
+                  {lock?.mode === 'countdown' && (
+                    <div className="space-y-1.5 pt-1 animate-in fade-in duration-150">
+                      <label
+                        className={`block text-[11px] ${
+                          isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                        }`}
+                      >
+                        Unlocks on:
+                      </label>
+                      <input
+                        type="datetime-local"
+                        aria-label="Unlock date and time"
+                        value={lock.unlockAtIso ? lock.unlockAtIso.slice(0, 16) : ''}
+                        onChange={(e) => updateLock({ unlockAtIso: e.target.value })}
+                        className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                        }`}
+                      />
+                    </div>
+                  )}
 
-              {lock?.mode === 'countdown' && (
-                <div className="space-y-1.5 pt-1 animate-in fade-in duration-150">
-                  <label
-                    className={`block text-[11px] ${
-                      isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                  {lock?.mode === 'passcode' && (
+                    <div className="space-y-2 pt-1 animate-in fade-in duration-150">
+                      <div>
+                        <label
+                          className={`block text-[11px] mb-1 ${
+                            isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                          }`}
+                        >
+                          Hint for recipient:
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={80}
+                          placeholder="e.g., The special date we first met"
+                          value={lock.questionPrompt || ''}
+                          onChange={(e) => updateLock({ questionPrompt: e.target.value })}
+                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                            isDarkMode
+                              ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          className={`block text-[11px] mb-1 ${
+                            isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                          }`}
+                        >
+                          Answer:
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={40}
+                          placeholder="e.g., October 14"
+                          value={lock.passcodeAnswer || ''}
+                          onChange={(e) => updateLock({ passcodeAnswer: e.target.value })}
+                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                            isDarkMode
+                              ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          }`}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShareStep('dedication')}
+                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                      isDarkMode
+                        ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
+                        : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
                     }`}
                   >
-                    Unlocks automatically on:
-                  </label>
-                  <input
-                    type="datetime-local"
-                    aria-label="Unlock date and time"
-                    value={lock.unlockAtIso ? lock.unlockAtIso.slice(0, 16) : ''}
-                    onChange={(e) => updateLock({ unlockAtIso: e.target.value })}
-                    className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="share-step-next-btn"
+                    onClick={() => setShareStep('seal')}
+                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
                       isDarkMode
-                        ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                        : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                    }`}
+                  >
+                    Next · Seal Gift
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ===============================================================
+                STEP 3: SEAL GIFT (Lifespan, Couture Check & Final Seal)
+                =============================================================== */}
+            {shareStep === 'seal' && (
+              <div className="space-y-3.5 animate-in fade-in duration-150">
+                <div
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${
+                    isDarkMode
+                      ? 'bg-[#2B2321]/80 border-[#544540]'
+                      : 'bg-[#FAF4EE]/65 border-[#E2D1C1]'
+                  }`}
+                >
+                  {/* Lifespan Row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">Gift link lifespan</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        data-testid="share-lifespan-badge"
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-dashed ${
+                          activeRetentionPolicy.isPremiumEternal
+                            ? 'border-amber-500/60 text-amber-600 dark:text-amber-300'
+                            : activeRetentionPolicy.retentionDays > 30
+                            ? isDarkMode
+                              ? 'border-[#E6B89C] text-[#F0C8B0]'
+                              : 'border-[#B4846C] text-[#6E4434]'
+                            : isDarkMode
+                            ? 'border-[#544540] text-[#C8B6AC]'
+                            : 'border-[#DECBB9] text-[#7D6B60]'
+                        }`}
+                      >
+                        {activeRetentionPolicy.badgeLabel}
+                      </span>
+                      {!isBouquetUnlockedByPass && !currentPremiumInspection.isPremiumBouquet && (
+                        <button
+                          type="button"
+                          data-testid="upgrade-lifespan-btn"
+                          onClick={() => {
+                            setIsShareModalOpen(false);
+                            setCheckoutTriggerAction('share');
+                            setIsCheckoutModalOpen(true);
+                          }}
+                          className="text-[10.5px] font-medium text-[#B4846C] hover:underline cursor-pointer"
+                        >
+                          Extend
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Couture Pieces Used Banner */}
+                  {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass && (
+                    <div
+                      data-testid="share-couture-unlock-banner"
+                      className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 ${
+                        isDarkMode
+                          ? 'bg-[#352C29] border-[#E6B89C]/55'
+                          : 'bg-[#FFFDF9] border-[#D8BFA8]'
+                      }`}
+                    >
+                      <span className="text-xs font-medium flex items-center gap-1.5 min-w-0 truncate">
+                        <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                        <span className="truncate">
+                          {currentPremiumInspection.reasons.slice(0, 2).join(' · ')}
+                          {currentPremiumInspection.reasons.length > 2
+                            ? ` +${currentPremiumInspection.reasons.length - 2}`
+                            : ''}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsShareModalOpen(false);
+                          setCheckoutTriggerAction('share');
+                          setIsCheckoutModalOpen(true);
+                        }}
+                        className="text-[11px] font-semibold text-[#B4846C] hover:underline shrink-0 cursor-pointer"
+                      >
+                        Have a Key?
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Clean Checkboxes (Showcase + Final Arrangement Reset) */}
+                  <div className="space-y-2 pt-1 border-t border-dashed border-[#DECBB9]/60 dark:border-[#544540]">
+                    <label className="flex items-center gap-2.5 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={pinToShowcaseChecked}
+                        onChange={(e) => setPinToShowcaseChecked(e.target.checked)}
+                        className="rounded accent-[#6E4434] w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span>Display on Shared Creations lace</span>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={isFinalDesignChecked}
+                        onChange={(e) => setIsFinalDesignChecked(e.target.checked)}
+                        className="rounded accent-[#6E4434] w-3.5 h-3.5 mt-0.5 cursor-pointer"
+                      />
+                      <span>
+                        Confirm final design{' '}
+                        <span className="opacity-65 text-[11px]">
+                          (resets studio after sealing)
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShareStep('lock')}
+                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                      isDarkMode
+                        ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
+                        : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
+                    }`}
+                  >
+                    Back
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="share-modal-primary-btn"
+                    disabled={isShorteningUrl || !isFinalDesignChecked}
+                    onClick={() => {
+                      if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
+                        setIsShareModalOpen(false);
+                        setCheckoutTriggerAction('share');
+                        setIsCheckoutModalOpen(true);
+                        return;
+                      }
+                      handleShareLink(true);
+                    }}
+                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition disabled:opacity-50 cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                    }`}
+                  >
+                    {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass ? (
+                      <>
+                        <CoutureBloomSeal className="w-3.5 h-3.5" />
+                        <span>Unlock &amp; Seal Gift</span>
+                      </>
+                    ) : (
+                      <span>Seal &amp; Send Gift</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ===============================================================
+                STEP 4 (READY): SEALED GIFT LINK & PNG DOWNLOAD
+                =============================================================== */}
+            {shareStep === 'ready' && (
+              <div className="mt-4 space-y-3.5 animate-in fade-in duration-150">
+                <div
+                  className={`flex items-center gap-1.5 p-1.5 rounded-2xl border border-dashed ${
+                    isDarkMode
+                      ? 'bg-[#2B2321] border-[#544540]'
+                      : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
+                  }`}
+                >
+                  <input
+                    type="text"
+                    readOnly
+                    aria-label="Short gift link"
+                    value={sealedGiftUrl || shortShareUrl || getShareUrl(true)}
+                    onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                    className={`flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none truncate ${
+                      isDarkMode ? 'text-[#E6D6C7]' : 'text-[#5C4438]'
                     }`}
                   />
+                  <button
+                    type="button"
+                    data-testid="copy-sealed-link-btn"
+                    onClick={() => {
+                      const urlToCopy = sealedGiftUrl || shortShareUrl || getShareUrl(true);
+                      if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(urlToCopy).catch(() => {});
+                      }
+                      triggerToast('Gift link copied ♥');
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                    }`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Link</span>
+                  </button>
                 </div>
-              )}
 
-              {lock?.mode === 'passcode' && (
-                <div className="space-y-2 pt-1 animate-in fade-in duration-150">
-                  <div>
-                    <label
-                      className={`block text-[11px] mb-1 ${
-                        isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                      }`}
-                    >
-                      Question or hint for your recipient:
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={80}
-                      placeholder="e.g., The special date we first met"
-                      value={lock.questionPrompt || ''}
-                      onChange={(e) => updateLock({ questionPrompt: e.target.value })}
-                      className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                        isDarkMode
-                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label
-                      className={`block text-[11px] mb-1 ${
-                        isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                      }`}
-                    >
-                      Answer to unlock:
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={40}
-                      placeholder="e.g., October 14"
-                      value={lock.passcodeAnswer || ''}
-                      onChange={(e) => updateLock({ passcodeAnswer: e.target.value })}
-                      className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                        isDarkMode
-                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                      }`}
-                    />
-                  </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleExportPng();
+                    }}
+                    className={`py-2.5 px-3 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
+                      isDarkMode
+                        ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
+                        : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
+                    }`}
+                  >
+                    Save PNG
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsShareModalOpen(false)}
+                    className={`py-2.5 px-3 rounded-full text-xs font-medium text-center transition cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#463A36] text-[#FBF6F1] hover:bg-[#544540]'
+                        : 'bg-[#EDE0D4] text-[#2A201D] hover:bg-[#E2D1C1]'
+                    }`}
+                  >
+                    Done
+                  </button>
                 </div>
-              )}
-            </div>
-
-            {/* Quiet Secondary Actions Row */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsShareModalOpen(false);
-                  startGiftBloomAnimation(items.length, true);
-                }}
-                className={`py-2 px-2.5 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
-                  isDarkMode
-                    ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
-                    : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
-                }`}
-              >
-                Preview Bloom
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  handleExportPng();
-                  setIsShareModalOpen(false);
-                }}
-                className={`py-2 px-2.5 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
-                  isDarkMode
-                    ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
-                    : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
-                }`}
-              >
-                Save PNG
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsShareModalOpen(false);
-                  setIsVaultModalOpen(true);
-                }}
-                className={`py-2 px-2.5 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
-                  isDarkMode
-                    ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
-                    : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
-                }`}
-              >
-                Saved Bouquets
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -5238,6 +5518,14 @@ export default function App() {
         activePass={activeStudioPass}
         onClose={() => setIsCheckoutModalOpen(false)}
         onPassActivated={(newPass, resumeAction) => {
+          if (newPass.tier === 'single') {
+            setIsCheckoutModalOpen(false);
+            handleShareLink(true, newPass);
+            if (resumeAction === 'png') {
+              performSvgPngDownload();
+            }
+            return;
+          }
           saveStoredStudioPass(newPass);
           setActiveStudioPass(newPass);
           if (resumeAction === 'share') {

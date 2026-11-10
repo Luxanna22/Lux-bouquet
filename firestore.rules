@@ -185,7 +185,8 @@ service cloud.firestore {
       // Updates cannot escalate tier, extend expiresAt, or overwrite primaryDeviceHash once bound
       allow update: if isValidStudioPass(request.resource.data, passKey) &&
         (
-          passKey == 'BLOOM-KF99-LAST' ||
+          passKey.matches('^BLOOM-KS[A-Z2-9]{2}-[A-Z2-9]{4}$') ||
+          passKey == 'BLOOM-KCFG-SHOP' ||
           (
             request.resource.data.passKey == resource.data.passKey &&
             request.resource.data.tier == resource.data.tier &&

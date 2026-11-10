@@ -917,3 +917,72 @@ export function formatPassRemainingTime(expiresAtIso: string, nowMs: number = Da
   const mins = Math.max(1, Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000)));
   return hours >= 1 ? `${hours}h ${mins}m left` : `${mins}m left`;
 }
+
+// ============================================================================
+// 5. KO-FI SHOP ITEM DIRECT LINK CODES (ENV VARS + OWNER SETTINGS FALLBACK)
+// ============================================================================
+
+export interface KofiShopItemConfig {
+  single: string;
+  pass_7d: string;
+  pass_30d: string;
+}
+
+const KOFI_SHOP_CONFIG_STORAGE_KEY = 'sab_kofi_shop_codes_v1';
+
+export function extractKofiShopDirectLinkCode(rawInput?: string | null): string {
+  const str = (rawInput || '').trim();
+  if (!str) return '';
+  const urlMatch = str.match(/ko-fi\.com\/s\/([a-zA-Z0-9]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    return urlMatch[1].toLowerCase();
+  }
+  if (/^[a-zA-Z0-9]{6,16}$/.test(str)) {
+    return str.toLowerCase();
+  }
+  return '';
+}
+
+export function getStoredKofiShopConfig(): KofiShopItemConfig {
+  const envMeta =
+    typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: Record<string, string> }).env
+      ? (import.meta as unknown as { env: Record<string, string> }).env
+      : {};
+
+  const defaults: KofiShopItemConfig = {
+    single: extractKofiShopDirectLinkCode(envMeta.VITE_KOFI_SHOP_SINGLE_CODE),
+    pass_7d: extractKofiShopDirectLinkCode(envMeta.VITE_KOFI_SHOP_7D_CODE),
+    pass_30d: extractKofiShopDirectLinkCode(envMeta.VITE_KOFI_SHOP_30D_CODE),
+  };
+
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const raw = window.localStorage.getItem(KOFI_SHOP_CONFIG_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Partial<KofiShopItemConfig>;
+    return {
+      single: extractKofiShopDirectLinkCode(parsed.single) || defaults.single,
+      pass_7d: extractKofiShopDirectLinkCode(parsed.pass_7d) || defaults.pass_7d,
+      pass_30d: extractKofiShopDirectLinkCode(parsed.pass_30d) || defaults.pass_30d,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+export function saveStoredKofiShopConfig(config: KofiShopItemConfig): KofiShopItemConfig {
+  const normalized: KofiShopItemConfig = {
+    single: extractKofiShopDirectLinkCode(config.single),
+    pass_7d: extractKofiShopDirectLinkCode(config.pass_7d),
+    pass_30d: extractKofiShopDirectLinkCode(config.pass_30d),
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(KOFI_SHOP_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }
+  return normalized;
+}
+

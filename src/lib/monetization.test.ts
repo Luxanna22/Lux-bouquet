@@ -250,3 +250,92 @@ test('Vercel Ko-fi checkout, URL normalization, stateless token, and PASS_SIGNIN
   }
 });
 
+test('Ko-fi Shop Order verification strictly requires type "Shop Order", matches direct_link_code to exact tier, and isolates receipts by (email, tier)', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+
+  const shopConfig = {
+    single: '1a2b3c4d5e',
+    pass_7d: '7d8e9f0a1b',
+    pass_30d: '30d9988776',
+  };
+
+  assert.equal(paymentLib.extractKofiShopCode('https://ko-fi.com/s/1a2b3c4d5e?ref=sab'), '1a2b3c4d5e');
+  assert.equal(paymentLib.buildKofiShopItemUrl('1a2b3c4d5e', 'https://ko-fi.com/luxinnamon'), 'https://ko-fi.com/s/1a2b3c4d5e');
+
+  // 1. Rejects generic Single Tip ("Donation") and Monthly ("Subscription") webhooks
+  const donationResult = paymentLib.resolveKofiShopOrderTier(
+    { type: 'Donation', amount: '5.00', email: 'buyer@example.com' },
+    shopConfig,
+  );
+  assert.equal(donationResult.valid, false);
+  assert.equal(donationResult.reason, 'NON_SHOP_ORDER_REJECTED');
+
+  const subscriptionResult = paymentLib.resolveKofiShopOrderTier(
+    { type: 'Subscription', amount: '10.00', email: 'buyer@example.com' },
+    shopConfig,
+  );
+  assert.equal(subscriptionResult.valid, false);
+  assert.equal(subscriptionResult.reason, 'NON_SHOP_ORDER_REJECTED');
+
+  // 2. Rejects Shop Order with unrecognized direct_link_code
+  const wrongCodeResult = paymentLib.resolveKofiShopOrderTier(
+    {
+      type: 'Shop Order',
+      email: 'buyer@example.com',
+      shop_items: [{ direct_link_code: 'unknown999' }],
+    },
+    shopConfig,
+  );
+  assert.equal(wrongCodeResult.valid, false);
+  assert.equal(wrongCodeResult.reason, 'UNRECOGNIZED_DIRECT_LINK_CODE');
+
+  // 3. Accepts matching Shop Order for each exact tier
+  const singleOrder = paymentLib.resolveKofiShopOrderTier(
+    {
+      type: 'Shop Order',
+      email: 'buyer@example.com',
+      shop_items: [{ direct_link_code: '1a2b3c4d5e' }],
+    },
+    shopConfig,
+  );
+  assert.equal(singleOrder.valid, true);
+  assert.equal(singleOrder.tier, 'single');
+
+  const pass7dOrder = paymentLib.resolveKofiShopOrderTier(
+    {
+      type: 'Shop Order',
+      email: 'buyer@example.com',
+      shop_items: [{ direct_link_code: '7d8e9f0a1b' }],
+    },
+    shopConfig,
+  );
+  assert.equal(pass7dOrder.valid, true);
+  assert.equal(pass7dOrder.tier, 'pass_7d');
+
+  const pass30dOrder = paymentLib.resolveKofiShopOrderTier(
+    {
+      type: 'Shop Order',
+      email: 'buyer@example.com',
+      shop_items: [{ direct_link_code: '30d9988776' }],
+    },
+    shopConfig,
+  );
+  assert.equal(pass30dOrder.valid, true);
+  assert.equal(pass30dOrder.tier, 'pass_30d');
+
+  // 4. Deterministic (email, tier) slot keys are valid BLOOM-KSXX-XXXX keys and strictly distinct per tier & email
+  const slotSingle = paymentLib.deriveKofiEmailTierSlotKey('Buyer@Example.com ', 'single');
+  const slot7d = paymentLib.deriveKofiEmailTierSlotKey('buyer@example.com', 'pass_7d');
+  const slot30d = paymentLib.deriveKofiEmailTierSlotKey('buyer@example.com', 'pass_30d');
+  const slotOtherEmail = paymentLib.deriveKofiEmailTierSlotKey('someoneelse@example.com', 'single');
+
+  assert.match(slotSingle, /^BLOOM-KS[A-Z2-9]{2}-[A-Z2-9]{4}$/);
+  assert.match(slot7d, /^BLOOM-KS[A-Z2-9]{2}-[A-Z2-9]{4}$/);
+  assert.match(slot30d, /^BLOOM-KS[A-Z2-9]{2}-[A-Z2-9]{4}$/);
+  assert.notEqual(slotSingle, slot7d);
+  assert.notEqual(slot7d, slot30d);
+  assert.notEqual(slotSingle, slotOtherEmail);
+});
+
+
