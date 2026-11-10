@@ -360,7 +360,22 @@ test('Ko-fi Shop Order verification strictly requires type "Shop Order", matches
   } finally {
     delete process.env.KOFI_SHOP_TEST_CODE;
   }
+
+  // 6. Any $0.00 Shop Order (e.g. "Single Bouquet Test ($0.00)") unlocks all 3 tiers even when paid item codes are configured
+  const zeroDollarTestItemOrder = paymentLib.resolveKofiShopOrderTier(
+    {
+      type: 'Shop Order',
+      amount: '0.00',
+      currency: 'USD',
+      email: 'bloom@gmail.com',
+      shop_items: [{ direct_link_code: 'e194d8c6aa' }],
+    },
+    shopConfig,
+  );
+  assert.equal(zeroDollarTestItemOrder.valid, true);
+  assert.deepEqual(zeroDollarTestItemOrder.matchedTiers, ['single', 'pass_7d', 'pass_30d']);
 });
+
 
 
 

@@ -708,23 +708,40 @@ export function verifyPaymongoWebhookSignature(rawBody, signatureHeader, webhook
 }
 
 async function readRequestBody(req) {
-  if (req.body !== undefined && req.body !== null) {
-    if (typeof req.body === 'string') {
-      const trimmed = req.body.trim();
-      if (trimmed.startsWith('data=')) {
-        const params = new URLSearchParams(trimmed);
-        const dataStr = params.get('data') || '{}';
+  const parseStringPayload = (str) => {
+    const trimmed = String(str || '').trim();
+    if (!trimmed) return { raw: '', parsed: {} };
+    if (trimmed.startsWith('data=')) {
+      const params = new URLSearchParams(trimmed);
+      const dataStr = params.get('data') || '{}';
+      try {
+        return { raw: trimmed, parsed: JSON.parse(dataStr) };
+      } catch {
+        return { raw: trimmed, parsed: {} };
+      }
+    }
+    try {
+      return { raw: trimmed, parsed: JSON.parse(trimmed) };
+    } catch {
+      const params = new URLSearchParams(trimmed);
+      const dataStr = params.get('data');
+      if (dataStr) {
         try {
           return { raw: trimmed, parsed: JSON.parse(dataStr) };
         } catch {
           return { raw: trimmed, parsed: {} };
         }
       }
-      try {
-        return { raw: trimmed, parsed: JSON.parse(trimmed || '{}') };
-      } catch {
-        return { raw: trimmed, parsed: {} };
-      }
+      return { raw: trimmed, parsed: {} };
+    }
+  };
+
+  if (req.body !== undefined && req.body !== null) {
+    if (Buffer.isBuffer(req.body) || req.body instanceof Uint8Array) {
+      return parseStringPayload(Buffer.from(req.body).toString('utf8'));
+    }
+    if (typeof req.body === 'string') {
+      return parseStringPayload(req.body);
     }
     if (typeof req.body === 'object') {
       if (typeof req.body.data === 'string' && req.body.data.trim().startsWith('{')) {
@@ -748,21 +765,7 @@ async function readRequestBody(req) {
       }
     });
     req.on('end', () => {
-      if (!raw.trim()) {
-        resolve({ raw: '', parsed: {} });
-        return;
-      }
-      try {
-        if (raw.startsWith('data=')) {
-          const params = new URLSearchParams(raw);
-          const dataStr = params.get('data') || '{}';
-          resolve({ raw, parsed: JSON.parse(dataStr) });
-          return;
-        }
-        resolve({ raw, parsed: JSON.parse(raw) });
-      } catch {
-        resolve({ raw, parsed: {} });
-      }
+      resolve(parseStringPayload(raw));
     });
     req.on('error', reject);
   });
@@ -820,19 +823,17 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
     };
   }
 
+  const rawAmountStr =
+    parsedWebhook?.amount !== undefined && parsedWebhook?.amount !== null
+      ? String(parsedWebhook.amount).trim()
+      : '';
+  const parsedAmount = rawAmountStr !== '' ? Number.parseFloat(rawAmountStr) : NaN;
+  const isExplicitZeroDollarTest = Number.isFinite(parsedAmount) && parsedAmount <= 0;
+
   const codes = getActiveKofiShopCodes(configuredShopCodes);
   const hasAnyConfiguredCode = Boolean(codes.test || codes.single || codes.pass_7d || codes.pass_30d);
 
   if (hasAnyConfiguredCode) {
-    if (codes.test && itemCodes.includes(codes.test)) {
-      return {
-        valid: true,
-        tier: 'pass_30d',
-        matchedTiers: ['single', 'pass_7d', 'pass_30d'],
-        directLinkCode: codes.test,
-      };
-    }
-
     const matchedTiers = [];
     let primaryDirectLinkCode = '';
 
@@ -858,6 +859,15 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
       };
     }
 
+    if ((codes.test && itemCodes.includes(codes.test)) || isExplicitZeroDollarTest) {
+      return {
+        valid: true,
+        tier: 'pass_30d',
+        matchedTiers: ['single', 'pass_7d', 'pass_30d'],
+        directLinkCode: '',
+      };
+    }
+
     return {
       valid: false,
       reason: 'UNRECOGNIZED_DIRECT_LINK_CODE',
@@ -867,14 +877,14 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
 
   // Fallback when owner hasn't configured specific codes yet: still strictly requires type === 'Shop Order'
   // and a valid direct_link_code, resolving tier by amount/currency (or unlocking all 3 tiers if $0 test product)
-  const amount = Number.parseFloat(String(parsedWebhook?.amount || '0'));
+  const amount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
   const cur = String(parsedWebhook?.currency || 'USD').toUpperCase();
   if (amount <= 0) {
     return {
       valid: true,
       tier: 'pass_30d',
       matchedTiers: ['single', 'pass_7d', 'pass_30d'],
-      directLinkCode: itemCodes[0],
+      directLinkCode: '',
     };
   }
   let tier = 'single';
@@ -1043,6 +1053,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         passKey,
         tier,
         region,
+        plan,
         deviceTokenHash,
         boundBouquetCode,
         directLinkCode: tierDirectLinkCode || null,
@@ -1082,12 +1093,15 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const decodedToken = verifySignedCheckoutToken(checkoutToken);
 
       if (!pending && decodedToken && decodedToken.cid === checkoutId) {
+        const resolvedRegion = isValidRegion(decodedToken.r) ? decodedToken.r : 'INTL';
+        const resolvedTier = isValidTier(decodedToken.t) ? decodedToken.t : 'single';
         pending = {
           checkoutId: decodedToken.cid,
           checkoutToken,
           passKey: decodedToken.pk,
-          tier: decodedToken.t,
-          region: decodedToken.r,
+          tier: resolvedTier,
+          region: resolvedRegion,
+          plan: PRICING_CATALOG[resolvedRegion][resolvedTier],
           provider: decodedToken.p,
           deviceTokenHash: decodedToken.d,
           boundBouquetCode: decodedToken.b || null,
@@ -1159,7 +1173,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
       }
 
-      // Case B: Strict Ko-fi Shop Order Verification by Buyer Email + Exact Tier (`direct_link_code`)
+      // Case B: Ko-fi Shop Order Verification by Buyer Email + Tier
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
       const isKofiLiveRequired =
         pending.provider === 'kofi' &&
@@ -1183,7 +1197,24 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           SERVER_PASS_STORE.get(emailTierSlotKey) ||
           (await fetchStudioPassFromFirestoreRest(emailTierSlotKey));
 
+        // If no receipt exists in the requested tier slot, check if the buyer ordered a different tier
         if (!receiptSlot) {
+          const otherTiers = ['single', 'pass_7d', 'pass_30d'].filter((t) => t !== pending.tier);
+          for (const otherTier of otherTiers) {
+            const otherSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, otherTier);
+            const candidate =
+              SERVER_PASS_STORE.get(otherSlotKey) ||
+              (await fetchStudioPassFromFirestoreRest(otherSlotKey));
+            if (candidate && candidate.secondaryDeviceHash !== 'CLAIMED') {
+              sendJson(res, 403, {
+                ok: false,
+                status: 'TIER_MISMATCH',
+                message: `Your Ko-fi Shop order was for "${PRICING_CATALOG.INTL[otherTier]?.name || otherTier}", which does not match "${pending.plan?.name || pending.tier}". Please select the matching tier.`,
+              });
+              return true;
+            }
+          }
+
           sendJson(res, 402, {
             ok: false,
             status: 'PENDING_PAYMENT',
@@ -1192,7 +1223,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        // Strictly verify the Shop Order receipt matches the requested tier!
+        // Verify the Shop Order receipt matches the requested tier
         if (receiptSlot.tier !== pending.tier) {
           sendJson(res, 403, {
             ok: false,
@@ -1212,11 +1243,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        // If a specific direct_link_code was configured for this tier, verify the receipt's direct_link_code matches
+        const activeShopCodes = getActiveKofiShopCodes();
         if (
           pending.directLinkCode &&
           receiptSlot.boundBouquetCode &&
-          receiptSlot.boundBouquetCode !== pending.directLinkCode
+          receiptSlot.boundBouquetCode !== pending.directLinkCode &&
+          receiptSlot.boundBouquetCode !== activeShopCodes.test
         ) {
           sendJson(res, 403, {
             ok: false,
@@ -1229,6 +1261,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         // Mark this `(buyerEmail, tier)` receipt slot as CLAIMED so it cannot be reused
         const claimedSlot = {
           ...receiptSlot,
+          primaryDeviceHash: deviceTokenHash,
           secondaryDeviceHash: 'CLAIMED',
         };
         claimedSlot.signature = computePassIntegritySignature(claimedSlot, CLIENT_SIGNATURE_SALT);
@@ -1455,9 +1488,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
     // 6. POST /api/webhooks/kofi — Strict Ko-fi Shop Order (`direct_link_code` + Buyer Email) Listener
     if (pathname === '/api/webhooks/kofi' && req.method === 'POST') {
       const { parsed } = await readRequestBody(req);
-      const expectedToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
+      const expectedToken = (process.env.KOFI_VERIFICATION_TOKEN || '')
+        .replace(/^["']+|["']+$/g, '')
+        .trim();
       const incomingToken =
-        typeof parsed.verification_token === 'string' ? parsed.verification_token.trim() : '';
+        typeof parsed.verification_token === 'string'
+          ? parsed.verification_token.replace(/^["']+|["']+$/g, '').trim()
+          : '';
 
       if (expectedToken && !timingSafeMatch(expectedToken, incomingToken)) {
         sendJson(res, 401, { ok: false, message: 'Invalid Ko-fi verification token' });

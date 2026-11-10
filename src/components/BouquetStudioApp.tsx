@@ -247,6 +247,7 @@ export default function App() {
   const [isFinalDesignChecked, setIsFinalDesignChecked] = useState<boolean>(true);
   const [pinToShowcaseChecked, setPinToShowcaseChecked] = useState<boolean>(true);
   const shouldResetStudioOnShareCloseRef = useRef<boolean>(false);
+  const isSealedBouquetPaidRef = useRef<boolean>(false);
   const [shortShareUrl, setShortShareUrl] = useState<string | null>(null);
   const [isShorteningUrl, setIsShorteningUrl] = useState(false);
   const [isInAppBrowserModalOpen, setIsInAppBrowserModalOpen] = useState(false);
@@ -1321,6 +1322,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isShareModalOpen) {
+      isSealedBouquetPaidRef.current = false;
       if (shouldResetStudioOnShareCloseRef.current) {
         shouldResetStudioOnShareCloseRef.current = false;
         setSealedBouquetCode(null);
@@ -1357,6 +1359,7 @@ export default function App() {
     setSealedGiftUrl(firstPartyUrl);
     setSealedBouquetCode(currentBouquetShortCode);
     setIsShorteningUrl(false);
+    isSealedBouquetPaidRef.current = Boolean(passVerify.valid && effectivePass);
     setShareStep('ready');
     setIsShareModalOpen(true);
 
@@ -5447,7 +5450,11 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      handleExportPng();
+                      if (isSealedBouquetPaidRef.current) {
+                        performSvgPngDownload();
+                      } else {
+                        handleExportPng();
+                      }
                     }}
                     className={`py-2.5 px-3 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
                       isDarkMode
