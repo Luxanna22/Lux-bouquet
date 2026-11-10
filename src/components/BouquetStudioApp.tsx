@@ -1598,9 +1598,9 @@ export default function App() {
               so the recipient focuses purely on the bouquet and card.
               ===================================================================== */}
           {!isGiftView && !isPreviewMode && (
-        <div className="px-2.5 sm:px-5 pt-2 pb-1 shrink-0 z-30">
+        <div className="px-2 sm:px-5 pt-2 pb-1 shrink-0 z-30">
           <div
-            className={`h-11 sm:h-12 px-3 sm:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-2 transition-colors ${
+            className={`h-10.5 sm:h-12 px-2 sm:px-3.5 md:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-1 sm:gap-2 overflow-hidden transition-colors ${
               isDarkMode
                 ? 'bg-[#352C29]/95 border-[#4E423E] text-[#FBF6F1]'
                 : 'bg-[#FFFDF9]/95 border-[#EFE6DD] text-[#231C18]'
@@ -1612,11 +1612,11 @@ export default function App() {
               onClick={() => setShowLandingPage(true)}
               title="Back to Send A Bouquet Home"
               aria-label="Open Send A Bouquet Home Page"
-              className="flex items-center gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 sm:gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
             >
-              <BrandLogoMark className="w-6 h-6 sm:w-7 sm:h-7" isDarkMode={isDarkMode} />
+              <BrandLogoMark className="w-5 h-5 sm:w-6.5 sm:h-6.5" isDarkMode={isDarkMode} />
               <span
-                className="hidden sm:inline text-lg font-semibold tracking-tight whitespace-nowrap"
+                className="hidden lg:inline text-lg font-semibold tracking-tight whitespace-nowrap"
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               >
                 Send A Bouquet
@@ -1625,7 +1625,7 @@ export default function App() {
 
             {/* Center: Quiet History & Reset Capsule */}
             <div
-              className={`flex items-center gap-0.5 rounded-full px-1 py-0.5 border border-dashed shrink-0 ${
+              className={`flex items-center gap-0 sm:gap-0.5 rounded-full px-0.5 sm:px-1 py-0.5 border border-dashed shrink-0 ${
                 isDarkMode
                   ? 'bg-[#2B2321]/80 border-[#52433E]'
                   : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
@@ -1640,9 +1640,9 @@ export default function App() {
                 disabled={past.length === 0}
                 aria-label="Undo"
                 title="Undo"
-                className="w-7 h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
               >
-                <Undo2 className="w-3.5 h-3.5" />
+                <Undo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
               <button
                 type="button"
@@ -1653,13 +1653,13 @@ export default function App() {
                 disabled={future.length === 0}
                 aria-label="Redo"
                 title="Redo"
-                className="w-7 h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
               >
-                <Redo2 className="w-3.5 h-3.5" />
+                <Redo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
               <span
                 aria-hidden="true"
-                className={`w-[1px] h-3.5 mx-0.5 ${
+                className={`hidden sm:block w-[1px] h-3.5 mx-0.5 ${
                   isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                 }`}
               />
@@ -1669,14 +1669,14 @@ export default function App() {
                 onClick={handleSaveDraftOnDevice}
                 aria-label="Save bouquet draft on this device"
                 title="Save Draft on Device"
-                className="h-7 px-2 rounded-full text-[11px] font-medium flex items-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white active:scale-95 transition cursor-pointer"
+                className="w-5.5 sm:w-auto h-5.5 sm:h-7 sm:px-2 rounded-full text-[11px] font-medium flex items-center justify-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white active:scale-95 transition cursor-pointer"
               >
                 <Check className="w-3 h-3 text-[#B4846C]" />
-                <span className="hidden sm:inline">Save Draft</span>
+                <span className="hidden xl:inline">Save Draft</span>
               </button>
               <span
                 aria-hidden="true"
-                className={`w-[1px] h-3.5 mx-0.5 ${
+                className={`hidden sm:block w-[1px] h-3.5 mx-0.5 ${
                   isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                 }`}
               />
@@ -1689,10 +1689,10 @@ export default function App() {
                 }}
                 aria-label="Reset bouquet and start over"
                 title="Start Over"
-                className="h-7 px-2 rounded-full text-[11px] font-medium flex items-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
+                className="w-5.5 sm:w-auto h-5.5 sm:h-7 sm:px-2 rounded-full text-[11px] font-medium flex items-center justify-center gap-1 text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span className="hidden md:inline">Reset</span>
+                <span className="hidden xl:inline">Reset</span>
               </button>
             </div>
 
@@ -1711,7 +1711,7 @@ export default function App() {
                     ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
                     : 'Premium Studio Pass & Pass Key'
                 }
-                className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-6.5 sm:h-8 px-1.5 sm:px-2.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isBouquetUnlockedByPass
                     ? isDarkMode
                       ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
@@ -1721,8 +1721,9 @@ export default function App() {
                     : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                <span>Premium</span>
+                <CoutureBloomSeal className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C] shrink-0" />
+                <span className="hidden min-[410px]:inline">Premium</span>
+                <span className="min-[410px]:hidden">Pass</span>
               </button>
 
               <button
@@ -1730,17 +1731,17 @@ export default function App() {
                 onClick={() => setIsVaultModalOpen(true)}
                 aria-label="Open Saved Bouquets"
                 title="Saved Bouquets"
-                className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1.5 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-6.5 sm:h-8 px-1.5 sm:px-2.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
                     ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                     : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                <span className="sm:hidden">Saved</span>
-                <span className="hidden sm:inline">Saved Bouquets</span>
+                <span className="lg:hidden">Saved</span>
+                <span className="hidden lg:inline">Saved Bouquets</span>
                 {vaultCount > 0 && (
                   <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                    className={`px-1 sm:px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-semibold tabular-nums ${
                       isDarkMode
                         ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
                         : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
@@ -1757,7 +1758,7 @@ export default function App() {
                 aria-pressed={isMusicPlaying}
                 aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                 title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
+                className={`hidden sm:flex w-7 h-7 sm:w-8 sm:h-8 rounded-full items-center justify-center shrink-0 active:scale-95 transition cursor-pointer ${
                   isMusicPlaying
                     ? 'bg-[#B4846C]/15 text-[#B4846C]'
                     : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36]'
@@ -1771,10 +1772,10 @@ export default function App() {
                 onClick={() => setIsDarkMode((prev) => !prev)}
                 aria-label="Toggle theme"
                 title="Toggle theme"
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
+                className="w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
               >
                 <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
-                  {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
+                  {isDarkMode ? <Sun className="w-3.25 h-3.25 sm:w-3.5 sm:h-3.5 text-amber-300" /> : <Moon className="w-3.25 h-3.25 sm:w-3.5 sm:h-3.5" />}
                 </span>
               </button>
 
@@ -1783,7 +1784,7 @@ export default function App() {
                 onClick={() => setIsShareModalOpen(true)}
                 aria-label="Share bouquet"
                 title="Share bouquet"
-                className={`h-7 sm:h-8 px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-6.5 sm:h-8 px-2.5 sm:px-3.5 rounded-full text-[10.5px] sm:text-xs font-medium flex items-center justify-center gap-1 shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
                     ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
                     : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
@@ -2869,6 +2870,23 @@ export default function App() {
                         <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border border-white" />
                       )}
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={handleToggleMusic}
+                      aria-pressed={isMusicPlaying}
+                      aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                      title={isMusicPlaying ? 'Pause music' : 'Play music'}
+                      className={`sm:hidden w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                        isMusicPlaying
+                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                          : isDarkMode
+                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                      }`}
+                    >
+                      {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                    </button>
                   </div>
                 )}
 
@@ -3491,12 +3509,12 @@ export default function App() {
           >
             {/* Row 1: Category Pill Tabs + Reset & Collapse/Expand Tray Buttons (Works on Phone & Desktop) */}
             <div
-              className={`flex items-center justify-between gap-1.5 sm:gap-2 ${
+              className={`flex items-center justify-between gap-2 ${
                 isDesktopDockCollapsed ? 'pb-0' : 'pb-2'
               }`}
             >
               <div
-                className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar"
+                className="flex-1 min-w-0 flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar pr-3 [-webkit-mask-image:linear-gradient(to_right,black_calc(100%-14px),transparent_100%)] sm:[-webkit-mask-image:none]"
                 role="tablist"
               >
                 {(
@@ -3517,7 +3535,12 @@ export default function App() {
                       type="button"
                       role="tab"
                       aria-selected={isActive}
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.currentTarget.scrollIntoView({
+                          behavior: 'smooth',
+                          inline: 'center',
+                          block: 'nearest',
+                        });
                         if (cat.id === 'wrapping') setActiveColorTarget('wrapper');
                         else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
                         else if (cat.id === 'card') setActiveColorTarget('card');
@@ -3531,7 +3554,7 @@ export default function App() {
                           setIsDesktopDockCollapsed(false);
                         }
                       }}
-                      className={`px-3 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 ${
+                      className={`px-2.5 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 cursor-pointer ${
                         isActive
                           ? 'bg-[#B4846C] text-white shadow-xs border border-[#B4846C]'
                           : isDarkMode
@@ -3548,7 +3571,11 @@ export default function App() {
                 })}
               </div>
 
-              <div className="flex items-center shrink-0">
+              <div
+                className={`flex items-center shrink-0 pl-1.5 border-l border-dashed ${
+                  isDarkMode ? 'border-[#52433E]' : 'border-[#E2D1C1]'
+                }`}
+              >
                 {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section */}
                 <button
                   type="button"
@@ -3615,7 +3642,7 @@ export default function App() {
                     updateStudioCarouselScrollState();
                   }
                 }}
-                className="flex-1 min-w-0 flex items-start gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 scroll-smooth"
+                className="flex-1 min-w-0 flex items-start gap-2 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 pr-2 scroll-smooth"
               >
                 {/* CATEGORY 1: TEMPLATES */}
               {mobileCategory === 'templates' && (
@@ -3627,7 +3654,7 @@ export default function App() {
                       clearBouquet();
                       triggerToast('Started over with an empty bouquet');
                     }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                   >
                     <div
                       className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
@@ -3638,7 +3665,7 @@ export default function App() {
                     >
                       <RotateCcw className="w-5 h-5 text-[#B4846C] group-hover:text-red-500" />
                     </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       Start Over
                     </span>
                   </button>
@@ -3652,7 +3679,7 @@ export default function App() {
                         loadSnapshot(tpl.snapshot);
                         triggerToast(`Loaded ${tpl.name}`);
                       }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                     >
                       <div
                         className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
@@ -3667,7 +3694,7 @@ export default function App() {
                           bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
                         />
                       </div>
-                      <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                      <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                         {tpl.name}
                       </span>
                     </button>
@@ -3689,7 +3716,7 @@ export default function App() {
                           setWrapStyle(ws.id);
                           setActiveColorTarget('wrapper');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                       >
                         <div className="relative w-13 h-13 sm:w-16 sm:h-16">
                           <div
@@ -3714,7 +3741,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {ws.label}
                         </span>
                       </button>
@@ -3736,7 +3763,7 @@ export default function App() {
                         setActiveColorTarget('petal');
                         triggerToast(`Added ${entry.name}`);
                       }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                     >
                       <div className="relative w-13 h-13 sm:w-16 sm:h-16">
                         <div
@@ -3761,7 +3788,7 @@ export default function App() {
                           />
                         )}
                       </div>
-                      <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                      <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                         {entry.shortName}
                       </span>
                     </button>
@@ -3781,7 +3808,7 @@ export default function App() {
                         setActiveColorTarget('petal');
                         triggerToast(`Added ${entry.name}`);
                       }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                     >
                       <div className="relative w-13 h-13 sm:w-16 sm:h-16">
                         <div
@@ -3806,7 +3833,7 @@ export default function App() {
                           />
                         )}
                       </div>
-                      <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                      <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                         {entry.shortName}
                       </span>
                     </button>
@@ -3827,7 +3854,7 @@ export default function App() {
                           setRibbonStyle(rs.id);
                           setActiveColorTarget('ribbon');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group relative"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                       >
                         <div className="relative w-13 h-13 sm:w-16 sm:h-16">
                           <div
@@ -3848,7 +3875,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {rs.label}
                         </span>
                       </button>
@@ -3869,7 +3896,7 @@ export default function App() {
                       setIsMobileToolsExpanded(true);
                       setMobilePopover((prev) => (prev === 'card' ? null : 'card'));
                     }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                   >
                     <div
                       className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
@@ -3882,7 +3909,7 @@ export default function App() {
                     >
                       <PenLine className="w-5 h-5 text-[#B4846C]" />
                     </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       Write Note
                     </span>
                   </button>
@@ -3901,7 +3928,7 @@ export default function App() {
                           });
                           setActiveColorTarget('card');
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                       >
                         <div
                           className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
@@ -3916,7 +3943,7 @@ export default function App() {
                             theme={th.id}
                           />
                         </div>
-                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {th.label}
                         </span>
                       </button>
@@ -3926,7 +3953,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                   >
                     <div
                       className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
@@ -3943,7 +3970,7 @@ export default function App() {
                         <Eye className="w-5 h-5 text-[#B4846C]" />
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       {card.visibleOnStage ? 'Hide Tag' : 'Show Tag'}
                     </span>
                   </button>
@@ -3962,7 +3989,7 @@ export default function App() {
                       setIsMobileToolsExpanded(true);
                       setMobilePopover((prev) => (prev === 'voice' ? null : 'voice'));
                     }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                   >
                     <div
                       className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
@@ -3978,7 +4005,7 @@ export default function App() {
                         <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       {voice.audioDataUrl ? 'Voice Studio' : 'Record Voice'}
                     </span>
                   </button>
@@ -4000,7 +4027,7 @@ export default function App() {
                           setActiveColorTarget('voicePrimary');
                           triggerToast(`Selected ${vk.label}`);
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                       >
                         <div
                           className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
@@ -4017,7 +4044,7 @@ export default function App() {
                             accentColor={vk.defaultAccent}
                           />
                         </div>
-                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {vk.shortLabel}
                         </span>
                       </button>
@@ -4031,7 +4058,7 @@ export default function App() {
                       if (!nextVis) handleStopVoice();
                       updateVoice({ visibleOnStage: nextVis });
                     }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[60px] sm:w-[68px] group"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                   >
                     <div
                       className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
@@ -4048,7 +4075,7 @@ export default function App() {
                         <Eye className="w-5 h-5 text-[#B4846C]" />
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-300 truncate w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       {voice.visibleOnStage ? 'Hide Voice' : 'Show Voice'}
                     </span>
                   </button>

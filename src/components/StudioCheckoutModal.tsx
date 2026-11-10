@@ -91,6 +91,272 @@ export const CoutureItemBadge: React.FC<{ isDarkMode?: boolean; title?: string }
   </span>
 );
 
+/**
+ * Pure inline SVG botanical lineart symbol/graphic for each Studio Pass tier.
+ * Replaces external raster .jpg files so cards render instantaneously with zero
+ * image network requests and scale crisply at any mobile/tablet/desktop DPI.
+ */
+export const StudioPassLineartSymbol: React.FC<{
+  tier: StudioPassTier;
+  isDarkMode?: boolean;
+  isSelected?: boolean;
+  size?: 'card' | 'thumb';
+}> = ({ tier, isDarkMode = false, isSelected = false, size = 'card' }) => {
+  const strokePrimary = isDarkMode ? '#F0C8B0' : '#6E4434';
+  const strokeAccent = isDarkMode ? '#D4A383' : '#B4846C';
+  const softFill = isDarkMode ? 'rgba(230, 184, 156, 0.12)' : 'rgba(180, 132, 108, 0.11)';
+  const blushFill = isDarkMode ? 'rgba(236, 168, 176, 0.18)' : 'rgba(229, 152, 155, 0.22)';
+
+  return (
+    <div
+      data-testid={`plan-lineart-${tier}`}
+      className={`${
+        size === 'thumb'
+          ? 'w-12 h-12 rounded-xl shrink-0'
+          : 'w-full aspect-[1.15/1] sm:aspect-square rounded-xl'
+      } border border-dashed flex items-center justify-center overflow-hidden transition-colors select-none ${
+        isSelected
+          ? isDarkMode
+            ? 'bg-[#352B28] border-[#E6B89C]/80'
+            : 'bg-[#FFFDF9] border-[#8A5A44]/70'
+          : isDarkMode
+          ? 'bg-[#261F1D] border-[#544540]'
+          : 'bg-[#FAF5EF]/90 border-[#DECBB9]'
+      }`}
+    >
+      <svg
+        viewBox="0 0 88 88"
+        fill="none"
+        aria-hidden="true"
+        className={size === 'thumb' ? 'w-10 h-10' : 'w-[76%] h-[76%] max-w-[68px] max-h-[68px]'}
+      >
+        {/* Outer fine botanical stationer's ring */}
+        <circle
+          cx="44"
+          cy="44"
+          r="37"
+          stroke={strokeAccent}
+          strokeWidth="0.9"
+          strokeDasharray="2.5 2.5"
+          opacity="0.55"
+        />
+
+        {tier === 'single' && (
+          <g strokeLinecap="round" strokeLinejoin="round">
+            {/* Soft watercolor halo behind single bloom */}
+            <circle cx="44" cy="33" r="14" fill={blushFill} />
+            {/* Stem */}
+            <path
+              d="M44 43 C44 53, 43.5 62, 44 71"
+              stroke={strokePrimary}
+              strokeWidth="1.45"
+            />
+            {/* Botanical leaves */}
+            <path
+              d="M44 54 C37 52, 33 47, 36 44 C39 44, 42 48, 44 54 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.2"
+            />
+            <path
+              d="M44 51 C51 49, 55 44, 52 41 C49 41, 46 45, 44 51 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.2"
+            />
+            {/* Single Rosebud Chalice & Petals */}
+            <path
+              d="M35 33 C35 24, 53 24, 53 33 C53 39.5, 48.5 43, 44 43 C39.5 43, 35 39.5, 35 33 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.4"
+            />
+            <path
+              d="M38 30 C41 26, 47 26, 50 30 C47 33, 41 33, 38 30 Z"
+              stroke={strokePrimary}
+              strokeWidth="1.15"
+            />
+            <path
+              d="M41 28.5 C43 26.5, 45 26.5, 47 28.5"
+              stroke={strokeAccent}
+              strokeWidth="1.1"
+            />
+            {/* Calyx sepals */}
+            <path
+              d="M39 41.5 L44 44 L49 41.5"
+              stroke={strokePrimary}
+              strokeWidth="1.15"
+            />
+            {/* Dainty tied ribbon bow on stem */}
+            <path
+              d="M44 61 C39 58, 36 61, 40 63.5 C42 64.2, 43.2 62.2, 44 61 Z"
+              fill={blushFill}
+              stroke={strokeAccent}
+              strokeWidth="1.15"
+            />
+            <path
+              d="M44 61 C49 58, 52 61, 48 63.5 C46 64.2, 44.8 62.2, 44 61 Z"
+              fill={blushFill}
+              stroke={strokeAccent}
+              strokeWidth="1.15"
+            />
+            <path
+              d="M43 62 L40 68 M45 62 L48 68"
+              stroke={strokeAccent}
+              strokeWidth="1.1"
+            />
+            {/* Top solitaire diamond sparkle */}
+            <path
+              d="M44 14 L45.1 17.4 L48.5 18.5 L45.1 19.6 L44 23 L42.9 19.6 L39.5 18.5 L42.9 17.4 Z"
+              fill={strokeAccent}
+              opacity="0.85"
+            />
+          </g>
+        )}
+
+        {tier === 'pass_7d' && (
+          <g strokeLinecap="round" strokeLinejoin="round">
+            {/* Soft botanical aura */}
+            <circle cx="44" cy="34" r="18" fill={blushFill} />
+            {/* Origami paper cone wrapper */}
+            <path
+              d="M27 44 L44 72 L61 44 L53 40 L44 45 L35 40 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.35"
+            />
+            <path
+              d="M35 44 L44 59 L53 44"
+              stroke={strokeAccent}
+              strokeWidth="1.05"
+               opacity="0.8"
+            />
+            {/* Center Peony Bloom */}
+            <circle
+              cx="44"
+              cy="31"
+              r="8.2"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.35"
+            />
+            <path
+              d="M40.5 30.5 C42 27.5, 46 27.5, 47.5 30.5 C46 33.5, 42 33.5, 40.5 30.5 Z"
+              stroke={strokePrimary}
+              strokeWidth="1.1"
+            />
+            <circle cx="44" cy="30.5" r="1.4" fill={strokeAccent} />
+            {/* Left Tulip Bloom */}
+            <path
+              d="M26 35 C24 28, 30 25, 33 30 C35 33, 32 38, 29 38 C27 38, 26.5 36.5, 26 35 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.25"
+            />
+            <path d="M31.5 37.5 L37 44" stroke={strokePrimary} strokeWidth="1.2" />
+            {/* Right Lily Bloom */}
+            <path
+              d="M62 35 C64 28, 58 25, 55 30 C53 33, 56 38, 59 38 C61 38, 61.5 36.5, 62 35 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.25"
+            />
+            <path d="M56.5 37.5 L51 44" stroke={strokePrimary} strokeWidth="1.2" />
+            {/* Ribbon bow at waist of cone */}
+            <path
+              d="M44 57 C38 53.5, 35 57.5, 39.5 60 C41.5 61, 43 58.5, 44 57 Z"
+              fill={blushFill}
+              stroke={strokeAccent}
+              strokeWidth="1.2"
+            />
+            <path
+              d="M44 57 C50 53.5, 53 57.5, 48.5 60 C46.5 61, 45 58.5, 44 57 Z"
+              fill={blushFill}
+              stroke={strokeAccent}
+              strokeWidth="1.2"
+            />
+            <circle cx="44" cy="57" r="1.6" fill={strokePrimary} />
+            {/* 3 Tiny stars arc at crown */}
+            <circle cx="33" cy="18" r="1.3" fill={strokeAccent} />
+            <path
+              d="M44 12.5 L45 15.5 L48 16.5 L45 17.5 L44 20.5 L43 17.5 L40 16.5 L43 15.5 Z"
+              fill={strokeAccent}
+            />
+            <circle cx="55" cy="18" r="1.3" fill={strokeAccent} />
+          </g>
+        )}
+
+        {tier === 'pass_30d' && (
+          <g strokeLinecap="round" strokeLinejoin="round">
+            {/* Soft eternal glow */}
+            <circle cx="44" cy="42" r="19" fill={blushFill} />
+            {/* Glass Cloche Dome Arch (Eternal Keepsake Symbol) */}
+            <path
+              d="M26 62 L26 39 C26 27.5, 34 20, 44 20 C54 20, 62 27.5, 62 39 L62 62"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.4"
+            />
+            {/* Cloche top finial knob */}
+            <circle
+              cx="44"
+              cy="17"
+              r="2.6"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.3"
+            />
+            {/* Cloche pedestal base */}
+            <path
+              d="M22 62.5 L66 62.5 M25 66 L63 66"
+              stroke={strokePrimary}
+              strokeWidth="1.45"
+            />
+            {/* Eternal Rose inside the dome */}
+            <g transform="translate(44, 38)">
+              {[0, 72, 144, 216, 288].map((deg) => (
+                <ellipse
+                  key={deg}
+                  cx="0"
+                  cy="-5.2"
+                  rx="3.4"
+                  ry="5.2"
+                  transform={`rotate(${deg})`}
+                  fill={blushFill}
+                  stroke={strokePrimary}
+                  strokeWidth="1.15"
+                />
+              ))}
+              <circle cx="0" cy="0" r="2.3" fill={strokeAccent} />
+            </g>
+            {/* Stem & leaves inside cloche */}
+            <path d="M44 46 L44 62" stroke={strokePrimary} strokeWidth="1.3" />
+            <path
+              d="M44 55 C39 53, 36 50, 38 48 C40 48, 42.5 51, 44 55 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.1"
+            />
+            <path
+              d="M44 53 C49 51, 52 48, 50 46 C48 46, 45.5 49, 44 53 Z"
+              fill={softFill}
+              stroke={strokePrimary}
+              strokeWidth="1.1"
+            />
+            {/* Infinity / Eternal emblem beneath pedestal */}
+            <path
+              d="M44 71.5 C41.2 69, 37.5 69.2, 37.5 71.5 C37.5 73.8, 41.2 74, 44 71.5 C46.8 69, 50.5 69.2, 50.5 71.5 C50.5 73.8, 46.8 74, 44 71.5 Z"
+              stroke={strokeAccent}
+              strokeWidth="1.25"
+            />
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+};
+
+
 export interface StudioCheckoutModalProps {
   isOpen: boolean;
   isDarkMode: boolean;
@@ -348,12 +614,6 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     onToast('Couture defaults restored');
   };
 
-  const planCoverImages: Record<StudioPassTier, string> = {
-    single: '/assets/kofi-shop/single-bouquet-lineart.jpg',
-    pass_7d: '/assets/kofi-shop/7-day-pass-lineart.jpg',
-    pass_30d: '/assets/kofi-shop/30-day-eternal-lineart.jpg',
-  };
-
   const planShortSubtitles: Record<StudioPassTier, string> = {
     single: '1 bouquet · 90d link',
     pass_7d: 'Unlimited · 90d links',
@@ -580,7 +840,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         {activeView === 'plans' && checkoutStep === 'select' && (
           <div className="mt-3.5 space-y-3">
             {/* 3 Horizontal Visual Line-Art Stationery Cards */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
               {plans.map((plan) => {
                 const isSelected = selectedTier === plan.tier;
                 return (
@@ -589,7 +849,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     type="button"
                     data-testid={`plan-card-${plan.tier}`}
                     onClick={() => setSelectedTier(plan.tier)}
-                    className={`text-center p-2 sm:p-2.5 rounded-2xl border border-dashed transition cursor-pointer flex flex-col items-center justify-between gap-2 ${
+                    className={`text-center p-2 sm:p-2.5 rounded-2xl border border-dashed transition cursor-pointer flex flex-col items-center justify-between gap-1.5 sm:gap-2 ${
                       isSelected
                         ? isDarkMode
                           ? 'bg-[#423632] border-[#E6B89C] ring-1 ring-[#E6B89C]/50'
@@ -600,21 +860,20 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     }`}
                   >
                     <div className="w-full space-y-1.5">
-                      <img
-                        src={planCoverImages[plan.tier]}
-                        alt={plan.name}
-                        className={`w-full aspect-square rounded-xl object-cover border border-dashed ${
-                          isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
-                        }`}
+                      <StudioPassLineartSymbol
+                        tier={plan.tier}
+                        isDarkMode={isDarkMode}
+                        isSelected={isSelected}
+                        size="card"
                       />
                       <div
-                        className="text-sm sm:text-base font-semibold leading-tight"
+                        className="text-[13px] sm:text-base font-semibold leading-tight"
                         style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                       >
                         {planCompactNames[plan.tier]}
                       </div>
                       <div
-                        className={`text-[10px] leading-tight ${
+                        className={`text-[9.5px] sm:text-[10px] leading-tight ${
                           isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
                         }`}
                       >
@@ -623,7 +882,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     </div>
 
                     <div
-                      className="text-lg sm:text-xl font-semibold tracking-tight pt-0.5"
+                      className="text-base sm:text-xl font-semibold tracking-tight pt-0.5"
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       {plan.displayPrice}
@@ -707,12 +966,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               }`}
             >
               <div className="flex items-center justify-center gap-3">
-                <img
-                  src={planCoverImages[pendingCheckout.plan.tier]}
-                  alt={pendingCheckout.plan.name}
-                  className={`w-12 h-12 rounded-xl object-cover border border-dashed shrink-0 ${
-                    isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
-                  }`}
+                <StudioPassLineartSymbol
+                  tier={pendingCheckout.plan.tier}
+                  isDarkMode={isDarkMode}
+                  isSelected
+                  size="thumb"
                 />
                 <div className="text-left">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-[#B4846C] font-semibold">

@@ -1130,9 +1130,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       `}</style>
 
       {/* STICKY FLOATING TOP NAVBAR — Responsive Editorial Stationery Header & Dropdown */}
-      <div className="sticky top-2.5 sm:top-3.5 z-40 px-3 sm:px-6 pt-1 sm:pt-1.5 pointer-events-none">
+      <div className="sticky top-2.5 sm:top-3.5 z-40 px-2.5 sm:px-5 md:px-6 pt-1 sm:pt-1.5 pointer-events-none">
         <header
-          className={`pointer-events-auto max-w-5xl mx-auto h-12 sm:h-14 px-3.5 sm:px-5 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md flex items-center justify-between gap-2 sm:gap-4 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`pointer-events-auto max-w-5xl mx-auto h-11 sm:h-13 md:h-14 px-2.5 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md flex items-center justify-between gap-1.5 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             isDarkMode
               ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
               : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
@@ -1142,24 +1142,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <button
             type="button"
             onClick={onStartCrafting}
-            className="flex items-center gap-1.5 sm:gap-2.5 text-left cursor-pointer group shrink-0 min-w-0"
+            className="flex items-center gap-1.5 sm:gap-2 text-left cursor-pointer group min-w-0 flex-initial"
           >
             <BrandLogoMark
-              className="w-6 h-6 sm:w-8 sm:h-8 group-hover:scale-105 transition-transform duration-300 shrink-0"
+              className="w-5.5 h-5.5 sm:w-7 sm:h-7 md:w-8 md:h-8 group-hover:scale-105 transition-transform duration-300 shrink-0"
               isDarkMode={isDarkMode}
             />
             <span
-              className="text-[17px] sm:text-xl md:text-2xl font-semibold tracking-tight whitespace-nowrap shrink-0"
+              className="text-[15.5px] min-[380px]:text-[16.5px] sm:text-xl md:text-2xl font-semibold tracking-tight whitespace-nowrap truncate"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               Send A Bouquet
             </span>
           </button>
 
-          {/* Zone 2: Center Editorial Navigation Links — Visible on Tablet (sm: 640px+) & Desktop */}
+          {/* Zone 2: Center Editorial Navigation Links — Visible on Tablet (md: 768px+) & Desktop */}
           <nav
             aria-label="Primary navigation"
-            className="hidden sm:flex items-center gap-5 md:gap-7 shrink-0"
+            className="hidden md:flex items-center gap-4 lg:gap-7 shrink-0"
           >
             {[
               { id: 'how-it-works', label: 'How It Works' },
@@ -1171,7 +1171,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => scrollToSection(item.id)}
-                className={`group relative py-1 text-xs md:text-[13px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`group relative py-1 text-xs lg:text-[13px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${
                   isDarkMode
                     ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
                     : 'text-[#5A463B] hover:text-[#7A4B3A]'
@@ -1188,13 +1188,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             ))}
           </nav>
 
-          {/* Zone 3: Right Controls — Theme Toggle, Saved Bouquets & Mobile Editorial Menu Trigger */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Zone 3: Right Controls — Theme Toggle, Saved Bouquets & Mobile/Tablet Editorial Menu Trigger */}
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onToggleDarkMode}
               aria-label="Toggle theme"
-              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
+              className={`w-7 h-7 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
                 isDarkMode
                   ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
@@ -1209,17 +1209,17 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               type="button"
               onClick={onOpenVault}
               aria-label="Saved Bouquets"
-              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full border border-dashed text-[11px] sm:text-xs font-medium inline-flex items-center gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`h-7 sm:h-8.5 px-2 sm:px-3.5 rounded-full border border-dashed text-[10.5px] sm:text-xs font-medium inline-flex items-center gap-1 sm:gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap shrink-0 ${
                 isDarkMode
                   ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              <span className="hidden sm:inline">Saved Bouquets</span>
-              <span className="sm:hidden">Saved</span>
+              <span className="hidden lg:inline">Saved Bouquets</span>
+              <span className="lg:hidden">Saved</span>
               {vaultCount > 0 && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                  className={`px-1.5 py-0.2 rounded-full text-[9.5px] sm:text-[10px] font-semibold tabular-nums ${
                     isDarkMode
                       ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
                       : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
@@ -1230,14 +1230,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               )}
             </button>
 
-            {/* Mobile Editorial Menu Trigger (< 640px) — Contained cleanly inside the header pill */}
+            {/* Mobile & Small Tablet Editorial Menu Trigger (< 768px) — Contained cleanly inside the header pill */}
             <button
               type="button"
               onClick={() => setIsMobileNavOpen((prev) => !prev)}
               aria-label="Toggle navigation menu"
               aria-expanded={isMobileNavOpen}
               data-testid="mobile-nav-trigger"
-              className={`sm:hidden px-2.5 py-1.5 rounded-full border border-dashed text-[11px] font-medium inline-flex items-center gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+              className={`md:hidden h-7 sm:h-8.5 px-2 sm:px-3 rounded-full border border-dashed text-[10.5px] sm:text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
                 isMobileNavOpen
                   ? isDarkMode
                     ? 'bg-[#9A6550] border-[#B47E68] text-white'
@@ -1250,7 +1250,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <span>{isMobileNavOpen ? 'Close' : 'Menu'}</span>
               <svg
                 viewBox="0 0 18 18"
-                className="w-3.5 h-3.5 stroke-current"
+                className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-current"
                 fill="none"
                 strokeWidth="1.5"
                 strokeLinecap="round"
@@ -1271,12 +1271,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
         </header>
 
-        {/* Mobile Editorial Stationery Dropdown Card (< 640px) */}
+        {/* Mobile & Small Tablet Editorial Stationery Dropdown Card (< 768px) */}
         {isMobileNavOpen && (
           <nav
             aria-label="Mobile navigation"
             data-testid="mobile-nav-dropdown"
-            className={`sm:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] backdrop-blur-xl transition-all duration-300 animate-hero-entrance ${
+            className={`md:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] backdrop-blur-xl transition-all duration-300 animate-hero-entrance ${
               isDarkMode
                 ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
                 : 'bg-[#FFFDF9]/98 border-[#D8C4B4] text-[#231C18]'
