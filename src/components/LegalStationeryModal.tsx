@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { BrandLogoMark } from './BrandLogoMark';
 import { OFFICIAL_STUDIO_EMAIL } from '../lib/contactService';
@@ -76,18 +77,19 @@ export const LegalStationeryModal: React.FC<LegalStationeryModalProps> = ({
 
   const sections = activeTab === 'terms' ? TERMS_SECTIONS : PRIVACY_SECTIONS;
 
-  return (
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={activeTab === 'terms' ? 'Terms of Use' : 'Privacy Policy'}
       data-testid="legal-stationery-modal"
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+      style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-xl rounded-[26px] border border-dashed p-5 sm:p-7 shadow-[0_24px_60px_rgba(28,20,16,0.22)] relative text-left max-h-[88dvh] flex flex-col transition-colors ${
+        className={`w-full max-w-xl rounded-[26px] border border-dashed p-5 sm:p-7 shadow-[0_24px_60px_rgba(28,20,16,0.22)] relative text-left max-h-[86dvh] flex flex-col transition-colors ${
           isDarkMode
             ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
             : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18]'
@@ -107,13 +109,12 @@ export const LegalStationeryModal: React.FC<LegalStationeryModalProps> = ({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Stationery Header with Drawn Botanical Crest & Tab Switcher */}
+        {/* Stationery Header with Drawn Botanical Flower & Tab Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-dashed border-[#DECBB9]/70 dark:border-[#544540] pr-8">
           <div className="flex items-center gap-2.5">
             <BrandLogoMark
-              variant="crest"
               isDarkMode={isDarkMode}
-              className="w-11 h-7 shrink-0"
+              className="w-8 h-8 shrink-0"
             />
             <div>
               <h3
@@ -144,7 +145,7 @@ export const LegalStationeryModal: React.FC<LegalStationeryModalProps> = ({
               type="button"
               data-testid="legal-tab-terms"
               onClick={() => onSelectTab('terms')}
-              className={`px-3 py-1 rounded-full transition cursor-pointer ${
+              className={`px-3.5 py-1 rounded-full transition cursor-pointer ${
                 activeTab === 'terms'
                   ? isDarkMode
                     ? 'bg-[#E6B89C] text-[#231C18]'
@@ -158,7 +159,7 @@ export const LegalStationeryModal: React.FC<LegalStationeryModalProps> = ({
               type="button"
               data-testid="legal-tab-privacy"
               onClick={() => onSelectTab('privacy')}
-              className={`px-3 py-1 rounded-full transition cursor-pointer ${
+              className={`px-3.5 py-1 rounded-full transition cursor-pointer ${
                 activeTab === 'privacy'
                   ? isDarkMode
                     ? 'bg-[#E6B89C] text-[#231C18]'
@@ -241,4 +242,9 @@ export const LegalStationeryModal: React.FC<LegalStationeryModalProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

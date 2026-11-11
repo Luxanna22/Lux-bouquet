@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Lock,
   Sparkles,
   Copy,
   Check,
@@ -506,17 +505,21 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   );
 
   // ============================================================================
-  // VIEW 1: RECIPIENT FLOWER BLOOM LOCK SCREEN (Matches Recipient Unwrap UI)
+  // VIEW 1: LITERAL COPY OF RECIPIENT BOUQUET OPENING UI/UX (From BouquetStudioApp.tsx)
   // ============================================================================
   if (!adminSessionToken) {
     return (
       <div
         data-testid="stealth-bouquet-gate-screen"
-        className={`relative h-[100dvh] w-full flex flex-col items-center justify-center p-5 sm:p-6 overflow-hidden transition-colors duration-500 ${
+        className={`relative h-[100dvh] w-full flex flex-col items-center justify-center p-5 sm:p-6 overflow-hidden transition-all duration-300 ease-out ${
+          isBloomUnfurling
+            ? 'opacity-0 scale-[1.03] pointer-events-none'
+            : 'opacity-100 scale-100'
+        } ${
           isDarkMode ? 'bg-[#2B2321] text-[#F5EBE6]' : 'bg-[#FAF5F0] text-[#2C2523]'
         }`}
       >
-        {/* 2 Blurred Foreground Petals (DOF Framing matching Recipient Entrance) */}
+        {/* 2 Blurred Foreground Petals (DOF Framing matching Landing Page Hero) */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -left-8 sm:-left-12 md:-left-16 top-[10%] w-64 h-44 sm:w-84 sm:h-60 md:w-96 md:h-68"
@@ -568,7 +571,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           </svg>
         </div>
 
-        {/* LIVING WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING PEONY */}
+        {/* LIVING WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING PEONY (Exact Recipient SVG) */}
         <div
           aria-hidden="true"
           data-testid="recipient-entrance-bloom"
@@ -582,304 +585,295 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         >
           <svg viewBox="0 0 520 340" className="w-full h-full overflow-visible">
             <defs>
-              <radialGradient id="rg-gate-petal-blush" cx="50%" cy="68%" r="65%">
-                <stop offset="0%" stopColor={isDarkMode ? '#D97B93' : '#F29BB4'} stopOpacity="0.42" />
-                <stop offset="55%" stopColor={isDarkMode ? '#E69DB0' : '#F9C4D4'} stopOpacity="0.26" />
-                <stop offset="100%" stopColor={isDarkMode ? '#F5D0DA' : '#FFF5F8'} stopOpacity="0.06" />
+              <radialGradient id="rg-wc-petal-blush" cx="50%" cy="35%" r="65%">
+                <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.36' : '0.72'} />
+                <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.24' : '0.44'} />
+                <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
               </radialGradient>
-              <radialGradient id="rg-gate-petal-peach" cx="50%" cy="62%" r="62%">
-                <stop offset="0%" stopColor={isDarkMode ? '#D87E6C' : '#EE9682'} stopOpacity="0.46" />
-                <stop offset="60%" stopColor={isDarkMode ? '#E6A896' : '#F8C5B8'} stopOpacity="0.28" />
-                <stop offset="100%" stopColor={isDarkMode ? '#F5DCD4' : '#FFF7F4'} stopOpacity="0.08" />
+              <radialGradient id="rg-wc-petal-peach" cx="50%" cy="30%" r="65%">
+                <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.38' : '0.74'} />
+                <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.22' : '0.46'} />
+                <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
               </radialGradient>
-              <radialGradient id="rg-gate-leaf-sage" cx="30%" cy="50%" r="70%">
-                <stop offset="0%" stopColor={isDarkMode ? '#688B72' : '#7FA388'} stopOpacity="0.38" />
-                <stop offset="70%" stopColor={isDarkMode ? '#88AB91' : '#A6C4AD'} stopOpacity="0.22" />
-                <stop offset="100%" stopColor={isDarkMode ? '#A6C4AD' : '#DCEAD9'} stopOpacity="0.05" />
+              <radialGradient id="rg-wc-leaf-sage" cx="50%" cy="50%" r="60%">
+                <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.30' : '0.66'} />
+                <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.16' : '0.34'} />
+                <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
               </radialGradient>
-              <radialGradient id="rg-gate-center-gold" cx="50%" cy="50%" r="55%">
-                <stop offset="0%" stopColor={isDarkMode ? '#E8B86B' : '#F0C068'} stopOpacity="0.58" />
-                <stop offset="65%" stopColor={isDarkMode ? '#DF9B6D' : '#F2A679'} stopOpacity="0.28" />
-                <stop offset="100%" stopColor="#FFFDF9" stopOpacity="0" />
+              <radialGradient id="rg-wc-center-gold" cx="50%" cy="50%" r="55%">
+                <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.48' : '0.78'} />
+                <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.20' : '0.28'} />
+                <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
               </radialGradient>
             </defs>
 
-            {/* Ambient watercolor halo */}
-            <ellipse
-              cx="260"
-              cy="170"
-              rx={165 + recipientBloom.progress * 55}
-              ry={105 + recipientBloom.progress * 32}
-              fill="url(#rg-gate-petal-blush)"
-            />
-
-            {/* LEFT & RIGHT WATERCOLOR SAGE LEAF SPRIGS */}
+            {/* 1. Botanical Sage Leaf Sprigs & Dashed Rope Tendrils */}
             <g
-              stroke={isDarkMode ? '#8CAE95' : '#587860'}
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              transform={`translate(260, 170) scale(${recipientBloom.leafScale}, ${recipientBloom.leafScale})`}
             >
-              <g
-                style={{
-                  transformOrigin: '260px 175px',
-                  transform: `translateX(${(-recipientBloom.progress * 36).toFixed(1)}px) rotate(${(-14 - recipientBloom.progress * 20).toFixed(2)}deg) scale(${recipientBloom.leafScale})`,
-                }}
-              >
-                <path
-                  d="M210,175 C150,168 92,150 34,122"
-                  fill="none"
-                  strokeDasharray="240"
-                  strokeDashoffset={Math.round(240 * (1 - (0.35 + recipientBloom.progress * 0.65)))}
-                />
-                <path
-                  d="M158,164 C132,134 92,126 68,136 C94,158 130,168 158,164 Z"
-                  fill="url(#rg-gate-leaf-sage)"
-                />
-                <path
-                  d="M154,163 C126,146 96,138 74,136"
-                  fill="none"
-                  strokeWidth="0.85"
-                  opacity="0.7"
-                />
-                <path
-                  d="M128,156 C96,174 62,182 32,170 C58,150 96,148 128,156 Z"
-                  fill="url(#rg-gate-leaf-sage)"
-                />
-                <path
-                  d="M102,146 C78,120 48,112 22,120 C46,140 76,148 102,146 Z"
-                  fill="url(#rg-gate-leaf-sage)"
-                />
-                <circle cx="48" cy="112" r="3.5" fill={isDarkMode ? '#E49B85' : '#EA907A'} opacity="0.65" />
-                <circle cx="24" cy="144" r="3" fill={isDarkMode ? '#E8B86B' : '#E8B258'} opacity="0.65" />
-              </g>
+              <path
+                d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
+                fill="url(#rg-wc-leaf-sage)"
+                stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
+                strokeWidth="1.2"
+                strokeOpacity={isDarkMode ? '0.55' : '0.65'}
+              />
+              <path
+                d="M -60,10 Q -135,4 -198,17 M -115,7 L -138,-6 M -145,10 L -168,0 M -125,11 L -148,24"
+                fill="none"
+                stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                strokeWidth="0.9"
+                strokeLinecap="round"
+                strokeOpacity={isDarkMode ? '0.48' : '0.56'}
+              />
+              <path
+                d="M -75,-18 C -128,-58 -168,-54 -194,-32"
+                fill="none"
+                stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
+                strokeWidth="1.05"
+                strokeDasharray="3 3"
+                strokeDashoffset={recipientBloom.stamenDashOffset}
+                strokeLinecap="round"
+                strokeOpacity="0.58"
+              />
+              <path
+                d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
+                fill="url(#rg-wc-petal-blush)"
+                stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
+                strokeWidth="1.1"
+              />
 
-              <g
-                style={{
-                  transformOrigin: '260px 175px',
-                  transform: `translateX(${(recipientBloom.progress * 36).toFixed(1)}px) rotate(${(14 + recipientBloom.progress * 20).toFixed(2)}deg) scale(${recipientBloom.leafScale})`,
-                }}
-              >
-                <path
-                  d="M310,175 C370,168 428,150 486,122"
-                  fill="none"
-                  strokeDasharray="240"
-                  strokeDashoffset={Math.round(240 * (1 - (0.35 + recipientBloom.progress * 0.65)))}
-                />
-                <path
-                  d="M362,164 C388,134 428,126 452,136 C426,158 390,168 362,164 Z"
-                  fill="url(#rg-gate-leaf-sage)"
-                />
-                <path
-                  d="M366,163 C394,146 424,138 446,136"
-                  fill="none"
-                  strokeWidth="0.85"
-                  opacity="0.7"
-                />
-                <path
-                  d="M392,156 C424,174 458,182 488,170 C462,150 424,148 392,156 Z"
-                  fill="url(#rg-gate-leaf-sage)"
-                />
-                <path
-                  d="M418,146 C442,120 472,112 498,120 C474,140 444,148 418,146 Z"
-                  fill="url(#rg-gate-leaf-sage)"
-                />
-                <circle cx="472" cy="112" r="3.5" fill={isDarkMode ? '#E49B85' : '#EA907A'} opacity="0.65" />
-                <circle cx="496" cy="144" r="3" fill={isDarkMode ? '#E8B86B' : '#E8B258'} opacity="0.65" />
-              </g>
+              <path
+                d="M 55,10 C 115,-28 175,-18 212,18 C 170,48 110,44 55,10 Z"
+                fill="url(#rg-wc-leaf-sage)"
+                stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
+                strokeWidth="1.2"
+                strokeOpacity={isDarkMode ? '0.55' : '0.65'}
+              />
+              <path
+                d="M 60,10 Q 135,4 198,17 M 115,7 L 138,-6 M 145,10 L 168,0 M 125,11 L 148,24"
+                fill="none"
+                stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
+                strokeWidth="0.9"
+                strokeLinecap="round"
+                strokeOpacity={isDarkMode ? '0.48' : '0.56'}
+              />
+              <path
+                d="M 75,-18 C 128,-58 168,-54 194,-32"
+                fill="none"
+                stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
+                strokeWidth="1.05"
+                strokeDasharray="3 3"
+                strokeDashoffset={recipientBloom.stamenDashOffset}
+                strokeLinecap="round"
+                strokeOpacity="0.58"
+              />
+              <path
+                d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
+                fill="url(#rg-wc-petal-blush)"
+                stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
+                strokeWidth="1.1"
+              />
             </g>
 
-            {/* CENTRAL WATERCOLOR & INK PEONY BLOOM */}
-            <g transform="translate(260, 170)">
-              {[0, 45, 90, 135, 180, 225, 270, 315].map((baseAngle, idx) => {
-                const spreadOffset = (idx % 2 === 0 ? 1 : -1) * recipientBloom.outerRotateDeg * 0.45;
-                const petalReachY = -8 - recipientBloom.progress * 26;
-                return (
-                  <g
-                    key={`outer-wc-${baseAngle}`}
-                    transform={`rotate(${(baseAngle + spreadOffset).toFixed(2)}) translate(0, ${petalReachY.toFixed(1)}) scale(${recipientBloom.outerScale})`}
-                  >
-                    <path
-                      d="M0,0 C-44,-28 -58,-86 -26,-122 C-10,-136 10,-136 26,-122 C58,-86 44,-28 0,0 Z"
-                      fill="url(#rg-gate-petal-blush)"
-                      stroke={isDarkMode ? '#D98B9E' : '#B55D72'}
-                      strokeWidth="1.2"
-                      strokeOpacity={0.55 + recipientBloom.progress * 0.35}
-                    />
-                    <path
-                      d="M-16,-116 C-6,-124 6,-118 16,-116"
-                      fill="none"
-                      stroke={isDarkMode ? '#F2B8C6' : '#9E475C'}
-                      strokeWidth="0.9"
-                      strokeOpacity="0.55"
-                    />
-                    <path
-                      d="M0,-12 C-8,-48 -6,-84 0,-112 M0,-20 C8,-52 14,-78 18,-100 M0,-20 C-8,-52 -14,-78 -18,-100"
-                      fill="none"
-                      stroke={isDarkMode ? '#E69DB0' : '#B55D72'}
-                      strokeWidth="0.75"
-                      strokeOpacity={0.28 + recipientBloom.progress * 0.3}
-                    />
-                  </g>
-                );
-              })}
+            {/* 2. Outer Ring of 8 Watercolor Peony Petals */}
+            <g
+              transform={`translate(260, 170) rotate(${recipientBloom.outerRotateDeg}) scale(${recipientBloom.outerScale})`}
+            >
+              {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                <g key={`rg-outer-${angle}`} transform={`rotate(${angle})`}>
+                  <path
+                    d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
+                    fill="url(#rg-wc-petal-blush)"
+                    stroke={isDarkMode ? '#E5A3B7' : '#CD7E95'}
+                    strokeWidth="1.2"
+                    strokeOpacity={isDarkMode ? '0.56' : '0.66'}
+                  />
+                  <path
+                    d="M 0,-14 Q -12,-62 -6,-106 M 0,-18 Q 12,-62 6,-106 M 0,-10 L 0,-114"
+                    fill="none"
+                    stroke={isDarkMode ? '#DF9BB0' : '#C67B91'}
+                    strokeWidth="0.7"
+                    strokeLinecap="round"
+                    strokeOpacity={isDarkMode ? '0.38' : '0.44'}
+                  />
+                </g>
+              ))}
+            </g>
 
-              {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((baseAngle, idx) => {
-                const spreadOffset = (idx % 2 === 0 ? -1 : 1) * recipientBloom.midRotateDeg * 0.5;
-                const petalReachY = -4 - recipientBloom.progress * 18;
-                return (
-                  <g
-                    key={`mid-wc-${baseAngle}`}
-                    transform={`rotate(${(baseAngle + spreadOffset).toFixed(2)}) translate(0, ${petalReachY.toFixed(1)}) scale(${recipientBloom.midScale})`}
-                  >
-                    <path
-                      d="M0,0 C-34,-22 -42,-68 -18,-96 C-6,-108 6,-108 18,-96 C42,-68 34,-22 0,0 Z"
-                      fill="url(#rg-gate-petal-peach)"
-                      stroke={isDarkMode ? '#E29888' : '#B85B48'}
-                      strokeWidth="1.15"
-                      strokeOpacity={0.6 + recipientBloom.progress * 0.35}
-                    />
-                    <path
-                      d="M0,-10 C-5,-38 -4,-66 0,-86 M0,-16 C6,-42 10,-62 13,-78"
-                      fill="none"
-                      stroke={isDarkMode ? '#E6A896' : '#B85B48'}
-                      strokeWidth="0.7"
-                      strokeOpacity="0.35"
-                    />
-                  </g>
-                );
-              })}
+            {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals */}
+            <g
+              transform={`translate(260, 170) rotate(${recipientBloom.midRotateDeg}) scale(${recipientBloom.midScale})`}
+            >
+              {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
+                <g key={`rg-mid-${angle}`} transform={`rotate(${angle})`}>
+                  <path
+                    d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
+                    fill="url(#rg-wc-petal-peach)"
+                    stroke={isDarkMode ? '#E8B298' : '#C88A74'}
+                    strokeWidth="1.1"
+                    strokeOpacity={isDarkMode ? '0.58' : '0.68'}
+                  />
+                  <path
+                    d="M 0,-12 Q -8,-48 -3,-78 M 0,-12 Q 8,-48 3,-78"
+                    fill="none"
+                    stroke={isDarkMode ? '#E2A88B' : '#B87B65'}
+                    strokeWidth="0.65"
+                    strokeLinecap="round"
+                    strokeOpacity="0.42"
+                  />
+                </g>
+              ))}
+            </g>
 
-              {[0, 60, 120, 180, 240, 300].map((baseAngle, idx) => {
-                const closedCupOffset = (1 - recipientBloom.progress) * (idx % 2 === 0 ? -18 : 18);
-                const openOffset = recipientBloom.innerRotateDeg * 0.35;
-                const petalReachY = -2 - recipientBloom.progress * 10;
-                return (
-                  <g
-                    key={`inner-wc-${baseAngle}`}
-                    transform={`rotate(${(baseAngle + closedCupOffset + openOffset).toFixed(2)}) translate(0, ${petalReachY.toFixed(1)}) scale(${recipientBloom.innerScale})`}
-                  >
-                    <path
-                      d="M0,4 C-24,-14 -30,-48 -10,-68 C-2,-76 2,-76 10,-68 C30,-48 24,-14 0,4 Z"
-                      fill="url(#rg-gate-petal-peach)"
-                      stroke={isDarkMode ? '#ECA898' : '#A84A38'}
-                      strokeWidth="1.1"
-                      strokeOpacity="0.82"
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Golden Watercolor Heart & Botanical Stamens */}
-              <g
-                style={{
-                  transform: `scale(${(0.32 + recipientBloom.progress * 0.88).toFixed(3)})`,
-                  opacity: Number((0.25 + recipientBloom.progress * 0.75).toFixed(3)),
-                }}
-              >
-                <circle cx="0" cy="0" r="34" fill="url(#rg-gate-center-gold)" />
-                {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg, i) => (
-                  <g key={`stamen-${deg}`} transform={`rotate(${deg})`}>
-                    <line
-                      x1="0"
-                      y1="-4"
-                      x2="0"
-                      y2={i % 2 === 0 ? '-24' : '-18'}
-                      stroke={isDarkMode ? '#F0C37B' : '#B87A28'}
-                      strokeWidth="1.1"
-                      strokeDasharray="28"
-                      strokeDashoffset={Math.round(recipientBloom.stamenDashOffset * 0.25)}
-                    />
-                    <circle
-                      cx="0"
-                      cy={i % 2 === 0 ? -25 : -19}
-                      r="2.2"
-                      fill={isDarkMode ? '#F7D794' : '#D99330'}
-                    />
-                  </g>
-                ))}
-                <circle
-                  cx="0"
-                  cy="0"
-                  r="6.5"
-                  fill={isDarkMode ? '#E59882' : '#D4725C'}
-                  fillOpacity="0.65"
-                  stroke={isDarkMode ? '#F7D794' : '#B87A28'}
-                  strokeWidth="1"
+            {/* 4. Inner Corolla & Golden Botanical Stamens */}
+            <g
+              transform={`translate(260, 170) rotate(${recipientBloom.innerRotateDeg}) scale(${recipientBloom.innerScale})`}
+            >
+              {[0, 60, 120, 180, 240, 300].map((angle) => (
+                <path
+                  key={`rg-inner-${angle}`}
+                  transform={`rotate(${angle})`}
+                  d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
+                  fill="url(#rg-wc-petal-blush)"
+                  stroke={isDarkMode ? '#F0B6C8' : '#C4748B'}
+                  strokeWidth="1.05"
+                  strokeOpacity="0.62"
                 />
-              </g>
+              ))}
+              <circle cx="0" cy="0" r="24" fill="url(#rg-wc-center-gold)" />
+              {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
+                <g key={`rg-stamen-${deg}`} transform={`rotate(${deg})`}>
+                  <line
+                    x1="0"
+                    y1="-4"
+                    x2="0"
+                    y2="-20"
+                    stroke={isDarkMode ? '#FCD34D' : '#D97706'}
+                    strokeWidth="1"
+                    strokeOpacity="0.58"
+                    strokeLinecap="round"
+                  />
+                  <circle
+                    cx="0"
+                    cy="-21.5"
+                    r="2"
+                    fill={isDarkMode ? '#FDE68A' : '#F59E0B'}
+                    fillOpacity="0.72"
+                  />
+                </g>
+              ))}
+              <circle
+                cx="0"
+                cy="0"
+                r="6.5"
+                fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
+                stroke={isDarkMode ? '#F59E0B' : '#D97706'}
+                strokeWidth="1.05"
+                strokeOpacity="0.68"
+              />
             </g>
           </svg>
         </div>
 
-        {/* FOREGROUND CONTENT LOCKUP (Exact Recipient Layout) */}
+        {/* FOREGROUND CONTENT LOCKUP (Exact Recipient Entrance Layout) */}
         <div
-          className={`relative z-10 max-w-md w-full text-center flex flex-col items-center transition-all duration-300 ease-out ${
-            isBloomUnfurling
-              ? 'opacity-0 scale-95 translate-y-2 pointer-events-none'
-              : 'opacity-100 scale-100 translate-y-0'
-          }`}
+          onClick={(e) => e.stopPropagation()}
+          className="relative z-10 max-w-xl w-full mx-auto text-center flex flex-col items-center px-3"
         >
-          {/* Thin Rope Lace & Scallop Bow Ornament */}
-          <div aria-hidden="true" className="mb-3 sm:mb-4 flex items-center justify-center">
-            <svg
-              viewBox="0 0 220 24"
-              className={`w-44 sm:w-52 h-6 overflow-visible ${
-                isDarkMode ? 'text-[#E6B89C]/75' : 'text-[#8C624C]/75'
-              }`}
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M 8,12 C 36,9 66,14 96,12" strokeWidth="1.15" />
-              <path d="M 8,12 C 36,15 66,10 96,12" strokeWidth="0.75" strokeDasharray="2 3" opacity="0.75" />
-              <path d="M 124,12 C 154,14 184,9 212,12" strokeWidth="1.15" />
-              <path d="M 124,12 C 154,10 184,15 212,12" strokeWidth="0.75" strokeDasharray="2 3" opacity="0.75" />
-              <path d="M 110,12 C 102,4 91,5 93,12 C 95,18 104,16 110,12 Z" strokeWidth="1.2" />
-              <path d="M 110,12 C 118,4 129,5 127,12 C 125,18 116,16 110,12 Z" strokeWidth="1.2" />
-              <path d="M 108,13 C 104,18 100,21 96,22" strokeWidth="1.05" />
-              <path d="M 112,13 C 116,18 120,21 124,22" strokeWidth="1.05" />
-              <circle cx="110" cy="12" r="2" fill="currentColor" />
+          {/* Delicate Thin Rope Lace & Scallop Bow Ornament Above Dedication */}
+          <div className="mb-3 sm:mb-4 opacity-85" aria-hidden="true">
+            <svg viewBox="0 0 220 24" className="w-36 sm:w-44 h-5 overflow-visible">
+              <line
+                x1="14"
+                y1="12"
+                x2="86"
+                y2="12"
+                stroke={isDarkMode ? '#8C766C' : '#C8B09E'}
+                strokeWidth="1.1"
+                strokeDasharray="2.5 3"
+                strokeLinecap="round"
+              />
+              <line
+                x1="134"
+                y1="12"
+                x2="206"
+                y2="12"
+                stroke={isDarkMode ? '#8C766C' : '#C8B09E'}
+                strokeWidth="1.1"
+                strokeDasharray="2.5 3"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 110,12 C 100,4 92,8 97,13 C 100,16 106,14 110,12 Z M 110,12 C 120,4 128,8 123,13 C 120,16 114,14 110,12 Z"
+                fill="none"
+                stroke={isDarkMode ? '#E6B89C' : '#A6725C'}
+                strokeWidth="1.25"
+              />
+              <path
+                d="M 110,12 Q 104,18 100,21 M 110,12 Q 116,18 120,21"
+                fill="none"
+                stroke={isDarkMode ? '#E6B89C' : '#A6725C'}
+                strokeWidth="1.1"
+                strokeLinecap="round"
+              />
+              <circle cx="110" cy="12" r="1.8" fill={isDarkMode ? '#E6B89C' : '#A6725C'} />
             </svg>
           </div>
 
-          {/* Dedication Title Lockup */}
-          <div className="mb-6 sm:mb-8 px-2">
+          {/* Minimal Editorial Dedication Lockup Over the Living Peony Bloom */}
+          <h2
+            className="mx-auto leading-[0.98] tracking-[-0.02em]"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
             <span
-              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              className={`block italic text-xl sm:text-2xl leading-none mb-1 ${
-                isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A5442]'
+              className={`block text-2xl sm:text-3xl italic font-normal mb-1 ${
+                isDarkMode ? 'text-[#DFCFC6]' : 'text-[#6E594E]'
               }`}
             >
               For
             </span>
-            <h1
-              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              className="text-[46px] sm:text-[62px] md:text-[74px] font-normal tracking-[-0.02em] leading-[0.98]"
-            >
-              You
-            </h1>
-            <p
-              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-              className={`mt-2.5 sm:mt-3 italic text-base sm:text-lg tracking-wide ${
-                isDarkMode ? 'text-[#D8C7BF]' : 'text-[#6E5D55]'
+            <span
+              className={`block text-[46px] sm:text-[62px] md:text-[74px] font-semibold tracking-[-0.02em] leading-[0.98] ${
+                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
               }`}
             >
-              Someone sent you a bouquet
-            </p>
-          </div>
+              You
+            </span>
+          </h2>
 
-          {/* Minimal Inline Pill Passcode Form (Matches Recipient Passcode Lock) */}
-          <form onSubmit={handleUnlockGate} className="w-full max-w-xs flex flex-col items-center gap-2">
-            <div
-              className={`w-full flex items-center p-1 rounded-full border border-dashed transition-colors ${
-                isDarkMode
-                  ? 'bg-[#352C29]/92 border-[#66554F] focus-within:border-[#E6B89C]'
-                  : 'bg-[#FFFDF9]/92 border-[#D8C3B0] focus-within:border-[#6E4434]'
-              } shadow-md backdrop-blur-md`}
+          <p
+            data-testid="recipient-surprise-subtitle"
+            className={`mt-3 sm:mt-4 text-lg sm:text-xl italic font-normal ${
+              isDarkMode ? 'text-[#E5D6CE]' : 'text-[#5C473C]'
+            }`}
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
+            Someone sent you a bouquet
+          </p>
+
+          {/* MODE 2: SECRET HINT LOCK (Exact Recipient Inline Pill Input + Wax Seal Submit) */}
+          <form
+            onSubmit={handleUnlockGate}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-6 sm:mt-7 w-full max-w-xs flex flex-col items-center space-y-2.5"
+          >
+            <p
+              className={`text-lg sm:text-xl italic font-normal leading-snug px-2 ${
+                isDarkMode ? 'text-[#F0DFD6]' : 'text-[#4A3B33]'
+              }`}
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              <Lock className="w-3.5 h-3.5 ml-3 opacity-45 shrink-0" />
+              “Our special secret”
+            </p>
+
+            <div
+              className={`w-full flex items-center p-1 rounded-full border border-dashed shadow-[0_10px_28px_rgba(35,28,24,0.07)] backdrop-blur-md ${
+                isDarkMode
+                  ? 'bg-[#352C29]/92 border-[#66554F]'
+                  : 'bg-[#FFFDF9]/92 border-[#D8C3B0]'
+              }`}
+            >
               <input
                 data-testid="stealth-gate-pin-input"
                 type="password"
@@ -888,23 +882,24 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 onChange={(e) => {
                   setPinInput(e.target.value);
                   if (gateError) setGateError(null);
-                  if (!isBloomUnfurling) {
-                    setBloomProgress(Math.min(0.35, e.target.value.length * 0.08));
-                  }
                 }}
-                placeholder="Secret passphrase..."
-                aria-label="Secret passphrase"
+                placeholder="Secret answer..."
+                aria-label="Secret answer to unlock bouquet"
                 autoFocus
-                className="flex-1 bg-transparent px-2.5 py-2 text-xs focus:outline-none min-w-0"
+                className={`flex-1 min-w-0 bg-transparent px-4 py-2 text-xs sm:text-sm focus:outline-none ${
+                  isDarkMode
+                    ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
+                    : 'text-[#231C18] placeholder:text-[#9A877B]'
+                }`}
               />
               <button
                 data-testid="stealth-gate-unwrap-btn"
                 type="submit"
                 disabled={gateLockedOut || isVerifyingPin}
-                className={`px-4 py-2 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 disabled:opacity-50 ${
+                className={`px-4 py-2 rounded-full text-xs font-medium shrink-0 transition active:scale-95 cursor-pointer disabled:opacity-50 ${
                   isDarkMode
-                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8AE]'
-                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#593527]'
+                    ? 'bg-[#9A6550] text-white hover:bg-[#875642]'
+                    : 'bg-[#7A4B3A] text-white hover:bg-[#633B2C]'
                 }`}
               >
                 {isVerifyingPin ? '...' : 'Unlock'}
@@ -912,23 +907,14 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             </div>
 
             {gateError && (
-              <span
+              <p
                 data-testid="stealth-gate-error"
-                className="text-xs text-rose-600 dark:text-rose-400 font-medium mt-1"
+                className="text-xs text-rose-600 dark:text-rose-300 font-medium"
               >
                 {gateError}
-              </span>
+              </p>
             )}
           </form>
-
-          <button
-            type="button"
-            onClick={onExitToStudio}
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-            className="mt-7 italic text-sm opacity-55 hover:opacity-90 transition-opacity cursor-pointer"
-          >
-            Return to the flower studio
-          </button>
         </div>
       </div>
     );

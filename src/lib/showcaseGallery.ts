@@ -160,7 +160,7 @@ export function computeSingleLaceCarouselItemTransform(
     effectiveSlots === 1
       ? 0
       : effectiveSlots === 2
-      ? 0.44
+      ? 0.48
       : effectiveSlots === 3
       ? 0.58
       : 0.66;
@@ -169,7 +169,7 @@ export function computeSingleLaceCarouselItemTransform(
     safeSlots === 1
       ? 0.36
       : safeSlots === 2
-      ? 0.44
+      ? 0.48
       : safeSlots === 3
       ? 0.29
       : 0.22;
@@ -187,14 +187,24 @@ export function computeSingleLaceCarouselItemTransform(
 
   // Slight perspective emphasis near the center dip of the catenary curve
   const distFromCenter = Math.abs(u - 0.5);
-  const scale = Number(Math.max(0.88, Math.min(1.03, 1.02 - distFromCenter * 0.16)).toFixed(3));
+  const scale = Number(
+    Math.max(0.92, Math.min(1.03, 1.02 - distFromCenter * (safeSlots === 2 ? 0.08 : 0.16))).toFixed(3)
+  );
 
-  // Smooth fade-in on the right edge (u: 1.12 -> 0.90) and fade-out on the left edge (u: 0.10 -> -0.12)
+  // Smooth fade-in on the right edge and fade-out on the left edge (tighter bounds on 2-slot mobile so off-slot cards never clip at screen edges)
   let opacity = 1;
-  if (u < 0.1) {
-    opacity = Math.max(0, Math.min(1, (u - -0.12) / 0.22));
-  } else if (u > 0.9) {
-    opacity = Math.max(0, Math.min(1, (1.12 - u) / 0.22));
+  if (safeSlots === 2) {
+    if (u < 0.2) {
+      opacity = Math.max(0, Math.min(1, (u - 0.06) / 0.14));
+    } else if (u > 0.8) {
+      opacity = Math.max(0, Math.min(1, (0.94 - u) / 0.14));
+    }
+  } else {
+    if (u < 0.1) {
+      opacity = Math.max(0, Math.min(1, (u - -0.12) / 0.22));
+    } else if (u > 0.9) {
+      opacity = Math.max(0, Math.min(1, (1.12 - u) / 0.22));
+    }
   }
   opacity = Number(opacity.toFixed(3));
 
@@ -205,7 +215,9 @@ export function computeSingleLaceCarouselItemTransform(
     rotateDeg,
     scale,
     opacity,
-    isVisible: opacity > 0.01 && u >= -0.15 && u <= 1.15,
+    isVisible:
+      opacity > 0.01 &&
+      (safeSlots === 2 ? u >= 0.05 && u <= 0.95 : u >= -0.15 && u <= 1.15),
   };
 }
 
