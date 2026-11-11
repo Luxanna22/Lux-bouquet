@@ -1138,15 +1138,17 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <header
           data-testid="landing-navbar"
           data-nav-mode={isNavScrolled ? 'pill' : 'integrated'}
-          className={`pointer-events-auto mx-auto flex items-center justify-between gap-1.5 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             isNavScrolled
-              ? `max-w-5xl h-11 sm:h-13 md:h-14 px-2.5 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${
+              ? `max-w-5xl h-12 sm:h-13 md:h-14 px-3 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${
                   isDarkMode
                     ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
                     : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
                 }`
-              : `max-w-6xl h-13 sm:h-15 md:h-16 px-4 sm:px-8 rounded-none border-b border-dashed border-transparent shadow-none bg-transparent ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+              : `max-w-6xl h-14 sm:h-15 md:h-16 px-4 sm:px-8 rounded-none border-b border-dashed shadow-none backdrop-blur-xs ${
+                  isDarkMode
+                    ? 'bg-[#2B2321]/80 border-[#4D3F3B]/65 text-[#FBF6F1]'
+                    : 'bg-[#FDF9F5]/80 border-[#E6D6C6]/75 text-[#231C18]'
                 }`
           }`}
         >
@@ -1154,24 +1156,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <button
             type="button"
             onClick={onStartCrafting}
-            className="flex items-center gap-1.5 sm:gap-2 text-left cursor-pointer group min-w-0 flex-initial"
+            className="flex items-center gap-2 text-left cursor-pointer group min-w-0 justify-self-start"
           >
             <BrandLogoMark
-              className="w-5.5 h-5.5 sm:w-7 sm:h-7 md:w-8 md:h-8 group-hover:scale-105 transition-transform duration-300 shrink-0"
+              className="w-6.5 h-6.5 sm:w-7 sm:h-7 md:w-7.5 md:h-7.5 group-hover:scale-105 transition-transform duration-300 shrink-0"
               isDarkMode={isDarkMode}
             />
             <span
-              className="text-[15.5px] min-[380px]:text-[16.5px] sm:text-xl md:text-2xl font-semibold tracking-tight whitespace-nowrap truncate"
+              className="text-[18px] min-[380px]:text-[19px] sm:text-xl md:text-[22px] font-semibold tracking-tight whitespace-nowrap truncate"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               Send A Bouquet
             </span>
           </button>
 
-          {/* Zone 2: Center Editorial Navigation Links — Visible on Tablet (md: 768px+) & Desktop */}
+          {/* Zone 2: Center Editorial Navigation Links — Mathematically Centered on Tablet (md: 768px+) & Desktop */}
           <nav
             aria-label="Primary navigation"
-            className="hidden md:flex items-center gap-4 lg:gap-7 shrink-0"
+            className="hidden md:flex items-center justify-center gap-5 lg:gap-8 shrink-0 justify-self-center"
           >
             {[
               { id: 'how-it-works', label: 'How It Works' },
@@ -1183,7 +1185,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => scrollToSection(item.id)}
-                className={`group relative py-1 text-xs lg:text-[13px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${
                   isDarkMode
                     ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
                     : 'text-[#5A463B] hover:text-[#7A4B3A]'
@@ -1201,20 +1203,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </nav>
 
           {/* Zone 3: Right Controls — Icon-Only Theme Toggle, Saved Bouquets & Mobile Menu Trigger */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 justify-self-end">
             <button
               type="button"
               onClick={onToggleDarkMode}
               aria-label="Toggle theme"
               title="Toggle theme"
-              className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
+              className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
                 isDarkMode
                   ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
               <span key={isDarkMode ? 'sun' : 'moon'} className="block animate-theme-icon">
-                {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
+                {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
               </span>
             </button>
 
@@ -1223,18 +1225,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               onClick={onOpenVault}
               aria-label="Saved Bouquets"
               title="Saved Bouquets"
-              className={`h-8 sm:h-8.5 ${
-                vaultCount > 0 ? 'px-2.5' : 'w-8 sm:w-8.5 justify-center'
-              } rounded-full border border-dashed text-[10.5px] sm:text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+              className={`h-9 ${
+                vaultCount > 0 ? 'px-3' : 'w-9 justify-center'
+              } rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
                 isDarkMode
                   ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
               }`}
             >
-              <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+              <Bookmark className="w-4 h-4 text-[#B4846C] shrink-0" />
               {vaultCount > 0 && (
                 <span
-                  className={`px-1 py-0.2 rounded-full text-[9.5px] sm:text-[10px] font-semibold tabular-nums ${
+                  className={`px-1 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${
                     isDarkMode
                       ? 'text-[#F0C8B0]'
                       : 'text-[#7A4B3A]'
@@ -1253,7 +1255,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               title={isMobileNavOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={isMobileNavOpen}
               data-testid="mobile-nav-trigger"
-              className={`md:hidden w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+              className={`md:hidden w-9 h-9 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
                 isMobileNavOpen
                   ? isDarkMode
                     ? 'bg-[#9A6550] border-[#B47E68] text-white'
@@ -1265,9 +1267,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             >
               <svg
                 viewBox="0 0 18 18"
-                className="w-3.5 h-3.5 stroke-current"
+                className="w-4 h-4 stroke-current"
                 fill="none"
-                strokeWidth="1.5"
+                strokeWidth="1.6"
                 strokeLinecap="round"
               >
                 {isMobileNavOpen ? (
@@ -1495,27 +1497,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
       <div ref={scrollContentRef} className="w-full">
-        {/* 2. FULL-SCREEN LUXURY HERO — Grand Background Bloom, Editorial Serif Tagline + Roman/Italic Headline */}
-        <section className="relative min-h-[92svh] sm:min-h-[90svh] flex flex-col items-center justify-center px-4 sm:px-8 pt-12 sm:pt-16 pb-16 sm:pb-24">
-          {/* Seamless GPU Radial Aura Centered Behind the Bloom (No overflow-hidden clip so it blends seamlessly into the Lace Garland below) */}
+        {/* 2. FULL-SCREEN LUXURY HERO — Grand Background Bloom, Clear 1-2-3 Typographic Hierarchy & Stationery CTAs */}
+        <section className="relative min-h-[88svh] sm:min-h-[88svh] flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-12 pb-14 sm:pb-20">
+          {/* Seamless GPU Radial Aura Centered Behind the Bloom */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[580px] sm:w-[1080px] h-[540px] sm:h-[720px] rounded-full"
+            className="pointer-events-none absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 w-[560px] sm:w-[1040px] h-[500px] sm:h-[680px] rounded-full"
             style={{
               background: isDarkMode
-                ? 'radial-gradient(closest-side at 50% 48%, rgba(164, 96, 116, 0.26) 0%, rgba(112, 82, 126, 0.11) 46%, rgba(43, 35, 33, 0) 86%)'
-                : 'radial-gradient(closest-side at 50% 48%, rgba(250, 210, 225, 0.62) 0%, rgba(235, 220, 250, 0.28) 46%, rgba(253, 249, 245, 0) 86%)',
+                ? 'radial-gradient(closest-side at 50% 46%, rgba(164, 96, 116, 0.24) 0%, rgba(112, 82, 126, 0.10) 46%, rgba(43, 35, 33, 0) 86%)'
+                : 'radial-gradient(closest-side at 50% 46%, rgba(250, 210, 225, 0.54) 0%, rgba(235, 220, 250, 0.24) 46%, rgba(253, 249, 245, 0) 86%)',
             }}
           />
 
           {/* SCROLL-LINKED WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING FLOWER
-              Generously scaled so the bloom has true viewport presence behind the typography */}
+              Positioned as a botanical crest behind the headline with a soft center parchment veil for effortless text contrast */}
           <div
             ref={bloomRootRef}
             aria-hidden="true"
-            className="pointer-events-none select-none absolute left-1/2 top-1/2 z-0 w-[450px] sm:w-[760px] md:w-[880px] h-[310px] sm:h-[500px] md:h-[580px]"
+            className="pointer-events-none select-none absolute left-1/2 top-[43%] sm:top-[44%] mt-8 z-0 w-[450px] sm:w-[720px] md:w-[820px] h-[310px] sm:h-[470px] md:h-[540px]"
             style={{
-              opacity: isDarkMode ? 0.76 : 0.94,
+              marginTop: '2rem',
+              opacity: isDarkMode ? 0.72 : 0.88,
               transform: 'translate3d(-50%, -63%, 0) scale(1.02)',
               willChange: 'transform, opacity',
             }}
@@ -1527,24 +1530,30 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <defs>
                 {/* Soft Watercolor Wash Gradients */}
                 <radialGradient id="wc-petal-blush" cx="50%" cy="35%" r="65%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.34' : '0.70'} />
-                  <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.22' : '0.42'} />
+                  <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
+                  <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
                   <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
                 </radialGradient>
                 <radialGradient id="wc-petal-peach" cx="50%" cy="30%" r="65%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.36' : '0.72'} />
-                  <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.20' : '0.44'} />
+                  <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.32' : '0.66'} />
+                  <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.18' : '0.38'} />
                   <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
                 </radialGradient>
                 <radialGradient id="wc-leaf-sage" cx="50%" cy="50%" r="60%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.28' : '0.64'} />
-                  <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.15' : '0.32'} />
+                  <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.58'} />
+                  <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.28'} />
                   <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
                 </radialGradient>
                 <radialGradient id="wc-center-gold" cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.46' : '0.76'} />
-                  <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.18' : '0.26'} />
+                  <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.38' : '0.62'} />
+                  <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.14' : '0.20'} />
                   <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                </radialGradient>
+                {/* Soft Parchment Readability Halo Over Center & Lower Petal Zone */}
+                <radialGradient id="wc-text-readability-veil" cx="50%" cy="54%" r="52%">
+                  <stop offset="0%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.68' : '0.72'} />
+                  <stop offset="58%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.36' : '0.42'} />
+                  <stop offset="100%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity="0" />
                 </radialGradient>
               </defs>
 
@@ -1708,63 +1717,102 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   strokeOpacity="0.68"
                 />
               </g>
+
+              {/* 5. Soft Readability Veil Over Inner Corolla & Lower Petal Zone so Typography & Buttons Stand Out Clearly */}
+              <ellipse
+                cx="260"
+                cy="205"
+                rx="235"
+                ry="125"
+                fill="url(#wc-text-readability-veil)"
+              />
             </svg>
           </div>
 
-          {/* Centered Editorial Focal Block — Roman + Italic Headline & Tagline (Zero Eyebrow Clutter) */}
-          <div className="relative z-10 max-w-5xl mx-auto text-center animate-hero-entrance px-2 mt-2 sm:mt-6 lg:mt-8">
-            {/* Main Serif Display Headline — 2-Line Balanced Lockup on Mobile & Tablet, Single Wide Sweep on Desktop (lg:) */}
+          {/* Centered Editorial Focal Block — Clear 1 -> 2 -> 3 Visual Hierarchy */}
+          <div className="relative z-10 max-w-3xl mx-auto text-center animate-hero-entrance px-3 mt-4 sm:mt-8">
+            {/* 1. Primary Display Lockup — Stacked 2-Line Couture Composition (Send Love in / Every Bloom.) */}
             <h1
               className="mx-auto select-none"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               <span
-                className={`block lg:inline whitespace-nowrap text-[52px] sm:text-[66px] md:text-[76px] lg:text-[86px] xl:text-[96px] font-semibold tracking-[-0.02em] leading-[0.98] transition-colors ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                className={`block whitespace-nowrap text-[48px] min-[390px]:text-[52px] sm:text-[62px] md:text-[70px] lg:text-[76px] font-medium tracking-[-0.02em] leading-[0.96] transition-colors ${
+                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
                 }`}
               >
                 Send Love in{' '}
               </span>
               <span
-                className={`block lg:inline whitespace-nowrap text-[56px] sm:text-[70px] md:text-[80px] lg:text-[90px] xl:text-[100px] italic font-normal tracking-[-0.015em] leading-[0.98] transition-colors ${
-                  isDarkMode ? 'text-[#F0C2AE]' : 'text-[#8A4B38]'
+                className={`block whitespace-nowrap mt-0.5 sm:mt-1 text-[56px] min-[390px]:text-[60px] sm:text-[74px] md:text-[86px] lg:text-[94px] italic font-normal tracking-[-0.015em] leading-[0.92] transition-colors ${
+                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
                 }`}
               >
                 Every Bloom.
               </span>
             </h1>
 
-            {/* Tagline — Editorial Serif & Italic Rhythm, Balanced 2-Line on Mobile/Tablet & Single Line on Desktop */}
+            {/* Delicate Fine-Line Botanical Divider Separating Display Headline from Supporting Deck */}
+            <div
+              aria-hidden="true"
+              className="mt-5 sm:mt-6 flex items-center justify-center gap-2.5 opacity-65"
+            >
+              <span
+                className={`h-px w-8 sm:w-12 border-t border-dashed ${
+                  isDarkMode ? 'border-[#8A7267]' : 'border-[#C8B09B]'
+                }`}
+              />
+              <span
+                className={`w-1.5 h-1.5 rotate-45 border ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#352C29]'
+                    : 'border-[#9E4757] bg-[#FFFDF9]'
+                }`}
+              />
+              <span
+                className={`h-px w-8 sm:w-12 border-t border-dashed ${
+                  isDarkMode ? 'border-[#8A7267]' : 'border-[#C8B09B]'
+                }`}
+              />
+            </div>
+
+            {/* 2. Supporting Editorial Subtitle — Crisp Contrast & Scannable Measure */}
             <p
-              className={`mt-5 sm:mt-6 lg:mt-7 text-[19px] sm:text-[22px] md:text-[24px] lg:text-[25px] max-w-[300px] sm:max-w-[440px] md:max-w-[480px] lg:max-w-3xl mx-auto leading-[1.45] font-normal px-2 transition-colors ${
-                isDarkMode ? 'text-[#E5D6CE]' : 'text-[#4A3B33]'
+              className={`mt-4 sm:mt-5 text-[19px] sm:text-[21.5px] md:text-[23px] max-w-[330px] sm:max-w-[470px] md:max-w-[530px] mx-auto leading-[1.42] font-normal px-2 transition-colors ${
+                isDarkMode ? 'text-[#EAE0DA]' : 'text-[#3E3029]'
               }`}
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              Pick your flowers, <span className="italic">wrap with love</span>, and attach a little voice note or letter.
+              Pick your flowers, <span className="italic font-medium">wrap with love</span>, and attach a little voice note or letter.
             </p>
 
-            {/* Dual Centered Pill Buttons — Pure Typography, Zero Emojis/Icons */}
-            <div className="mt-8 sm:mt-9 lg:mt-10 flex items-center justify-center gap-3 sm:gap-4">
+            {/* 3. Action Hierarchy — Unmistakable Primary Studio Button + Lighter Secondary Pill */}
+            <div className="mt-7 sm:mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-3.5">
               <button
                 type="button"
                 onClick={onStartCrafting}
-                className={`px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-white text-xs sm:text-sm font-medium shadow-[0_10px_26px_rgba(122,75,58,0.22)] hover:shadow-[0_14px_32px_rgba(122,75,58,0.3)] transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
+                className={`group px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-[#FFFDF9] text-[13px] sm:text-[14px] font-medium inline-flex items-center gap-2 ring-1 ring-inset ring-[#FFFDF9]/25 shadow-[0_12px_28px_rgba(110,68,52,0.24)] hover:shadow-[0_16px_34px_rgba(110,68,52,0.32)] transition-all duration-300 hover:-translate-y-0.5 active:scale-95 cursor-pointer whitespace-nowrap ${
                   isDarkMode
                     ? 'bg-[#9A6550] hover:bg-[#875642]'
-                    : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                    : 'bg-[#6E4434] hover:bg-[#5B3729]'
                 }`}
               >
-                Craft a Bouquet
+                <span>Craft a Bouquet</span>
+                <span
+                  aria-hidden="true"
+                  className="text-sm leading-none transition-transform duration-300 group-hover:translate-x-0.5"
+                >
+                  →
+                </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => scrollToSection('how-it-works')}
-                className={`px-6 sm:px-8 py-3.5 sm:py-4 rounded-full border border-dashed text-xs sm:text-sm font-medium transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
+                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium backdrop-blur-xs transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
                   isDarkMode
-                    ? 'bg-[#362D2A]/90 border-[#66554F] text-[#F5ECE6] hover:bg-[#423734]'
-                    : 'bg-white/90 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF5F0]'
+                    ? 'bg-[#352C29]/80 border-[#66554F] text-[#DFCFC6] hover:text-[#FBF6F1] hover:bg-[#423734]'
+                    : 'bg-[#FFFDF9]/85 border-[#D8C4B4] text-[#5C483E] hover:text-[#231C18] hover:bg-[#FAF4EE]'
                 }`}
               >
                 See How It Works
@@ -1832,8 +1880,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   Pick &amp; Wrap
                 </h3>
                 <p
-                  className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
+                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${
+                    isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                   }`}
                 >
                   Arrange 31 blooms into couture wraps, velvet hatboxes &amp; lace bows.
@@ -1881,8 +1929,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   Voice &amp; Note
                 </h3>
                 <p
-                  className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
+                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${
+                    isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                   }`}
                 >
                   Tuck in a handwritten letter and record a voice keepsake.
@@ -1930,8 +1978,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   Send or Time-Lock
                 </h3>
                 <p
-                  className={`text-xs mt-0.5 sm:mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D0BEB4]' : 'text-[#7D6B61]'
+                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${
+                    isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                   }`}
                 >
                   Share an instant gift link, date countdown or secret key lock.

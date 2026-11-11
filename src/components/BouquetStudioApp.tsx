@@ -1812,7 +1812,7 @@ export default function App() {
           {!isGiftView && !isPreviewMode && (
         <div className="px-2 sm:px-5 pt-2 pb-1 shrink-0 z-30">
           <div
-            className={`h-10.5 sm:h-12 px-2 sm:px-3.5 md:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-1 sm:gap-2 overflow-hidden transition-colors ${
+            className={`h-11.5 sm:h-12 px-2.5 sm:px-3.5 md:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-1 sm:gap-2 overflow-hidden transition-colors ${
               isDarkMode
                 ? 'bg-[#352C29]/95 border-[#4E423E] text-[#FBF6F1]'
                 : 'bg-[#FFFDF9]/95 border-[#EFE6DD] text-[#231C18]'
@@ -1826,7 +1826,7 @@ export default function App() {
               aria-label="Open Send A Bouquet Home Page"
               className="flex items-center gap-1.5 sm:gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
             >
-              <BrandLogoMark className="w-5 h-5 sm:w-6.5 sm:h-6.5" isDarkMode={isDarkMode} />
+              <BrandLogoMark className="w-6 h-6 sm:w-6.5 sm:h-6.5" isDarkMode={isDarkMode} />
               <span
                 className="hidden lg:inline text-lg font-semibold tracking-tight whitespace-nowrap"
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -1838,7 +1838,7 @@ export default function App() {
             {/* Center: Undo / Redo / Save Draft / Start Over Capsule + Desktop/Tablet Selected Item Layer & Photo Controls */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <div
-                className={`flex items-center gap-0 sm:gap-1 rounded-full px-0.5 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${
+                className={`flex items-center gap-0.5 sm:gap-1 rounded-full px-1 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${
                   isDarkMode
                     ? 'bg-[#2B2321]/80 border-[#52433E]'
                     : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
@@ -1853,9 +1853,9 @@ export default function App() {
                   disabled={past.length === 0}
                   aria-label="Undo"
                   title="Undo"
-                  className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
                 >
-                  <Undo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
                 <button
                   type="button"
@@ -1866,13 +1866,13 @@ export default function App() {
                   disabled={future.length === 0}
                   aria-label="Redo"
                   title="Redo"
-                  className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
                 >
-                  <Redo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
                 <span
                   aria-hidden="true"
-                  className={`w-[1px] h-3 mx-0.5 ${
+                  className={`w-[1px] h-3.5 mx-0.5 ${
                     isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                   }`}
                 />
@@ -1882,21 +1882,21 @@ export default function App() {
                   onClick={handleSaveDraftOnDevice}
                   aria-label="Save bouquet draft on this device"
                   title="Save Draft on Device"
-                  className={`w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
+                  className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
                     savedDraftPulse
                       ? 'bg-emerald-500/20 text-emerald-500 scale-105'
                       : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
                   }`}
                 >
                   <Check
-                    className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
                       savedDraftPulse ? 'text-emerald-500' : 'text-[#B4846C]'
                     }`}
                   />
                 </button>
                 <span
                   aria-hidden="true"
-                  className={`w-[1px] h-3 mx-0.5 ${
+                  className={`w-[1px] h-3.5 mx-0.5 ${
                     isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                   }`}
                 />
@@ -1909,9 +1909,9 @@ export default function App() {
                   }}
                   aria-label="Reset bouquet and start over"
                   title="Start Over"
-                  className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
+                  className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
                 >
-                  <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
 
@@ -2039,7 +2039,7 @@ export default function App() {
                     ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
                     : 'Premium Studio Pass & Pass Key'
                 }
-                className={`h-6.5 sm:h-8 px-1.75 sm:px-2.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-7.5 sm:h-8 px-2.25 sm:px-2.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isBouquetUnlockedByPass
                     ? isDarkMode
                       ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
@@ -2049,7 +2049,7 @@ export default function App() {
                     : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                <CoutureBloomSeal className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C] shrink-0" />
+                <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
                 <span>Premium</span>
               </button>
 
@@ -2059,18 +2059,18 @@ export default function App() {
                 onClick={() => setIsVaultModalOpen(true)}
                 aria-label="Open Saved Bouquets"
                 title="Saved Bouquets"
-                className={`h-6.5 sm:h-8 ${
-                  vaultCount > 0 ? 'px-1.5 sm:px-2' : 'w-6.5 sm:w-8 justify-center'
-                } rounded-full text-[10px] sm:text-xs font-medium flex items-center gap-0.5 sm:gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-7.5 sm:h-8 ${
+                  vaultCount > 0 ? 'px-2 sm:px-2.5' : 'w-7.5 sm:w-8 justify-center'
+                } rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
                     ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                     : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                <Bookmark className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#B4846C] shrink-0" />
+                <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
                 {vaultCount > 0 && (
                   <span
-                    className={`text-[9px] sm:text-[10px] font-semibold tabular-nums ${
+                    className={`text-[10.5px] sm:text-[11px] font-semibold tabular-nums ${
                       isDarkMode ? 'text-[#F0C8B0]' : 'text-[#7A4B3A]'
                     }`}
                   >
@@ -2085,13 +2085,13 @@ export default function App() {
                 aria-pressed={isMusicPlaying}
                 aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                 title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                className={`hidden sm:flex w-7 h-7 sm:w-8 sm:h-8 rounded-full items-center justify-center shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`hidden sm:flex w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full items-center justify-center shrink-0 active:scale-95 transition cursor-pointer ${
                   isMusicPlaying
                     ? 'bg-[#B4846C]/15 text-[#B4846C]'
                     : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36]'
                 }`}
               >
-                {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                {isMusicPlaying ? <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
               </button>
 
               <button
@@ -2099,10 +2099,10 @@ export default function App() {
                 onClick={() => setIsDarkMode((prev) => !prev)}
                 aria-label="Toggle theme"
                 title="Toggle theme"
-                className="w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
+                className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
               >
                 <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
-                  {isDarkMode ? <Sun className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" /> : <Moon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
+                  {isDarkMode ? <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" /> : <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
                 </span>
               </button>
 
@@ -2111,7 +2111,7 @@ export default function App() {
                 onClick={() => setIsShareModalOpen(true)}
                 aria-label="Share bouquet"
                 title="Share bouquet"
-                className={`h-6.5 sm:h-8 px-2.5 sm:px-3.5 rounded-full text-[10.5px] sm:text-xs font-medium flex items-center justify-center gap-1 shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-7.5 sm:h-8 px-3 sm:px-3.5 rounded-full text-xs font-medium flex items-center justify-center gap-1 shrink-0 active:scale-95 transition cursor-pointer ${
                   isDarkMode
                     ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
                     : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
@@ -3103,17 +3103,17 @@ export default function App() {
             {!isGiftView && !isPreviewMode && !showLandingPage && (
               <div
                 ref={floatingToolStackRef}
-                className="absolute right-2 sm:right-3 bottom-1.5 sm:bottom-2.5 z-40 max-h-[calc(100%-0.5rem)] flex flex-col items-center justify-end gap-1"
+                className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3 z-40 max-h-[calc(100%-0.5rem)] flex flex-col items-center justify-end gap-1.5"
               >
                 {isMobileToolsExpanded && (
-                  <div className="flex flex-col items-center gap-1 overflow-y-auto no-scrollbar py-0.5 px-0.5 animate-in fade-in duration-150">
+                  <div className="flex flex-col items-center gap-1.5 overflow-y-auto no-scrollbar py-0.5 px-0.5 animate-in fade-in duration-150">
                     <button
                       type="button"
                       onClick={() => handleMobileFloatingTool('color')}
                       aria-pressed={mobilePopover === 'color'}
                       aria-label="Open Unified Color Picker"
                       title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon, Card & Voice)'}
-                      className={`w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
+                      className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'color'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -3121,7 +3121,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Palette className="w-3.5 h-3.5" />
+                      <Palette className="w-4 h-4" />
                     </button>
 
                     <button
@@ -3130,7 +3130,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'stem'}
                       aria-label="Open Stem Length, Size & Tilt Settings"
                       title={mobilePopover === 'stem' ? 'Hide Stem Settings Drawer' : 'Stem Settings (Length, Size & Tilt)'}
-                      className={`w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
+                      className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'stem'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -3138,7 +3138,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Sliders className="w-3.5 h-3.5" />
+                      <Sliders className="w-4 h-4" />
                     </button>
 
                     <button
@@ -3147,7 +3147,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'layers'}
                       aria-label="Open Layer Order Manager"
                       title={mobilePopover === 'layers' ? 'Hide Layer Order Drawer' : 'Layer Order (Drag to reorder, Lock & Hide)'}
-                      className={`w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
+                      className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'layers'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -3155,7 +3155,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Layers className="w-3.5 h-3.5" />
+                      <Layers className="w-4 h-4" />
                     </button>
 
                     <button
@@ -3164,7 +3164,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'card'}
                       aria-label="Edit greeting card"
                       title={mobilePopover === 'card' ? 'Hide Greeting Card Drawer' : 'Edit Greeting Card'}
-                      className={`relative w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
+                      className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'card'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -3172,7 +3172,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <PenLine className="w-3.5 h-3.5" />
+                      <PenLine className="w-4 h-4" />
                     </button>
 
                     <button
@@ -3181,7 +3181,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'voice'}
                       aria-label="Open Voice Keepsake Recorder"
                       title={mobilePopover === 'voice' ? 'Hide Voice Recorder Drawer' : 'Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)'}
-                      className={`relative w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
+                      className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'voice'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -3189,7 +3189,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Mic className="w-3.5 h-3.5" />
+                      <Mic className="w-4 h-4" />
                       {voice.audioDataUrl && (
                         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
                       )}
@@ -3201,7 +3201,7 @@ export default function App() {
                       aria-pressed={isMusicPlaying}
                       aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                       title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                      className={`sm:hidden w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
+                      className={`sm:hidden w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         isMusicPlaying
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -3209,7 +3209,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                      {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                     </button>
                   </div>
                 )}
@@ -3238,17 +3238,17 @@ export default function App() {
                         : 'Expand canvas tools (Colors, Stem, Layers, Card, Voice)'
                     }
                     title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card, Voice)'}
-                    className={`relative w-8 h-6 rounded-t-full flex items-center justify-center active:scale-95 transition ${
+                    className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${
                       isMobileToolsExpanded
                         ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
                         : 'text-[#B4846C]'
                     }`}
                   >
                     {isMobileToolsExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5" />
+                      <ChevronDown className="w-4 h-4" />
                     ) : (
                       <>
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-4 h-4" />
                         {(selectedId || mobilePopover) && (
                           <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-[#B4846C]" />
                         )}
@@ -3256,16 +3256,16 @@ export default function App() {
                     )}
                   </button>
 
-                  <div className="w-4 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
+                  <div className="w-4.5 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
 
                   <button
                     type="button"
                     onClick={() => startGiftBloomAnimation(items.length, true)}
                     aria-label="Preview gift bloom"
                     title="Preview Bloom"
-                    className="w-8 h-7.5 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
+                    className="w-9 h-8.5 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
                   >
-                    <Eye className="w-3.5 h-3.5" />
+                    <Eye className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -3472,7 +3472,7 @@ export default function App() {
             <div className="w-full max-w-full px-2.5 sm:px-6 z-20 absolute top-3 sm:top-4 inset-x-0 pointer-events-none flex items-center justify-between gap-1.5 sm:gap-2">
               {/* Left: Dedication Capsule (Flexes and truncates cleanly so right pill never clips on mobile) */}
               <div
-                className={`pointer-events-auto min-w-0 flex-initial max-w-[calc(100%-6.75rem)] sm:max-w-md inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md ${
+                className={`pointer-events-auto min-w-0 flex-initial max-w-[calc(100%-7.25rem)] sm:max-w-md inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md ${
                   isDarkMode
                     ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
                     : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
@@ -3485,16 +3485,16 @@ export default function App() {
                   aria-label={isPreviewMode ? 'Back to Studio' : 'Back'}
                   className="shrink-0 hover:opacity-80 transition cursor-pointer flex items-center"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <ArrowLeft className="w-4 h-4 shrink-0" />
                 </button>
                 <div
-                  className="min-w-0 truncate text-xs sm:text-base leading-tight"
+                  className="min-w-0 truncate text-[13.5px] sm:text-base leading-tight"
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
                   <span className="italic opacity-75 mr-1">For</span>
                   <span className="font-semibold tracking-tight">{card.to || 'You'}</span>
                   <span
-                    className={`ml-1.5 sm:ml-2 text-[11px] sm:text-sm ${
+                    className={`ml-1.5 sm:ml-2 text-xs sm:text-sm ${
                       isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
                     }`}
                   >
@@ -3523,13 +3523,13 @@ export default function App() {
                   onClick={() => startGiftBloomAnimation(items.length, false)}
                   aria-label="Replay bloom animation"
                   title="Replay bloom animation"
-                  className={`h-6 sm:h-7 px-1.5 sm:px-2 rounded-full text-[11px] font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                  className={`h-7 px-2 rounded-full text-xs font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
                     isDarkMode
                       ? 'text-[#E6D6C7] hover:text-[#FBF6F1]'
                       : 'text-[#5C4438] hover:text-[#231C18]'
                   }`}
                 >
-                  <RotateCcw className="w-3 h-3 text-[#B4846C]" />
+                  <RotateCcw className="w-3.5 h-3.5 text-[#B4846C]" />
                   <span className="hidden sm:inline">Replay</span>
                 </button>
 
@@ -3541,7 +3541,7 @@ export default function App() {
                   aria-pressed={isMusicPlaying}
                   aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                   title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
-                  className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
                     isMusicPlaying
                       ? 'text-[#B4846C]'
                       : isDarkMode
@@ -3559,7 +3559,7 @@ export default function App() {
                   onClick={() => setIsDarkMode((prev) => !prev)}
                   aria-label="Toggle theme"
                   title="Toggle theme"
-                  className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
                     isDarkMode
                       ? 'text-[#E6B89C] hover:text-[#FBF6F1]'
                       : 'text-[#7D6B60] hover:text-[#231C18]'
@@ -4016,7 +4016,7 @@ export default function App() {
                           setIsDesktopDockCollapsed(false);
                         }
                       }}
-                      className={`px-2.5 sm:px-3.5 py-1 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 cursor-pointer ${
+                      className={`px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 cursor-pointer ${
                         isActive
                           ? 'bg-[#B4846C] text-white shadow-xs border border-[#B4846C]'
                           : isDarkMode
@@ -4053,7 +4053,7 @@ export default function App() {
                       ? 'Expand tray'
                       : 'Collapse tray down'
                   }
-                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-medium border border-dashed shrink-0 transition cursor-pointer ${
+                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium border border-dashed shrink-0 transition cursor-pointer ${
                     isDarkMode
                       ? 'bg-[#2B2321] border-[#52433E] text-[#D8C7BE] hover:border-[#B4846C] hover:text-white'
                       : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#6E5D54] hover:border-[#B4846C] hover:text-[#1C1917]'
@@ -4061,9 +4061,9 @@ export default function App() {
                 >
                   <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show' : 'Hide'}</span>
                   {isDesktopDockCollapsed ? (
-                    <ChevronUp className="w-3.5 h-3.5 text-[#B4846C]" />
+                    <ChevronUp className="w-4 h-4 text-[#B4846C]" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-[#B4846C]" />
+                    <ChevronDown className="w-4 h-4 text-[#B4846C]" />
                   )}
                 </button>
               </div>
@@ -4156,7 +4156,7 @@ export default function App() {
                           bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
                         />
                       </div>
-                      <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                         {tpl.name}
                       </span>
                     </button>
@@ -4203,7 +4203,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {ws.label}
                         </span>
                       </button>
@@ -4250,7 +4250,7 @@ export default function App() {
                           />
                         )}
                       </div>
-                      <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                         {entry.shortName}
                       </span>
                     </button>
@@ -4295,7 +4295,7 @@ export default function App() {
                           />
                         )}
                       </div>
-                      <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                         {entry.shortName}
                       </span>
                     </button>
@@ -4381,7 +4381,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {pf.shortLabel}
                         </span>
                       </button>
@@ -4425,7 +4425,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {rs.label}
                         </span>
                       </button>
@@ -4469,7 +4469,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {env.shortLabel}
                         </span>
                       </button>
@@ -4537,7 +4537,7 @@ export default function App() {
                             theme={th.id}
                           />
                         </div>
-                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {th.label}
                         </span>
                       </button>
@@ -4654,7 +4654,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {vk.shortLabel}
                         </span>
                       </button>

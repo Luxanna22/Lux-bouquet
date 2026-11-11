@@ -266,33 +266,59 @@ const HangingCreationCard: React.FC<{
         onClick={() => onUnwrap(entry)}
         aria-label={`Open bouquet for ${entry.to} from ${entry.from} (view-only)`}
         style={disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }}
-        className={`w-full aspect-[1/1.28] sm:aspect-[1/1.26] rounded-[24px] sm:rounded-[30px] border border-dashed p-2.5 sm:p-3.5 relative flex items-center justify-center overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 cursor-pointer focus:outline-none ${
+        className={`w-full aspect-[12/15.2] sm:aspect-[12/15] rounded-[20px] sm:rounded-[24px] border border-dashed p-1.5 sm:p-2 relative flex flex-col items-stretch justify-between overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 cursor-pointer focus:outline-none ${
           isDarkMode
             ? 'bg-[#28211F] border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_14px_32px_rgba(15,11,9,0.34)]'
             : 'bg-[#F7F1E8] border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_12px_28px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_38px_rgba(122,75,58,0.12)]'
         }`}
       >
-        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (100% Exact Studio Stage Copy) */}
-        <div className="w-full h-full flex items-center justify-center p-0.5 sm:p-1 pb-11 sm:pb-12 group-hover:scale-105 transition-transform duration-500">
-          <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
+        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Edge-to-Edge Framed Creation Window) */}
+        <div
+          className={`w-full flex-1 min-h-0 rounded-[14px] sm:rounded-[18px] overflow-hidden relative border ${
+            isDarkMode
+              ? 'border-[#4A3C37]/85 bg-[#221B19]'
+              : 'border-[#E5D5C5]/80 bg-[#FDF9F5]'
+          }`}
+        >
+          <div className="w-full h-full group-hover:scale-105 transition-transform duration-500">
+            <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
+          </div>
         </div>
 
-        {/* Prominent 2-Line Editorial Dedication Tag at Base of Portrait Card (For & From 100% Visible) */}
+        {/* High-Contrast 2-Line Editorial Dedication Plate at Base of Portrait Card */}
         <div
-          className={`pointer-events-none absolute bottom-2 sm:bottom-2.5 inset-x-2 sm:inset-x-2.5 py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-[15px] sm:rounded-[18px] text-center transition-all duration-300 backdrop-blur-xs border border-dashed ${
+          className={`pointer-events-none mt-1.5 py-1 sm:py-1.5 px-2 sm:px-2.5 rounded-[12px] sm:rounded-[14px] text-center shrink-0 transition-all duration-300 border border-dashed ${
             isDarkMode
-              ? 'bg-[#231C18]/92 border-[#52433D] text-[#F5ECE6]'
-              : 'bg-[#FFFDF9]/95 border-[#E6D6C7] text-[#3E2E25] shadow-2xs'
+              ? 'bg-[#221B18] border-[#5A4943] text-[#FBF6F1]'
+              : 'bg-[#FFFDF9] border-[#D8C4B2] text-[#1F1713] shadow-2xs'
           }`}
           style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
         >
-          <div className="text-[12.5px] sm:text-[13.5px] leading-tight truncate">
-            <span className="italic opacity-75">For </span>
-            <span className="font-semibold">{entry.to}</span>
+          <div className="text-[14.5px] sm:text-[16px] lg:text-[17px] leading-[1.12] tracking-[-0.01em] truncate">
+            <span
+              className={`italic font-medium ${
+                isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
+              }`}
+            >
+              For{' '}
+            </span>
+            <span className="font-bold">{entry.to}</span>
           </div>
-          <div className="text-[11px] sm:text-[12px] leading-tight truncate mt-0.5">
-            <span className="italic opacity-75">from </span>
-            <span className="font-medium opacity-95">{entry.from}</span>
+          <div className="text-[12px] sm:text-[13px] lg:text-[13.5px] leading-[1.15] truncate mt-0.5">
+            <span
+              className={`italic ${
+                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E584D]'
+              }`}
+            >
+              from{' '}
+            </span>
+            <span
+              className={`font-semibold ${
+                isDarkMode ? 'text-[#F2E6DE]' : 'text-[#3B2D26]'
+              }`}
+            >
+              {entry.from}
+            </span>
           </div>
         </div>
       </button>
@@ -507,7 +533,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
 
       {/* UNIFIED SINGLE-LACE RIGHT-TO-LEFT CAROUSEL PREVIEW ACROSS MOBILE, TABLET & DESKTOP */}
       <div
-        className="relative w-full h-[306px] sm:h-[365px] lg:h-[400px] touch-pan-y"
+        className="relative w-full h-[314px] sm:h-[372px] lg:h-[408px] touch-pan-y"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return;
           dragStartXRef.current = e.clientX;
@@ -577,7 +603,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                   visibility: initial.isVisible ? 'visible' : 'hidden',
                   willChange: 'transform, left, opacity',
                 }}
-                className="absolute top-0 w-[164px] min-[380px]:w-[172px] sm:w-[200px] lg:w-[220px] transition-[left,transform,opacity] duration-150 ease-out"
+                className="absolute top-0 w-[166px] min-[380px]:w-[176px] sm:w-[208px] lg:w-[228px] transition-[left,transform,opacity] duration-150 ease-out"
               >
                 <HangingCreationCard
                   entry={entry}
@@ -901,20 +927,20 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   : 'bg-[#FDF9F5]/95 border-[#E5D5C5] text-[#231C18]'
               }`}
             >
-              <div className="max-w-6xl mx-auto h-12 sm:h-14 px-4 sm:px-8 flex items-center justify-between gap-2 sm:gap-3">
+              <div className="max-w-6xl mx-auto h-13 sm:h-14 px-3.5 sm:px-8 flex items-center justify-between gap-2 sm:gap-3">
                 {/* Left: Back to Home + Brand */}
                 <div className="flex items-center gap-2 sm:gap-3">
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onBackToHome)}
                     data-testid="creations-back-home-btn"
-                    className={`px-3 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                    className={`h-9 px-3.5 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
                       isDarkMode
                         ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                         : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                     }`}
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
 
@@ -923,9 +949,9 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                     onClick={() => triggerSmoothClose(onBackToHome)}
                     className="hidden sm:flex items-center gap-2 cursor-pointer"
                   >
-                    <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
+                    <BrandLogoMark className="w-6.5 h-6.5" isDarkMode={isDarkMode} />
                     <span
-                      className="text-lg font-semibold tracking-tight whitespace-nowrap"
+                      className="text-xl font-semibold tracking-tight whitespace-nowrap"
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       Send A Bouquet
@@ -939,23 +965,23 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                     type="button"
                     onClick={onToggleDarkMode}
                     aria-label="Toggle theme"
-                    className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
+                    className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                       isDarkMode
-                        ? 'text-[#E6B89C] hover:bg-[#483C38]'
-                        : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+                        ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
+                        : 'bg-[#FAF4EE]/85 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
                     }`}
                   >
                     {isDarkMode ? (
-                      <Sun className="w-3.5 h-3.5 text-amber-300" />
+                      <Sun className="w-4 h-4 text-amber-300" />
                     ) : (
-                      <Moon className="w-3.5 h-3.5" />
+                      <Moon className="w-4 h-4" />
                     )}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onOpenVault)}
-                    className={`hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
+                    className={`inline-flex h-9 px-3 sm:px-3.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
                       isDarkMode
                         ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                         : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
@@ -964,7 +990,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                     <span>Saved Bouquets</span>
                     {vaultCount > 0 && (
                       <span
-                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                        className={`px-1.5 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${
                           isDarkMode
                             ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
                             : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
@@ -978,7 +1004,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onStartCrafting)}
-                    className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap ${
+                    className={`h-9 px-4 sm:px-5 rounded-full text-white text-xs sm:text-[13px] font-medium inline-flex items-center justify-center transition active:scale-95 cursor-pointer whitespace-nowrap ${
                       isDarkMode
                         ? 'bg-[#9A6550] hover:bg-[#875642]'
                         : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
@@ -993,7 +1019,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             {/* Compact Editorial Title + Unified "For / From" Search Input */}
             <div className="max-w-xl mx-auto px-3 pt-2.5 sm:pt-3.5 text-center">
               <h1
-                className={`text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight leading-none ${
+                className={`text-[26px] sm:text-3xl lg:text-4xl font-semibold tracking-tight leading-none ${
                   isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                 }`}
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -1002,19 +1028,19 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
               </h1>
 
               <label
-                className={`mt-2 sm:mt-2.5 max-w-md mx-auto rounded-full border border-dashed px-4 py-1.5 sm:py-2 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
+                className={`mt-2 sm:mt-2.5 max-w-md mx-auto rounded-full border border-dashed px-4 py-2 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
                   isDarkMode
                     ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
                     : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
                 }`}
               >
                 <Search
-                  className={`w-3.5 h-3.5 shrink-0 ${
+                  className={`w-4 h-4 shrink-0 ${
                     isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
                   }`}
                 />
                 <span
-                  className={`text-sm italic font-medium shrink-0 select-none ${
+                  className={`text-[15px] sm:text-base italic font-medium shrink-0 select-none ${
                     isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -1028,7 +1054,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   placeholder="Search recipient or sender…"
                   aria-label="Search bouquets by recipient (For) or sender (From)"
                   data-testid="showcase-search-unified"
-                  className={`w-full min-w-0 bg-transparent text-xs focus:outline-none ${
+                  className={`w-full min-w-0 bg-transparent text-[13px] sm:text-sm focus:outline-none ${
                     isDarkMode
                       ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
                       : 'text-[#231C18] placeholder:text-[#A39084]'
@@ -1113,7 +1139,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             ) : (
               <div
                 data-testid="single-lace-carousel-track"
-                className="relative w-full h-[clamp(268px,46vh,385px)]"
+                className="relative w-full h-[clamp(278px,46.5vh,392px)]"
               >
                 {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
                 <div className="absolute top-0 inset-x-0 z-0">
@@ -1151,7 +1177,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                           visibility: initial.isVisible ? 'visible' : 'hidden',
                           willChange: 'transform, left, opacity',
                         }}
-                        className="absolute top-0 w-[148px] min-[380px]:w-[158px] sm:w-[clamp(154px,21vh,194px)] lg:w-[clamp(162px,22.5vh,206px)]"
+                        className="absolute top-0 w-[158px] min-[380px]:w-[168px] sm:w-[clamp(162px,22vh,204px)] lg:w-[clamp(172px,23.5vh,218px)]"
                       >
                         <HangingCreationCard
                           entry={entry}

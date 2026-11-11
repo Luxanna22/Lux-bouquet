@@ -3138,13 +3138,18 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const bouquetTransform = `translate(${pose.x}, ${pose.y}) rotate(${pose.rotation}) scale(${pose.scale}) translate(-300, -380)`;
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center p-0 sm:p-1 select-none overflow-hidden">
+    <div
+      className={`relative w-full h-full flex items-center justify-center ${
+        isCardThumbnail ? 'p-0' : 'p-0 sm:p-1'
+      } select-none overflow-hidden`}
+    >
       <svg
         ref={svgRef as React.RefObject<SVGSVGElement>}
-        viewBox={isCardThumbnail ? '6 6 588 668' : '0 0 600 680'}
+        viewBox={isCardThumbnail ? '12 12 576 656' : '0 0 600 680'}
+        preserveAspectRatio={isCardThumbnail ? 'xMidYMid slice' : undefined}
         className={
           isCardThumbnail
-            ? 'w-full h-full drop-shadow-sm pointer-events-none select-none'
+            ? 'w-full h-full pointer-events-none select-none'
             : 'w-full h-full max-w-[820px] max-h-[930px] aspect-[600/680] drop-shadow-sm touch-none'
         }
         role="img"
@@ -3250,6 +3255,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           isDarkMode={isDarkMode}
           idPrefix={idPrefix}
         />
+        <g
+          transform={
+            isCardThumbnail
+              ? 'translate(300, 368) scale(1.18) translate(-300, -368)'
+              : undefined
+          }
+        >
         <circle
           cx="300"
           cy="285"
@@ -4797,6 +4809,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             </g>
           );
         })()}
+        </g>
 
         {/* 5C. CORNER CONTROLS (STRAIGHTEN, HIDE X & PULL-IN/OUT RESIZE+ROTATE) FOR GREETING CARD — NO FOCUS/OUTLINE RING */}
         {!isPreviewMode &&
