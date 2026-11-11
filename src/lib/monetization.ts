@@ -537,9 +537,11 @@ export function getPricingCatalog(region: PricingRegion): PricingTierPlan[] {
 
 export const MAX_ALLOWED_DEVICES_PER_PASS = 2; // Original device + max 1 transfer
 export const MAX_DAILY_PASS_BOUQUETS = 15;
+export const TESTER_SINGLE_DEVICE_SENTINEL = 'TESTER_SINGLE_DEVICE_LOCK';
+export const REVOKED_PASS_SENTINEL = 'REVOKED_BY_OWNER';
 
 export interface StudioPassRecord {
-  passKey: string; // e.g., BLOOM-7K4M-9P2X
+  passKey: string; // e.g., BLOOM-7K4M-9P2X or BLOOM-TV4M-9P2X
   tier: StudioPassTier;
   region: PricingRegion;
   createdAt: string; // ISO string
@@ -549,10 +551,10 @@ export interface StudioPassRecord {
   primaryDeviceHash: string;
   secondaryDeviceHash: string | null;
   activeSessionNonce: string;
-  boundBouquetCode: string | null; // For 'single' tier: locks unlock to that bouquet's short code
+  boundBouquetCode: string | null; // For 'single' tier: locks unlock to that bouquet's short code; for tester voucher: 'TV:<cap>:<label>'
   dailyUsageDate: string; // YYYY-MM-DD
   dailyUsageCount: number;
-  paymentProvider: 'paymongo' | 'kofi' | 'verified_checkout';
+  paymentProvider: 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
   paymentReference: string;
   signature: string; // Cryptographic signature preventing localStorage manipulation
 }
@@ -595,6 +597,60 @@ export function generatePassKeyCode(randomBytes?: Uint8Array): string {
     part2 += PASS_ALPHABET[bytes[i + 4] % PASS_ALPHABET.length];
   }
   return `BLOOM-${part1}-${part2}`;
+}
+
+export function generateTesterVoucherKeyCode(randomBytes?: Uint8Array): string {
+  const base = generatePassKeyCode(randomBytes);
+  // Prefix first block with TV (both T and V are valid in PASS_ALPHABET)
+  return `BLOOM-TV${base.slice(8, 10)}-${base.slice(11, 15)}`;
+}
+
+export function isTesterVoucherPass(
+  pass:
+    | Pick<StudioPassRecord, 'passKey' | 'paymentProvider' | 'secondaryDeviceHash'>
+    | null
+    | undefined
+): boolean {
+  if (!pass) return false;
+  return (
+    pass.paymentProvider === 'tester_voucher' ||
+    pass.secondaryDeviceHash === TESTER_SINGLE_DEVICE_SENTINEL ||
+    normalizePassKey(pass.passKey).startsWith('BLOOM-TV')
+  );
+}
+
+export function parseTesterVoucherMeta(
+  input?: string | Pick<StudioPassRecord, 'boundBouquetCode' | 'paymentReference'> | null
+): {
+  isTester: boolean;
+  dailyCap: number;
+  label: string;
+} {
+  const raw =
+    typeof input === 'object' && input !== null
+      ? (input.boundBouquetCode || input.paymentReference || '').trim()
+      : (input || '').trim();
+  if (raw.startsWith('TV:')) {
+    const parts = raw.split(':');
+    const parsedCap = Number.parseInt(parts[1] || '10', 10);
+    const dailyCap =
+      Number.isFinite(parsedCap) && parsedCap >= 1 && parsedCap <= 50 ? parsedCap : 10;
+    const label = parts.slice(2).join(':').trim() || 'Tester Invite';
+    return { isTester: true, dailyCap, label };
+  }
+  if (raw.startsWith('tv_')) {
+    const parts = raw.split('_');
+    const parsedCap = Number.parseInt(parts[1] || '10', 10);
+    const dailyCap =
+      Number.isFinite(parsedCap) && parsedCap >= 1 && parsedCap <= 50 ? parsedCap : 10;
+    const label = parts.slice(2).join('_').trim() || 'Tester Invite';
+    return { isTester: true, dailyCap, label };
+  }
+  return {
+    isTester: false,
+    dailyCap: MAX_DAILY_PASS_BOUQUETS,
+    label: raw || 'Tester Invite',
+  };
 }
 
 export function generateSessionNonce(): string {
@@ -704,6 +760,7 @@ export function verifyPassIntegritySignature(
 export type PassValidationStatus =
   | 'VALID'
   | 'EXPIRED'
+  | 'REVOKED'
   | 'INVALID_FORMAT'
   | 'TAMPERED_SIGNATURE'
   | 'DEVICE_LIMIT_EXCEEDED'
@@ -719,7 +776,7 @@ export interface PassValidationResult {
 }
 
 /**
- * Creates a newly issued, cryptographically signed StudioPassRecord.
+ * Creates a newly issued, cryptographically signed StudioPassRecord (standard paid pass or 1-device locked Tester Voucher).
  */
 export function createSignedStudioPass(params: {
   passKey?: string;
@@ -727,20 +784,58 @@ export function createSignedStudioPass(params: {
   region: PricingRegion;
   deviceTokenHash: string;
   boundBouquetCode?: string | null;
-  paymentProvider?: 'paymongo' | 'kofi' | 'verified_checkout';
+  paymentProvider?: 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
   paymentReference?: string;
+  durationHours?: number;
+  isTesterVoucher?: boolean;
+  testerLabel?: string;
+  testerDailyCap?: number;
+  retentionDaysOverride?: number;
   nowMs?: number;
   secretSalt?: string;
 }): StudioPassRecord {
   const now = params.nowMs ?? Date.now();
   const createdAt = new Date(now).toISOString();
-  const durationDays =
-    params.tier === 'pass_30d' ? 30 : params.tier === 'pass_7d' ? 7 : 2; // Single bouquet unlock key valid for 48h on that bouquet
-  const expiresAt = new Date(now + durationDays * 24 * 60 * 60 * 1000).toISOString();
+  const isTester = Boolean(params.isTesterVoucher || params.paymentProvider === 'tester_voucher');
+  const durationHours =
+    typeof params.durationHours === 'number' && params.durationHours > 0
+      ? params.durationHours
+      : params.tier === 'pass_30d'
+      ? 30 * 24
+      : params.tier === 'pass_7d'
+      ? 7 * 24
+      : 48;
+  const expiresAt = new Date(now + durationHours * 60 * 60 * 1000).toISOString();
   const policy = getRetentionPolicyForPassTier(params.tier);
-  const passKey = params.passKey ? normalizePassKey(params.passKey) : generatePassKeyCode();
+  const retentionDays =
+    typeof params.retentionDaysOverride === 'number' && params.retentionDaysOverride >= 1
+      ? params.retentionDaysOverride
+      : isTester
+      ? 30
+      : policy.retentionDays;
+  const isEternalKeepsake = isTester ? false : policy.isPremiumEternal;
+  const passKey = params.passKey
+    ? normalizePassKey(params.passKey)
+    : isTester
+    ? generateTesterVoucherKeyCode()
+    : generatePassKeyCode();
   const activeSessionNonce = generateSessionNonce();
   const todayIso = createdAt.slice(0, 10);
+
+  let boundCode: string | null = null;
+  if (isTester) {
+    const cleanCap =
+      typeof params.testerDailyCap === 'number' && params.testerDailyCap >= 1
+        ? Math.min(50, Math.round(params.testerDailyCap))
+        : 10;
+    const cleanLabel = (params.testerLabel || params.boundBouquetCode || 'Tester Invite')
+      .replace(/\|/g, ' ')
+      .trim()
+      .slice(0, 34);
+    boundCode = `TV:${cleanCap}:${cleanLabel}`;
+  } else if (params.tier === 'single') {
+    boundCode = params.boundBouquetCode || null;
+  }
 
   const draft: Omit<StudioPassRecord, 'signature'> = {
     passKey,
@@ -748,16 +843,20 @@ export function createSignedStudioPass(params: {
     region: params.region,
     createdAt,
     expiresAt,
-    retentionDays: policy.retentionDays,
-    isEternalKeepsake: policy.isPremiumEternal,
-    primaryDeviceHash: params.deviceTokenHash,
-    secondaryDeviceHash: null,
+    retentionDays,
+    isEternalKeepsake,
+    primaryDeviceHash: params.deviceTokenHash || '',
+    secondaryDeviceHash: isTester ? TESTER_SINGLE_DEVICE_SENTINEL : null,
     activeSessionNonce,
-    boundBouquetCode: params.tier === 'single' ? params.boundBouquetCode || null : null,
+    boundBouquetCode: boundCode,
     dailyUsageDate: todayIso,
     dailyUsageCount: 0,
-    paymentProvider: params.paymentProvider || 'verified_checkout',
-    paymentReference: params.paymentReference || `ref_${generateSessionNonce().slice(0, 10)}`,
+    paymentProvider: isTester ? 'tester_voucher' : params.paymentProvider || 'verified_checkout',
+    paymentReference:
+      params.paymentReference ||
+      (isTester
+        ? `tv_${generateSessionNonce().slice(0, 10)}`
+        : `ref_${generateSessionNonce().slice(0, 10)}`),
   };
 
   const signature = computePassIntegritySignature(draft, params.secretSalt);
@@ -770,8 +869,8 @@ export function createSignedStudioPass(params: {
 /**
  * Validates and binds a Pass Key redemption attempt on a device (`deviceTokenHash`).
  * Enforces:
- * 1. Signature & expiry check
- * 2. Max 2 distinct devices ever (`primaryDeviceHash` + `secondaryDeviceHash`). A 3rd device is blocked!
+ * 1. Signature, revocation & expiry check
+ * 2. Strict 1-device lock for Tester Vouchers (`TESTER_SINGLE_DEVICE_LOCK`) or max 2 devices for Paid Passes.
  * 3. Single Active Session Lease: rotates `activeSessionNonce` so only 1 browser session is active at a time.
  */
 export function validateAndBindPassRedemption(
@@ -796,23 +895,48 @@ export function validateAndBindPassRedemption(
     };
   }
 
+  if (
+    existingRecord.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    existingRecord.primaryDeviceHash === REVOKED_PASS_SENTINEL
+  ) {
+    return {
+      valid: false,
+      status: 'REVOKED',
+      message: 'This voucher key has been revoked by the studio owner.',
+    };
+  }
+
   const expiresMs = Date.parse(existingRecord.expiresAt);
   if (!Number.isFinite(expiresMs) || nowMs > expiresMs) {
     return {
       valid: false,
       status: 'EXPIRED',
-      message: 'This Studio Pass has expired.',
+      message: isTesterVoucherPass(existingRecord)
+        ? 'This Tester Voucher has expired.'
+        : 'This Studio Pass has expired.',
     };
   }
 
+  const isTester = isTesterVoucherPass(existingRecord);
   let nextPrimary = existingRecord.primaryDeviceHash;
   let nextSecondary = existingRecord.secondaryDeviceHash;
 
   if (!nextPrimary) {
     nextPrimary = requestDeviceTokenHash;
+    if (isTester) {
+      nextSecondary = TESTER_SINGLE_DEVICE_SENTINEL;
+    }
   } else if (requestDeviceTokenHash !== nextPrimary) {
+    if (isTester || nextSecondary === TESTER_SINGLE_DEVICE_SENTINEL) {
+      return {
+        valid: false,
+        status: 'DEVICE_LIMIT_EXCEEDED',
+        message:
+          'This Tester Voucher is locked to the first device that claimed it and cannot be shared or forwarded to others.',
+      };
+    }
     if (!nextSecondary) {
-      // Allow 1 transfer to a secondary device (e.g. phone -> laptop)
+      // Allow 1 transfer to a secondary device (e.g. phone -> laptop) for standard paid passes
       nextSecondary = requestDeviceTokenHash;
     } else if (requestDeviceTokenHash !== nextSecondary) {
       // 3rd distinct device! Reject to prevent Pass Key sharing abuse.
@@ -838,7 +962,9 @@ export function validateAndBindPassRedemption(
   return {
     valid: true,
     status: 'VALID',
-    message: 'Studio Pass verified and locked to your current session.',
+    message: isTester
+      ? 'Tester Voucher activated and locked to this device.'
+      : 'Studio Pass verified and locked to your current session.',
     updatedPass: {
       ...updatedDraft,
       signature,
@@ -849,7 +975,7 @@ export function validateAndBindPassRedemption(
 /**
  * Verifies whether a stored pass authorizes unlocking/exporting a bouquet (`bouquetCode`)
  * on the current device (`deviceTokenHash`) and session (`clientSessionNonce`),
- * enforcing single-bouquet binding and daily velocity caps.
+ * enforcing single-bouquet binding, 1-device tester locks, and daily velocity caps.
  */
 export function verifyActiveStudioPassForAction(params: {
   pass: StudioPassRecord | null | undefined;
@@ -879,16 +1005,38 @@ export function verifyActiveStudioPassForAction(params: {
     };
   }
 
+  if (
+    pass.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    pass.primaryDeviceHash === REVOKED_PASS_SENTINEL
+  ) {
+    return {
+      valid: false,
+      status: 'REVOKED',
+      message: 'Your Tester Voucher has been revoked.',
+    };
+  }
+
   const expiresMs = Date.parse(pass.expiresAt);
   if (!Number.isFinite(expiresMs) || now > expiresMs) {
     return {
       valid: false,
       status: 'EXPIRED',
-      message: 'Your Studio Pass has expired.',
+      message: isTesterVoucherPass(pass)
+        ? 'Your Tester Voucher has expired.'
+        : 'Your Studio Pass has expired.',
     };
   }
 
-  if (
+  const isTester = isTesterVoucherPass(pass);
+  if (isTester) {
+    if (deviceTokenHash !== pass.primaryDeviceHash) {
+      return {
+        valid: false,
+        status: 'DEVICE_LIMIT_EXCEEDED',
+        message: 'This Tester Voucher is locked to another device and cannot be shared.',
+      };
+    }
+  } else if (
     deviceTokenHash !== pass.primaryDeviceHash &&
     deviceTokenHash !== pass.secondaryDeviceHash
   ) {
@@ -912,7 +1060,7 @@ export function verifyActiveStudioPassForAction(params: {
   }
 
   // Enforce Single-Bouquet Unlock binding so a ₱49/$2.99 single unlock cannot be reused on new bouquets
-  if (pass.tier === 'single') {
+  if (pass.tier === 'single' && !isTester) {
     if (
       pass.boundBouquetCode &&
       params.bouquetCode &&
@@ -930,19 +1078,23 @@ export function verifyActiveStudioPassForAction(params: {
   const todayIso = new Date(now).toISOString().slice(0, 10);
   const currentDailyCount =
     pass.dailyUsageDate === todayIso ? pass.dailyUsageCount || 0 : 0;
+  const maxDailyAllowed = isTester
+    ? parseTesterVoucherMeta(pass.boundBouquetCode).dailyCap
+    : MAX_DAILY_PASS_BOUQUETS;
 
-  if (params.incrementUsage && currentDailyCount >= MAX_DAILY_PASS_BOUQUETS) {
+  if (params.incrementUsage && currentDailyCount >= maxDailyAllowed) {
     return {
       valid: false,
       status: 'DAILY_LIMIT_REACHED',
-      message: `Fair-use limit reached (${MAX_DAILY_PASS_BOUQUETS} bouquets/day). Your pass resets tomorrow!`,
+      message: `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
     };
   }
 
-  const nextBoundCode =
-    pass.tier === 'single'
-      ? pass.boundBouquetCode || params.bouquetCode || null
-      : null;
+  const nextBoundCode = isTester
+    ? pass.boundBouquetCode
+    : pass.tier === 'single'
+    ? pass.boundBouquetCode || params.bouquetCode || null
+    : null;
 
   const updatedDraft: Omit<StudioPassRecord, 'signature'> = {
     ...pass,

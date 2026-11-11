@@ -321,6 +321,9 @@ export function isValidPassKeyFormat(raw) {
   return PASS_KEY_REGEX.test(normalizePassKey(raw));
 }
 
+export const TESTER_SINGLE_DEVICE_SENTINEL = 'TESTER_SINGLE_DEVICE_LOCK';
+export const REVOKED_PASS_SENTINEL = 'REVOKED_BY_OWNER';
+
 export function generatePassKeyCode() {
   const bytes = crypto.randomBytes(8);
   let part1 = '';
@@ -330,6 +333,36 @@ export function generatePassKeyCode() {
     part2 += PASS_ALPHABET[bytes[i + 4] % PASS_ALPHABET.length];
   }
   return `BLOOM-${part1}-${part2}`;
+}
+
+export function generateTesterVoucherKeyCodeServer() {
+  const base = generatePassKeyCode();
+  return `BLOOM-TV${base.slice(8, 10)}-${base.slice(11, 15)}`;
+}
+
+export function isTesterVoucherPassServer(pass) {
+  if (!pass) return false;
+  return (
+    pass.paymentProvider === 'tester_voucher' ||
+    pass.secondaryDeviceHash === TESTER_SINGLE_DEVICE_SENTINEL ||
+    normalizePassKey(pass.passKey).startsWith('BLOOM-TV')
+  );
+}
+
+export function parseTesterVoucherMetaServer(boundBouquetCode) {
+  const raw = String(boundBouquetCode || '').trim();
+  if (raw.startsWith('TV:')) {
+    const parts = raw.split(':');
+    const parsedCap = Number.parseInt(parts[1] || '10', 10);
+    const dailyCap =
+      Number.isFinite(parsedCap) && parsedCap >= 1 && parsedCap <= 50 ? parsedCap : 10;
+    const label = parts.slice(2).join(':').trim() || 'Tester Invite';
+    return { dailyCap, label };
+  }
+  return {
+    dailyCap: MAX_DAILY_PASS_BOUQUETS,
+    label: raw || 'Tester Invite',
+  };
 }
 
 export function generateSessionNonce() {
@@ -378,18 +411,53 @@ export function signServerPaymentReference(prefix, passKey, tier, region, create
 export function createSignedStudioPassServer(params) {
   const now = params.nowMs ?? Date.now();
   const createdAt = params.createdAt || new Date(now).toISOString();
-  const durationDays =
-    params.tier === 'pass_30d' ? 30 : params.tier === 'pass_7d' ? 7 : 2;
+  const isTester = Boolean(params.isTesterVoucher || params.paymentProvider === 'tester_voucher');
+  const durationHours =
+    typeof params.durationHours === 'number' && params.durationHours > 0
+      ? params.durationHours
+      : params.tier === 'pass_30d'
+      ? 30 * 24
+      : params.tier === 'pass_7d'
+      ? 7 * 24
+      : 48;
   const expiresAt =
-    params.expiresAt || new Date(now + durationDays * 24 * 60 * 60 * 1000).toISOString();
-  const retentionDays = params.tier === 'pass_30d' ? 36500 : 90;
-  const isEternalKeepsake = params.tier === 'pass_30d';
-  const passKey = params.passKey ? normalizePassKey(params.passKey) : generatePassKeyCode();
+    params.expiresAt || new Date(now + durationHours * 60 * 60 * 1000).toISOString();
+  const retentionDays =
+    typeof params.retentionDaysOverride === 'number' && params.retentionDaysOverride >= 1
+      ? params.retentionDaysOverride
+      : isTester
+      ? 30
+      : params.tier === 'pass_30d'
+      ? 36500
+      : 90;
+  const isEternalKeepsake = isTester ? false : params.tier === 'pass_30d';
+  const passKey = params.passKey
+    ? normalizePassKey(params.passKey)
+    : isTester
+    ? generateTesterVoucherKeyCodeServer()
+    : generatePassKeyCode();
   const activeSessionNonce = generateSessionNonce();
   const todayIso = createdAt.slice(0, 10);
 
+  let boundCode = null;
+  if (isTester) {
+    const cleanCap =
+      typeof params.testerDailyCap === 'number' && params.testerDailyCap >= 1
+        ? Math.min(50, Math.round(params.testerDailyCap))
+        : 10;
+    const cleanLabel = String(params.testerLabel || params.boundBouquetCode || 'Tester Invite')
+      .replace(/\|/g, ' ')
+      .trim()
+      .slice(0, 34);
+    boundCode = `TV:${cleanCap}:${cleanLabel}`;
+  } else if (params.boundBouquetCode !== undefined) {
+    boundCode = params.boundBouquetCode;
+  } else if (params.tier === 'single') {
+    boundCode = params.boundBouquetCode || null;
+  }
+
   const paymentReference = signServerPaymentReference(
-    params.paymentReference || params.paymentProvider || 'chk',
+    params.paymentReference || (isTester ? 'tv' : params.paymentProvider || 'chk'),
     passKey,
     params.tier,
     params.region,
@@ -406,17 +474,17 @@ export function createSignedStudioPassServer(params) {
     retentionDays,
     isEternalKeepsake,
     primaryDeviceHash: params.deviceTokenHash || '',
-    secondaryDeviceHash: params.secondaryDeviceHash || null,
-    activeSessionNonce,
-    boundBouquetCode:
-      params.boundBouquetCode !== undefined
-        ? params.boundBouquetCode
-        : params.tier === 'single'
-        ? params.boundBouquetCode || null
+    secondaryDeviceHash:
+      params.secondaryDeviceHash !== undefined
+        ? params.secondaryDeviceHash
+        : isTester
+        ? TESTER_SINGLE_DEVICE_SENTINEL
         : null,
+    activeSessionNonce,
+    boundBouquetCode: boundCode,
     dailyUsageDate: todayIso,
     dailyUsageCount: 0,
-    paymentProvider: params.paymentProvider || 'verified_checkout',
+    paymentProvider: isTester ? 'tester_voucher' : params.paymentProvider || 'verified_checkout',
     paymentReference,
   };
 
@@ -427,7 +495,13 @@ export function createSignedStudioPassServer(params) {
   };
 }
 
-export function validateAndBindPassRedemptionServer(existingRecord, requestDeviceTokenHash, nowMs = Date.now()) {
+export const REVOKED_VOUCHER_KEYS = new Set();
+
+export function validateAndBindPassRedemptionServer(
+  existingRecord,
+  requestDeviceTokenHash,
+  nowMs = Date.now()
+) {
   if (!existingRecord || !isValidPassKeyFormat(existingRecord.passKey)) {
     return {
       valid: false,
@@ -444,21 +518,48 @@ export function validateAndBindPassRedemptionServer(existingRecord, requestDevic
     };
   }
 
+  const normKey = normalizePassKey(existingRecord.passKey);
+  if (
+    REVOKED_VOUCHER_KEYS.has(normKey) ||
+    existingRecord.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    existingRecord.primaryDeviceHash === REVOKED_PASS_SENTINEL
+  ) {
+    return {
+      valid: false,
+      status: 'REVOKED',
+      message: 'This voucher key has been revoked by the studio owner.',
+    };
+  }
+
   const expiresMs = Date.parse(existingRecord.expiresAt);
   if (!Number.isFinite(expiresMs) || nowMs > expiresMs) {
     return {
       valid: false,
       status: 'EXPIRED',
-      message: 'This Studio Pass has expired.',
+      message: isTesterVoucherPassServer(existingRecord)
+        ? 'This Tester Voucher has expired.'
+        : 'This Studio Pass has expired.',
     };
   }
 
+  const isTester = isTesterVoucherPassServer(existingRecord);
   let nextPrimary = existingRecord.primaryDeviceHash || '';
   let nextSecondary = existingRecord.secondaryDeviceHash || null;
 
   if (!nextPrimary) {
     nextPrimary = requestDeviceTokenHash;
+    if (isTester) {
+      nextSecondary = TESTER_SINGLE_DEVICE_SENTINEL;
+    }
   } else if (requestDeviceTokenHash !== nextPrimary) {
+    if (isTester || nextSecondary === TESTER_SINGLE_DEVICE_SENTINEL) {
+      return {
+        valid: false,
+        status: 'DEVICE_LIMIT_EXCEEDED',
+        message:
+          'This Tester Voucher is locked to the first device that claimed it and cannot be shared or forwarded to others.',
+      };
+    }
     if (!nextSecondary) {
       nextSecondary = requestDeviceTokenHash;
     } else if (requestDeviceTokenHash !== nextSecondary) {
@@ -483,7 +584,9 @@ export function validateAndBindPassRedemptionServer(existingRecord, requestDevic
   return {
     valid: true,
     status: 'VALID',
-    message: 'Studio Pass verified and locked to your current session.',
+    message: isTester
+      ? 'Tester Voucher activated and locked to this device.'
+      : 'Studio Pass verified and locked to your current session.',
     updatedPass: {
       ...updatedDraft,
       signature,
@@ -511,16 +614,40 @@ export function verifyActiveStudioPassForActionServer(params) {
     };
   }
 
+  const normKey = normalizePassKey(pass.passKey);
+  if (
+    REVOKED_VOUCHER_KEYS.has(normKey) ||
+    pass.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    pass.primaryDeviceHash === REVOKED_PASS_SENTINEL
+  ) {
+    return {
+      valid: false,
+      status: 'REVOKED',
+      message: 'Your Tester Voucher has been revoked.',
+    };
+  }
+
   const expiresMs = Date.parse(pass.expiresAt);
   if (!Number.isFinite(expiresMs) || now > expiresMs) {
     return {
       valid: false,
       status: 'EXPIRED',
-      message: 'Your Studio Pass has expired.',
+      message: isTesterVoucherPassServer(pass)
+        ? 'Your Tester Voucher has expired.'
+        : 'Your Studio Pass has expired.',
     };
   }
 
-  if (
+  const isTester = isTesterVoucherPassServer(pass);
+  if (isTester) {
+    if (deviceTokenHash !== pass.primaryDeviceHash) {
+      return {
+        valid: false,
+        status: 'DEVICE_LIMIT_EXCEEDED',
+        message: 'This Tester Voucher is locked to another device and cannot be shared.',
+      };
+    }
+  } else if (
     deviceTokenHash !== pass.primaryDeviceHash &&
     deviceTokenHash !== pass.secondaryDeviceHash
   ) {
@@ -540,7 +667,7 @@ export function verifyActiveStudioPassForActionServer(params) {
     };
   }
 
-  if (pass.tier === 'single') {
+  if (pass.tier === 'single' && !isTester) {
     if (
       pass.boundBouquetCode &&
       params.bouquetCode &&
@@ -557,17 +684,23 @@ export function verifyActiveStudioPassForActionServer(params) {
 
   const todayIso = new Date(now).toISOString().slice(0, 10);
   const currentDailyCount = pass.dailyUsageDate === todayIso ? pass.dailyUsageCount || 0 : 0;
+  const maxDailyAllowed = isTester
+    ? parseTesterVoucherMetaServer(pass.boundBouquetCode).dailyCap
+    : MAX_DAILY_PASS_BOUQUETS;
 
-  if (params.incrementUsage && currentDailyCount >= MAX_DAILY_PASS_BOUQUETS) {
+  if (params.incrementUsage && currentDailyCount >= maxDailyAllowed) {
     return {
       valid: false,
       status: 'DAILY_LIMIT_REACHED',
-      message: `Fair-use limit reached (${MAX_DAILY_PASS_BOUQUETS} bouquets/day). Your pass resets tomorrow!`,
+      message: `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
     };
   }
 
-  const nextBoundCode =
-    pass.tier === 'single' ? pass.boundBouquetCode || params.bouquetCode || null : null;
+  const nextBoundCode = isTester
+    ? pass.boundBouquetCode
+    : pass.tier === 'single'
+    ? pass.boundBouquetCode || params.bouquetCode || null
+    : null;
 
   const updatedDraft = {
     ...pass,
@@ -612,6 +745,522 @@ export function verifySignedCheckoutToken(tokenStr) {
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// STEALTH EPHEMERAL GATE SLUG, PIN RATE LIMITER & OWNER ANALYTICS LEDGER
+// ============================================================================
+
+const PIN_ATTEMPT_TRACKER = new Map();
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_LOCKOUT_MS = 15 * 60 * 1000;
+let cachedCustomOwnerPin = '';
+
+export function createEncryptedAdminVisitSlug(deviceTokenHash, nowMs = Date.now()) {
+  const cleanDevice = String(deviceTokenHash || 'anon').slice(0, 64);
+  const nonce = crypto.randomBytes(6).toString('hex');
+  const payload = {
+    d: cleanDevice,
+    n: nonce,
+    exp: nowMs + 25 * 60 * 1000,
+  };
+  const b64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', getServerSigningSalt())
+    .update(`gk_visit_v1:${b64}`, 'utf8')
+    .digest('hex')
+    .slice(0, 24);
+  return `gk-${b64}_${sig}`;
+}
+
+export function verifyEncryptedAdminVisitSlug(gateSlug, deviceTokenHash, nowMs = Date.now()) {
+  const cleaned = String(gateSlug || '').replace(/^\/+/, '').trim();
+  if (!cleaned.startsWith('gk-') || !cleaned.includes('_')) return false;
+  const body = cleaned.slice(3);
+  const lastUnderscore = body.lastIndexOf('_');
+  if (lastUnderscore <= 0) return false;
+  const b64 = body.slice(0, lastUnderscore);
+  const sig = body.slice(lastUnderscore + 1);
+  const expectedSig = crypto
+    .createHmac('sha256', getServerSigningSalt())
+    .update(`gk_visit_v1:${b64}`, 'utf8')
+    .digest('hex')
+    .slice(0, 24);
+  if (!timingSafeMatch(expectedSig, sig)) return false;
+  try {
+    const decoded = JSON.parse(Buffer.from(b64, 'base64url').toString('utf8'));
+    if (!decoded || typeof decoded.exp !== 'number' || nowMs > decoded.exp) return false;
+    if (decoded.d !== String(deviceTokenHash || 'anon').slice(0, 64)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function createSignedAdminSessionToken(deviceTokenHash, nowMs = Date.now()) {
+  return createSignedCheckoutToken({
+    role: 'owner_admin',
+    d: String(deviceTokenHash || '').slice(0, 64),
+    exp: nowMs + 60 * 60 * 1000,
+  });
+}
+
+export function verifySignedAdminSessionToken(tokenStr, deviceTokenHash, nowMs = Date.now()) {
+  const decoded = verifySignedCheckoutToken(tokenStr);
+  if (!decoded || decoded.role !== 'owner_admin') return false;
+  if (typeof decoded.exp !== 'number' || nowMs > decoded.exp) return false;
+  if (decoded.d !== String(deviceTokenHash || '').slice(0, 64)) return false;
+  return true;
+}
+
+export function getActiveOwnerPinServer() {
+  if (cachedCustomOwnerPin) return cachedCustomOwnerPin;
+  const envPin = String(process.env.OWNER_ADMIN_PIN || '').trim();
+  return envPin || '2026';
+}
+
+export function verifyOwnerPinWithRateLimit(candidatePin, deviceTokenHash, nowMs = Date.now()) {
+  const key = String(deviceTokenHash || 'default_client').slice(0, 64);
+  const record = PIN_ATTEMPT_TRACKER.get(key) || { count: 0, lockedUntilMs: 0 };
+
+  if (record.lockedUntilMs > nowMs) {
+    const minsLeft = Math.max(1, Math.ceil((record.lockedUntilMs - nowMs) / 60000));
+    return {
+      ok: false,
+      locked: true,
+      message: `Too many failed passphrase attempts. Please wait ${minsLeft}m before trying again.`,
+    };
+  }
+
+  const cleanCandidate = String(candidatePin || '').trim();
+  const activePin = getActiveOwnerPinServer();
+  const hashA = crypto.createHash('sha256').update(`pin:${cleanCandidate}`).digest('hex');
+  const hashB = crypto.createHash('sha256').update(`pin:${activePin}`).digest('hex');
+
+  if (!cleanCandidate || !timingSafeMatch(hashA, hashB)) {
+    const nextCount = record.count + 1;
+    const lockedUntilMs = nextCount >= MAX_PIN_ATTEMPTS ? nowMs + PIN_LOCKOUT_MS : 0;
+    PIN_ATTEMPT_TRACKER.set(key, { count: nextCount, lockedUntilMs });
+    return {
+      ok: false,
+      locked: lockedUntilMs > nowMs,
+      attemptsRemaining: Math.max(0, MAX_PIN_ATTEMPTS - nextCount),
+      message:
+        lockedUntilMs > nowMs
+          ? 'Too many incorrect attempts. Passphrase gate locked for 15 minutes.'
+          : 'That secret passphrase didn’t match. Try again.',
+    };
+  }
+
+  PIN_ATTEMPT_TRACKER.delete(key);
+  return { ok: true, locked: false };
+}
+
+function buildRolling14DaysServer(nowMs = Date.now()) {
+  const list = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(nowMs - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    list.push({
+      date: d,
+      visits: 0,
+      studioSessions: 0,
+      bouquetsSealed: 0,
+      recipientUnwraps: 0,
+      passUnlocks: 0,
+    });
+  }
+  return list;
+}
+
+export const OWNER_ANALYTICS_STATE = {
+  webVisits: 0,
+  uniqueVisitors: 0,
+  landingViews: 0,
+  studioSessions: 0,
+  showcaseViews: 0,
+  bouquetsCreated: 0,
+  coutureBouquetsCreated: 0,
+  freeBouquetsCreated: 0,
+  recipientUnwraps: 0,
+  voiceNotesRecorded: 0,
+  voicePlays: 0,
+  reactionsSent: 0,
+  repliesSent: 0,
+  recipientToStudioClicks: 0,
+  paywallOpens: 0,
+  checkoutsStarted: 0,
+  passesIssued: {
+    single: 0,
+    pass_7d: 0,
+    pass_30d: 0,
+    tester: 0,
+  },
+  revenueUsdCents: 0,
+  revenuePhpCentavos: 0,
+  blockedShareAttempts: 0,
+  blockedPinAttempts: 0,
+  shareChannels: {
+    short_link: 0,
+    png_download: 0,
+    qr_card: 0,
+    email_surprise: 0,
+    garland_pin: 0,
+  },
+  devices: {
+    mobile: 0,
+    tablet: 0,
+    desktop: 0,
+  },
+  osBrowsers: {
+    ios: 0,
+    android: 0,
+    macos: 0,
+    windows: 0,
+    other: 0,
+  },
+  regions: {
+    INTL: 0,
+    PH: 0,
+  },
+  referrers: {
+    direct: 0,
+    recipient_viral: 0,
+    social: 0,
+    qr_scan: 0,
+    search: 0,
+    tester_magic_link: 0,
+  },
+  flowers: {},
+  wraps: {},
+  ribbons: {},
+  environments: {},
+  voiceStyles: {},
+  photoStyles: {},
+  lockModes: {},
+  paywallTriggers: {},
+  dailySeries: buildRolling14DaysServer(),
+  recentEvents: [],
+  vercelAnalyticsConnected: true,
+  updatedAt: new Date().toISOString(),
+};
+
+export const TESTER_VOUCHER_LEDGER = new Map();
+
+async function syncRealAnalyticsSnapshotServer() {
+  // 1. Reconcile real issued Studio Passes & Tester Vouchers in SERVER_PASS_STORE
+  let singleCount = 0;
+  let pass7dCount = 0;
+  let pass30dCount = 0;
+  let testerCount = TESTER_VOUCHER_LEDGER.size;
+  let usdCents = 0;
+  let phpCentavos = 0;
+
+  for (const [key, pass] of SERVER_PASS_STORE.entries()) {
+    if (!pass || key === 'BLOOM-KCFG-SHOP' || key.startsWith('BLOOM-KS')) continue;
+    if (isTesterVoucherPassServer(pass)) {
+      if (!TESTER_VOUCHER_LEDGER.has(key)) testerCount += 1;
+      continue;
+    }
+    if (pass.tier === 'single') {
+      singleCount += 1;
+      if (pass.region === 'PH') phpCentavos += 4900;
+      else usdCents += 299;
+    } else if (pass.tier === 'pass_7d') {
+      pass7dCount += 1;
+      if (pass.region === 'PH') phpCentavos += 9900;
+      else usdCents += 499;
+    } else if (pass.tier === 'pass_30d') {
+      pass30dCount += 1;
+      if (pass.region === 'PH') phpCentavos += 19900;
+      else usdCents += 899;
+    }
+  }
+
+  OWNER_ANALYTICS_STATE.passesIssued.single = Math.max(
+    OWNER_ANALYTICS_STATE.passesIssued.single,
+    singleCount
+  );
+  OWNER_ANALYTICS_STATE.passesIssued.pass_7d = Math.max(
+    OWNER_ANALYTICS_STATE.passesIssued.pass_7d,
+    pass7dCount
+  );
+  OWNER_ANALYTICS_STATE.passesIssued.pass_30d = Math.max(
+    OWNER_ANALYTICS_STATE.passesIssued.pass_30d,
+    pass30dCount
+  );
+  OWNER_ANALYTICS_STATE.passesIssued.tester = Math.max(
+    OWNER_ANALYTICS_STATE.passesIssued.tester,
+    testerCount
+  );
+  OWNER_ANALYTICS_STATE.revenueUsdCents = Math.max(OWNER_ANALYTICS_STATE.revenueUsdCents, usdCents);
+  OWNER_ANALYTICS_STATE.revenuePhpCentavos = Math.max(
+    OWNER_ANALYTICS_STATE.revenuePhpCentavos,
+    phpCentavos
+  );
+
+  // 2. Sync real global counters from Firestore studio_stats/global (stripping any legacy 1284/3910 seed offset)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const statsUrl = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/studio_stats/global`;
+    const resp = await fetch(statsUrl, { method: 'GET', signal: controller.signal });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const docJson = await resp.json();
+      const f = docJson?.fields;
+      if (f) {
+        const rawCreated = Number(f.bouquetsCreated?.integerValue || 0);
+        const rawOpened = Number(f.bouquetsOpened?.integerValue || 0);
+        const rawVoice = Number(f.voiceNotesRecorded?.integerValue || 0);
+        const rawReactions = Number(f.reactionsSent?.integerValue || 0);
+
+        const realCreated = rawCreated >= 1284 ? rawCreated - 1284 : rawCreated;
+        const realOpened = rawOpened >= 3910 ? rawOpened - 3910 : rawOpened;
+        const realVoice = rawVoice >= 742 ? rawVoice - 742 : rawVoice;
+        const realReactions = rawReactions >= 964 ? rawReactions - 964 : rawReactions;
+
+        OWNER_ANALYTICS_STATE.bouquetsCreated = Math.max(
+          OWNER_ANALYTICS_STATE.bouquetsCreated,
+          realCreated
+        );
+        OWNER_ANALYTICS_STATE.recipientUnwraps = Math.max(
+          OWNER_ANALYTICS_STATE.recipientUnwraps,
+          realOpened
+        );
+        OWNER_ANALYTICS_STATE.voiceNotesRecorded = Math.max(
+          OWNER_ANALYTICS_STATE.voiceNotesRecorded,
+          realVoice
+        );
+        OWNER_ANALYTICS_STATE.reactionsSent = Math.max(
+          OWNER_ANALYTICS_STATE.reactionsSent,
+          realReactions
+        );
+      }
+    }
+  } catch {
+    // Keep in-memory telemetry state if offline
+  }
+
+  return OWNER_ANALYTICS_STATE;
+}
+
+function pushAnalyticsEventServer(category, type, summary, device = 'mobile', region = 'INTL') {
+  const nowIso = new Date().toISOString();
+  OWNER_ANALYTICS_STATE.recentEvents.unshift({
+    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    ts: nowIso,
+    category,
+    type,
+    summary: String(summary || '').slice(0, 140),
+    device: device === 'tablet' || device === 'desktop' ? device : 'mobile',
+    region: region === 'PH' ? 'PH' : 'INTL',
+  });
+  if (OWNER_ANALYTICS_STATE.recentEvents.length > 40) {
+    OWNER_ANALYTICS_STATE.recentEvents = OWNER_ANALYTICS_STATE.recentEvents.slice(0, 40);
+  }
+  OWNER_ANALYTICS_STATE.updatedAt = nowIso;
+}
+
+function getTodayDailyBucketServer() {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let bucket = OWNER_ANALYTICS_STATE.dailySeries.find((d) => d.date === todayIso);
+  if (!bucket) {
+    bucket = {
+      date: todayIso,
+      visits: 0,
+      studioSessions: 0,
+      bouquetsSealed: 0,
+      recipientUnwraps: 0,
+      passUnlocks: 0,
+    };
+    OWNER_ANALYTICS_STATE.dailySeries.push(bucket);
+    if (OWNER_ANALYTICS_STATE.dailySeries.length > 14) {
+      OWNER_ANALYTICS_STATE.dailySeries = OWNER_ANALYTICS_STATE.dailySeries.slice(-14);
+    }
+  }
+  return bucket;
+}
+
+export function applyServerTelemetryEvent(event) {
+  if (!event || typeof event !== 'object') return;
+  const dev =
+    event.device === 'mobile' || event.device === 'tablet' || event.device === 'desktop'
+      ? event.device
+      : 'mobile';
+  const os =
+    event.os === 'ios' ||
+    event.os === 'android' ||
+    event.os === 'macos' ||
+    event.os === 'windows' ||
+    event.os === 'other'
+      ? event.os
+      : 'other';
+  const reg = event.region === 'PH' ? 'PH' : 'INTL';
+  const bucket = getTodayDailyBucketServer();
+  const incKey = (obj, k) => {
+    if (!k) return;
+    const clean = String(k).trim().slice(0, 48);
+    if (!clean) return;
+    obj[clean] = (obj[clean] || 0) + 1;
+  };
+
+  switch (event.eventType) {
+    case 'web_visit':
+      OWNER_ANALYTICS_STATE.webVisits += 1;
+      if (event.isUniqueVisitor) OWNER_ANALYTICS_STATE.uniqueVisitors += 1;
+      OWNER_ANALYTICS_STATE.devices[dev] = (OWNER_ANALYTICS_STATE.devices[dev] || 0) + 1;
+      OWNER_ANALYTICS_STATE.osBrowsers[os] = (OWNER_ANALYTICS_STATE.osBrowsers[os] || 0) + 1;
+      OWNER_ANALYTICS_STATE.regions[reg] = (OWNER_ANALYTICS_STATE.regions[reg] || 0) + 1;
+      if (event.referrer && event.referrer in OWNER_ANALYTICS_STATE.referrers) {
+        OWNER_ANALYTICS_STATE.referrers[event.referrer] += 1;
+      }
+      bucket.visits += 1;
+      break;
+    case 'landing_view':
+      OWNER_ANALYTICS_STATE.landingViews += 1;
+      break;
+    case 'studio_session':
+      OWNER_ANALYTICS_STATE.studioSessions += 1;
+      bucket.studioSessions += 1;
+      break;
+    case 'showcase_view':
+      OWNER_ANALYTICS_STATE.showcaseViews += 1;
+      break;
+    case 'bouquet_sealed':
+      OWNER_ANALYTICS_STATE.bouquetsCreated += 1;
+      bucket.bouquetsSealed += 1;
+      if (event.isCouture) {
+        OWNER_ANALYTICS_STATE.coutureBouquetsCreated += 1;
+      } else {
+        OWNER_ANALYTICS_STATE.freeBouquetsCreated += 1;
+      }
+      if (event.hasVoice) {
+        OWNER_ANALYTICS_STATE.voiceNotesRecorded += 1;
+        incKey(OWNER_ANALYTICS_STATE.voiceStyles, event.voiceStyle);
+      }
+      if (Array.isArray(event.flowers)) {
+        for (const f of event.flowers) incKey(OWNER_ANALYTICS_STATE.flowers, f);
+      }
+      if (Array.isArray(event.photoStyles)) {
+        for (const p of event.photoStyles) incKey(OWNER_ANALYTICS_STATE.photoStyles, p);
+      }
+      incKey(OWNER_ANALYTICS_STATE.wraps, event.wrapStyle);
+      incKey(OWNER_ANALYTICS_STATE.ribbons, event.ribbonStyle);
+      incKey(OWNER_ANALYTICS_STATE.environments, event.environment);
+      incKey(OWNER_ANALYTICS_STATE.lockModes, event.lockMode || 'none');
+      pushAnalyticsEventServer(
+        'studio',
+        'bouquet_sealed',
+        event.summary ||
+          `${event.isCouture ? 'Couture' : 'Free'} bouquet sealed (${
+            event.flowers?.length || 1
+          } stems · ${event.wrapStyle || 'kraft'} wrap)`,
+        dev,
+        reg
+      );
+      break;
+    case 'recipient_unwrap':
+      OWNER_ANALYTICS_STATE.recipientUnwraps += 1;
+      bucket.recipientUnwraps += 1;
+      pushAnalyticsEventServer(
+        'recipient',
+        'recipient_unwrap',
+        event.summary || 'Recipient unwrapped a shared gift bouquet',
+        dev,
+        reg
+      );
+      break;
+    case 'voice_play':
+      OWNER_ANALYTICS_STATE.voicePlays += 1;
+      pushAnalyticsEventServer(
+        'recipient',
+        'voice_play',
+        event.summary || 'Recipient played a voice keepsake recording',
+        dev,
+        reg
+      );
+      break;
+    case 'recipient_reaction':
+      OWNER_ANALYTICS_STATE.reactionsSent += 1;
+      if (event.hasReply) OWNER_ANALYTICS_STATE.repliesSent += 1;
+      pushAnalyticsEventServer(
+        'recipient',
+        'recipient_reaction',
+        event.summary ||
+          (event.hasReply
+            ? 'Recipient sent a reaction & thank-you note'
+            : 'Recipient sent a reaction to sender'),
+        dev,
+        reg
+      );
+      break;
+    case 'recipient_to_studio':
+      OWNER_ANALYTICS_STATE.recipientToStudioClicks += 1;
+      OWNER_ANALYTICS_STATE.referrers.recipient_viral += 1;
+      pushAnalyticsEventServer(
+        'recipient',
+        'recipient_to_studio',
+        'Gift recipient clicked to craft their own bouquet (viral loop)',
+        dev,
+        reg
+      );
+      break;
+    case 'paywall_open':
+      OWNER_ANALYTICS_STATE.paywallOpens += 1;
+      if (Array.isArray(event.paywallFeatures)) {
+        for (const feat of event.paywallFeatures) {
+          incKey(OWNER_ANALYTICS_STATE.paywallTriggers, feat);
+        }
+      }
+      pushAnalyticsEventServer(
+        'monetization',
+        'paywall_open',
+        event.summary ||
+          `Unlock Premium modal viewed (${
+            event.paywallFeatures?.slice(0, 2).join(', ') || 'Studio Pass'
+          })`,
+        dev,
+        reg
+      );
+      break;
+    case 'checkout_started':
+      OWNER_ANALYTICS_STATE.checkoutsStarted += 1;
+      break;
+    case 'share_channel':
+      if (event.shareChannel && event.shareChannel in OWNER_ANALYTICS_STATE.shareChannels) {
+        OWNER_ANALYTICS_STATE.shareChannels[event.shareChannel] += 1;
+      }
+      break;
+  }
+  OWNER_ANALYTICS_STATE.updatedAt = new Date().toISOString();
+}
+
+function serializeTesterVoucherList(nowMs = Date.now()) {
+  const result = [];
+  for (const [, item] of TESTER_VOUCHER_LEDGER.entries()) {
+    const passRecord = SERVER_PASS_STORE.get(item.passKey) || item.passRecord;
+    const isRevoked =
+      REVOKED_VOUCHER_KEYS.has(item.passKey) ||
+      item.status === 'revoked' ||
+      passRecord?.secondaryDeviceHash === REVOKED_PASS_SENTINEL;
+    const isExpired = !isRevoked && Date.parse(item.expiresAt) <= nowMs;
+    const claimedHash = passRecord?.primaryDeviceHash || item.claimedDeviceHash || '';
+    const status = isRevoked
+      ? 'revoked'
+      : isExpired
+      ? 'expired'
+      : claimedHash
+      ? 'claimed'
+      : 'unclaimed';
+
+    result.push({
+      ...item,
+      status,
+      claimedDeviceHash: claimedHash,
+      bouquetsCreated: Math.max(item.bouquetsCreated || 0, passRecord?.dailyUsageCount || 0),
+    });
+  }
+  return result.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 export async function saveStudioPassToFirestoreRest(pass) {
@@ -1376,11 +2025,24 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
     if (pathname === '/api/payments/redeem-pass' && req.method === 'POST') {
       const { parsed } = await readRequestBody(req);
       const rawKey = typeof parsed.passKey === 'string' ? parsed.passKey : '';
-      const passKey = normalizePassKey(rawKey);
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' && parsed.deviceTokenHash.length >= 8
           ? parsed.deviceTokenHash
           : '';
+
+      // Stealth Owner Gate Trigger: ONLY when typing `admin` in "Have a Key?"
+      if (rawKey.trim().toLowerCase() === 'admin') {
+        const gateSlug = createEncryptedAdminVisitSlug(deviceTokenHash || 'anon');
+        sendJson(res, 200, {
+          ok: true,
+          status: 'STEALTH_GATE',
+          gateSlug,
+          gatePath: `/${gateSlug}`,
+        });
+        return true;
+      }
+
+      const passKey = normalizePassKey(rawKey);
 
       // Prevent internal Ko-fi receipt slots (`BLOOM-KS...` or `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
       if (
@@ -1419,6 +2081,23 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       );
 
       if (!result.valid || !result.updatedPass) {
+        if (result.status === 'DEVICE_LIMIT_EXCEEDED') {
+          OWNER_ANALYTICS_STATE.blockedShareAttempts += 1;
+          if (TESTER_VOUCHER_LEDGER.has(passKey)) {
+            const item = TESTER_VOUCHER_LEDGER.get(passKey);
+            item.blockedAttempts = (item.blockedAttempts || 0) + 1;
+            TESTER_VOUCHER_LEDGER.set(passKey, item);
+          }
+          pushAnalyticsEventServer(
+            'security',
+            'voucher_share_blocked',
+            `Blocked additional device from claiming ${
+              isTesterVoucherPassServer(existingRecord) ? '1-device Tester Voucher' : 'Studio Pass'
+            } (${passKey})`,
+            'mobile',
+            existingRecord.region || 'INTL'
+          );
+        }
         sendJson(res, 403, {
           ok: false,
           status: result.status,
@@ -1429,6 +2108,49 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       SERVER_PASS_STORE.set(passKey, result.updatedPass);
       await saveStudioPassToFirestoreRest(result.updatedPass);
+
+      if (isTesterVoucherPassServer(result.updatedPass)) {
+        const meta = parseTesterVoucherMetaServer(result.updatedPass.paymentReference);
+        const existingItem = TESTER_VOUCHER_LEDGER.get(passKey);
+        const wasUnclaimed = !existingRecord.primaryDeviceHash;
+        TESTER_VOUCHER_LEDGER.set(passKey, {
+          passKey,
+          label: existingItem?.label || meta.label || 'Tester Invite',
+          durationHours:
+            existingItem?.durationHours ||
+            Math.max(
+              1,
+              Math.round(
+                (Date.parse(result.updatedPass.expiresAt) -
+                  Date.parse(result.updatedPass.createdAt)) /
+                  3600000
+              )
+            ),
+          dailyCap: existingItem?.dailyCap || meta.dailyCap || 10,
+          retentionDays: result.updatedPass.retentionDays || 30,
+          createdAt: result.updatedPass.createdAt,
+          expiresAt: result.updatedPass.expiresAt,
+          status: 'claimed',
+          claimedDeviceHash: result.updatedPass.primaryDeviceHash,
+          bouquetsCreated: Math.max(
+            existingItem?.bouquetsCreated || 0,
+            result.updatedPass.dailyUsageCount || 0
+          ),
+          blockedAttempts: existingItem?.blockedAttempts || 0,
+          passRecord: result.updatedPass,
+        });
+        if (wasUnclaimed) {
+          OWNER_ANALYTICS_STATE.referrers.tester_magic_link += 1;
+          pushAnalyticsEventServer(
+            'monetization',
+            'voucher_claimed',
+            `Tester Voucher claimed (${meta.label || passKey}) — locked to 1 device`,
+            'mobile',
+            result.updatedPass.region || 'INTL'
+          );
+        }
+      }
+
       sendJson(res, 200, {
         ok: true,
         status: result.status,
@@ -1441,9 +2163,245 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
     // 4. POST /api/payments/verify-action
     if (pathname === '/api/payments/verify-action' && req.method === 'POST') {
       const { parsed } = await readRequestBody(req);
-      const clientPass = parsed.pass || null;
+      const actionType = typeof parsed.action === 'string' ? parsed.action : '';
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' ? parsed.deviceTokenHash : '';
+
+      // 4A. First-party telemetry event ingestion
+      if (actionType === 'telemetry_event') {
+        applyServerTelemetryEvent(parsed.telemetry);
+        sendJson(res, 200, { ok: true });
+        return true;
+      }
+
+      // 4B. Verify Stealth Gate URL Slug (`/gk-<hmac_token>`)
+      if (actionType === 'verify_gate_slug') {
+        const gateSlug = typeof parsed.gateSlug === 'string' ? parsed.gateSlug : '';
+        const valid = verifyEncryptedAdminVisitSlug(gateSlug, deviceTokenHash || 'anon');
+        sendJson(res, valid ? 200 : 403, { ok: valid, valid });
+        return true;
+      }
+
+      // 4C. Unlock Owner Console with PIN / Passphrase
+      if (actionType === 'unlock_owner_console') {
+        const gateSlug = typeof parsed.gateSlug === 'string' ? parsed.gateSlug : '';
+        const pin = typeof parsed.pin === 'string' ? parsed.pin : '';
+        const slugValid = verifyEncryptedAdminVisitSlug(gateSlug, deviceTokenHash || 'anon');
+        if (!slugValid) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'EXPIRED_GATE',
+            message:
+              'This private bouquet link has expired. Re-open "Have a Key?" in the Studio to generate a fresh link.',
+          });
+          return true;
+        }
+
+        const pinResult = verifyOwnerPinWithRateLimit(pin, deviceTokenHash || 'anon');
+        if (!pinResult.ok) {
+          OWNER_ANALYTICS_STATE.blockedPinAttempts += 1;
+          pushAnalyticsEventServer(
+            'security',
+            'pin_failed',
+            pinResult.locked
+              ? 'Stealth gate locked for 15m after repeated incorrect passphrase attempts'
+              : 'Incorrect passphrase entered on stealth bouquet gate',
+            'desktop',
+            'INTL'
+          );
+          sendJson(res, pinResult.locked ? 429 : 401, {
+            ok: false,
+            locked: pinResult.locked,
+            attemptsRemaining: pinResult.attemptsRemaining,
+            message: pinResult.message,
+          });
+          return true;
+        }
+
+        const adminSessionToken = createSignedAdminSessionToken(deviceTokenHash || 'anon');
+        await syncRealAnalyticsSnapshotServer();
+        pushAnalyticsEventServer(
+          'security',
+          'owner_unlocked',
+          'Owner unlocked the Atelier Analytics & Tester Voucher Console',
+          'desktop',
+          'INTL'
+        );
+        sendJson(res, 200, {
+          ok: true,
+          adminSessionToken,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+        });
+        return true;
+      }
+
+      // 4D. Fetch Live Owner Console State
+      if (actionType === 'fetch_owner_console') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          return true;
+        }
+        await syncRealAnalyticsSnapshotServer();
+        sendJson(res, 200, {
+          ok: true,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+        });
+        return true;
+      }
+
+      // 4E. Mint a 1-Device Locked Expiring Tester Voucher
+      if (actionType === 'mint_tester_voucher') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          return true;
+        }
+
+        const label =
+          String(parsed.label || 'Tester Invite')
+            .replace(/[|:]/g, ' ')
+            .trim()
+            .slice(0, 32) || 'Tester Invite';
+        const durationHours = Math.max(1, Math.min(24 * 30, Number(parsed.durationHours) || 48));
+        const dailyCap = Math.max(1, Math.min(50, Number(parsed.dailyCap) || 10));
+        const retentionDays = Number(parsed.retentionDays) === 90 ? 90 : 30;
+
+        const signedPass = createSignedStudioPassServer({
+          isTesterVoucher: true,
+          tier: 'pass_7d',
+          region: 'INTL',
+          deviceTokenHash: '',
+          durationHours,
+          testerLabel: label,
+          testerDailyCap: dailyCap,
+          retentionDaysOverride: retentionDays,
+        });
+
+        SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
+        await saveStudioPassToFirestoreRest(signedPass);
+
+        const voucherEntry = {
+          passKey: signedPass.passKey,
+          label,
+          durationHours,
+          dailyCap,
+          retentionDays,
+          createdAt: signedPass.createdAt,
+          expiresAt: signedPass.expiresAt,
+          status: 'unclaimed',
+          claimedDeviceHash: '',
+          bouquetsCreated: 0,
+          blockedAttempts: 0,
+          passRecord: signedPass,
+        };
+        TESTER_VOUCHER_LEDGER.set(signedPass.passKey, voucherEntry);
+        OWNER_ANALYTICS_STATE.passesIssued.tester += 1;
+        getTodayDailyBucketServer().passUnlocks += 1;
+        pushAnalyticsEventServer(
+          'monetization',
+          'voucher_minted',
+          `Minted ${durationHours}h 1-device Tester Voucher for "${label}" (${signedPass.passKey})`,
+          'desktop',
+          'INTL'
+        );
+
+        sendJson(res, 200, {
+          ok: true,
+          voucher: voucherEntry,
+          pass: signedPass,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+        });
+        return true;
+      }
+
+      // 4F. Revoke a Tester Voucher Immediately
+      if (actionType === 'revoke_tester_voucher') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          return true;
+        }
+
+        const targetKey = normalizePassKey(parsed.passKey || '');
+        if (!isValidPassKeyFormat(targetKey)) {
+          sendJson(res, 400, { ok: false, message: 'Invalid voucher key.' });
+          return true;
+        }
+
+        REVOKED_VOUCHER_KEYS.add(targetKey);
+        const existingPass =
+          SERVER_PASS_STORE.get(targetKey) || (await fetchStudioPassFromFirestoreRest(targetKey));
+        if (existingPass) {
+          const revokedPass = {
+            ...existingPass,
+            secondaryDeviceHash: REVOKED_PASS_SENTINEL,
+            expiresAt: new Date(Date.now() - 1000).toISOString(),
+          };
+          SERVER_PASS_STORE.set(targetKey, revokedPass);
+          await saveStudioPassToFirestoreRest(revokedPass);
+        }
+
+        if (TESTER_VOUCHER_LEDGER.has(targetKey)) {
+          const item = TESTER_VOUCHER_LEDGER.get(targetKey);
+          item.status = 'revoked';
+          TESTER_VOUCHER_LEDGER.set(targetKey, item);
+        }
+
+        pushAnalyticsEventServer(
+          'security',
+          'voucher_revoked',
+          `Owner revoked Tester Voucher ${targetKey}`,
+          'desktop',
+          'INTL'
+        );
+
+        sendJson(res, 200, {
+          ok: true,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+        });
+        return true;
+      }
+
+      // 4G. Update Owner Passphrase / PIN
+      if (actionType === 'update_owner_pin') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          return true;
+        }
+
+        const newPin = String(parsed.newPin || '').trim();
+        if (newPin.length < 4 || newPin.length > 32) {
+          sendJson(res, 400, {
+            ok: false,
+            message: 'Passphrase must be between 4 and 32 characters.',
+          });
+          return true;
+        }
+
+        cachedCustomOwnerPin = newPin;
+        pushAnalyticsEventServer(
+          'security',
+          'owner_pin_updated',
+          'Owner updated the stealth gate passphrase',
+          'desktop',
+          'INTL'
+        );
+        sendJson(res, 200, { ok: true, message: 'Owner passphrase updated for this server.' });
+        return true;
+      }
+
+      // 4H. Standard Studio Pass Verification for Couture Actions
+      const clientPass = parsed.pass || null;
       const bouquetCode =
         typeof parsed.bouquetCode === 'string' ? parsed.bouquetCode : null;
       const incrementUsage = Boolean(parsed.incrementUsage);
@@ -1482,6 +2440,14 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
       await saveStudioPassToFirestoreRest(check.updatedPass);
+
+      if (incrementUsage && TESTER_VOUCHER_LEDGER.has(normKey)) {
+        const entry = TESTER_VOUCHER_LEDGER.get(normKey);
+        entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
+        entry.passRecord = check.updatedPass;
+        TESTER_VOUCHER_LEDGER.set(normKey, entry);
+      }
+
       sendJson(res, 200, {
         ok: true,
         status: 'VALID',

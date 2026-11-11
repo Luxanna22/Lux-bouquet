@@ -152,6 +152,13 @@ import {
   CoutureItemBadge,
 } from './StudioCheckoutModal';
 import { BotanicalQrCard } from './BotanicalQrCard';
+import { StealthGateAndOwnerConsole } from './OwnerAnalyticsConsole';
+import {
+  extractStealthGateSlug,
+  extractVoucherKeyFromSearch,
+  initVercelWebAnalytics,
+  trackStudioTelemetry,
+} from '../lib/ownerAnalytics';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -237,8 +244,13 @@ export default function App() {
       !localShortCodeCache.has(initialPathShortCode) &&
       !localStorage.getItem(`bq_short_${initialPathShortCode}`)
   );
+  const [stealthGateSlug, setStealthGateSlug] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? extractStealthGateSlug(window.location.pathname) : null
+  );
   const [showLandingPage, setShowLandingPage] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
+    if (extractStealthGateSlug(window.location.pathname)) return false;
+    if (extractVoucherKeyFromSearch(window.location.search)) return false;
     if (isGiftShareHash()) return false;
     if (getShortCodeFromPathname(window.location.pathname)) return false;
     if (window.location.search.includes('studio=1')) return false;
@@ -798,6 +810,7 @@ export default function App() {
       if (!isPreviewMode && activeShortCode && countedOpenCodeRef.current !== activeShortCode) {
         countedOpenCodeRef.current = activeShortCode;
         incrementSharedBouquetOpenCount(activeShortCode).catch(() => {});
+        trackStudioTelemetry({ eventType: 'recipient_unwrap' });
       }
     },
     [items.length, runStemBloomSequence, isGiftCurrentlyLocked, isPreviewMode, activeShortCode]
@@ -911,6 +924,10 @@ export default function App() {
       );
       setHasSubmittedReaction(true);
       setIsReactionPopoverOpen(false);
+      trackStudioTelemetry({
+        eventType: 'recipient_reaction',
+        hasReply: Boolean(recipientReplyText.trim()),
+      });
       triggerToast('Reaction sent!');
     } catch {
       triggerToast('Reaction saved!');
@@ -969,6 +986,7 @@ export default function App() {
     setIsPreviewMode(false);
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
+    trackStudioTelemetry({ eventType: 'recipient_to_studio' });
     triggerToast('Canvas reset');
   }, [clearBouquet, selectItem, triggerToast, handleStopVoice]);
 
@@ -995,6 +1013,54 @@ export default function App() {
     setShowGiftCardReveal(true);
     setShowLandingPage(true);
   }, [clearBouquet, selectItem, handleStopVoice]);
+
+  // Vercel Web Analytics + First-Party Telemetry + Auto-Unlock Tester Voucher Magic Links (`?voucher=BLOOM-...`)
+  useEffect(() => {
+    initVercelWebAnalytics();
+    trackStudioTelemetry({ eventType: 'web_visit' });
+
+    const handlePopState = () => {
+      setStealthGateSlug(extractStealthGateSlug(window.location.pathname));
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    const voucherKeyFromUrl = extractVoucherKeyFromSearch(window.location.search);
+    if (voucherKeyFromUrl) {
+      try {
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl || '/');
+      } catch {
+        // Ignore history error
+      }
+      setShowLandingPage(false);
+      const deviceTokenHash = getOrCreateDeviceTokenHash();
+      fetch('/api/payments/redeem-pass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passKey: voucherKeyFromUrl,
+          deviceTokenHash,
+        }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok && data.pass) {
+            saveStoredStudioPass(data.pass);
+            setActiveStudioPass(data.pass);
+            triggerToast('Tester Voucher activated — Couture unlocked on this device!');
+          } else {
+            triggerToast(
+              data.message || 'This Tester Voucher is already locked to another device.'
+            );
+          }
+        })
+        .catch(() => {
+          triggerToast('Could not verify Tester Voucher link right now.');
+        });
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [triggerToast]);
 
   // Autosave to localStorage & Hydrate Shared Links (including first-party /<code> short links)
   useEffect(() => {
@@ -1476,6 +1542,18 @@ export default function App() {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
     }
+    trackStudioTelemetry({
+      eventType: 'bouquet_sealed',
+      isCouture: currentPremiumInspection.isPremiumBouquet,
+      hasVoice: Boolean(voice?.audioDataUrl),
+      flowers: items.map((i) => i.type),
+      wrapStyle,
+      ribbonStyle,
+      environment,
+      voiceStyle: voice?.audioDataUrl ? voice.style : undefined,
+      photoStyles: items.filter((i) => i.photoDataUrl).map((i) => i.photoStyle || 'polaroid'),
+      lockMode: lock?.mode || 'none',
+    });
     triggerToast('Gift sealed & link copied!');
   };
 
@@ -1652,15 +1730,17 @@ export default function App() {
           100% Free & Account-Free — includes About, How It Works, Live Analytics,
           and Interactive FAQs, with smooth transition into the Bouquet Studio.
           ===================================================================== */}
-      {showLandingPage && !isGiftView && !isPreviewMode && (
+      {showLandingPage && !isGiftView && !isPreviewMode && !stealthGateSlug && (
         <LandingPageView
           onStartCrafting={() => {
             setStudioEntranceKey((k) => k + 1);
             setShowLandingPage(false);
+            trackStudioTelemetry({ eventType: 'studio_session' });
           }}
           onPreviewShowcaseBouquet={() => {
             const currentItems = useBouquetStore.getState().items;
             setShowLandingPage(false);
+            trackStudioTelemetry({ eventType: 'showcase_view' });
             // Strictly view-only recipient mode (fromEditorPreview = false) so showcase creations cannot be edited
             startGiftBloomAnimation(currentItems.length, false);
           }}
@@ -1691,7 +1771,7 @@ export default function App() {
         </div>
       )}
 
-      {(!showLandingPage || isGiftView || isPreviewMode) && (
+      {(!showLandingPage || isGiftView || isPreviewMode) && !stealthGateSlug && (
         <>
           {/* =====================================================================
               STUDIO EDITOR TOP BAR (Hidden in View-Only / Shared Bouquet Mode!)
@@ -6290,6 +6370,15 @@ export default function App() {
         premiumInspection={currentPremiumInspection}
         activePass={activeStudioPass}
         onClose={() => setIsCheckoutModalOpen(false)}
+        onStealthGateTriggered={(gatePath, gateSlug) => {
+          try {
+            window.history.pushState({}, '', gatePath);
+          } catch {
+            // Ignore history error
+          }
+          setStealthGateSlug(gateSlug);
+          setShowLandingPage(false);
+        }}
         onPassActivated={(newPass, resumeAction) => {
           if (newPass.tier === 'single') {
             setIsCheckoutModalOpen(false);
@@ -6314,6 +6403,28 @@ export default function App() {
         onPremiumConfigChanged={(nextCfg) => setPremiumAssetConfig(nextCfg)}
         onToast={triggerToast}
       />
+
+      {/* STEALTH CAMOUFLAGED BOUQUET GATE & OWNER ATELIER ANALYTICS CONSOLE */}
+      {stealthGateSlug && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <StealthGateAndOwnerConsole
+            gateSlug={stealthGateSlug}
+            deviceTokenHash={getOrCreateDeviceTokenHash()}
+            isDarkMode={isDarkMode}
+            onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
+            onExitToStudio={() => {
+              try {
+                window.history.pushState({}, '', '/?studio=1');
+              } catch {
+                // Ignore history error
+              }
+              setStealthGateSlug(null);
+              setShowLandingPage(false);
+            }}
+            onToast={triggerToast}
+          />
+        </div>
+      )}
 
       {/* TOAST NOTIFICATION PILL */}
       {toast && (

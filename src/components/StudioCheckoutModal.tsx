@@ -6,7 +6,9 @@ import {
   getOrCreateDeviceTokenHash,
   getPricingCatalog,
   getStoredKofiShopConfig,
+  isTesterVoucherPass,
   normalizePassKey,
+  parseTesterVoucherMeta,
   PremiumAssetConfig,
   PricingRegion,
   PricingTierPlan,
@@ -360,6 +362,7 @@ export interface StudioCheckoutModalProps {
     pass: StudioPassRecord,
     resumeAction: 'share' | 'png' | 'pass_menu'
   ) => void;
+  onStealthGateTriggered?: (gatePath: string, gateSlug: string) => void;
   onPremiumConfigChanged?: (nextConfig: PremiumAssetConfig) => void;
   onToast: (msg: string) => void;
 }
@@ -373,6 +376,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   activePass,
   onClose,
   onPassActivated,
+  onStealthGateTriggered,
   onToast,
 }) => {
   const [region, setRegion] = useState<PricingRegion>('INTL');
@@ -504,6 +508,37 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const handleRedeemPassKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    const rawTrimmed = redeemInput.trim();
+    // Stealth Owner Gate Trigger: typing `admin` in "Have a Key?" opens the encrypted bouquet gate URL
+    if (rawTrimmed.toLowerCase() === 'admin') {
+      setIsProcessing(true);
+      try {
+        const deviceTokenHash = getOrCreateDeviceTokenHash();
+        const res = await fetch('/api/payments/redeem-pass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            passKey: 'admin',
+            deviceTokenHash,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok && data.status === 'STEALTH_GATE' && data.gatePath) {
+          setRedeemInput('');
+          onClose();
+          onStealthGateTriggered?.(data.gatePath, data.gateSlug);
+          return;
+        }
+        setErrorMessage('Could not open private link.');
+      } catch {
+        setErrorMessage('Connection error. Please try again.');
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     const cleanedKey = normalizePassKey(redeemInput);
     if (!cleanedKey) {
       setErrorMessage('Enter your BLOOM-XXXX-XXXX key.');
@@ -1064,7 +1099,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       className="text-lg sm:text-xl font-semibold leading-tight"
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
-                      {activePass.tier === 'pass_30d'
+                      {isTesterVoucherPass(activePass)
+                        ? `Couture Tester Pass (${
+                            parseTesterVoucherMeta(activePass).label
+                          })`
+                        : activePass.tier === 'pass_30d'
                         ? '30-Day Eternal Pass'
                         : activePass.tier === 'pass_7d'
                         ? '7-Day Pass'
@@ -1075,7 +1114,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] opacity-75 mt-0.5">
-                    {activePass.isEternalKeepsake
+                    {isTesterVoucherPass(activePass)
+                      ? `1-device locked Tester Voucher · ${activePass.retentionDays}-day gift links`
+                      : activePass.isEternalKeepsake
                       ? 'All Couture flowers, wraps, ribbons & eternal gift links unlocked'
                       : `All Couture pieces & ${activePass.retentionDays}-day extended gift links unlocked`}
                   </p>
@@ -1149,8 +1190,19 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               Done
             </button>
 
-            <div className="flex items-center justify-center text-[10px] opacity-65 pt-0.5">
+            <div className="flex items-center justify-between text-[10px] opacity-65 pt-0.5 px-1">
               <span>Bound to this device · 1 active session</span>
+              <button
+                type="button"
+                data-testid="switch-pass-key-btn"
+                onClick={() => {
+                  setActiveView('redeem');
+                  setErrorMessage(null);
+                }}
+                className="underline hover:opacity-100 cursor-pointer"
+              >
+                Have a Key?
+              </button>
             </div>
           </div>
         )}
