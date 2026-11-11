@@ -338,6 +338,13 @@ export async function incrementStudioGlobalStat(
 }
 
 const VAULT_STORAGE_KEY = 'flowers_for_you_local_vault_v1';
+let inMemoryVaultCache: SavedVaultBouquet[] | null = null;
+
+function stripInlineAudioFromPayload(payload?: string): string | undefined {
+  if (!payload) return payload;
+  const idx = payload.indexOf('&a=');
+  return idx >= 0 ? payload.slice(0, idx) : payload;
+}
 
 function deduplicateVaultList(list: SavedVaultBouquet[]): SavedVaultBouquet[] {
   const seenCodes = new Set<string>();
@@ -347,42 +354,90 @@ function deduplicateVaultList(list: SavedVaultBouquet[]): SavedVaultBouquet[] {
     if (!item || typeof item.code !== 'string') continue;
     if (seenCodes.has(item.code)) continue;
 
-    // Collapse rapid-fire edits of the same bouquet (same recipient, sender, flower count) saved within 15 minutes
     const itemTime = Date.parse(item.createdAt || '') || 0;
-    const isRapidDuplicate = result.some((existing) => {
+    const itemToNorm = (item.to || '').trim().toLowerCase();
+    const itemFromNorm = (item.from || '').trim().toLowerCase();
+
+    // Collapse rapid-fire edits or draft-then-shared duplicates for the same recipient & sender
+    const isDuplicateCreation = result.some((existing) => {
       const existingTime = Date.parse(existing.createdAt || '') || 0;
-      const withinWindow = Math.abs(existingTime - itemTime) < 15 * 60 * 1000;
+      const withinWindow = Math.abs(existingTime - itemTime) < 60 * 60 * 1000;
+      const sameNames =
+        (existing.to || '').trim().toLowerCase() === itemToNorm &&
+        (existing.from || '').trim().toLowerCase() === itemFromNorm;
+      if (!sameNames) return false;
+
+      // If a shared creation already exists for the same (to, from) within 60 mins, collapse older drafts or re-shares
+      if (!existing.isDraft && (item.isDraft || withinWindow)) {
+        return true;
+      }
       return (
         withinWindow &&
-        (existing.to || '') === (item.to || '') &&
-        (existing.from || '') === (item.from || '') &&
         existing.flowerCount === item.flowerCount &&
         Boolean(existing.hasVoice) === Boolean(item.hasVoice)
       );
     });
 
     seenCodes.add(item.code);
-    if (!isRapidDuplicate) {
+    if (!isDuplicateCreation) {
       result.push(item);
     }
   }
   return result;
 }
 
+function persistVaultListSafely(list: SavedVaultBouquet[]): void {
+  inMemoryVaultCache = list;
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // QuotaExceededError fallback: strip heavy inline &a= audio dataURLs from localStorage copy while keeping full visual draftPayload
+    try {
+      const slimmed = list.map((item) => ({
+        ...item,
+        draftPayload: stripInlineAudioFromPayload(item.draftPayload),
+      }));
+      localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(slimmed));
+    } catch {
+      // Final fallback: keep most recent 10 visual payloads
+      try {
+        const minimal = list.slice(0, 10).map((item, idx) => ({
+          ...item,
+          draftPayload: idx < 5 ? stripInlineAudioFromPayload(item.draftPayload) : undefined,
+        }));
+        localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(minimal));
+      } catch {
+        // Ignore storage write failure; inMemoryVaultCache still holds full session state
+      }
+    }
+  }
+}
+
 export function getSavedVaultBouquets(): SavedVaultBouquet[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(VAULT_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return inMemoryVaultCache ? deduplicateVaultList(inMemoryVaultCache) : [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    const cleaned = deduplicateVaultList(parsed);
+    if (!Array.isArray(parsed)) return inMemoryVaultCache || [];
+    // Merge any richer in-memory draftPayload from the current session
+    const merged = parsed.map((item: SavedVaultBouquet) => {
+      const memMatch = inMemoryVaultCache?.find((m) => m.code === item.code);
+      if (memMatch && memMatch.draftPayload && (!item.draftPayload || memMatch.draftPayload.length > item.draftPayload.length)) {
+        return { ...item, draftPayload: memMatch.draftPayload };
+      }
+      return item;
+    });
+    const cleaned = deduplicateVaultList(merged);
     if (cleaned.length !== parsed.length) {
-      localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(cleaned));
+      persistVaultListSafely(cleaned);
+    } else {
+      inMemoryVaultCache = cleaned;
     }
     return cleaned;
   } catch {
-    return [];
+    return inMemoryVaultCache || [];
   }
 }
 
@@ -396,10 +451,10 @@ export function saveBouquetToLocalVault(
       (b) => b.code !== entry.code && (!replaceCode || b.code !== replaceCode)
     );
     const next = deduplicateVaultList([entry, ...existing]).slice(0, 30);
-    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(next));
+    persistVaultListSafely(next);
     return next;
   } catch {
-    return [];
+    return inMemoryVaultCache || [];
   }
 }
 
@@ -407,10 +462,10 @@ export function removeBouquetFromLocalVault(code: string): SavedVaultBouquet[] {
   if (typeof window === 'undefined') return [];
   try {
     const next = getSavedVaultBouquets().filter((b) => b.code !== code);
-    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(next));
+    persistVaultListSafely(next);
     return next;
   } catch {
-    return [];
+    return inMemoryVaultCache || [];
   }
 }
 

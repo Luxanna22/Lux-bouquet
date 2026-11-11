@@ -662,6 +662,7 @@ export interface SavedVaultBouquet {
   retentionDays?: number;
   isDraft?: boolean;
   draftPayload?: string;
+  pinToShowcase?: boolean;
 }
 
 export interface BouquetSnapshot {

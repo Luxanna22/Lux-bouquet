@@ -1715,11 +1715,12 @@ export const BouquetVoiceKeepsakeSVG: React.FC<{
 export const BouquetEnvironmentSVG: React.FC<{
   environment: CanvasEnvironment;
   isDarkMode: boolean;
-}> = ({ environment, isDarkMode }) => {
+  idPrefix?: string;
+}> = ({ environment, isDarkMode, idPrefix = '' }) => {
   if (environment === 'studio') return null;
 
   return (
-    <g clipPath="url(#stageArchClip)" className="pointer-events-none select-none">
+    <g clipPath={`url(#${idPrefix}stageArchClip)`} className="pointer-events-none select-none">
       {/* 1. PAPER TEXTURE (Handmade deckle-edge cotton rag stationery grain & botanical watermark) */}
       {environment === 'paper' && (
         <g opacity={isDarkMode ? 0.32 : 0.85}>
@@ -1953,19 +1954,19 @@ export const BouquetEnvironmentSVG: React.FC<{
       {environment === 'aurora' && (
         <g>
           <defs>
-            <linearGradient id="envAuroraBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id={`${idPrefix}envAuroraBg`} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor={isDarkMode ? '#2D192B' : '#FFF5F8'} />
               <stop offset="48%" stopColor={isDarkMode ? '#33251B' : '#FEF7E6'} />
               <stop offset="100%" stopColor={isDarkMode ? '#1C223A' : '#EEF2FF'} />
             </linearGradient>
-            <radialGradient id="envAuroraHalo" cx="50%" cy="42%" r="50%">
+            <radialGradient id={`${idPrefix}envAuroraHalo`} cx="50%" cy="42%" r="50%">
               <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.26' : '0.45'} />
               <stop offset="55%" stopColor="#F472B6" stopOpacity={isDarkMode ? '0.12' : '0.18'} />
               <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
             </radialGradient>
           </defs>
-          <rect x="14" y="14" width="572" height="652" rx="36" fill="url(#envAuroraBg)" />
-          <circle cx="300" cy="290" r="260" fill="url(#envAuroraHalo)" />
+          <rect x="14" y="14" width="572" height="652" rx="36" fill={`url(#${idPrefix}envAuroraBg)`} />
+          <circle cx="300" cy="290" r="260" fill={`url(#${idPrefix}envAuroraHalo)`} />
           {/* Flowing Iridescent Aurora Ribbons */}
           <path
             d="M28,230 C160,120 280,290 420,165 C485,110 535,145 572,125"
@@ -2015,13 +2016,13 @@ export const BouquetEnvironmentSVG: React.FC<{
       {environment === 'velvetSalon' && (
         <g>
           <defs>
-            <radialGradient id="envVelvetBg" cx="50%" cy="46%" r="62%">
+            <radialGradient id={`${idPrefix}envVelvetBg`} cx="50%" cy="46%" r="62%">
               <stop offset="0%" stopColor={isDarkMode ? '#3B1522' : '#4A192C'} />
               <stop offset="65%" stopColor={isDarkMode ? '#240C15' : '#2D0F1B'} />
               <stop offset="100%" stopColor="#17070D" />
             </radialGradient>
           </defs>
-          <rect x="14" y="14" width="572" height="652" rx="36" fill="url(#envVelvetBg)" />
+          <rect x="14" y="14" width="572" height="652" rx="36" fill={`url(#${idPrefix}envVelvetBg)`} />
           {/* Subtle Warm Spotlight Behind Bouquet */}
           <circle cx="300" cy="330" r="215" fill="#F59E0B" opacity="0.09" />
           {/* Double Gilded Filigree Frame & Corner Baroque Scrollwork */}
@@ -2069,13 +2070,13 @@ export const BouquetEnvironmentSVG: React.FC<{
       {environment === 'opalMist' && (
         <g>
           <defs>
-            <linearGradient id="envOpalBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id={`${idPrefix}envOpalBg`} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor={isDarkMode ? '#1F242D' : '#FFFDF9'} />
               <stop offset="45%" stopColor={isDarkMode ? '#2B222C' : '#FDF2F8'} />
               <stop offset="100%" stopColor={isDarkMode ? '#1B2830' : '#F0F9FF'} />
             </linearGradient>
           </defs>
-          <rect x="14" y="14" width="572" height="652" rx="36" fill="url(#envOpalBg)" />
+          <rect x="14" y="14" width="572" height="652" rx="36" fill={`url(#${idPrefix}envOpalBg)`} />
           {/* Diagonal Luminous Sunbeam Rays */}
           <g opacity={isDarkMode ? '0.14' : '0.35'}>
             <polygon points="14,14 210,14 586,440 586,610" fill="#FEF08A" />
@@ -2121,12 +2122,13 @@ export const BouquetEnvironmentSVG: React.FC<{
  */
 export const BouquetPhotoCardSVG: React.FC<{
   item: BouquetItem;
-}> = ({ item }) => {
+  idPrefix?: string;
+}> = ({ item, idPrefix = '' }) => {
   const style: PhotoFrameStyle = item.photoStyle || 'polaroid';
   const frameColor = item.petalColor || '#FFFDF9';
   const accentColor = item.centerColor || '#E11D48';
   const caption = (item.photoCaption ?? 'Sweet Memory').slice(0, 22);
-  const clipId = `photo-frame-clip-${item.id}`;
+  const clipId = `${idPrefix}photo-frame-clip-${item.id}`;
 
   const renderPhotoOrPlaceholder = (x: number, y: number, w: number, h: number) => {
     if (item.photoDataUrl) {
@@ -2600,7 +2602,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     commitHistorySnapshot
   } = storeState;
 
-  const idPrefix = instanceIdPrefix || '';
+  const reactInstanceId = React.useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const idPrefix = `${instanceIdPrefix || ''}${reactInstanceId}-`;
   const pose = bouquetPose || DEFAULT_BOUQUET_POSE;
   const [activeSpecialObject, setActiveSpecialObject] = useState<'card' | 'voice' | 'bouquet' | null>(null);
 
@@ -3138,7 +3141,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     <div className="relative w-full h-full flex items-center justify-center p-0 sm:p-1 select-none overflow-hidden">
       <svg
         ref={svgRef as React.RefObject<SVGSVGElement>}
-        viewBox={isCardThumbnail ? '38 56 524 556' : '0 0 600 680'}
+        viewBox={isCardThumbnail ? '6 6 588 668' : '0 0 600 680'}
         className={
           isCardThumbnail
             ? 'w-full h-full drop-shadow-sm pointer-events-none select-none'
@@ -3221,32 +3224,32 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         </defs>
 
         {/* 1. Arch Backdrop (Upsized within 600x680 ratio; cross-fades smoothly between Light & Soft Dark Mode + Environment Vibe) */}
-        {!isCardThumbnail && (
-          <>
-            <rect
-              x="6"
-              y="6"
-              width="588"
-              height="668"
-              rx="38"
-              fill={`url(#${idPrefix}stageBgGrad)`}
-            />
-            <rect
-              x="6"
-              y="6"
-              width="588"
-              height="668"
-              rx="38"
-              fill={`url(#${idPrefix}stageBgGradDark)`}
-              style={{
-                opacity: isDarkMode ? 1 : 0,
-                transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
-              }}
-            />
-            {/* Minimalist Environment Texture / Vibe Layer */}
-            <BouquetEnvironmentSVG environment={environment || 'studio'} isDarkMode={isDarkMode} />
-          </>
-        )}
+        <rect
+          x="6"
+          y="6"
+          width="588"
+          height="668"
+          rx="38"
+          fill={`url(#${idPrefix}stageBgGrad)`}
+        />
+        <rect
+          x="6"
+          y="6"
+          width="588"
+          height="668"
+          rx="38"
+          fill={`url(#${idPrefix}stageBgGradDark)`}
+          style={{
+            opacity: isDarkMode ? 1 : 0,
+            transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        />
+        {/* Minimalist Environment Texture / Vibe Layer */}
+        <BouquetEnvironmentSVG
+          environment={environment || 'studio'}
+          isDarkMode={isDarkMode}
+          idPrefix={idPrefix}
+        />
         <circle
           cx="300"
           cy="285"
@@ -3703,7 +3706,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   {/* Invisible generous hit target for easy touch tapping */}
                   <circle cx="0" cy="-10" r="48" fill="transparent" />
                   {item.photoStyle ? (
-                    <BouquetPhotoCardSVG item={item} />
+                    <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
                   ) : (
                     <FlowerRenderer
                       type={item.type}
@@ -4333,7 +4336,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               >
                 <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
                   <circle cx="0" cy="-10" r="48" fill="transparent" />
-                  <BouquetPhotoCardSVG item={item} />
+                  <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
                 </g>
               </g>
             );

@@ -19,7 +19,7 @@ interface BouquetVaultModalProps {
   onClose: () => void;
   onOpenGiftUrl?: (url: string) => void;
   onSaveCurrentDraft?: () => void;
-  onResumeDraft?: (draftPayload: string) => void;
+  onResumeDraft?: (draftPayload: string, sourceCode?: string) => void;
   isDarkMode?: boolean;
 }
 
@@ -375,7 +375,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                           type="button"
                           data-testid={`resume-draft-${entry.code}`}
                           onClick={() => {
-                            onResumeDraft(resolvedDraftPayload);
+                            onResumeDraft(resolvedDraftPayload, entry.code);
                             onClose();
                           }}
                           className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${

@@ -98,7 +98,7 @@ test('inspectBouquetPremiumUsage distinguishes free classic bouquets from coutur
   assert.equal(coutureInspection.hasSecretOrDateLock, true);
   assert.deepEqual(coutureInspection.premiumFlowerTypes, ['callalily']);
 
-  // Verify all photos, all visible voices (even before recording), extended card notes (> 80 chars),
+  // Verify all photos, all visible voices (even before recording), extended card notes (> 560 chars),
   // and new luxury flowers, fillers, ribbons, and backgrounds trigger Couture inspection
   const luxurySnapshot = {
     ...freeSnapshot,
@@ -146,7 +146,7 @@ test('inspectBouquetPremiumUsage distinguishes free classic bouquets from coutur
       to: 'My Love',
       from: 'Yours',
       message:
-        'Every petal in this gilded arrangement carries a memory of our favorite evenings together under the stars.',
+        'Every petal in this gilded arrangement carries a memory of our favorite evenings together under the stars. '.repeat(6),
       visibleOnStage: true,
       theme: 'sealed' as const,
     },

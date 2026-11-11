@@ -33,6 +33,9 @@ dist-ssr
 .aistudio
 .agents
 .agents/teamwork
+AGENTS.md
+CLAUDE.md
+design-instructions.md
 DRAFT_*
 security_spec.md
 
@@ -46,3 +49,4 @@ security_spec.md
 *.njsproj
 *.sln
 *.sw?
+AGENTS.md

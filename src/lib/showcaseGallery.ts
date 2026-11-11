@@ -1,5 +1,6 @@
 import {
   BouquetSnapshot,
+  CanvasEnvironment,
   DEFAULT_VOICE_KEEPSAKE,
   FlowerType,
   RibbonStyle,
@@ -39,6 +40,7 @@ export interface ShowcaseBouquetEntry {
   wrapShadow: string;
   ribbonStyle: RibbonStyle;
   ribbonColor: string;
+  environment?: CanvasEnvironment;
   stems: ShowcaseStem[];
   tiltDeg: number;
   stringLengthPx: number;
@@ -448,6 +450,7 @@ export function convertVaultBouquetToShowcaseEntry(
     wrapShadow: darkenHex(wrapColor, 20),
     ribbonStyle,
     ribbonColor,
+    environment: snapshot?.environment || 'studio',
     stems: mappedStems,
     tiltDeg: tilts[idx % tilts.length],
     stringLengthPx: drops[idx % drops.length],
@@ -466,6 +469,7 @@ export function buildSnapshotFromShowcaseEntry(entry: ShowcaseBouquetEntry): Bou
   if (entry.snapshot && Array.isArray(entry.snapshot.items) && entry.snapshot.items.length > 0) {
     return {
       ...entry.snapshot,
+      environment: entry.snapshot.environment || entry.environment || 'studio',
       card: {
         ...entry.snapshot.card,
         to: entry.to || entry.snapshot.card?.to || 'Someone Special',
@@ -494,7 +498,7 @@ export function buildSnapshotFromShowcaseEntry(entry: ShowcaseBouquetEntry): Bou
     wrapColor: entry.wrapColor,
     ribbonStyle: entry.ribbonStyle,
     ribbonColor: entry.ribbonColor,
-    environment: 'studio',
+    environment: entry.environment || 'studio',
     card: {
       to: entry.to,
       from: entry.from,

@@ -12,15 +12,62 @@ import {
   filterShowcaseBouquets,
   ShowcaseBouquetEntry,
 } from '../lib/showcaseGallery';
-import { getSavedVaultBouquets } from '../lib/firebase';
-import { decodeBouquetFromHash } from '../lib/shareAndExport';
+import {
+  fetchSharedBouquetFromFirestore,
+  getSavedVaultBouquets,
+} from '../lib/firebase';
+import {
+  decodeBouquetFromHash,
+  localShortCodeCache,
+} from '../lib/shareAndExport';
 
 /**
  * Shared hook to merge user's locally saved/shared bouquets with the curated community showcase,
  * deduplicating identical recipient/sender entries so duplicate drafts never clutter the garland,
+ * hydrating any missing payloads from Firestore for 100% database consistency,
  * and filtering out any >30-day expired bouquets (unless marked `isPremium: true`).
  */
 export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
+  const [hydratedPayloads, setHydratedPayloads] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    const localVault = getSavedVaultBouquets();
+
+    for (const v of localVault) {
+      if (!v || v.isDraft || v.pinToShowcase === false || !v.code || v.code.startsWith('draft_')) {
+        continue;
+      }
+      const existingRaw =
+        v.draftPayload ||
+        localShortCodeCache.get(v.code) ||
+        localStorage.getItem(`bq_short_${v.code}`) ||
+        hydratedPayloads[v.code];
+
+      if (!existingRaw) {
+        fetchSharedBouquetFromFirestore(v.code)
+          .then((record) => {
+            if (cancelled || !record || !record.payload) return;
+            localShortCodeCache.set(v.code, record.payload);
+            try {
+              localStorage.setItem(`bq_short_${v.code}`, record.payload);
+            } catch {
+              // Ignore localStorage quota errors
+            }
+            setHydratedPayloads((prev) =>
+              prev[v.code] === record.payload ? prev : { ...prev, [v.code]: record.payload }
+            );
+          })
+          .catch(() => {});
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultCount, hydratedPayloads]);
+
   return useMemo(() => {
     const curated = buildCuratedShowcaseBouquets(nowMs);
     if (typeof window === 'undefined') {
@@ -28,22 +75,33 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
     }
 
     const localVault = getSavedVaultBouquets();
+    const seenCodes = new Set<string>();
     const seenRecipientSender = new Set<string>();
     const userEntries: ShowcaseBouquetEntry[] = [];
 
     for (let idx = 0; idx < localVault.length; idx++) {
       const v = localVault[idx];
-      const dedupeKey = `${v.code || ''}__${(v.to || '').trim().toLowerCase()}__${(v.from || '').trim().toLowerCase()}`;
-      if (seenRecipientSender.has(dedupeKey)) {
+      if (!v || v.isDraft || v.pinToShowcase === false || (v.code && v.code.startsWith('draft_'))) {
         continue;
       }
-      seenRecipientSender.add(dedupeKey);
+
+      const normTo = (v.to || v.recipientName || '').trim().toLowerCase();
+      const normFrom = (v.from || v.senderName || '').trim().toLowerCase();
+      const recipientSenderKey = `${normTo}__${normFrom}`;
+
+      if ((v.code && seenCodes.has(v.code)) || seenRecipientSender.has(recipientSenderKey)) {
+        continue;
+      }
+      if (v.code) seenCodes.add(v.code);
+      seenRecipientSender.add(recipientSenderKey);
 
       let decodedSnap = null;
       try {
         const rawPayload =
           v.draftPayload ||
-          localStorage.getItem(`bq_short_${v.code}`) ||
+          (v.code ? localShortCodeCache.get(v.code) : undefined) ||
+          (v.code ? hydratedPayloads[v.code] : undefined) ||
+          (v.code ? localStorage.getItem(`bq_short_${v.code}`) : null) ||
           v.shareUrl ||
           '';
         if (rawPayload) {
@@ -56,10 +114,10 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       if (userEntries.length >= 6) break;
     }
 
-    const seenCodes = new Set<string>(userEntries.map((u) => u.code));
-    const merged = [...userEntries, ...curated.filter((c) => !seenCodes.has(c.code))];
+    const userCodes = new Set<string>(userEntries.map((u) => u.code));
+    const merged = [...userEntries, ...curated.filter((c) => !userCodes.has(c.code))];
     return filterShowcaseBouquets(merged, { nowMs });
-  }, [nowMs, vaultCount]);
+  }, [nowMs, vaultCount, hydratedPayloads]);
 }
 
 /**
@@ -103,7 +161,7 @@ export const LaceHangerClipSVG: React.FC<{
   const brassBody = isDarkMode ? '#D4A373' : '#C89666';
   const brassHighlight = isDarkMode ? '#FDE68A' : '#FEF3C7';
 
-  const dropCordPx = stringLengthPx + 22;
+  const dropCordPx = stringLengthPx + 14;
 
   return (
     <div
@@ -666,8 +724,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const scrollPerItemPx = 300;
   const totalScrollRangePx = Math.max(320, Math.round(maxCarouselOffset * scrollPerItemPx));
 
-  const edgeY = visibleSlots === 2 ? 10 : 14;
-  const midY = visibleSlots === 2 ? 44 : visibleSlots === 3 ? 72 : 86;
+  const edgeY = visibleSlots === 2 ? 8 : 10;
+  const midY = visibleSlots === 2 ? 36 : visibleSlots === 3 ? 52 : 60;
 
   const applySingleLaceTransforms = useCallback(
     (scrollTopPx: number) => {
@@ -834,106 +892,108 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
           data-testid="single-screen-lace-stage"
           className="sticky top-0 h-dvh w-full overflow-hidden flex flex-col justify-between select-none"
         >
-          {/* 1. TOP BAR + COMPACT HEADER & UNIFIED "FOR / FROM" SEARCH */}
-          <div className="w-full shrink-0 z-30 pt-2 sm:pt-3 px-3 sm:px-6">
+          {/* 1. TOP BAR (INTEGRATED PAGE HEADER) + COMPACT HEADER & UNIFIED "FOR / FROM" SEARCH */}
+          <div className="w-full shrink-0 z-30">
             <header
-              className={`max-w-5xl mx-auto h-12 sm:h-14 px-3.5 sm:px-5 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md flex items-center justify-between gap-2 sm:gap-3 transition-colors ${
+              className={`w-full border-b border-dashed transition-colors ${
                 isDarkMode
-                  ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
-                  : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
+                  ? 'bg-[#2B2321]/95 border-[#4D3F3B] text-[#FBF6F1]'
+                  : 'bg-[#FDF9F5]/95 border-[#E5D5C5] text-[#231C18]'
               }`}
             >
-              {/* Left: Back to Home + Brand */}
-              <div className="flex items-center gap-2 sm:gap-3">
-                <button
-                  type="button"
-                  onClick={() => triggerSmoothClose(onBackToHome)}
-                  data-testid="creations-back-home-btn"
-                  className={`px-3 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                      : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                  }`}
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => triggerSmoothClose(onBackToHome)}
-                  className="hidden sm:flex items-center gap-2 cursor-pointer"
-                >
-                  <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
-                  <span
-                    className="text-lg font-semibold tracking-tight whitespace-nowrap"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              <div className="max-w-6xl mx-auto h-12 sm:h-14 px-4 sm:px-8 flex items-center justify-between gap-2 sm:gap-3">
+                {/* Left: Back to Home + Brand */}
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => triggerSmoothClose(onBackToHome)}
+                    data-testid="creations-back-home-btn"
+                    className={`px-3 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                        : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                    }`}
                   >
-                    Send A Bouquet
-                  </span>
-                </button>
-              </div>
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back</span>
+                  </button>
 
-              {/* Right: Theme Toggle, Saved Bouquets & Craft CTA */}
-              <div className="flex items-center gap-1.5 sm:gap-2.5">
-                <button
-                  type="button"
-                  onClick={onToggleDarkMode}
-                  aria-label="Toggle theme"
-                  className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
-                    isDarkMode
-                      ? 'text-[#E6B89C] hover:bg-[#483C38]'
-                      : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
-                  }`}
-                >
-                  {isDarkMode ? (
-                    <Sun className="w-3.5 h-3.5 text-amber-300" />
-                  ) : (
-                    <Moon className="w-3.5 h-3.5" />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => triggerSmoothClose(onOpenVault)}
-                  className={`hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                      : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                  }`}
-                >
-                  <span>Saved Bouquets</span>
-                  {vaultCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => triggerSmoothClose(onBackToHome)}
+                    className="hidden sm:flex items-center gap-2 cursor-pointer"
+                  >
+                    <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
                     <span
-                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
-                        isDarkMode
-                          ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
-                          : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
-                      }`}
+                      className="text-lg font-semibold tracking-tight whitespace-nowrap"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
-                      {vaultCount}
+                      Send A Bouquet
                     </span>
-                  )}
-                </button>
+                  </button>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => triggerSmoothClose(onStartCrafting)}
-                  className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap ${
-                    isDarkMode
-                      ? 'bg-[#9A6550] hover:bg-[#875642]'
-                      : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                  }`}
-                >
-                  Craft a Bouquet
-                </button>
+                {/* Right: Theme Toggle, Saved Bouquets & Craft CTA */}
+                <div className="flex items-center gap-1.5 sm:gap-2.5">
+                  <button
+                    type="button"
+                    onClick={onToggleDarkMode}
+                    aria-label="Toggle theme"
+                    className={`p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
+                      isDarkMode
+                        ? 'text-[#E6B89C] hover:bg-[#483C38]'
+                        : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+                    }`}
+                  >
+                    {isDarkMode ? (
+                      <Sun className="w-3.5 h-3.5 text-amber-300" />
+                    ) : (
+                      <Moon className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => triggerSmoothClose(onOpenVault)}
+                    className={`hidden sm:inline-flex px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                        : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                    }`}
+                  >
+                    <span>Saved Bouquets</span>
+                    {vaultCount > 0 && (
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold tabular-nums ${
+                          isDarkMode
+                            ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
+                            : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                        }`}
+                      >
+                        {vaultCount}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => triggerSmoothClose(onStartCrafting)}
+                    className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-full text-white text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap ${
+                      isDarkMode
+                        ? 'bg-[#9A6550] hover:bg-[#875642]'
+                        : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                    }`}
+                  >
+                    Craft a Bouquet
+                  </button>
+                </div>
               </div>
             </header>
 
             {/* Compact Editorial Title + Unified "For / From" Search Input */}
-            <div className="max-w-xl mx-auto px-2 pt-3 sm:pt-5 text-center">
+            <div className="max-w-xl mx-auto px-3 pt-2.5 sm:pt-3.5 text-center">
               <h1
-                className={`text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight leading-none ${
+                className={`text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight leading-none ${
                   isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                 }`}
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -942,7 +1002,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
               </h1>
 
               <label
-                className={`mt-3 sm:mt-4 max-w-md mx-auto rounded-full border border-dashed px-4 py-2 sm:py-2.5 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
+                className={`mt-2 sm:mt-2.5 max-w-md mx-auto rounded-full border border-dashed px-4 py-1.5 sm:py-2 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
                   isDarkMode
                     ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
                     : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
@@ -995,7 +1055,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
 
           {/* 2. MIDDLE: ONE SINGLE SWEEPING CATENARY LACE LINE & RIGHT-TO-LEFT LENIS CAROUSEL */}
           <div
-            className="relative flex-1 w-full flex flex-col justify-center overflow-hidden"
+            className="relative flex-1 min-h-0 w-full flex flex-col justify-center overflow-x-hidden overflow-y-visible"
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, input, label')) return;
               dragStartXRef.current = e.clientX;
@@ -1053,7 +1113,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             ) : (
               <div
                 data-testid="single-lace-carousel-track"
-                className="relative w-full h-[315px] sm:h-[375px] lg:h-[410px]"
+                className="relative w-full h-[clamp(268px,46vh,385px)]"
               >
                 {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
                 <div className="absolute top-0 inset-x-0 z-0">
@@ -1091,7 +1151,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                           visibility: initial.isVisible ? 'visible' : 'hidden',
                           willChange: 'transform, left, opacity',
                         }}
-                        className="absolute top-0 w-[164px] min-[380px]:w-[172px] sm:w-[200px] lg:w-[220px]"
+                        className="absolute top-0 w-[148px] min-[380px]:w-[158px] sm:w-[clamp(154px,21vh,194px)] lg:w-[clamp(162px,22.5vh,206px)]"
                       >
                         <HangingCreationCard
                           entry={entry}
@@ -1110,7 +1170,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
           </div>
 
           {/* 3. MINIMAL BOTTOM CAROUSEL STEP CONTROLS */}
-          <div className="w-full shrink-0 pb-4 sm:pb-6 px-4 z-30 flex flex-col items-center">
+          <div className="w-full shrink-0 pb-2.5 sm:pb-4 pt-1 px-4 z-30 flex flex-col items-center">
             {filteredEntries.length > 0 && (
               <div className="flex items-center gap-3">
                 <button

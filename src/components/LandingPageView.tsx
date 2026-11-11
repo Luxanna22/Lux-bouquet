@@ -44,7 +44,9 @@ import {
 
 interface LandingPageViewProps {
   onStartCrafting: () => void;
-  onPreviewShowcaseBouquet?: () => void;
+  onPreviewShowcaseBouquet?: (fromCreationsPage?: boolean) => void;
+  initialCreationsPageOpen?: boolean;
+  onCloseCreationsPage?: () => void;
   onOpenVault: () => void;
   vaultCount: number;
   isDarkMode: boolean;
@@ -58,7 +60,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What comes with a Couture Pass or Single Bouquet unlock?',
-    a: 'Unlocking a Single Bouquet ($0.99), 7-Day Pass ($2.99), or 30-Day Eternal Pass ($5.99) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 500-character notes, and eternal links on 30-day passes.',
+    a: 'Unlocking a Single Bouquet ($0.99), 7-Day Pass ($2.99), or 30-Day Eternal Pass ($5.99) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 1,500-character notes, and eternal links on 30-day passes.',
   },
   {
     q: 'Can I add photos and a recorded voice message?',
@@ -759,6 +761,8 @@ const ThinRopeLaceDivider: React.FC<{ isDarkMode: boolean }> = React.memo(({ isD
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onStartCrafting,
   onPreviewShowcaseBouquet,
+  initialCreationsPageOpen = false,
+  onCloseCreationsPage,
   onOpenVault,
   vaultCount,
   isDarkMode,
@@ -780,8 +784,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMaintainNoteOpen, setIsMaintainNoteOpen] = useState(false);
-  const [isCreationsPageOpen, setIsCreationsPageOpen] = useState(false);
+  const [isCreationsPageOpen, setIsCreationsPageOpen] = useState(Boolean(initialCreationsPageOpen));
   const [legalModal, setLegalModal] = useState<'terms' | 'privacy' | null>(null);
+  const [isNavScrolled, setIsNavScrolled] = useState(false);
+  const isNavScrolledRef = useRef(false);
 
   const scrollWrapperRef = useRef<HTMLDivElement | null>(null);
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
@@ -802,6 +808,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
   // Pure GPU-driven scroll bloom & foreground depth-of-field petal updater (0 React re-renders during scroll)
   const applyHeroBloomProgress = (scrollTop: number) => {
+    const nextScrolled = scrollTop > 44;
+    if (isNavScrolledRef.current !== nextScrolled) {
+      isNavScrolledRef.current = nextScrolled;
+      setIsNavScrolled(nextScrolled);
+    }
     const vh = scrollWrapperRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 900);
 
     // 1. Update Foreground Depth-of-Field Camera-Lens Petals across the entire scroll height
@@ -988,10 +999,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     onStartCrafting();
   };
 
-  const handleUnwrapShowcaseEntry = (entry: ShowcaseBouquetEntry) => {
+  const handleUnwrapShowcaseEntry = (entry: ShowcaseBouquetEntry, fromCreationsPage = false) => {
     applyShowcaseEntryToStudio(entry);
     if (onPreviewShowcaseBouquet) {
-      onPreviewShowcaseBouquet();
+      onPreviewShowcaseBouquet(fromCreationsPage);
     }
   };
 
@@ -1116,13 +1127,27 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         .fluid-delay-3 { transition-delay: 240ms; }
       `}</style>
 
-      {/* STICKY FLOATING TOP NAVBAR — Responsive Editorial Stationery Header & Dropdown */}
-      <div className="sticky top-2.5 sm:top-3.5 z-40 px-2.5 sm:px-5 md:px-6 pt-1 sm:pt-1.5 pointer-events-none">
+      {/* STICKY TOP NAVBAR — Integrated Page Header in Hero, Smoothly Transitions to Floating Pill on Scroll */}
+      <div
+        className={`sticky z-40 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          isNavScrolled
+            ? 'top-2.5 sm:top-3.5 px-2.5 sm:px-5 md:px-6 pt-1 sm:pt-1.5'
+            : 'top-0 px-0 pt-0'
+        }`}
+      >
         <header
-          className={`pointer-events-auto max-w-5xl mx-auto h-11 sm:h-13 md:h-14 px-2.5 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md flex items-center justify-between gap-1.5 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            isDarkMode
-              ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
-              : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
+          data-testid="landing-navbar"
+          data-nav-mode={isNavScrolled ? 'pill' : 'integrated'}
+          className={`pointer-events-auto mx-auto flex items-center justify-between gap-1.5 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            isNavScrolled
+              ? `max-w-5xl h-11 sm:h-13 md:h-14 px-2.5 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${
+                  isDarkMode
+                    ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
+                }`
+              : `max-w-6xl h-13 sm:h-15 md:h-16 px-4 sm:px-8 rounded-none border-b border-dashed border-transparent shadow-none bg-transparent ${
+                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                }`
           }`}
         >
           {/* Zone 1: Brand Wordmark & Official Logo */}
@@ -2819,19 +2844,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <CreationsGalleryPageView
             isDarkMode={isDarkMode}
             vaultCount={vaultCount}
-            onBackToHome={() => setIsCreationsPageOpen(false)}
+            onBackToHome={() => {
+              setIsCreationsPageOpen(false);
+              onCloseCreationsPage?.();
+            }}
             onStartCrafting={() => {
               setIsCreationsPageOpen(false);
+              onCloseCreationsPage?.();
               onStartCrafting();
             }}
             onOpenVault={() => {
               setIsCreationsPageOpen(false);
+              onCloseCreationsPage?.();
               onOpenVault();
             }}
             onToggleDarkMode={onToggleDarkMode}
             onUnwrapShowcaseBouquet={(entry) => {
               setIsCreationsPageOpen(false);
-              handleUnwrapShowcaseEntry(entry);
+              handleUnwrapShowcaseEntry(entry, true);
             }}
           />
         )}

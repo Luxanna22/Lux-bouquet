@@ -200,7 +200,7 @@ try {
   console.log('✓ Share modal backdrop tap-to-dismiss behavior verified');
 
   // 24. Greeting Card Input Limit Alignment with Stage Tag
-  assert(studioSrc.includes('maxLength={22}') && studioSrc.includes('maxLength={20}') && studioSrc.includes('maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}'), 'Greeting card inputs maxLength supports Free (80) and Couture (260) notes');
+  assert(studioSrc.includes('maxLength={22}') && studioSrc.includes('maxLength={20}') && studioSrc.includes('maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}'), 'Greeting card inputs maxLength supports Free (560) and Couture (1500) notes');
   console.log('✓ Greeting card input character limits aligned with canvas tag');
 
   // 25. Mobile Header Responsiveness & Share Modal Preview Action

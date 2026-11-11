@@ -330,6 +330,7 @@ export default function App() {
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
   const currentSessionVaultCodeRef = useRef<string | null>(null);
+  const [returnToCreationsPage, setReturnToCreationsPage] = useState(false);
   const [activeStudioPass, setActiveStudioPass] = useState<StudioPassRecord | null>(() =>
     getStoredStudioPass()
   );
@@ -1409,6 +1410,7 @@ export default function App() {
           isPremium: policy.isPremiumEternal,
           retentionDays: policy.retentionDays,
           isDraft: false,
+          pinToShowcase: true,
           draftPayload: hashPayload,
         },
         currentSessionVaultCodeRef.current
@@ -1477,6 +1479,7 @@ export default function App() {
         hasVoice: Boolean(voice?.audioDataUrl),
         flowerCount: items.length,
         isDraft: true,
+        pinToShowcase: false,
         draftPayload: hashPayload,
       },
       currentSessionVaultCodeRef.current
@@ -1489,11 +1492,14 @@ export default function App() {
   }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, triggerToast]);
 
   const handleResumeDraftFromDevice = useCallback(
-    (draftPayload: string) => {
+    (draftPayload: string, sourceVaultCode?: string) => {
       const decoded = decodeBouquetFromHash(draftPayload);
       if (!decoded) {
         triggerToast('Could not load draft');
         return;
+      }
+      if (sourceVaultCode) {
+        currentSessionVaultCodeRef.current = sourceVaultCode;
       }
       loadSnapshot(decoded);
       setIsGiftView(false);
@@ -1753,13 +1759,17 @@ export default function App() {
           ===================================================================== */}
       {showLandingPage && !isGiftView && !isPreviewMode && !stealthGateSlug && (
         <LandingPageView
+          initialCreationsPageOpen={returnToCreationsPage}
+          onCloseCreationsPage={() => setReturnToCreationsPage(false)}
           onStartCrafting={() => {
+            setReturnToCreationsPage(false);
             setStudioEntranceKey((k) => k + 1);
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'studio_session' });
           }}
-          onPreviewShowcaseBouquet={() => {
+          onPreviewShowcaseBouquet={(fromCreationsPage) => {
             const currentItems = useBouquetStore.getState().items;
+            setReturnToCreationsPage(Boolean(fromCreationsPage));
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'showcase_view' });
             // Strictly view-only recipient mode (fromEditorPreview = false) so showcase creations cannot be edited
@@ -2351,7 +2361,7 @@ export default function App() {
                   }`}
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>{isPreviewMode ? 'Back to Studio' : 'Home'}</span>
+                  <span>{isPreviewMode ? 'Back to Studio' : 'Back'}</span>
                 </button>
               </div>
               {/* Seamless Radial Aura Behind the Living Watercolor Bloom (Scales with slide progress) */}
@@ -3471,8 +3481,8 @@ export default function App() {
                 <button
                   type="button"
                   onClick={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
-                  title={isPreviewMode ? 'Back to Studio' : 'Back to Send A Bouquet Home'}
-                  aria-label={isPreviewMode ? 'Back to Studio' : 'Back to Send A Bouquet Home'}
+                  title={isPreviewMode ? 'Back to Studio' : 'Back'}
+                  aria-label={isPreviewMode ? 'Back to Studio' : 'Back'}
                   className="shrink-0 hover:opacity-80 transition cursor-pointer flex items-center"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />

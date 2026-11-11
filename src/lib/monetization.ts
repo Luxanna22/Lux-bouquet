@@ -18,8 +18,8 @@ import {
 //    prompted when clicking "Share" or "Save PNG" if Couture features are used.
 // ============================================================================
 
-export const FREE_CARD_NOTE_MAX_CHARS = 80;
-export const PREMIUM_CARD_NOTE_MAX_CHARS = 260;
+export const FREE_CARD_NOTE_MAX_CHARS = 560;
+export const PREMIUM_CARD_NOTE_MAX_CHARS = 1500;
 
 export interface PremiumAssetConfig {
   flowers: FlowerType[];
@@ -75,7 +75,7 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
   voiceStyles: ['mixtape', 'vinyl', 'plushie', 'musicbox', 'locket'],
   // Time-Capsule Countdown & Secret Question Locks are Couture keepsakes ('none' is Free)
   lockModes: ['countdown', 'passcode'],
-  // Notes longer than 80 characters (up to 260 characters) are Couture Extended Notes
+  // Notes longer than 560 characters (up to 1500 characters) are Couture Extended Notes
   freeCardNoteMaxChars: FREE_CARD_NOTE_MAX_CHARS,
   // High-res PNG print download is a Couture Studio feature
   requirePassForHighResPng: true,
