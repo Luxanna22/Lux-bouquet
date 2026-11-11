@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
 import { ArrowLeft, ChevronLeft, ChevronRight, Moon, Search, Sun, X } from 'lucide-react';
-import { FlowerRenderer } from './flowers/FlowerRenderer';
-import { MiniVoiceKeepsakeSVG } from './MiniThumbnails';
+import { BouquetStage } from './BouquetStage';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
   buildCuratedShowcaseBouquets,
+  buildSnapshotFromShowcaseEntry,
   computeSingleLaceCarouselItemTransform,
   convertVaultBouquetToShowcaseEntry,
   filterShowcaseBouquets,
@@ -33,19 +33,19 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
 
     for (let idx = 0; idx < localVault.length; idx++) {
       const v = localVault[idx];
-      const dedupeKey = `${(v.to || '').trim().toLowerCase()}__${(v.from || '').trim().toLowerCase()}`;
-      // Skip default unedited placeholder drafts or duplicate recipient+sender entries
-      const isDefaultPlaceholder =
-        (v.to || '').trim().toLowerCase() === 'my soulmate' &&
-        (v.from || '').trim().toLowerCase() === 'secret admirer';
-      if (isDefaultPlaceholder || seenRecipientSender.has(dedupeKey)) {
+      const dedupeKey = `${v.code || ''}__${(v.to || '').trim().toLowerCase()}__${(v.from || '').trim().toLowerCase()}`;
+      if (seenRecipientSender.has(dedupeKey)) {
         continue;
       }
       seenRecipientSender.add(dedupeKey);
 
       let decodedSnap = null;
       try {
-        const rawPayload = localStorage.getItem(`bq_short_${v.code}`);
+        const rawPayload =
+          v.draftPayload ||
+          localStorage.getItem(`bq_short_${v.code}`) ||
+          v.shareUrl ||
+          '';
         if (rawPayload) {
           decodedSnap = decodeBouquetFromHash(rawPayload);
         }
@@ -53,7 +53,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
         // Ignore decode errors
       }
       userEntries.push(convertVaultBouquetToShowcaseEntry(v, decodedSnap, userEntries.length));
-      if (userEntries.length >= 2) break;
+      if (userEntries.length >= 6) break;
     }
 
     const seenCodes = new Set<string>(userEntries.map((u) => u.code));
@@ -63,307 +63,30 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
 }
 
 /**
- * Pure Botanical Bouquet + Attached Assets SVG (just like a saved Studio PNG keepsake:
- * soft dashed halo ring, full wrapped bouquet, tucked wax-sealed letter envelope, and optional voice keepsake).
+ * 100% Exact Studio & Recipient BouquetStage SVG Renderer for Shared Creations Cards.
+ * Renders the exact BouquetSnapshot (wrapper, ribbon, flowers, photocards, on-stage voice keepsake,
+ * and on-stage wax-sealed letter envelope) so the card preview matches the unwrapped bouquet 1:1.
  */
 export const ShowcaseBouquetIllustrationSVG: React.FC<{
   entry: ShowcaseBouquetEntry;
   isDarkMode?: boolean;
 }> = React.memo(({ entry, isDarkMode = false }) => {
-  const { wrapStyle, wrapColor, wrapShadow, ribbonColor, stems } = entry;
-  const domeClipId = `garland-cloche-clip-${entry.id}`;
-
-  const silhouette =
-    wrapStyle === 'hatbox' || wrapStyle === 'vase' || wrapStyle === 'basket'
-      ? 'hatbox'
-      : wrapStyle === 'cloche'
-      ? 'cloche'
-      : wrapStyle === 'koreanmesh' || wrapStyle === 'lace' || wrapStyle === 'chalice'
-      ? 'butterfly'
-      : 'cone';
-
-  const renderStems = (yShift = 0, scaleMul = 1) =>
-    stems.map((s, i) => (
-      <g
-        key={`${entry.id}-stem-${i}`}
-        transform={`translate(${s.x}, ${s.y + yShift}) rotate(${s.rot}) scale(${(
-          s.scale * scaleMul
-        ).toFixed(2)})`}
-      >
-        <path
-          d={`M 0,10 Q ${(200 - s.x) * 0.22},66 ${(200 - s.x) * 0.52},132`}
-          stroke="#2E7D32"
-          strokeWidth="5.2"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <FlowerRenderer
-          type={s.type}
-          petalColor={s.petal}
-          centerColor={s.center}
-          hideStem
-        />
-      </g>
-    ));
+  const snapshot = useMemo(() => buildSnapshotFromShowcaseEntry(entry), [entry]);
+  const safeIdPrefix = useMemo(
+    () => `card-${entry.id.replace(/[^a-zA-Z0-9_-]/g, '')}-`,
+    [entry.id]
+  );
 
   return (
-    <svg
-      viewBox="44 22 312 284"
-      className="w-full h-full overflow-visible select-none"
-    >
-      <defs>
-        <clipPath id={domeClipId}>
-          <path d="M 116,238 L 116,136 A 84,84 0 0,1 284,136 L 284,238 Z" />
-        </clipPath>
-      </defs>
-
-      {/* Studio Saved-PNG Dashed Botanical Halo Circle Behind the Bouquet */}
-      <circle
-        cx="200"
-        cy="154"
-        r="112"
-        fill={isDarkMode ? 'rgba(255,253,249,0.03)' : 'rgba(255,253,249,0.55)'}
-        stroke={isDarkMode ? '#5A4A44' : '#E2D4C5'}
-        strokeWidth="1.25"
-        strokeDasharray="4 4"
+    <div className="w-full h-full flex items-center justify-center pointer-events-none select-none">
+      <BouquetStage
+        isPreviewMode={true}
+        isDarkMode={isDarkMode}
+        snapshotOverride={snapshot}
+        instanceIdPrefix={safeIdPrefix}
+        isCardThumbnail={true}
       />
-
-      {/* 1. CONE SILHOUETTE */}
-      {silhouette === 'cone' && (
-        <g>
-          <polygon
-            points="92,126 200,56 308,126 244,254 156,254"
-            fill={wrapShadow}
-            stroke="#E5C158"
-            strokeWidth="1.4"
-          />
-          <polygon points="116,122 200,74 284,122 200,236" fill="#FFFDF9" opacity="0.92" />
-          <g>{renderStems(0, 1)}</g>
-          <polygon
-            points="92,126 164,192 184,264 148,264"
-            fill={wrapColor}
-            stroke="#E5C158"
-            strokeWidth="1.2"
-          />
-          <polygon
-            points="308,126 236,192 216,264 252,264"
-            fill={wrapShadow}
-            stroke="#E5C158"
-            strokeWidth="1.2"
-          />
-          <polygon
-            points="148,200 252,200 232,272 168,272"
-            fill={wrapColor}
-            stroke="#E5C158"
-            strokeWidth="1.4"
-          />
-          <g transform="translate(200, 212)">
-            <rect x="-38" y="-5" width="76" height="10" rx="5" fill={ribbonColor} />
-            <path
-              d="M 0,0 C -26,-20 -36,10 -4,6 M 0,0 C 26,-20 36,10 4,6"
-              fill="none"
-              stroke={ribbonColor}
-              strokeWidth="5.5"
-              strokeLinecap="round"
-            />
-            <path
-              d="M -4,5 L -16,44 M 4,5 L 16,44"
-              stroke={ribbonColor}
-              strokeWidth="4.5"
-              strokeLinecap="round"
-            />
-            <circle cx="0" cy="0" r="6" fill={ribbonColor} />
-          </g>
-        </g>
-      )}
-
-      {/* 2. GLASS CLOCHE DOME SILHOUETTE */}
-      {silhouette === 'cloche' && (
-        <g>
-          <path
-            d="M 116,238 L 116,136 A 84,84 0 0,1 284,136 L 284,238 Z"
-            fill="rgba(240, 249, 255, 0.34)"
-            stroke="rgba(255, 255, 255, 0.85)"
-            strokeWidth="2.5"
-          />
-          <g clipPath={`url(#${domeClipId})`}>
-            {renderStems(16, 0.88)}
-            <path
-              d="M 188,214 L 212,214 M 200,214 C 186,204 182,220 198,217 M 200,214 C 214,204 218,220 202,217"
-              stroke={ribbonColor}
-              strokeWidth="4"
-              fill="none"
-              strokeLinecap="round"
-            />
-            <ellipse cx="200" cy="238" rx="68" ry="9" fill="#86EFAC" opacity="0.45" />
-          </g>
-          <circle
-            cx="200"
-            cy="43"
-            r="9.5"
-            fill="rgba(240, 249, 255, 0.58)"
-            stroke="#FFFFFF"
-            strokeWidth="2.2"
-          />
-          <path
-            d="M 130,224 L 130,138 A 70,70 0 0,1 182,70"
-            fill="none"
-            stroke="#FFFFFF"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            opacity="0.72"
-          />
-          <ellipse cx="200" cy="240" rx="92" ry="9" fill={wrapColor} stroke={wrapShadow} strokeWidth="1.5" />
-          <path
-            d="M 104,240 L 296,240 L 302,254 C 302,259 294,262 284,262 L 116,262 C 106,262 98,259 98,254 Z"
-            fill={wrapShadow}
-          />
-        </g>
-      )}
-
-      {/* 3. PARISIAN VELVET HATBOX SILHOUETTE */}
-      {silhouette === 'hatbox' && (
-        <g>
-          <ellipse cx="200" cy="166" rx="68" ry="14" fill={wrapShadow} />
-          <ellipse cx="200" cy="164" rx="62" ry="11" fill="#FFFDF9" opacity="0.9" />
-          <g>{renderStems(8, 0.94)}</g>
-          <path
-            d="M 132,166 L 142,262 C 142,273 258,273 258,262 L 268,166 Z"
-            fill={wrapColor}
-            stroke="#D97706"
-            strokeWidth="1.5"
-          />
-          <rect
-            x="127"
-            y="158"
-            width="146"
-            height="16"
-            rx="5"
-            fill={wrapShadow}
-            stroke="#F59E0B"
-            strokeWidth="1.4"
-          />
-          <line
-            x1="134"
-            y1="166"
-            x2="266"
-            y2="166"
-            stroke="#FDE68A"
-            strokeWidth="1.5"
-            strokeDasharray="4 4"
-          />
-          <rect
-            x="170"
-            y="198"
-            width="60"
-            height="34"
-            rx="5"
-            fill="#FFFDF9"
-            stroke="#D97706"
-            strokeWidth="1.6"
-          />
-          <rect
-            x="174"
-            y="202"
-            width="52"
-            height="26"
-            rx="3"
-            fill="none"
-            stroke="#F59E0B"
-            strokeWidth="0.9"
-          />
-          <line x1="184" y1="212" x2="216" y2="212" stroke="#92400E" strokeWidth="1.6" strokeLinecap="round" />
-          <line x1="190" y1="220" x2="210" y2="220" stroke="#B45309" strokeWidth="1.2" strokeLinecap="round" />
-        </g>
-      )}
-
-      {/* 4. KOREAN SILK BUTTERFLY WINGS SILHOUETTE */}
-      {silhouette === 'butterfly' && (
-        <g>
-          <path
-            d="M 200,204 C 138,186 78,128 96,74 C 114,44 168,78 200,148 Z"
-            fill={wrapShadow}
-            opacity="0.88"
-            stroke="#FFFDF9"
-            strokeWidth="1.4"
-          />
-          <path
-            d="M 200,204 C 262,186 322,128 304,74 C 286,44 232,78 200,148 Z"
-            fill={wrapShadow}
-            opacity="0.88"
-            stroke="#FFFDF9"
-            strokeWidth="1.4"
-          />
-          <ellipse cx="200" cy="144" rx="58" ry="44" fill="#FFFDF9" opacity="0.88" />
-          <g>{renderStems(2, 0.96)}</g>
-          <path
-            d="M 200,214 C 142,212 104,174 114,136 C 124,116 168,150 200,196 Z"
-            fill={wrapColor}
-            stroke="#FFFDF9"
-            strokeWidth="1.4"
-          />
-          <path
-            d="M 200,214 C 258,212 296,174 286,136 C 276,116 232,150 200,196 Z"
-            fill={wrapColor}
-            stroke="#FFFDF9"
-            strokeWidth="1.4"
-          />
-          <path
-            d="M 164,200 L 236,200 L 224,266 C 216,272 184,272 176,266 Z"
-            fill={wrapColor}
-            stroke="#FFFDF9"
-            strokeWidth="1.4"
-          />
-          <g transform="translate(200, 208)">
-            <rect x="-34" y="-5" width="68" height="10" rx="5" fill={ribbonColor} />
-            <path
-              d="M 0,0 C -24,-18 -32,10 -4,6 M 0,0 C 24,-18 32,10 4,6"
-              fill="none"
-              stroke={ribbonColor}
-              strokeWidth="5"
-              strokeLinecap="round"
-            />
-            <circle cx="0" cy="0" r="5.5" fill={ribbonColor} />
-          </g>
-        </g>
-      )}
-
-      {/* Tucked Wax-Sealed Keepsake Envelope Asset (Just like the Saved PNG / Recipient Studio Canvas) */}
-      <g transform="translate(254, 224) rotate(-4)">
-        <rect
-          x="-28"
-          y="-19"
-          width="56"
-          height="38"
-          rx="5"
-          fill="#FFFDF9"
-          stroke="#D8C4B4"
-          strokeWidth="1.4"
-        />
-        {/* Envelope Flap Lines */}
-        <path
-          d="M -26,-17 L 0,3 L 26,-17"
-          fill="none"
-          stroke="#DECBB9"
-          strokeWidth="1.3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M -26,17 L -8,2 M 26,17 L 8,2"
-          fill="none"
-          stroke="#EAE0D5"
-          strokeWidth="1.1"
-          strokeLinecap="round"
-        />
-        {/* Rose-Gold / Crimson Wax Seal */}
-        <circle cx="0" cy="2" r="6.2" fill="#E11D48" stroke="#FFFDF9" strokeWidth="1.2" />
-        <path
-          d="M 0,4.5 C -3,2 -3.8,-0.5 -1.8,-1.8 C -0.6,-2.5 0,-1.2 0,-1.2 C 0,-1.2 0.6,-2.5 1.8,-1.8 C 3.8,-0.5 3,2 0,4.5 Z"
-          fill="#FFFDF9"
-        />
-      </g>
-    </svg>
+    </div>
   );
 });
 
@@ -491,28 +214,10 @@ const HangingCreationCard: React.FC<{
             : 'bg-[#F7F1E8] border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_12px_28px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_38px_rgba(122,75,58,0.12)]'
         }`}
       >
-        {/* Bouquet + Envelope Asset SVG */}
+        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (100% Exact Studio Stage Copy) */}
         <div className="w-full h-full flex items-center justify-center p-0.5 sm:p-1 pb-11 sm:pb-12 group-hover:scale-105 transition-transform duration-500">
           <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
         </div>
-
-        {/* Attached Voice Keepsake Asset (No text, just the miniature keepsake icon asset) */}
-        {entry.hasVoice && entry.voiceStyle && (
-          <div
-            aria-hidden="true"
-            className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 w-7.5 h-7.5 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center shadow-2xs [&>svg]:w-4.5 [&>svg]:h-4.5 sm:[&>svg]:w-5 sm:[&>svg]:h-5 transition-transform duration-300 group-hover:scale-110 ${
-              isDarkMode
-                ? 'bg-[#352C29]/95 border-[#5E4E49]'
-                : 'bg-[#FFFDF9]/95 border-[#DECBB9]'
-            }`}
-          >
-            <MiniVoiceKeepsakeSVG
-              styleType={entry.voiceStyle}
-              primaryColor="#D6A87C"
-              accentColor="#F43F5E"
-            />
-          </div>
-        )}
 
         {/* Prominent 2-Line Editorial Dedication Tag at Base of Portrait Card (For & From 100% Visible) */}
         <div

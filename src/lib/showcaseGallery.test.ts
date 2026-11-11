@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildCuratedShowcaseBouquets,
+  buildSnapshotFromShowcaseEntry,
   computeGarlandItemScrollTransform,
   computeSingleLaceCarouselItemTransform,
+  convertVaultBouquetToShowcaseEntry,
   evaluateCatenaryCurveY,
   filterShowcaseBouquets,
   getShowcaseFreshnessInfo,
@@ -171,4 +173,38 @@ test('computeSingleLaceCarouselItemTransform moves creations from right to left 
 
   // Vertical Y follows the catenary curve: lower (larger Y) near center u=0.5 than near right edge u>0.9
   assert.ok(item4AfterScroll.yCurvePx > item4AtStart.yCurvePx);
+});
+
+test('buildSnapshotFromShowcaseEntry preserves 100% of user BouquetSnapshot or builds identical curated snapshot', () => {
+  const curated = buildCuratedShowcaseBouquets(FIXED_NOW)[0]; // Sophia from Julian
+  const curatedSnap = buildSnapshotFromShowcaseEntry(curated);
+  assert.equal(curatedSnap.wrapStyle, 'tissue');
+  assert.equal(curatedSnap.ribbonStyle, 'lace');
+  assert.equal(curatedSnap.card.to, 'Sophia');
+  assert.equal(curatedSnap.card.from, 'Julian');
+  assert.equal(curatedSnap.voice?.visibleOnStage, true);
+  assert.equal(curatedSnap.voice?.style, 'mixtape');
+
+  const userEntry = convertVaultBouquetToShowcaseEntry(
+    {
+      code: 'usr123',
+      to: 'Camille',
+      from: 'Lucas',
+      createdAt: new Date(FIXED_NOW).toISOString(),
+      shareUrl: 'https://sendabouquet.online/usr123',
+    },
+    {
+      ...curatedSnap,
+      wrapStyle: 'koreanmesh',
+      wrapColor: '#EDE0F5',
+      ribbonStyle: 'double',
+      ribbonColor: '#A855F7',
+    },
+    0
+  );
+  const userSnap = buildSnapshotFromShowcaseEntry(userEntry);
+  assert.equal(userSnap.wrapStyle, 'koreanmesh');
+  assert.equal(userSnap.ribbonStyle, 'double');
+  assert.equal(userSnap.card.to, 'Camille');
+  assert.equal(userSnap.card.from, 'Lucas');
 });

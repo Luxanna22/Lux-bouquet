@@ -18,6 +18,7 @@ import {
   FlipHorizontal,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   Gift,
   Mail,
   Check,
@@ -386,6 +387,26 @@ export default function App() {
       ),
     [currentPassCheck.valid, activeStudioPass]
   );
+
+  // Harden against F12 DevTools localStorage tampering: re-verify HMAC integrity on storage/focus events
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const enforcePassIntegrity = () => {
+      const verified = getStoredStudioPass();
+      if (!verified && activeStudioPass) {
+        setActiveStudioPass(null);
+      } else if (verified && !currentPassCheck.valid && currentPassCheck.status === 'TAMPERED_SIGNATURE') {
+        saveStoredStudioPass(null);
+        setActiveStudioPass(null);
+      }
+    };
+    window.addEventListener('storage', enforcePassIntegrity);
+    window.addEventListener('focus', enforcePassIntegrity);
+    return () => {
+      window.removeEventListener('storage', enforcePassIntegrity);
+      window.removeEventListener('focus', enforcePassIntegrity);
+    };
+  }, [activeStudioPass, currentPassCheck.valid, currentPassCheck.status]);
 
   const updateStudioCarouselScrollState = useCallback(() => {
     const el = studioCarouselRef.current;
@@ -3454,7 +3475,7 @@ export default function App() {
                   aria-label={isPreviewMode ? 'Back to Studio' : 'Back to Send A Bouquet Home'}
                   className="shrink-0 hover:opacity-80 transition cursor-pointer flex items-center"
                 >
-                  <BrandLogoMark className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 shrink-0" isDarkMode={isDarkMode} />
+                  <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 </button>
                 <div
                   className="min-w-0 truncate text-xs sm:text-base leading-tight"
@@ -3463,11 +3484,18 @@ export default function App() {
                   <span className="italic opacity-75 mr-1">For</span>
                   <span className="font-semibold tracking-tight">{card.to || 'You'}</span>
                   <span
-                    className={`ml-1.5 sm:ml-2 italic text-[11px] sm:text-sm ${
+                    className={`ml-1.5 sm:ml-2 text-[11px] sm:text-sm ${
                       isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
                     }`}
                   >
-                    · Someone sent you a bouquet
+                    · <span className="italic">from</span>{' '}
+                    <span
+                      className={`font-semibold tracking-tight ${
+                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                      }`}
+                    >
+                      {card.from || 'Secret Admirer'}
+                    </span>
                   </span>
                 </div>
               </div>

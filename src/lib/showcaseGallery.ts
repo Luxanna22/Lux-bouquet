@@ -1,5 +1,6 @@
 import {
   BouquetSnapshot,
+  DEFAULT_VOICE_KEEPSAKE,
   FlowerType,
   RibbonStyle,
   SavedVaultBouquet,
@@ -42,6 +43,7 @@ export interface ShowcaseBouquetEntry {
   tiltDeg: number;
   stringLengthPx: number;
   isUserCreated?: boolean;
+  snapshot?: BouquetSnapshot;
 }
 
 export type ShowcaseCategoryFilter =
@@ -450,6 +452,78 @@ export function convertVaultBouquetToShowcaseEntry(
     tiltDeg: tilts[idx % tilts.length],
     stringLengthPx: drops[idx % drops.length],
     isUserCreated: true,
+    snapshot: snapshot || undefined,
+  };
+}
+
+/**
+ * Builds the exact full-stage BouquetSnapshot for any ShowcaseBouquetEntry.
+ * If the entry is a user-created bouquet with a saved snapshot, returns that exact snapshot
+ * (preserving custom flower positions, photocards, wrapper, ribbon, card, and voice keepsake).
+ * Otherwise, converts the curated showcase entry into the identical BouquetSnapshot used when unwrapping.
+ */
+export function buildSnapshotFromShowcaseEntry(entry: ShowcaseBouquetEntry): BouquetSnapshot {
+  if (entry.snapshot && Array.isArray(entry.snapshot.items) && entry.snapshot.items.length > 0) {
+    return {
+      ...entry.snapshot,
+      card: {
+        ...entry.snapshot.card,
+        to: entry.to || entry.snapshot.card?.to || 'Someone Special',
+        from: entry.from || entry.snapshot.card?.from || 'Secret Admirer',
+        visibleOnStage: entry.snapshot.card?.visibleOnStage ?? true,
+      },
+    };
+  }
+
+  return {
+    items: entry.stems.map((s, idx) => ({
+      id: `showcase-${entry.id}-${idx}`,
+      type: s.type,
+      x: Math.round(300 + (s.x - 200) * 1.65),
+      y: Math.round(245 + (s.y - 112) * 3.0),
+      scale: Number((s.scale * 1.45).toFixed(2)),
+      rotation: s.rot,
+      flipX: s.rot > 0,
+      petalColor: s.petal,
+      centerColor: s.center,
+      stemLength: 1,
+      locked: false,
+      hidden: false,
+    })),
+    wrapStyle: entry.wrapStyle,
+    wrapColor: entry.wrapColor,
+    ribbonStyle: entry.ribbonStyle,
+    ribbonColor: entry.ribbonColor,
+    environment: 'studio',
+    card: {
+      to: entry.to,
+      from: entry.from,
+      message: entry.noteExcerpt.replace(/^[“"]|[”"]$/g, ''),
+      theme: 'sealed',
+      visibleOnStage: true,
+      x: 410,
+      y: 525,
+      scale: 0.72,
+      rotation: 0,
+    },
+    voice: entry.hasVoice
+      ? {
+          ...DEFAULT_VOICE_KEEPSAKE,
+          style: entry.voiceStyle || 'mixtape',
+          title: (entry.voiceLabel || 'Voice Keepsake').split('·')[0].trim(),
+          accentColor: entry.ribbonColor || '#FB7185',
+          visibleOnStage: true,
+          durationSec: 18,
+          x: 185,
+          y: 525,
+          scale: 1.0,
+          rotation: 0,
+        }
+      : {
+          ...DEFAULT_VOICE_KEEPSAKE,
+          visibleOnStage: false,
+          durationSec: 0,
+        },
   };
 }
 

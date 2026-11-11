@@ -2178,7 +2178,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (actionType === 'verify_gate_slug') {
         const gateSlug = typeof parsed.gateSlug === 'string' ? parsed.gateSlug : '';
         const valid = verifyEncryptedAdminVisitSlug(gateSlug, deviceTokenHash || 'anon');
-        sendJson(res, valid ? 200 : 403, { ok: valid, valid });
+        sendJson(res, 200, { ok: valid, valid });
         return true;
       }
 
@@ -2188,8 +2188,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const pin = typeof parsed.pin === 'string' ? parsed.pin : '';
         const slugValid = verifyEncryptedAdminVisitSlug(gateSlug, deviceTokenHash || 'anon');
         if (!slugValid) {
-          sendJson(res, 403, {
+          sendJson(res, 200, {
             ok: false,
+            unauthorized: true,
             status: 'EXPIRED_GATE',
             message:
               'This private bouquet link has expired. Re-open "Have a Key?" in the Studio to generate a fresh link.',
@@ -2209,8 +2210,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             'desktop',
             'INTL'
           );
-          sendJson(res, pinResult.locked ? 429 : 401, {
+          sendJson(res, 200, {
             ok: false,
+            unauthorized: true,
             locked: pinResult.locked,
             attemptsRemaining: pinResult.attemptsRemaining,
             message: pinResult.message,
@@ -2241,7 +2243,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const adminSessionToken =
           typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
         if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
-          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          sendJson(res, 200, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
           return true;
         }
         await syncRealAnalyticsSnapshotServer();
@@ -2258,7 +2264,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const adminSessionToken =
           typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
         if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
-          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          sendJson(res, 200, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
           return true;
         }
 
@@ -2325,7 +2335,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const adminSessionToken =
           typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
         if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
-          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          sendJson(res, 200, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
           return true;
         }
 
@@ -2375,7 +2389,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const adminSessionToken =
           typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
         if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
-          sendJson(res, 401, { ok: false, message: 'Owner session expired. Please re-enter PIN.' });
+          sendJson(res, 200, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
           return true;
         }
 

@@ -141,7 +141,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [bloomProgress, setBloomProgress] = useState(0);
   const [isBloomUnfurling, setIsBloomUnfurling] = useState(false);
 
-  // Authenticated Owner Session state
+  // Authenticated Owner Session state (Console UI only renders when BOTH adminSessionToken AND isServerVerified are true, preventing F12 sessionStorage bypass)
   const [adminSessionToken, setAdminSessionToken] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem('lux_owner_session_token_v1');
@@ -149,6 +149,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       return null;
     }
   });
+  const [isServerVerified, setIsServerVerified] = useState(false);
   const [activeTab, setActiveTab] = useState<ConsoleTab>('web_funnel');
   const [analytics, setAnalytics] = useState<OwnerAnalyticsSummary>(() =>
     createInitialAnalyticsSummary()
@@ -172,8 +173,40 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [newOwnerPin, setNewOwnerPin] = useState('');
   const [isUpdatingPin, setIsUpdatingPin] = useState(false);
 
-  // Fetch real Firestore global stats if available
+  // Verify the encrypted per-visit gateSlug with the server on mount; if forged or tampered in F12, exit immediately
   useEffect(() => {
+    let active = true;
+    fetch('/api/payments/verify-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'verify_gate_slug',
+        gateSlug,
+        deviceTokenHash,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && (!data || !data.valid)) {
+          setIsServerVerified(false);
+          setAdminSessionToken(null);
+          try {
+            sessionStorage.removeItem('lux_owner_session_token_v1');
+          } catch {
+            // Ignore storage errors
+          }
+          onExitToStudio();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [gateSlug, deviceTokenHash, onExitToStudio]);
+
+  // Fetch real Firestore global stats only after server-verified unlock
+  useEffect(() => {
+    if (!adminSessionToken || !isServerVerified) return;
     let active = true;
     fetchStudioGlobalStats()
       .then((stats) => {
@@ -183,7 +216,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
     return () => {
       active = false;
     };
-  }, [adminSessionToken]);
+  }, [adminSessionToken, isServerVerified]);
 
   // Merge real server telemetry, real Firestore stats, and real locally saved bouquets on device
   const realAnalytics = useMemo<OwnerAnalyticsSummary>(() => {
@@ -307,7 +340,9 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         if (res.ok && data.ok) {
           if (data.analytics) setAnalytics(data.analytics);
           if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
-        } else if (res.status === 401) {
+          setIsServerVerified(true);
+        } else if (res.status === 401 || data.unauthorized || !data.ok) {
+          setIsServerVerified(false);
           setAdminSessionToken(null);
           try {
             sessionStorage.removeItem('lux_owner_session_token_v1');
@@ -349,6 +384,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         window.setTimeout(() => {
           if (nextAnalytics) setAnalytics(nextAnalytics);
           if (Array.isArray(nextVouchers)) setTesterVouchers(nextVouchers);
+          setIsServerVerified(true);
           setAdminSessionToken(token);
           try {
             sessionStorage.setItem('lux_owner_session_token_v1', token);
@@ -507,7 +543,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   // ============================================================================
   // VIEW 1: LITERAL COPY OF RECIPIENT BOUQUET OPENING UI/UX (From BouquetStudioApp.tsx)
   // ============================================================================
-  if (!adminSessionToken) {
+  if (!adminSessionToken || !isServerVerified) {
     return (
       <div
         data-testid="stealth-bouquet-gate-screen"

@@ -7,7 +7,6 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
-import { fetchStudioGlobalStats, StudioGlobalStats } from '../lib/firebase';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
 import { BrandLogoMark } from './BrandLogoMark';
 import { LegalStationeryModal } from './LegalStationeryModal';
@@ -31,7 +30,10 @@ import {
   HeroLaceGarlandPreview,
   CreationsGalleryPageView,
 } from './LaceGarlandShowcase';
-import { ShowcaseBouquetEntry } from '../lib/showcaseGallery';
+import {
+  buildSnapshotFromShowcaseEntry,
+  ShowcaseBouquetEntry,
+} from '../lib/showcaseGallery';
 import {
   OFFICIAL_STUDIO_EMAIL,
   CONTACT_TOPICS,
@@ -235,44 +237,13 @@ function applyShowcasePresetToStudio(preset: ShowcasePreset) {
   });
 }
 
-/** Converts a LaceGarlandShowcase entry into a full 600x650 Studio BouquetSnapshot */
+/** Converts a LaceGarlandShowcase entry into a full 600x680 Studio BouquetSnapshot (100% identical to the card preview) */
 function applyShowcaseEntryToStudio(entry: ShowcaseBouquetEntry) {
   const store = useBouquetStore.getState();
-  const studioItems = entry.stems.map((st, idx) => ({
-    id: `garland-${entry.id}-${idx}-${Date.now()}`,
-    type: st.type,
-    x: Math.round(300 + (st.x - 200) * 1.65),
-    y: Math.round(245 + (st.y - 112) * 3.0),
-    scale: Number((st.scale * 1.45).toFixed(2)),
-    rotation: st.rot,
-    flipX: st.rot > 0,
-    petalColor: st.petal,
-    centerColor: st.center,
-    stemLength: 1,
-    locked: false,
-    hidden: false,
-  }));
-
+  const exactSnap = buildSnapshotFromShowcaseEntry(entry);
   store.loadSnapshot({
-    items: studioItems,
-    wrapStyle: entry.wrapStyle,
-    wrapColor: entry.wrapColor,
-    ribbonStyle: entry.ribbonStyle,
-    ribbonColor: entry.ribbonColor,
-    card: {
-      ...store.card,
-      to: entry.to,
-      from: entry.from,
-      message: entry.noteExcerpt.replace(/[“”]/g, ''),
-      visibleOnStage: true,
-    },
-    voice: {
-      ...(store.voice || DEFAULT_VOICE_KEEPSAKE),
-      visibleOnStage: Boolean(entry.hasVoice),
-      style: entry.voiceStyle || 'mixtape',
-      title: entry.voiceLabel ? entry.voiceLabel.split('·')[0].trim() : 'For You ♥',
-    },
-    lock: { ...DEFAULT_BOUQUET_LOCK },
+    ...exactSnap,
+    lock: exactSnap.lock || { ...DEFAULT_BOUQUET_LOCK },
   });
 }
 
@@ -793,13 +764,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   isDarkMode,
   onToggleDarkMode,
 }) => {
-  const [stats, setStats] = useState<StudioGlobalStats>({
-    bouquetsCreated: 1284,
-    voiceNotesRecorded: 642,
-    bouquetsOpened: 3910,
-    reactionsSent: 894,
-    updatedAt: '',
-  });
   const [openFaqIdx, setOpenFaqIdx] = useState<number | null>(0);
   const [activePresetIdx, setActivePresetIdx] = useState<number>(0);
 
@@ -835,18 +799,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   // Direct DOM refs for Depth-of-Field Foreground Camera-Lens Petals (2.15x & 2.65x fast scroll parallax)
   const fgPetalLeftRef = useRef<HTMLDivElement | null>(null);
   const fgPetalRightRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    fetchStudioGlobalStats()
-      .then((live) => {
-        if (mounted && live) setStats(live);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   // Pure GPU-driven scroll bloom & foreground depth-of-field petal updater (0 React re-renders during scroll)
   const applyHeroBloomProgress = (scrollTop: number) => {

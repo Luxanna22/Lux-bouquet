@@ -1014,16 +1014,27 @@ export class RomanticMusicBox {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
-    if (!this.ctx) {
-      this.ctx = new AudioCtx();
-    }
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
+    const hasUserGesture =
+      typeof navigator !== 'undefined' &&
+      Boolean(
+        (navigator as Navigator & { userActivation?: { hasBeenActive?: boolean } })
+          .userActivation?.hasBeenActive
+      );
+
+    if (hasUserGesture) {
+      if (!this.ctx) {
+        this.ctx = new AudioCtx();
+      }
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
     }
 
     if (this.isPlaying) return;
     this.isPlaying = true;
-    this.playChimeNote();
+    if (this.ctx && this.ctx.state === 'running') {
+      this.playChimeNote();
+    }
     this.timerId = window.setInterval(() => {
       if (this.isPlaying) {
         this.playChimeNote();
@@ -1038,6 +1049,9 @@ export class RomanticMusicBox {
     if (!AudioCtx) return;
     if (!this.ctx) {
       this.ctx = new AudioCtx();
+      if (this.ctx.state === 'running' && this.isPlaying) {
+        this.playChimeNote();
+      }
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().then(() => {
