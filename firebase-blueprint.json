@@ -180,6 +180,60 @@
         "paymentReference",
         "signature"
       ]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "A visitor message sent via the Landing Page stationery contact form, backed up in Firestore alongside Resend email delivery.",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "description": "Unique contact message identifier (msg_<timestamp>_<random>)"
+        },
+        "topic": {
+          "type": "string",
+          "description": "Selected contact topic ('flower_wish', 'feedback', 'order_help', or 'general')"
+        },
+        "topicLabel": {
+          "type": "string",
+          "description": "Human-readable label for the selected topic"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Optional name provided by the visitor"
+        },
+        "replyToEmail": {
+          "type": "string",
+          "description": "Optional reply-to email address provided by the visitor"
+        },
+        "message": {
+          "type": "string",
+          "description": "Stationery note message body (3 to 2000 characters)"
+        },
+        "emailDispatched": {
+          "type": "boolean",
+          "description": "Whether the notification email was dispatched via Resend to luxcg22@gmail.com"
+        },
+        "autoReplySent": {
+          "type": "boolean",
+          "description": "Whether an automatic confirmation email was sent to the visitor's reply-to address"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when the contact message was submitted"
+        }
+      },
+      "required": [
+        "messageId",
+        "topic",
+        "topicLabel",
+        "senderName",
+        "replyToEmail",
+        "message",
+        "emailDispatched",
+        "autoReplySent",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -200,6 +254,12 @@
         "$ref": "#/entities/StudioPass"
       },
       "description": "Zero-login Studio Pass records lookup by exact BLOOM-XXXX-XXXX Pass Key with anti-sharing device binding and immutable tier/expiry."
+    },
+    "/contact_messages/{messageId}": {
+      "schema": {
+        "$ref": "#/entities/ContactMessage"
+      },
+      "description": "Write-only visitor contact notes submitted from the Landing Page stationery form."
     }
   }
 }

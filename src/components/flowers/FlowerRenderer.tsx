@@ -1285,6 +1285,364 @@ export const AstilbeSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, 
   </g>
 );
 
+/** 32. Gilded Celestial Rose (Luxury Shimmering Focal Bloom) */
+export const CelestialRoseSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
+  <g>
+    {!hideStem && (
+      <g>
+        <path d="M0,152 Q-4,75 0,10" stroke="#15803d" strokeWidth="4.6" fill="none" strokeLinecap="round" />
+        {/* 24k Gold-Edged Botanical Rose Leaves */}
+        <path
+          d="M-2,65 C-28,58 -36,42 -16,38 C-4,40 -1,54 -2,65 Z"
+          fill="#16a34a"
+          stroke="#FDE68A"
+          strokeWidth="1.2"
+        />
+        <path
+          d="M2,84 C28,77 36,61 16,57 C4,59 1,73 2,84 Z"
+          fill="#16a34a"
+          stroke="#FDE68A"
+          strokeWidth="1.2"
+        />
+      </g>
+    )}
+    {/* Radiant Golden Starlight Halo Behind Bloom */}
+    <circle cx="0" cy="-16" r="46" fill={centerColor} fillOpacity="0.16" />
+    <circle
+      cx="0"
+      cy="-16"
+      r="43"
+      fill="none"
+      stroke="#FDE68A"
+      strokeWidth="1"
+      strokeDasharray="3 3"
+      opacity="0.7"
+    />
+    {/* Outer 6 Sculpted Velvet Petals with 24k Gold-Leaf Rim */}
+    {[0, 60, 120, 180, 240, 300].map((deg) => (
+      <g key={`cr-out-${deg}`} transform={`translate(0, -16) rotate(${deg})`}>
+        <path
+          d="M0,0 C-24,-10 -32,-38 0,-43 C32,-38 24,-10 0,0 Z"
+          fill={petalColor}
+          stroke="#FDE68A"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M0,-6 Q-10,-24 -4,-36 M0,-6 Q10,-24 4,-36"
+          fill="none"
+          stroke="#FFFDF9"
+          strokeWidth="0.9"
+          opacity="0.55"
+        />
+      </g>
+    ))}
+    {/* Middle 6 Spiral Cupped Petals with Shimmering Highlight */}
+    {[30, 90, 150, 210, 270, 330].map((deg) => (
+      <g key={`cr-mid-${deg}`} transform={`translate(0, -16) rotate(${deg})`}>
+        <path
+          d="M0,0 C-18,-8 -24,-29 0,-33 C24,-29 18,-8 0,0 Z"
+          fill={petalColor}
+          fillOpacity="0.92"
+          stroke="#FEF08A"
+          strokeWidth="1.4"
+        />
+        <path
+          d="M-10,-22 Q0,-28 10,-22"
+          fill="none"
+          stroke="#FFFFFF"
+          strokeWidth="1.1"
+          opacity="0.65"
+        />
+      </g>
+    ))}
+    {/* Inner Velvet Corolla */}
+    {[0, 72, 144, 216, 288].map((deg) => (
+      <path
+        key={`cr-in-${deg}`}
+        transform={`translate(0, -16) rotate(${deg})`}
+        d="M0,0 C-12,-6 -15,-19 0,-22 C15,-19 12,-6 0,0 Z"
+        fill={petalColor}
+        stroke="#FDE047"
+        strokeWidth="1.3"
+      />
+    ))}
+    {/* Glowing 24k Gold Starburst Heart */}
+    <circle cx="0" cy="-16" r="9.5" fill={centerColor} stroke="#FFFDF9" strokeWidth="1.2" />
+    <path
+      d="M0,-28 L2.4,-18.4 L12,-16 L2.4,-13.6 L0,-4 L-2.4,-13.6 L-12,-16 L-2.4,-18.4 Z"
+      fill="#FFFDF9"
+      opacity="0.92"
+    />
+    {/* Glimmering 4-Point Starlight Sparkles & Gold Dust Motes */}
+    <g fill="#FEF08A" stroke="#F59E0B" strokeWidth="0.4">
+      <path d="M-36,-46 L-34.5,-41.5 L-30,-40 L-34.5,-38.5 L-36,-34 L-37.5,-38.5 L-42,-40 L-37.5,-41.5 Z" />
+      <path d="M37,-42 L38.3,-38.3 L42,-37 L38.3,-35.7 L37,-32 L35.7,-35.7 L32,-37 L35.7,-38.3 Z" />
+      <path d="M0,-62 L1.2,-58.2 L5,-57 L1.2,-55.8 L0,-52 L-1.2,-55.8 L-5,-57 L-1.2,-58.2 Z" />
+      <circle cx="-41" cy="-12" r="2.2" fill="#FFFDF9" />
+      <circle cx="41" cy="-8" r="2.2" fill="#FFFDF9" />
+      <circle cx="-24" cy="-54" r="1.8" fill="#FDE047" />
+      <circle cx="25" cy="-53" r="1.8" fill="#FDE047" />
+    </g>
+  </g>
+);
+
+/** 33. Crystal Moonbow Orchid (Luxury Iridescent Prism Orchid) */
+export const CrystalOrchidSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
+  <g>
+    {!hideStem && (
+      <path d="M0,152 Q5,72 0,8" stroke="#0f766e" strokeWidth="4.4" fill="none" strokeLinecap="round" />
+    )}
+    {/* Iridescent Crystal Halo */}
+    <circle cx="0" cy="-18" r="46" fill={petalColor} fillOpacity="0.18" />
+    {/* Upper & Lateral Crystalline Sepals with Prism Facet Lines */}
+    <path
+      d="M0,-16 C-18,-36 -16,-62 0,-66 C16,-62 18,-36 0,-16 Z"
+      fill={petalColor}
+      stroke="#FFFDF9"
+      strokeWidth="1.6"
+    />
+    <path
+      d="M0,-14 C-16,4 -38,14 -42,2 C-44,-10 -22,-20 0,-14 Z"
+      fill={petalColor}
+      stroke="#FFFDF9"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M0,-14 C16,4 38,14 42,2 C44,-10 22,-20 0,-14 Z"
+      fill={petalColor}
+      stroke="#FFFDF9"
+      strokeWidth="1.5"
+    />
+    {/* Oversized Winged Phalaenopsis Petals with Opalescent Shimmer & Gold Rim */}
+    <path
+      d="M-2,-16 C-26,-44 -52,-36 -48,-12 C-45,8 -20,2 -2,-16 Z"
+      fill={petalColor}
+      stroke="#FDE68A"
+      strokeWidth="1.6"
+    />
+    <path
+      d="M2,-16 C26,-44 52,-36 48,-12 C45,8 20,2 2,-16 Z"
+      fill={petalColor}
+      stroke="#FDE68A"
+      strokeWidth="1.6"
+    />
+    {/* Crystalline Prism Shimmer Facets Inside Wings */}
+    <path
+      d="M-8,-18 C-24,-34 -40,-28 -38,-14 C-36,-2 -20,-6 -8,-18 Z M8,-18 C24,-34 40,-28 38,-14 C36,-2 20,-6 8,-18 Z"
+      fill="#FFFFFF"
+      fillOpacity="0.48"
+    />
+    <path
+      d="M0,-22 L0,-56 M-6,-18 L-38,-22 M6,-18 L38,-22"
+      stroke="#FFFDF9"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      opacity="0.8"
+    />
+    {/* Sculpted 24k Gold & Pearl Labellum (Lip) */}
+    <path
+      d="M0,-14 C-16,-12 -18,12 0,16 C18,12 16,-12 0,-14 Z"
+      fill={centerColor}
+      stroke="#FFFDF9"
+      strokeWidth="1.5"
+    />
+    <circle cx="0" cy="-14" r="5.5" fill="#FFFDF9" stroke={centerColor} strokeWidth="1.4" />
+    {/* Hanging Crystal Dew Drops & Diamond Sparkles */}
+    <path d="M-28,6 C-31,12 -25,12 -28,6 Z M28,6 C25,12 31,12 28,6 Z" fill="#FFFDF9" />
+    <g fill="#FFFDF9">
+      <path d="M-38,-44 L-36.5,-39.5 L-32,-38 L-36.5,-36.5 L-38,-32 L-39.5,-36.5 L-44,-38 L-39.5,-39.5 Z" />
+      <path d="M38,-44 L39.5,-39.5 L44,-38 L39.5,-36.5 L38,-32 L36.5,-36.5 L32,-38 L36.5,-39.5 Z" />
+      <path d="M0,-1 L1.5,3.5 L6,5 L1.5,6.5 L0,11 L-1.5,6.5 L-6,5 L-1.5,3.5 Z" fill="#FEF08A" />
+      <circle cx="-22" cy="-52" r="2" fill="#FEF08A" />
+      <circle cx="22" cy="-52" r="2" fill="#FEF08A" />
+    </g>
+  </g>
+);
+
+/** 34. Lumina Starlight Peony (Luxury Multi-Layered Silk & Gold Peony) */
+export const LuminaPeonySVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
+  <g>
+    {!hideStem && (
+      <g>
+        <path d="M0,152 Q-3,76 0,10" stroke="#15803d" strokeWidth="4.8" fill="none" strokeLinecap="round" />
+        <path d="M-2,70 C-26,60 -32,44 -14,42 C-4,44 -1,58 -2,70 Z" fill="#16a34a" stroke="#FDE68A" strokeWidth="1.1" />
+        <path d="M2,88 C26,78 32,62 14,60 C4,62 1,76 2,88 Z" fill="#16a34a" stroke="#FDE68A" strokeWidth="1.1" />
+      </g>
+    )}
+    {/* Soft Luminous Champagne Halo */}
+    <circle cx="0" cy="-18" r="47" fill={centerColor} fillOpacity="0.2" />
+    {/* Outer Crown of 8 Ruffled Silk Peony Petals with Gold Filigree Edge */}
+    {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+      <g key={`lp-out-${deg}`} transform={`translate(0, -18) rotate(${deg})`}>
+        <path
+          d="M0,0 C-22,-14 -28,-42 -8,-44 C0,-46 0,-42 8,-44 C28,-42 22,-14 0,0 Z"
+          fill={petalColor}
+          stroke="#FDE68A"
+          strokeWidth="1.35"
+        />
+      </g>
+    ))}
+    {/* Middle Ring of 8 Pearl-Lined Ruffled Petals */}
+    {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((deg) => (
+      <g key={`lp-mid-${deg}`} transform={`translate(0, -18) rotate(${deg})`}>
+        <path
+          d="M0,0 C-16,-10 -20,-32 0,-35 C20,-32 16,-10 0,0 Z"
+          fill={petalColor}
+          stroke="#FFFDF9"
+          strokeWidth="1.3"
+        />
+        <path d="M0,-8 L0,-28" stroke="#FFFDF9" strokeWidth="0.9" opacity="0.6" />
+      </g>
+    ))}
+    {/* Inner Cupped Silk Petals */}
+    {[0, 60, 120, 180, 240, 300].map((deg) => (
+      <path
+        key={`lp-in-${deg}`}
+        transform={`translate(0, -18) rotate(${deg})`}
+        d="M0,0 C-11,-7 -14,-22 0,-24 C14,-22 11,-7 0,0 Z"
+        fill="#FFFDF9"
+        fillOpacity="0.55"
+        stroke={centerColor}
+        strokeWidth="1.2"
+      />
+    ))}
+    {/* Radiant Golden Stamen Crown */}
+    <circle cx="0" cy="-18" r="12" fill={centerColor} stroke="#FFFDF9" strokeWidth="1.3" />
+    {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
+      <g key={`lp-st-${deg}`} transform={`translate(0, -18) rotate(${deg})`}>
+        <line x1="0" y1="-4" x2="0" y2="-16" stroke="#F59E0B" strokeWidth="1.1" />
+        <circle cx="0" cy="-17" r="1.8" fill="#FFFDF9" />
+      </g>
+    ))}
+    {/* Twinkling Starlight Motes */}
+    <g fill="#FFFDF9">
+      <path d="M-36,-48 L-34.5,-43.5 L-30,-42 L-34.5,-40.5 L-36,-36 L-37.5,-40.5 L-42,-42 L-37.5,-43.5 Z" />
+      <path d="M36,-48 L37.5,-43.5 L42,-42 L37.5,-40.5 L36,-36 L34.5,-40.5 L30,-42 L34.5,-43.5 Z" />
+      <path d="M0,-24 L1.5,-19.5 L6,-18 L1.5,-16.5 L0,-12 L-1.5,-16.5 L-6,-18 L-1.5,-19.5 Z" />
+      <circle cx="-42" cy="-18" r="2.2" fill="#FDE68A" />
+      <circle cx="42" cy="-18" r="2.2" fill="#FDE68A" />
+    </g>
+  </g>
+);
+
+/** 35. 24k Gilded Maidenhair Fern (Luxury Metallic Champagne-Gold Foliage Filler) */
+export const GildedFernSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor, hideStem }) => (
+  <g>
+    <path
+      d={hideStem ? 'M0,18 Q-4,-24 0,-64' : 'M0,152 Q-6,48 0,-64'}
+      stroke={centerColor}
+      strokeWidth="3.2"
+      fill="none"
+      strokeLinecap="round"
+    />
+    {[
+      { x: -3, y: 2, s: 1.05, side: -1 },
+      { x: 2, y: -4, s: 1.05, side: 1 },
+      { x: -3, y: -16, s: 0.96, side: -1 },
+      { x: 2, y: -22, s: 0.96, side: 1 },
+      { x: -2, y: -34, s: 0.85, side: -1 },
+      { x: 2, y: -40, s: 0.85, side: 1 },
+      { x: -1, y: -50, s: 0.72, side: -1 },
+      { x: 1, y: -54, s: 0.72, side: 1 },
+    ].map((p, idx) => (
+      <g
+        key={`gf-${idx}`}
+        transform={`translate(${p.x}, ${p.y}) scale(${p.side * p.s}, ${p.s})`}
+      >
+        <path d="M0,0 Q12,-4 22,-12" stroke={centerColor} strokeWidth="1.4" fill="none" />
+        {/* Fan-shaped Gilded Gingko/Maidenhair Leaflet with Metallic Gold Rim */}
+        <path
+          d="M12,-4 C16,-18 32,-20 34,-8 C31,-4 26,-6 24,-2 C20,2 14,0 12,-4 Z"
+          fill={petalColor}
+          stroke="#FFFDF9"
+          strokeWidth="1.1"
+        />
+        <path
+          d="M15,-5 L28,-12 M16,-4 L26,-6"
+          stroke={centerColor}
+          strokeWidth="0.8"
+          opacity="0.65"
+        />
+      </g>
+    ))}
+    {/* Apex Gilded Fan Leaflet */}
+    <path
+      d="M0,-62 C-12,-76 12,-76 0,-62 Z"
+      fill={petalColor}
+      stroke="#FFFDF9"
+      strokeWidth="1.2"
+    />
+    {/* Shimmering 24k Gold Sparkles Along the Frond */}
+    <g fill="#FFFDF9">
+      <path d="M-28,-30 L-26.8,-26.2 L-23,-25 L-26.8,-23.8 L-28,-20 L-29.2,-23.8 L-33,-25 L-29.2,-26.2 Z" />
+      <path d="M28,-46 L29.2,-42.2 L33,-41 L29.2,-39.8 L28,-36 L26.8,-39.8 L23,-41 L26.8,-42.2 Z" />
+      <circle cx="-22" cy="-54" r="2" fill="#FDE047" />
+      <circle cx="24" cy="-16" r="2" fill="#FDE047" />
+      <circle cx="0" cy="-74" r="2.2" fill="#FFFDF9" />
+    </g>
+  </g>
+);
+
+/** 36. Starlight Pearl Gypsophila Spray (Luxury Akoya Pearl & Diamond Filler) */
+export const StarlightGypsophilaSVG: React.FC<FlowerSVGProps> = ({
+  petalColor,
+  centerColor,
+  hideStem,
+}) => {
+  const pearls = [
+    { x: -28, y: -22, r: 7.5 },
+    { x: 28, y: -24, r: 7.5 },
+    { x: -18, y: -42, r: 8.5 },
+    { x: 20, y: -44, r: 8.5 },
+    { x: 0, y: -32, r: 9 },
+    { x: -26, y: -56, r: 6.5 },
+    { x: 26, y: -58, r: 6.5 },
+    { x: 0, y: -58, r: 8.5 },
+  ];
+  return (
+    <g>
+      {!hideStem && (
+        <path
+          d="M0,152 Q-3,70 0,8"
+          stroke={centerColor}
+          strokeWidth="3.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+      )}
+      {/* Fine Golden Filigree Branches */}
+      <g stroke={centerColor} strokeWidth="1.5" fill="none" strokeLinecap="round">
+        <path d="M0,8 Q-14,-8 -28,-22 M0,2 Q14,-10 28,-24" />
+        <path d="M0,0 Q-10,-22 -18,-42 M0,-2 Q10,-24 20,-44" />
+        <path d="M-12,-28 Q-20,-42 -26,-56 M12,-30 Q20,-44 26,-58" />
+        <line x1="0" y1="8" x2="0" y2="-58" />
+      </g>
+      {/* Glowing Akoya Pearl Blossoms with Specular Sheen & Gold Halo */}
+      {pearls.map((p, idx) => (
+        <g key={`sg-${idx}`} transform={`translate(${p.x}, ${p.y})`}>
+          <circle cx="0" cy="0" r={p.r + 3.5} fill={centerColor} fillOpacity="0.22" />
+          <circle
+            cx="0"
+            cy="0"
+            r={p.r}
+            fill={petalColor}
+            stroke={centerColor}
+            strokeWidth="1.2"
+          />
+          <circle cx={-p.r * 0.32} cy={-p.r * 0.32} r={p.r * 0.34} fill="#FFFFFF" />
+          <circle cx={p.r * 0.25} cy={p.r * 0.25} r={p.r * 0.16} fill={centerColor} />
+        </g>
+      ))}
+      {/* Twinkling 4-Point Diamond Starlight Glints */}
+      <g fill="#FFFDF9" stroke={centerColor} strokeWidth="0.35">
+        <path d="M0,-72 L1.5,-66.5 L7,-65 L1.5,-63.5 L0,-58 L-1.5,-63.5 L-7,-65 L-1.5,-66.5 Z" />
+        <path d="M-38,-38 L-36.8,-34.2 L-33,-33 L-36.8,-31.8 L-38,-28 L-39.2,-31.8 L-43,-33 L-39.2,-34.2 Z" />
+        <path d="M38,-40 L39.2,-36.2 L43,-35 L39.2,-33.8 L38,-30 L36.8,-33.8 L33,-35 L36.8,-36.2 Z" />
+      </g>
+    </g>
+  );
+};
+
 export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = ({
   type,
   petalColor,
@@ -1314,6 +1672,12 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <AnemoneSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'dahlia':
       return <DahliaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'celestialRose':
+      return <CelestialRoseSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'crystalOrchid':
+      return <CrystalOrchidSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'luminaPeony':
+      return <LuminaPeonySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'iris':
       return <IrisSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'camellia':
@@ -1344,6 +1708,10 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <WaxflowerSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'billyButtons':
       return <BillyButtonsSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'gildedFern':
+      return <GildedFernSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'starlightGypsophila':
+      return <StarlightGypsophilaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'oliveBranch':
       return <OliveBranchSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'monstera':

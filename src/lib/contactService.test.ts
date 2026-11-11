@@ -1,0 +1,96 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  OFFICIAL_STUDIO_EMAIL,
+  CONTACT_TOPICS,
+  getContactTopicOption,
+  validateContactSubmission,
+  generateClientContactMessageId,
+} from './contactService';
+// @ts-expect-error Testing shared backend handler functions
+import { validateContactPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail } from '../../api/_lib/contactHandler.js';
+
+test('OFFICIAL_STUDIO_EMAIL is set to hello@sendabouquet.online', () => {
+  assert.equal(OFFICIAL_STUDIO_EMAIL, 'hello@sendabouquet.online');
+});
+
+test('CONTACT_TOPICS includes Flower Wish, Feedback, Order Help, and General Note', () => {
+  const ids = CONTACT_TOPICS.map((t) => t.id);
+  assert.deepEqual(ids, ['flower_wish', 'feedback', 'order_help', 'general']);
+  assert.equal(getContactTopicOption('flower_wish').label, 'Flower Wish');
+  assert.equal(getContactTopicOption('order_help').label, 'Order Help');
+});
+
+test('validateContactSubmission rejects empty or too-short messages', () => {
+  const emptyRes = validateContactSubmission({ topic: 'feedback', message: '  ' });
+  assert.equal(emptyRes.ok, false);
+  if (!emptyRes.ok) {
+    assert.match(emptyRes.error, /brief note/i);
+  }
+});
+
+test('validateContactSubmission requires replyToEmail when topic is order_help', () => {
+  const noEmailOrder = validateContactSubmission({
+    topic: 'order_help',
+    name: 'Clara',
+    replyToEmail: '',
+    message: 'I bought a 7-day pass on Ko-fi and need my key resent.',
+  });
+  assert.equal(noEmailOrder.ok, false);
+  if (!noEmailOrder.ok) {
+    assert.match(noEmailOrder.error, /email address/i);
+  }
+
+  const withEmailOrder = validateContactSubmission({
+    topic: 'order_help',
+    name: 'Clara',
+    replyToEmail: 'clara@example.com',
+    message: 'I bought a 7-day pass on Ko-fi and need my key resent.',
+  });
+  assert.equal(withEmailOrder.ok, true);
+});
+
+test('validateContactSubmission rejects malformed replyToEmail', () => {
+  const badEmail = validateContactSubmission({
+    topic: 'flower_wish',
+    replyToEmail: 'not-an-email',
+    message: 'Please add Lily of the Valley!',
+  });
+  assert.equal(badEmail.ok, false);
+});
+
+test('generateClientContactMessageId matches Firestore security rule pattern', () => {
+  const id = generateClientContactMessageId(1700000000000);
+  assert.match(id, /^msg_[0-9]{10,16}_[a-zA-Z0-9]{4,16}$/);
+});
+
+test('backend email builders include sender details, reply-to, and hello@sendabouquet.online', () => {
+  const backendCheck = validateContactPayload({
+    topic: 'flower_wish',
+    name: 'Mina',
+    replyToEmail: 'mina@example.com',
+    message: 'Would love a white gardenia stem!',
+  });
+  assert.equal(backendCheck.ok, true);
+
+  const studioEmail = buildStudioNotificationEmail({
+    topicLabel: 'Flower Wish',
+    senderName: 'Mina',
+    replyToEmail: 'mina@example.com',
+    message: 'Would love a white gardenia stem!',
+    createdAt: '2026-11-11T00:00:00.000Z',
+    messageId: 'msg_1700000000000_abc123',
+  });
+  assert.match(studioEmail.subject, /Flower Wish/);
+  assert.match(studioEmail.subject, /Mina/);
+  assert.match(studioEmail.html, /mina@example\.com/);
+
+  const visitorEmail = buildVisitorConfirmationEmail({
+    topicLabel: 'Flower Wish',
+    senderName: 'Mina',
+    message: 'Would love a white gardenia stem!',
+  });
+  assert.match(visitorEmail.subject, /Send A Bouquet/);
+  assert.match(visitorEmail.html, /hello@sendabouquet\.online/);
+  assert.match(visitorEmail.html, /white gardenia/);
+});

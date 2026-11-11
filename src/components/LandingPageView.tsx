@@ -32,6 +32,13 @@ import {
   CreationsGalleryPageView,
 } from './LaceGarlandShowcase';
 import { ShowcaseBouquetEntry } from '../lib/showcaseGallery';
+import {
+  OFFICIAL_STUDIO_EMAIL,
+  CONTACT_TOPICS,
+  getContactTopicOption,
+  submitContactNote,
+  type ContactTopicId,
+} from '../lib/contactService';
 
 interface LandingPageViewProps {
   onStartCrafting: () => void;
@@ -793,10 +800,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [activePresetIdx, setActivePresetIdx] = useState<number>(0);
 
   // Minimal Contact, Mobile Nav & Legal modal state
+  const [contactTopic, setContactTopic] = useState<ContactTopicId>('flower_wish');
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactMessage, setContactMessage] = useState('');
+  const [isContactSending, setIsContactSending] = useState(false);
   const [isContactSent, setIsContactSent] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [sentConfirmationEmail, setSentConfirmationEmail] = useState<string | null>(null);
+  const [sentTopicLabel, setSentTopicLabel] = useState<string>('Flower Wish');
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMaintainNoteOpen, setIsMaintainNoteOpen] = useState(false);
@@ -1029,15 +1041,33 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
   const handleCopyStudioEmail = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText('hello@sendabouquet.com').catch(() => {});
+      navigator.clipboard.writeText(OFFICIAL_STUDIO_EMAIL).catch(() => {});
     }
     setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2200);
+    setTimeout(() => setCopiedEmail(false), 2400);
   };
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contactMessage.trim()) return;
+    if (isContactSending) return;
+    setContactError(null);
+    setIsContactSending(true);
+
+    const result = await submitContactNote({
+      topic: contactTopic,
+      name: contactName,
+      replyToEmail: contactEmail,
+      message: contactMessage,
+    });
+
+    setIsContactSending(false);
+    if (!result.ok) {
+      setContactError(result.error || 'Could not send your note right now.');
+      return;
+    }
+
+    setSentTopicLabel(result.topicLabel);
+    setSentConfirmationEmail(result.confirmationRecipient);
     setIsContactSent(true);
   };
 
@@ -2111,27 +2141,33 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 Feedback, custom flower wishes, or studio help.
               </p>
 
-              <div className="mt-3.5 inline-flex items-center gap-2">
+              <div className="mt-3.5 inline-flex items-center gap-2 flex-wrap justify-center lg:justify-start">
                 <a
-                  href="mailto:hello@sendabouquet.com"
+                  href={`mailto:${OFFICIAL_STUDIO_EMAIL}`}
+                  data-testid="official-studio-email-link"
                   className={`text-sm sm:text-[15px] font-medium underline decoration-dashed underline-offset-4 transition-colors ${
                     isDarkMode
                       ? 'text-[#FBF6F1] decoration-[#75625A] hover:text-[#E6B89C]'
                       : 'text-[#231C18] decoration-[#C8B5A6] hover:text-[#7A4B3A]'
                   }`}
                 >
-                  hello@sendabouquet.com
+                  {OFFICIAL_STUDIO_EMAIL}
                 </a>
                 <button
                   type="button"
                   onClick={handleCopyStudioEmail}
+                  aria-label={`Copy ${OFFICIAL_STUDIO_EMAIL}`}
                   className={`px-2.5 py-0.5 rounded-full border border-dashed text-[10px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                    isDarkMode
+                    copiedEmail
+                      ? isDarkMode
+                        ? 'bg-[#463833] border-[#E6B89C] text-[#E6B89C]'
+                        : 'bg-[#F3E7DC] border-[#7A4B3A] text-[#7A4B3A]'
+                      : isDarkMode
                       ? 'bg-[#352C29] border-[#5E4E49] text-[#D8C7BE] hover:text-[#FBF6F1]'
                       : 'bg-[#FAF5EF] border-[#D8C4B4] text-[#6E5D54] hover:text-[#231C18]'
                   }`}
                 >
-                  {copiedEmail ? 'Copied' : 'Copy'}
+                  {copiedEmail ? 'Copied!' : 'Copy'}
                 </button>
               </div>
             </div>
@@ -2316,7 +2352,47 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 </div>
 
                 {isContactSent ? (
-                  <div className="relative py-8 sm:py-10 text-center space-y-2.5">
+                  <div
+                    data-testid="contact-sent-confirmation"
+                    className="relative py-6 sm:py-8 text-center space-y-3"
+                  >
+                    {/* Animated Botanical Wax Seal Stamp Emblem */}
+                    <div className="mx-auto w-14 h-14 flex items-center justify-center relative">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 48 48"
+                        className="w-14 h-14 select-none drop-shadow-xs transition-transform duration-500 scale-100"
+                      >
+                        <circle
+                          cx="24"
+                          cy="24"
+                          r="20"
+                          fill={isDarkMode ? '#8C4A58' : '#A64B5B'}
+                          fillOpacity={isDarkMode ? '0.28' : '0.18'}
+                          stroke={isDarkMode ? '#E598A6' : '#9E4757'}
+                          strokeWidth="1.35"
+                          strokeDasharray="3 2.2"
+                        />
+                        <circle
+                          cx="24"
+                          cy="24"
+                          r="15"
+                          fill={isDarkMode ? '#7A3E4B' : '#9E4757'}
+                          fillOpacity={isDarkMode ? '0.32' : '0.12'}
+                          stroke={isDarkMode ? '#E598A6' : '#9E4757'}
+                          strokeWidth="1"
+                        />
+                        <path
+                          d="M 24,29.5 C 24,29.5 17.5,24.8 17.5,21.2 C 17.5,19.1 19.1,17.6 21.2,17.6 C 22.5,17.6 23.5,18.4 24,19.3 C 24.5,18.4 25.5,17.6 26.8,17.6 C 28.9,17.6 30.5,19.1 30.5,21.2 C 30.5,24.8 24,29.5 24,29.5 Z"
+                          fill={isDarkMode ? '#F4B4C0' : '#9E4757'}
+                        />
+                      </svg>
+                    </div>
+
+                    <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border border-dashed text-[11px] font-medium tracking-wide border-[#C8B5A6] text-[#7A4B3A] dark:border-[#66554F] dark:text-[#E6B89C]">
+                      Sealed • {sentTopicLabel}
+                    </div>
+
                     <div
                       className={`text-2xl sm:text-3xl font-semibold ${
                         isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
@@ -2325,30 +2401,82 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     >
                       Your Note Is on Its Way
                     </div>
+
                     <p
-                      className={`text-xs sm:text-sm ${
+                      className={`text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${
                         isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                       }`}
                     >
-                      Thank you for writing{contactName ? `, ${contactName}` : ''}. I’ll read it soon.
+                      Thank you for writing{contactName ? `, ${contactName}` : ''}. Your note has been safely received, and I’ll read it soon.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsContactSent(false);
-                        setContactMessage('');
-                      }}
-                      className={`mt-2 inline-block px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                        isDarkMode
-                          ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                          : 'bg-[#FAF4EE] border-[#D5C2B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                      }`}
-                    >
-                      Write another note
-                    </button>
+
+                    {sentConfirmationEmail && (
+                      <p
+                        data-testid="contact-confirmation-email-notice"
+                        className={`text-[11.5px] max-w-sm mx-auto px-3 py-1.5 rounded-xl border border-dashed ${
+                          isDarkMode
+                            ? 'bg-[#2B2321]/70 border-[#544540] text-[#E6B89C]'
+                            : 'bg-[#FAF5EF] border-[#DFCFC0] text-[#7A4B3A]'
+                        }`}
+                      >
+                        A confirmation copy was also sent to <span className="font-medium">{sentConfirmationEmail}</span> from <span className="font-medium">{OFFICIAL_STUDIO_EMAIL}</span>.
+                      </p>
+                    )}
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsContactSent(false);
+                          setContactMessage('');
+                          setContactError(null);
+                          setSentConfirmationEmail(null);
+                        }}
+                        className={`inline-block px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                          isDarkMode
+                            ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                            : 'bg-[#FAF4EE] border-[#D5C2B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                        }`}
+                      >
+                        Write another note
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <form onSubmit={handleContactSubmit} className="relative space-y-4">
+                  <form onSubmit={handleContactSubmit} noValidate className="relative space-y-4">
+                    {/* Quick Topic Tags Row */}
+                    <div
+                      role="group"
+                      aria-label="Note topic"
+                      className="flex flex-wrap items-center gap-1.5 pb-1"
+                    >
+                      {CONTACT_TOPICS.map((topicItem) => {
+                        const isSelected = contactTopic === topicItem.id;
+                        return (
+                          <button
+                            key={topicItem.id}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => {
+                              setContactTopic(topicItem.id);
+                              if (contactError) setContactError(null);
+                            }}
+                            className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium transition-all cursor-pointer ${
+                              isSelected
+                                ? isDarkMode
+                                  ? 'bg-[#9A6550] border-[#E6B89C] text-[#FFFDF9] shadow-2xs'
+                                  : 'bg-[#7A4B3A] border-[#7A4B3A] text-[#FFFDF9] shadow-2xs'
+                                : isDarkMode
+                                ? 'bg-[#2B2321]/70 border-[#5E4E49] text-[#D8C7BE] hover:text-[#FBF6F1] hover:border-[#8C766C]'
+                                : 'bg-[#FAF5EF]/90 border-[#D8C4B4] text-[#6E5D54] hover:text-[#231C18] hover:border-[#B89F8D]'
+                            }`}
+                          >
+                            {topicItem.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     {/* Ruled Stationery Lines Area — Textarea Sits Directly on Illustrated Paper Rules (Zero Boxy Input Border) */}
                     <div className="relative">
                       {/* 4 Illustrated Horizontal Ruled Paper Lines */}
@@ -2368,12 +2496,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                       <textarea
                         rows={4}
-                        required
                         aria-label="Write your note"
+                        disabled={isContactSending}
                         value={contactMessage}
-                        onChange={(e) => setContactMessage(e.target.value)}
-                        placeholder="Write feedback, a flower wish, or a little note..."
-                        className={`relative z-10 w-full px-1 py-0 bg-transparent border-0 text-[13.5px] sm:text-sm leading-[34px] resize-none focus:outline-none transition-colors ${
+                        onChange={(e) => {
+                          setContactMessage(e.target.value);
+                          if (contactError) setContactError(null);
+                        }}
+                        placeholder={getContactTopicOption(contactTopic).placeholder}
+                        className={`relative z-10 w-full px-1 py-0 bg-transparent border-0 text-[13.5px] sm:text-sm leading-[34px] resize-none focus:outline-none transition-colors disabled:opacity-60 ${
                           isDarkMode
                             ? 'text-[#FBF6F1] placeholder:text-[#9E8C83]'
                             : 'text-[#231C18] placeholder:text-[#9A897E]'
@@ -2381,6 +2512,31 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         style={{ minHeight: '136px' }}
                       />
                     </div>
+
+                    {/* Inline Validation or Network Error Banner with Retry / Direct Email Fallback */}
+                    {contactError && (
+                      <div
+                        role="alert"
+                        data-testid="contact-error-banner"
+                        className={`px-3.5 py-2.5 rounded-xl border border-dashed text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                          isDarkMode
+                            ? 'bg-[#462E32]/70 border-[#A66570] text-[#F9D5DC]'
+                            : 'bg-[#FDF2F4] border-[#D99AA5] text-[#7D2E3D]'
+                        }`}
+                      >
+                        <span>{contactError}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <a
+                            href={`mailto:${OFFICIAL_STUDIO_EMAIL}?subject=${encodeURIComponent(
+                              `[Send A Bouquet • ${getContactTopicOption(contactTopic).label}]`
+                            )}&body=${encodeURIComponent(contactMessage)}`}
+                            className="underline decoration-dashed underline-offset-2 font-medium whitespace-nowrap"
+                          >
+                            Email directly
+                          </a>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Bottom Postcard Signature Row: "From:" Underline Fields + Wax-Sealed Send Button */}
                     <div className="pt-2 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -2397,10 +2553,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           <input
                             type="text"
                             aria-label="Your name"
+                            disabled={isContactSending}
                             value={contactName}
                             onChange={(e) => setContactName(e.target.value)}
                             placeholder="Your name"
-                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors ${
+                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors disabled:opacity-60 ${
                               isDarkMode
                                 ? 'border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
                                 : 'border-[#D5C2B2] text-[#231C18] placeholder:text-[#A39186] focus:border-[#7A4B3A]'
@@ -2420,10 +2577,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           <input
                             type="email"
                             aria-label="Your email"
+                            disabled={isContactSending}
                             value={contactEmail}
-                            onChange={(e) => setContactEmail(e.target.value)}
-                            placeholder="Your email (optional)"
-                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors ${
+                            onChange={(e) => {
+                              setContactEmail(e.target.value);
+                              if (contactError) setContactError(null);
+                            }}
+                            placeholder={
+                              contactTopic === 'order_help'
+                                ? 'Your email (needed to reply)'
+                                : 'Your email (optional)'
+                            }
+                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors disabled:opacity-60 ${
                               isDarkMode
                                 ? 'border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
                                 : 'border-[#D5C2B2] text-[#231C18] placeholder:text-[#A39186] focus:border-[#7A4B3A]'
@@ -2437,7 +2602,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         <svg
                           aria-hidden="true"
                           viewBox="0 0 32 32"
-                          className="w-7 h-7 select-none shrink-0 opacity-90"
+                          className={`w-7 h-7 select-none shrink-0 transition-transform duration-300 ${
+                            isContactSending ? 'animate-pulse scale-110' : 'opacity-90'
+                          }`}
                         >
                           <circle
                             cx="16"
@@ -2465,13 +2632,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                         <button
                           type="submit"
-                          className={`px-6 sm:px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap ${
+                          disabled={isContactSending}
+                          className={`px-6 sm:px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap disabled:opacity-65 ${
                             isDarkMode
                               ? 'bg-[#9A6550] hover:bg-[#875642]'
                               : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
                           }`}
                         >
-                          Send Note
+                          {isContactSending ? 'Sealing & Sending...' : 'Seal & Send Note'}
                         </button>
                       </div>
                     </div>
@@ -2788,6 +2956,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 {legalModal === 'terms'
                   ? 'Send A Bouquet is a free digital floral studio for creating and sharing personal flower arrangements, notes, and voice keepsakes with loved ones. Shared links are intended for personal, non-commercial gifting.'
                   : 'We respect your privacy. No account or login is required. Your saved history is stored locally on your device, and shared bouquets or voice notes are only accessible via the private gift link you share.'}
+              </p>
+              <p
+                className={`pt-2 border-t border-dashed text-[11.5px] leading-relaxed ${
+                  isDarkMode ? 'border-[#544540] text-[#C9B6AC]' : 'border-[#E2D3C4] text-[#7D6B61]'
+                }`}
+              >
+                Questions or support? Write anytime to{' '}
+                <a
+                  href={`mailto:${OFFICIAL_STUDIO_EMAIL}`}
+                  className="underline decoration-dashed underline-offset-2 font-medium"
+                >
+                  {OFFICIAL_STUDIO_EMAIL}
+                </a>
+                .
               </p>
             </div>
           </div>

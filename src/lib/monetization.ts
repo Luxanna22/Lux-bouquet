@@ -1,7 +1,9 @@
 import {
   BouquetLockMode,
   BouquetSnapshot,
+  CanvasEnvironment,
   FlowerType,
+  PhotoFrameStyle,
   RibbonStyle,
   typeWrapStyle,
   VoiceKeepsakeStyle,
@@ -10,23 +12,35 @@ import {
 // ============================================================================
 // 1. OWNER-EDITABLE PREMIUM ASSET CONFIGURATION
 //    Edit the arrays below anytime to change which flowers, wraps, ribbons,
-//    voice keepsakes, and lock modes are Couture (Premium) vs. Free!
+//    backgrounds, photos, voice keepsakes, card notes, and lock modes are
+//    Couture (Premium) vs. Free!
 //    Everything remains 100% free to try on the Studio canvas; payment is only
 //    prompted when clicking "Share" or "Save PNG" if Couture features are used.
 // ============================================================================
+
+export const FREE_CARD_NOTE_MAX_CHARS = 80;
+export const PREMIUM_CARD_NOTE_MAX_CHARS = 260;
 
 export interface PremiumAssetConfig {
   flowers: FlowerType[];
   wraps: typeWrapStyle[];
   ribbons: RibbonStyle[];
+  environments?: CanvasEnvironment[];
+  photoStyles?: PhotoFrameStyle[];
   voiceStyles: VoiceKeepsakeStyle[];
   lockModes: BouquetLockMode[];
+  freeCardNoteMaxChars?: number;
   requirePassForHighResPng: boolean;
 }
 
 export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
-  // Couture Blooms & Rare Botanicals (12 items selected per user configuration)
+  // Couture Blooms & Glimmering Luxury Botanicals (17 items)
   flowers: [
+    'celestialRose',
+    'crystalOrchid',
+    'luminaPeony',
+    'gildedFern',
+    'starlightGypsophila',
     'iris',
     'camellia',
     'lotus',
@@ -40,14 +54,29 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
     'queenanneslace',
     'astilbe',
   ],
-  // Couture Vessels & Architectural Wraps (4 items selected: Ceramic Vase, Velvet Hatbox, Glass Cloche, Korean Mesh)
+  // Couture Vessels & Architectural Wraps (4 items: Ceramic Vase, Velvet Hatbox, Glass Cloche, Korean Mesh)
   wraps: ['vase', 'hatbox', 'cloche', 'koreanmesh'],
-  // Specialty Ribbons & Hardware (6 items selected: Twine & Seal, Sheer Chiffon, Cameo Velvet, Chiffon Fringe, Gold Chain, Botanical Raffia)
-  ribbons: ['waxCord', 'organza', 'velvet', 'chiffon', 'goldchain', 'raffia'],
-  // All 5 Voice Keepsake styles are Couture keepsakes when a voice note is attached or displayed
+  // Specialty & Luxury Couture Ribbons (8 items)
+  ribbons: [
+    'pearlStrand',
+    'celestialSilk',
+    'waxCord',
+    'organza',
+    'velvet',
+    'chiffon',
+    'goldchain',
+    'raffia',
+  ],
+  // Couture Atmospheric & Shimmering Backgrounds (4 items)
+  environments: ['aurora', 'velvetSalon', 'opalMist', 'starlit'],
+  // All Photo Uploads & Botanical Photocards are Couture Keepsakes
+  photoStyles: ['raw', 'polaroid', 'stamp', 'cameo', 'film', 'pressed', 'arch'],
+  // All 5 Voice Keepsake styles & Voice Recording are Couture Keepsakes
   voiceStyles: ['mixtape', 'vinyl', 'plushie', 'musicbox', 'locket'],
   // Time-Capsule Countdown & Secret Question Locks are Couture keepsakes ('none' is Free)
   lockModes: ['countdown', 'passcode'],
+  // Notes longer than 80 characters (up to 260 characters) are Couture Extended Notes
+  freeCardNoteMaxChars: FREE_CARD_NOTE_MAX_CHARS,
   // High-res PNG print download is a Couture Studio feature
   requirePassForHighResPng: true,
 };
@@ -78,6 +107,24 @@ export function isRibbonPremium(
   return config.ribbons.includes(style);
 }
 
+export function isEnvironmentPremium(
+  env: CanvasEnvironment | undefined,
+  config: PremiumAssetConfig = getActivePremiumAssetConfig()
+): boolean {
+  if (!env) return false;
+  const list = config.environments || PREMIUM_ASSET_CONFIG.environments || [];
+  return list.includes(env);
+}
+
+export function isPhotoStylePremium(
+  style: PhotoFrameStyle | undefined,
+  config: PremiumAssetConfig = getActivePremiumAssetConfig()
+): boolean {
+  if (!style) return false;
+  const list = config.photoStyles || PREMIUM_ASSET_CONFIG.photoStyles || [];
+  return list.includes(style);
+}
+
 export function isVoiceStylePremium(
   style: VoiceKeepsakeStyle,
   config: PremiumAssetConfig = getActivePremiumAssetConfig()
@@ -94,7 +141,16 @@ export function isLockModePremium(
 
 export interface PremiumFeatureItem {
   id: string;
-  category: 'flower' | 'wrap' | 'ribbon' | 'voice' | 'lock' | 'png';
+  category:
+    | 'flower'
+    | 'wrap'
+    | 'ribbon'
+    | 'environment'
+    | 'photo'
+    | 'voice'
+    | 'card'
+    | 'lock'
+    | 'png';
   label: string;
 }
 
@@ -105,11 +161,19 @@ export interface BouquetPremiumInspection {
   premiumFlowerTypes: FlowerType[];
   hasCoutureWrap: boolean;
   hasCoutureRibbon: boolean;
+  hasCoutureEnvironment: boolean;
+  hasPhotoKeepsake: boolean;
   hasVoiceKeepsake: boolean;
+  hasLongCardNote: boolean;
   hasSecretOrDateLock: boolean;
 }
 
 const FLOWER_LABELS: Record<string, string> = {
+  celestialRose: 'Gilded Rose',
+  crystalOrchid: 'Crystal Orchid',
+  luminaPeony: 'Starlight Peony',
+  gildedFern: 'Gilded Fern',
+  starlightGypsophila: 'Starlight Spray',
   iris: 'Iris',
   camellia: 'Camellia',
   lotus: 'Lotus',
@@ -132,6 +196,8 @@ const WRAP_LABELS: Record<string, string> = {
 };
 
 const RIBBON_LABELS: Record<string, string> = {
+  pearlStrand: 'Akoya Pearl',
+  celestialSilk: 'Starlight Silk',
   waxCord: 'Twine & Seal',
   organza: 'Sheer Chiffon',
   velvet: 'Cameo Velvet',
@@ -140,18 +206,33 @@ const RIBBON_LABELS: Record<string, string> = {
   raffia: 'Botanical Raffia',
 };
 
+const ENVIRONMENT_LABELS: Record<string, string> = {
+  aurora: 'Gilded Aurora',
+  velvetSalon: 'Royal Filigree',
+  opalMist: 'Opaline Sunbeam',
+  starlit: 'Evening Glow',
+};
+
 /**
  * Inspects a bouquet snapshot and lists every Couture / Premium feature currently used.
  */
 export function inspectBouquetPremiumUsage(
-  snapshot: Pick<BouquetSnapshot, 'items' | 'wrapStyle' | 'ribbonStyle' | 'voice' | 'lock'>,
+  snapshot: Pick<BouquetSnapshot, 'items' | 'wrapStyle' | 'ribbonStyle' | 'voice' | 'lock'> &
+    Partial<Pick<BouquetSnapshot, 'environment' | 'card'>>,
   config: PremiumAssetConfig = getActivePremiumAssetConfig()
 ): BouquetPremiumInspection {
   const features: PremiumFeatureItem[] = [];
   const visibleItems = (snapshot.items || []).filter((i) => !i.hidden);
 
   const premiumFlowerSet = new Set<FlowerType>();
+  let hasPhotoKeepsake = false;
   for (const stem of visibleItems) {
+    if (stem.photoStyle) {
+      if (isPhotoStylePremium(stem.photoStyle, config)) {
+        hasPhotoKeepsake = true;
+      }
+      continue;
+    }
     if (isFlowerPremium(stem.type, config)) {
       premiumFlowerSet.add(stem.type);
     }
@@ -162,6 +243,14 @@ export function inspectBouquetPremiumUsage(
       id: `flower:${flowerType}`,
       category: 'flower',
       label: FLOWER_LABELS[flowerType] || `${flowerType} bloom`,
+    });
+  }
+
+  if (hasPhotoKeepsake) {
+    features.push({
+      id: 'photo:keepsake',
+      category: 'photo',
+      label: 'Photo Keepsake',
     });
   }
 
@@ -184,17 +273,40 @@ export function inspectBouquetPremiumUsage(
     });
   }
 
+  const hasCoutureEnvironment = isEnvironmentPremium(snapshot.environment, config);
+  if (hasCoutureEnvironment && snapshot.environment) {
+    features.push({
+      id: `environment:${snapshot.environment}`,
+      category: 'environment',
+      label: ENVIRONMENT_LABELS[snapshot.environment] || `${snapshot.environment} background`,
+    });
+  }
+
   const hasVoiceKeepsake = Boolean(
     snapshot.voice &&
-      snapshot.voice.audioDataUrl &&
-      snapshot.voice.audioDataUrl.trim().length > 0 &&
+      (snapshot.voice.visibleOnStage ||
+        (snapshot.voice.audioDataUrl && snapshot.voice.audioDataUrl.trim().length > 0)) &&
       isVoiceStylePremium(snapshot.voice.style, config)
   );
   if (hasVoiceKeepsake) {
     features.push({
       id: `voice:${snapshot.voice?.style || 'mixtape'}`,
       category: 'voice',
-      label: 'Voice Keepsake Audio',
+      label: 'Voice Keepsake',
+    });
+  }
+
+  const freeNoteLimit = config.freeCardNoteMaxChars ?? FREE_CARD_NOTE_MAX_CHARS;
+  const hasLongCardNote = Boolean(
+    snapshot.card &&
+      snapshot.card.visibleOnStage !== false &&
+      (snapshot.card.message || '').trim().length > freeNoteLimit
+  );
+  if (hasLongCardNote) {
+    features.push({
+      id: 'card:longNote',
+      category: 'card',
+      label: 'Extended Card Note',
     });
   }
 
@@ -217,7 +329,10 @@ export function inspectBouquetPremiumUsage(
     premiumFlowerTypes,
     hasCoutureWrap,
     hasCoutureRibbon,
+    hasCoutureEnvironment,
+    hasPhotoKeepsake,
     hasVoiceKeepsake,
+    hasLongCardNote,
     hasSecretOrDateLock,
   };
 }

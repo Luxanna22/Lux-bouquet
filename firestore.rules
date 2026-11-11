@@ -148,6 +148,33 @@ service cloud.firestore {
         data.signature is string && data.signature.size() >= 16 && data.signature.size() <= 128;
     }
 
+    function isValidContactMessage(data, messageId) {
+      let allowedKeys = [
+        'messageId',
+        'topic',
+        'topicLabel',
+        'senderName',
+        'replyToEmail',
+        'message',
+        'emailDispatched',
+        'autoReplySent',
+        'createdAt'
+      ];
+      return messageId is string &&
+        messageId.matches('^msg_[0-9]{10,16}_[a-zA-Z0-9]{4,16}$') &&
+        data.keys().hasAll(allowedKeys) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.messageId == messageId &&
+        (data.topic == 'flower_wish' || data.topic == 'feedback' || data.topic == 'order_help' || data.topic == 'general') &&
+        data.topicLabel is string && data.topicLabel.size() >= 2 && data.topicLabel.size() <= 40 &&
+        data.senderName is string && data.senderName.size() <= 80 &&
+        data.replyToEmail is string && data.replyToEmail.size() <= 120 &&
+        data.message is string && data.message.size() >= 3 && data.message.size() <= 2000 &&
+        data.emailDispatched is bool &&
+        data.autoReplySent is bool &&
+        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+    }
+
     match /shared_bouquets/{code} {
       // Public read by short code so any recipient can open their gift link without logging in
       allow get: if isValidShortCode(code);
@@ -199,6 +226,12 @@ service cloud.firestore {
           )
         );
       allow delete: if false;
+    }
+
+    match /contact_messages/{messageId} {
+      // Write-only public dropbox for Contact form submissions; visitors cannot read or list messages
+      allow create: if isValidContactMessage(request.resource.data, messageId);
+      allow get, list, update, delete: if false;
     }
   }
 }

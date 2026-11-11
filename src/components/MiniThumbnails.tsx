@@ -407,6 +407,37 @@ export const MiniRibbonBowSVG: React.FC<{ hex: string; styleType?: RibbonStyle }
     );
   }
 
+  if (styleType === 'pearlStrand') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Lustrous Akoya pearl strands with 24k gold starburst brooch */}
+        <path d="M14,27 Q32,36 50,27" fill="none" stroke="#FFFDF9" strokeWidth="3.2" strokeDasharray="0.5 4.6" strokeLinecap="round" />
+        <path d="M16,32 Q32,42 48,32" fill="none" stroke="#FDF4E7" strokeWidth="2.8" strokeDasharray="0.5 4.2" strokeLinecap="round" />
+        <path d="M26,34 Q24,45 21,52" fill="none" stroke="#FFFDF9" strokeWidth="2.6" strokeDasharray="0.5 4" strokeLinecap="round" />
+        <path d="M38,34 Q40,45 43,52" fill="none" stroke="#FFFDF9" strokeWidth="2.6" strokeDasharray="0.5 4" strokeLinecap="round" />
+        <circle cx="32" cy="30" r="6.2" fill={hex} stroke="#F59E0B" strokeWidth="1.4" />
+        <path d="M32,22 L33.4,28.6 L40,30 L33.4,31.4 L32,38 L30.6,31.4 L24,30 L30.6,28.6 Z" fill="#FDE68A" />
+        <circle cx="32" cy="30" r="2.2" fill="#FFFFFF" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'celestialSilk') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Iridescent starlight silk ribbon with gold filigree & crystal drops */}
+        <path d="M29,33 C23,43 19,51 23,55 C27,50 30,41 32,33 Z" fill={hex} fillOpacity="0.82" stroke="#F59E0B" strokeWidth="1" />
+        <path d="M35,33 C41,43 45,51 41,55 C37,50 34,41 32,33 Z" fill={hex} fillOpacity="0.82" stroke="#F59E0B" strokeWidth="1" />
+        <path d="M30,30 C13,17 11,39 29,34 Z" fill={hex} stroke="#FDE68A" strokeWidth="1.2" />
+        <path d="M34,30 C51,17 53,39 35,34 Z" fill={hex} stroke="#FDE68A" strokeWidth="1.2" />
+        <circle cx="32" cy="31" r="4.2" fill="#F59E0B" stroke="#FFFDF9" strokeWidth="1" />
+        <path d="M32,36 L34.5,41 L32,46 L29.5,41 Z" fill="#E0F2FE" stroke="#F59E0B" strokeWidth="0.9" />
+        <circle cx="21" cy="27" r="1.1" fill="#FEF08A" />
+        <circle cx="43" cy="27" r="1.1" fill="#FEF08A" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 64 64" className="w-10 h-10">
       <path d="M29,33 Q24,44 20,52 L25,51 Q28,43 31,34 Z" fill={hex} />
@@ -919,6 +950,54 @@ export const MiniEnvironmentSVG: React.FC<{
     );
   }
 
+  if (env === 'aurora') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <defs>
+          <linearGradient id="miniAuroraGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#FDF2F8" />
+            <stop offset="50%" stopColor="#FEF3C7" />
+            <stop offset="100%" stopColor="#E0E7FF" />
+          </linearGradient>
+        </defs>
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="url(#miniAuroraGrad)" stroke="#D97706" strokeWidth="1.3" />
+        <path d="M16,38 Q26,22 36,32 T48,22" fill="none" stroke="#F59E0B" strokeWidth="1.6" opacity="0.75" />
+        <path d="M16,44 Q28,30 38,38 T48,28" fill="none" stroke="#EC4899" strokeWidth="1.3" opacity="0.55" />
+        <path d="M32,16 L33.2,20.8 L38,22 L33.2,23.2 L32,28 L30.8,23.2 L26,22 L30.8,20.8 Z" fill="#F59E0B" />
+      </svg>
+    );
+  }
+
+  if (env === 'velvetSalon') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#2A121B" stroke="#D97706" strokeWidth="1.4" />
+        <path d="M18,48 L18,27 A14,14 0 0,1 46,27 L46,48" fill="none" stroke="#F59E0B" strokeWidth="1.3" />
+        <path d="M21,48 L21,28 A11,11 0 0,1 43,28 L43,48" fill="none" stroke="#FDE68A" strokeWidth="0.8" strokeDasharray="2 1.5" />
+        <path d="M32,19 L33,23 L37,24 L33,25 L32,29 L31,25 L27,24 L31,23 Z" fill="#FDE68A" />
+      </svg>
+    );
+  }
+
+  if (env === 'opalMist') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <defs>
+          <linearGradient id="miniOpalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#FFFDF9" />
+            <stop offset="50%" stopColor="#FCE7F3" />
+            <stop offset="100%" stopColor="#E0F2FE" />
+          </linearGradient>
+        </defs>
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="url(#miniOpalGrad)" stroke="#D97706" strokeWidth="1.2" />
+        <circle cx="32" cy="32" r="12" fill="none" stroke="#F59E0B" strokeWidth="1.1" strokeDasharray="3 2" />
+        <line x1="16" y1="16" x2="46" y2="46" stroke="#FDE68A" strokeWidth="2.5" opacity="0.55" />
+        <circle cx="25" cy="25" r="2" fill="#F59E0B" />
+        <circle cx="39" cy="37" r="1.5" fill="#38BDF8" />
+      </svg>
+    );
+  }
+
   // Default: 'studio'
   return (
     <svg viewBox="0 0 64 64" className="w-11 h-11">
@@ -984,6 +1063,51 @@ export const LayerOrderBoxIcon: React.FC<{
       <rect x="3" y="12.5" width="7.5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4" strokeDasharray="1.8 1.4" opacity="0.55" />
       {/* Up arrow on right */}
       <path d="M14.5,17 L14.5,5 M12,7.5 L14.5,4.8 L17,7.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+};
+
+/**
+ * Custom "Tuck / Clip inside Bouquet Wrapper" icon (replaces generic Paperclip which looked like file upload).
+ * Shows a miniature bouquet wrap cone + a photo card either tucked inside the wrap fold or floating free.
+ */
+export const BouquetClipToggleIcon: React.FC<{
+  clipped?: boolean;
+  className?: string;
+}> = ({ clipped = false, className = 'w-4 h-4' }) => {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+      {/* Photo card frame at top */}
+      <rect
+        x={clipped ? '6' : '5.5'}
+        y={clipped ? '3.2' : '1.8'}
+        width="8"
+        height="7.5"
+        rx="1.3"
+        fill="currentColor"
+        fillOpacity={clipped ? '0.22' : '0.12'}
+        stroke="currentColor"
+        strokeWidth="1.45"
+      />
+      {/* Mini sun dot inside photo card */}
+      <circle cx={clipped ? '8.5' : '8'} cy={clipped ? '5.7' : '4.3'} r="0.9" fill="currentColor" />
+      {/* Bouquet wrapper cone */}
+      <path
+        d="M3.2,9.2 L16.8,9.2 L13.4,17.8 L6.6,17.8 Z"
+        fill="currentColor"
+        fillOpacity={clipped ? '0.28' : '0.08'}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeDasharray={clipped ? undefined : '2 1.4'}
+      />
+      {/* Wrapper front fold lip showing card tucked inside */}
+      <path
+        d="M3.5,9.2 Q10,12.2 16.5,9.2"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        strokeLinecap="round"
+      />
     </svg>
   );
 };

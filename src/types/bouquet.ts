@@ -21,6 +21,9 @@ export type FlowerType =
   | 'poppy'
   | 'sweetpea'
   | 'freesia'
+  | 'celestialRose'
+  | 'crystalOrchid'
+  | 'luminaPeony'
   | 'lavender'
   | 'hydrangea'
   | 'babysBreath'
@@ -33,7 +36,9 @@ export type FlowerType =
   | 'monstera'
   | 'pampas'
   | 'queenanneslace'
-  | 'astilbe';
+  | 'astilbe'
+  | 'gildedFern'
+  | 'starlightGypsophila';
 
 export type CardTheme =
   | 'sealed'
@@ -260,7 +265,9 @@ export type RibbonStyle =
   | 'velvet'
   | 'chiffon'
   | 'goldchain'
-  | 'raffia';
+  | 'raffia'
+  | 'pearlStrand'
+  | 'celestialSilk';
 
 export const RIBBON_STYLE_CATALOG: {
   id: RibbonStyle;
@@ -272,6 +279,8 @@ export const RIBBON_STYLE_CATALOG: {
   { id: 'lace', label: 'Eyelet Lace', subtitle: 'Scalloped bridal lace & pearl', defaultHex: '#F472B6' },
   { id: 'corset', label: 'Corset Tie', subtitle: 'Criss-cross ribbon waist', defaultHex: '#BE185D' },
   { id: 'double', label: 'Couture Rosette', subtitle: 'Multi-loop Parisian bow', defaultHex: '#EC4899' },
+  { id: 'pearlStrand', label: 'Akoya Pearl', subtitle: 'Lustrous pearl strands & starburst', defaultHex: '#F59E0B' },
+  { id: 'celestialSilk', label: 'Starlight Silk', subtitle: '24k gold filigree & crystal drops', defaultHex: '#EC4899' },
   { id: 'waxCord', label: 'Twine & Seal', subtitle: 'Artisan cord & wax emblem', defaultHex: '#B4846C' },
   { id: 'organza', label: 'Sheer Chiffon', subtitle: 'Billowy translucent veil', defaultHex: '#F9A8D4' },
   { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp', defaultHex: '#9F1239' },
@@ -397,7 +406,10 @@ export type CanvasEnvironment =
   | 'meadow'
   | 'sunlit'
   | 'linen'
-  | 'starlit';
+  | 'starlit'
+  | 'aurora'
+  | 'velvetSalon'
+  | 'opalMist';
 
 export interface CanvasEnvironmentMeta {
   id: CanvasEnvironment;
@@ -436,6 +448,24 @@ export const ENVIRONMENT_CATALOG: CanvasEnvironmentMeta[] = [
     label: 'Woven Linen',
     shortLabel: 'Linen',
     subtitle: 'Fine raw flax canvas weave'
+  },
+  {
+    id: 'aurora',
+    label: 'Gilded Aurora',
+    shortLabel: 'Aurora',
+    subtitle: 'Prism light rays & 24k gold dust'
+  },
+  {
+    id: 'velvetSalon',
+    label: 'Royal Filigree',
+    shortLabel: 'Filigree',
+    subtitle: 'Gilded cathedral arch & stardust'
+  },
+  {
+    id: 'opalMist',
+    label: 'Opaline Sunbeam',
+    shortLabel: 'Opaline',
+    subtitle: 'Mother-of-pearl silk & halo'
   },
   {
     id: 'starlit',
@@ -770,6 +800,33 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultScale: 1.14
   },
   {
+    type: 'celestialRose',
+    name: 'Gilded Celestial Rose',
+    shortName: 'Gilded Rose',
+    subtitle: '24k gold-rimmed velvet & starlight',
+    defaultPetalColor: '#fb7185',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.16
+  },
+  {
+    type: 'crystalOrchid',
+    name: 'Crystal Moonbow Orchid',
+    shortName: 'Crystal Orchid',
+    subtitle: 'Iridescent prism petals & diamond dew',
+    defaultPetalColor: '#e9d5ff',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.15
+  },
+  {
+    type: 'luminaPeony',
+    name: 'Lumina Starlight Peony',
+    shortName: 'Starlight Peony',
+    subtitle: 'Glowing silk blush & golden halo',
+    defaultPetalColor: '#fbcfe8',
+    defaultCenterColor: '#fde68a',
+    defaultScale: 1.18
+  },
+  {
     type: 'iris',
     name: 'Bearded Iris',
     shortName: 'Iris',
@@ -832,7 +889,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultCenterColor: '#f97316',
     defaultScale: 1.06
   },
-  // --- 12 FILLERS & FOLIAGE ---
+  // --- 14 FILLERS & FOLIAGE ---
   {
     type: 'lavender',
     name: 'French Lavender',
@@ -903,6 +960,27 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultPetalColor: '#facc15',
     defaultCenterColor: '#ca8a04',
     defaultScale: 1.08,
+    isFiller: true
+  },
+  {
+    type: 'gildedFern',
+    name: '24k Gilded Maidenhair',
+    shortName: 'Gilded Fern',
+    subtitle: 'Metallic champagne-gold fronds & sparkles',
+    defaultPetalColor: '#fde68a',
+    defaultCenterColor: '#d97706',
+    defaultScale: 1.14,
+    isFoliage: true,
+    isFiller: true
+  },
+  {
+    type: 'starlightGypsophila',
+    name: 'Starlight Pearl Cloud',
+    shortName: 'Starlight Spray',
+    subtitle: 'Glimmering Akoya pearls & diamond stars',
+    defaultPetalColor: '#fffdf9',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.12,
     isFiller: true
   },
   {

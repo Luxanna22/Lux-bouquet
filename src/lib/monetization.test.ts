@@ -97,6 +97,74 @@ test('inspectBouquetPremiumUsage distinguishes free classic bouquets from coutur
   assert.equal(coutureInspection.hasVoiceKeepsake, true);
   assert.equal(coutureInspection.hasSecretOrDateLock, true);
   assert.deepEqual(coutureInspection.premiumFlowerTypes, ['callalily']);
+
+  // Verify all photos, all visible voices (even before recording), extended card notes (> 80 chars),
+  // and new luxury flowers, fillers, ribbons, and backgrounds trigger Couture inspection
+  const luxurySnapshot = {
+    ...freeSnapshot,
+    items: [
+      ...freeSnapshot.items,
+      {
+        id: 'lux-1',
+        type: 'celestialRose' as const,
+        x: 295,
+        y: 230,
+        scale: 1,
+        rotation: 0,
+        flipX: false,
+        petalColor: '#FFFBF0',
+        centerColor: '#F59E0B',
+      },
+      {
+        id: 'lux-2',
+        type: 'gildedFern' as const,
+        x: 315,
+        y: 245,
+        scale: 1,
+        rotation: 12,
+        flipX: false,
+        petalColor: '#FDE68A',
+        centerColor: '#D97706',
+      },
+      {
+        id: 'photo-1',
+        type: 'rose' as const,
+        x: 220,
+        y: 440,
+        scale: 1,
+        rotation: -6,
+        flipX: false,
+        petalColor: '#FFFDF9',
+        centerColor: '#E11D48',
+        photoStyle: 'raw' as const,
+        photoDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+      },
+    ],
+    ribbonStyle: 'pearlStrand' as const,
+    environment: 'aurora' as const,
+    card: {
+      to: 'My Love',
+      from: 'Yours',
+      message:
+        'Every petal in this gilded arrangement carries a memory of our favorite evenings together under the stars.',
+      visibleOnStage: true,
+      theme: 'sealed' as const,
+    },
+    voice: {
+      ...freeSnapshot.voice,
+      visibleOnStage: true,
+      audioDataUrl: null,
+    },
+  };
+
+  const luxuryInspection = inspectBouquetPremiumUsage(luxurySnapshot);
+  assert.equal(luxuryInspection.isPremiumBouquet, true);
+  assert.equal(luxuryInspection.hasPhotoKeepsake, true);
+  assert.equal(luxuryInspection.hasVoiceKeepsake, true);
+  assert.equal(luxuryInspection.hasLongCardNote, true);
+  assert.equal(luxuryInspection.hasCoutureRibbon, true);
+  assert.equal(luxuryInspection.hasCoutureEnvironment, true);
+  assert.deepEqual(luxuryInspection.premiumFlowerTypes, ['celestialRose', 'gildedFern']);
 });
 
 test('PPP region detection and pricing catalog return accurate PH (PHP) and INTL (USD) tiers', () => {

@@ -58,7 +58,12 @@ const SHARE_FLOWER_TYPES: FlowerType[] = [
   'freesia',
   'pampas',
   'queenanneslace',
-  'astilbe'
+  'astilbe',
+  'celestialRose',
+  'crystalOrchid',
+  'luminaPeony',
+  'gildedFern',
+  'starlightGypsophila'
 ];
 
 const SHARE_WRAP_STYLES: typeWrapStyle[] = [
@@ -86,7 +91,9 @@ const SHARE_RIBBON_STYLES: RibbonStyle[] = [
   'velvet',
   'chiffon',
   'goldchain',
-  'raffia'
+  'raffia',
+  'pearlStrand',
+  'celestialSilk'
 ];
 
 const SHARE_CARD_THEMES: CardTheme[] = [
@@ -124,7 +131,10 @@ const SHARE_ENVIRONMENTS: CanvasEnvironment[] = [
   'meadow',
   'sunlit',
   'linen',
-  'starlit'
+  'starlit',
+  'aurora',
+  'velvetSalon',
+  'opalMist'
 ];
 
 const DEFAULT_SHARE_CARD_TO = 'My Dearest';

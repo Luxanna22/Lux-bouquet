@@ -65,13 +65,13 @@ try {
   console.log('✓ Procedural music box audio system preserved');
 
   // 9. Flower Catalog, Fillers, Wrappers, Ribbons, Cards & Templates Check
-  assert(studioMod.FLOWER_CATALOG.length === 31, `Expected 31 botanical entries (19 focal + 12 fillers), got ${studioMod.FLOWER_CATALOG.length}`);
+  assert(studioMod.FLOWER_CATALOG.length === 36, `Expected 36 botanical entries (22 focal + 14 fillers), got ${studioMod.FLOWER_CATALOG.length}`);
   assert(studioMod.WRAPPER_CATALOG.length === 12, `Expected 12 wrapper designs (including Velvet Hatbox, Glass Cloche, Korean Mesh), got ${studioMod.WRAPPER_CATALOG.length}`);
-  assert(studioMod.RIBBON_STYLE_CATALOG.length === 10, `Expected 10 ribbon styles (including Chiffon Fringe, Gold Chain, Botanical Raffia), got ${studioMod.RIBBON_STYLE_CATALOG.length}`);
+  assert(studioMod.RIBBON_STYLE_CATALOG.length === 12, `Expected 12 ribbon styles (including Akoya Pearl, Starlight Silk, Gold Chain), got ${studioMod.RIBBON_STYLE_CATALOG.length}`);
   assert(studioMod.RIBBON_SWATCHES.length === 12, `Expected 12 ribbon swatches, got ${studioMod.RIBBON_SWATCHES.length}`);
   assert(studioMod.CARD_THEME_CATALOG.length === 8, `Expected 8 greeting card themes (including default Sealed Letter), got ${studioMod.CARD_THEME_CATALOG.length}`);
   assert(studioMod.STARTER_TEMPLATES.length >= 4, `Expected at least 4 starter templates, got ${studioMod.STARTER_TEMPLATES.length}`);
-  console.log('✓ Botanical flower catalog (31), wrappers (12), ribbon styles (10), swatches (12), cards (8) and starter templates verified');
+  console.log('✓ Botanical flower catalog (36), wrappers (12), ribbon styles (12), swatches (12), cards (8) and starter templates verified');
 
   // 10. PNG Export Check
   assert(typeof studioMod.exportSvgElementToPng === 'function', 'High-res PNG export function preserved');
@@ -200,7 +200,7 @@ try {
   console.log('✓ Share modal backdrop tap-to-dismiss behavior verified');
 
   // 24. Greeting Card Input Limit Alignment with Stage Tag
-  assert(studioSrc.includes('maxLength={22}') && studioSrc.includes('maxLength={20}') && studioSrc.includes('maxLength={86}'), 'Greeting card inputs maxLength matches SVG canvas text slice limits');
+  assert(studioSrc.includes('maxLength={22}') && studioSrc.includes('maxLength={20}') && studioSrc.includes('maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}'), 'Greeting card inputs maxLength supports Free (80) and Couture (260) notes');
   console.log('✓ Greeting card input character limits aligned with canvas tag');
 
   // 25. Mobile Header Responsiveness & Share Modal Preview Action
@@ -305,15 +305,16 @@ try {
   assert(landingHtml.includes('Send A Bouquet') && landingHtml.includes('Send Love in') && landingHtml.includes('Every Bloom.') && landingHtml.includes('Start Crafting Your Bouquet'), 'Minimal Landing Page renders Send A Bouquet brand title, Send Love in Every Bloom headline, and Start Crafting CTA');
   assert(landingHtml.includes('How It Works') && landingHtml.includes('Frequently Asked Questions') && landingHtml.includes('Make someone smile today'), 'Landing Page includes concise How It Works, Gentle Answers FAQ cards, and Make someone smile today CTA container');
 
-  // Verify new botanicals, wrappers, and ribbons render cleanly
-  const newFlowers = ['callalily', 'poppy', 'sweetpea', 'freesia', 'pampas', 'queenanneslace', 'astilbe'];
+  // Verify new botanicals, wrappers, ribbons, and backgrounds render cleanly
+  const newFlowers = ['callalily', 'poppy', 'sweetpea', 'freesia', 'pampas', 'queenanneslace', 'astilbe', 'celestialRose', 'crystalOrchid', 'luminaPeony', 'gildedFern', 'starlightGypsophila'];
   for (const ft of newFlowers) {
     testStore.addFlower(ft);
   }
   testStore.setWrapStyle('hatbox');
-  testStore.setRibbonStyle('goldchain');
+  testStore.setRibbonStyle('pearlStrand');
+  testStore.setEnvironment('aurora');
   const coutureHtml = renderToString(React.createElement(App));
-  assert(coutureHtml.length > 50000, 'Couture flowers, Velvet Hatbox wrapper, and Gold Chain ribbon render cleanly');
+  assert(coutureHtml.length > 50000, 'Couture flowers, Velvet Hatbox wrapper, Akoya Pearl ribbon, and Gilded Aurora background render cleanly');
 
   // Verify Time-Capsule Countdown Lock & Secret Question Lock round-trip in share payload
   testStore.updateLock({

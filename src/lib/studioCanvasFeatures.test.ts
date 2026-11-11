@@ -11,13 +11,13 @@ import {
   DEFAULT_BOUQUET_POSE,
 } from '../types/bouquet';
 
-test('PHOTO_FRAME_CATALOG and ENVIRONMENT_CATALOG provide 6 unique designs each', () => {
+test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (9), FLOWER_CATALOG (36), and RIBBON_STYLE_CATALOG (12) provide unique designs', () => {
   assert.equal(PHOTO_FRAME_CATALOG.length, 6);
-  assert.equal(ENVIRONMENT_CATALOG.length, 6);
+  assert.equal(ENVIRONMENT_CATALOG.length, 9);
   const photoIds = new Set(PHOTO_FRAME_CATALOG.map((p) => p.id));
   const envIds = new Set(ENVIRONMENT_CATALOG.map((e) => e.id));
   assert.equal(photoIds.size, 6);
-  assert.equal(envIds.size, 6);
+  assert.equal(envIds.size, 9);
 });
 
 test('useBouquetStore supports photocards, environment, bouquetPose, and 4-way fast layering (back, down, up, front)', () => {

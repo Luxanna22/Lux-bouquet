@@ -1,5 +1,4 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { ImagePlus, Paperclip } from 'lucide-react';
 import {
   CardTheme,
   CardThemePalette,
@@ -16,7 +15,6 @@ import {
   getCardThemePalette,
 } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
-import { LayerOrderBoxIcon } from './MiniThumbnails';
 import { useBouquetStore } from '../store/useBouquetStore';
 
 // ============================================================================
@@ -717,6 +715,139 @@ export const BouquetRibbonSVG: React.FC<{
           </g>
         </g>
       )}
+
+      {/* 11. AKOYA PEARL STRAND & 24K GOLD STARBURST BROOCH ('pearlStrand') */}
+      {ribbonStyle === 'pearlStrand' && (
+        <g>
+          {/* Draped Double Akoya Pearl Waist Strands */}
+          <path
+            d={`M${leftX},${waistY - 6} Q300,${waistY + 18} ${rightX},${waistY - 6}`}
+            fill="none"
+            stroke="#FFFDF9"
+            strokeWidth="7.5"
+            strokeDasharray="1 10.5"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M${leftX + 3},${waistY + 4} Q300,${waistY + 32} ${rightX - 3},${waistY + 4}`}
+            fill="none"
+            stroke="#FDF4E7"
+            strokeWidth="6.2"
+            strokeDasharray="1 9.5"
+            strokeLinecap="round"
+          />
+          {/* Fine Gold Chain Underlay */}
+          <path
+            d={`M${leftX},${waistY - 6} Q300,${waistY + 18} ${rightX},${waistY - 6} M${leftX + 3},${waistY + 4} Q300,${waistY + 32} ${rightX - 3},${waistY + 4}`}
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="1.2"
+            opacity="0.7"
+          />
+          <g transform={bowTransform}>
+            {/* Cascading Pearl Tassel Tails */}
+            <path
+              d={`M290,${waistY + 8} Q268,${waistY + 58} 252,${tailBottomY - 6}`}
+              fill="none"
+              stroke="#FFFDF9"
+              strokeWidth="5.8"
+              strokeDasharray="1 9"
+              strokeLinecap="round"
+            />
+            <path
+              d={`M310,${waistY + 8} Q332,${waistY + 58} 348,${tailBottomY - 6}`}
+              fill="none"
+              stroke="#FFFDF9"
+              strokeWidth="5.8"
+              strokeDasharray="1 9"
+              strokeLinecap="round"
+            />
+            {/* Teardrop Pearl Drops at Ends */}
+            <circle cx="252" cy={tailBottomY - 2} r="5" fill="#FFFDF9" stroke="#F59E0B" strokeWidth="1.2" />
+            <circle cx="348" cy={tailBottomY - 2} r="5" fill="#FFFDF9" stroke="#F59E0B" strokeWidth="1.2" />
+            {/* 24k Gold & Mother-of-Pearl Starburst Brooch */}
+            <circle cx="300" cy={waistY + 5} r="16" fill={ribbonColor} stroke="#F59E0B" strokeWidth="2.2" />
+            <circle cx="300" cy={waistY + 5} r="12" fill="none" stroke="#FDE68A" strokeWidth="1.1" strokeDasharray="2.5 2" />
+            <path
+              d={`M300,${waistY - 15} L303.5,${waistY + 1.5} L320,${waistY + 5} L303.5,${waistY + 8.5} L300,${waistY + 25} L296.5,${waistY + 8.5} L280,${waistY + 5} L296.5,${waistY + 1.5} Z`}
+              fill="#FDE68A"
+              stroke="#D97706"
+              strokeWidth="0.9"
+            />
+            <circle cx="300" cy={waistY + 5} r="5.2" fill="#FFFFFF" stroke="#F59E0B" strokeWidth="1.2" />
+          </g>
+        </g>
+      )}
+
+      {/* 12. CELESTIAL STARLIGHT SILK & CRYSTAL PRISM DROPS ('celestialSilk') */}
+      {ribbonStyle === 'celestialSilk' && (
+        <g>
+          {/* Shimmering Gold-Edged Silk Waistband */}
+          <path
+            d={`M${leftX},${waistY - 7} Q300,${waistY + 8} ${rightX},${waistY - 7} L${rightX - 3},${waistY + 10} Q300,${waistY + 25} ${leftX + 3},${waistY + 10} Z`}
+            fill={ribbonColor}
+            fillOpacity="0.88"
+            stroke="#F59E0B"
+            strokeWidth="1.6"
+          />
+          <path
+            d={`M${leftX + 4},${waistY + 1} Q300,${waistY + 16} ${rightX - 4},${waistY + 1}`}
+            fill="none"
+            stroke="#FEF08A"
+            strokeWidth="1.1"
+            strokeDasharray="4 3"
+          />
+          <g transform={bowTransform}>
+            {/* Billowing Iridescent Silk Tails with Gold Filigree Trim */}
+            <path
+              d={`M295,${waistY + 7} C270,${waistY + 46} 242,${waistY + 84} 228,${tailBottomY + 8} L258,${tailBottomY - 4} L266,${tailBottomY + 12} C278,${waistY + 76} 292,${waistY + 42} 300,${waistY + 9} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.85"
+              stroke="#F59E0B"
+              strokeWidth="1.4"
+            />
+            <path
+              d={`M305,${waistY + 7} C330,${waistY + 46} 358,${waistY + 84} 372,${tailBottomY + 8} L342,${tailBottomY - 4} L334,${tailBottomY + 12} C322,${waistY + 76} 308,${waistY + 42} 300,${waistY + 9} Z`}
+              fill={ribbonColor}
+              fillOpacity="0.85"
+              stroke="#F59E0B"
+              strokeWidth="1.4"
+            />
+            {/* Grand Double Winged Bow Loops */}
+            <path
+              d={`M296,${waistY + 3} C218,${waistY - 48} 206,${waistY + 36} 294,${waistY + 11} Z`}
+              fill={ribbonColor}
+              stroke="#FDE68A"
+              strokeWidth="1.8"
+            />
+            <path
+              d={`M304,${waistY + 3} C382,${waistY - 48} 394,${waistY + 36} 306,${waistY + 11} Z`}
+              fill={ribbonColor}
+              stroke="#FDE68A"
+              strokeWidth="1.8"
+            />
+            {/* Inner Gold Constellation Embroidery on Loops */}
+            <circle cx="254" cy={waistY - 4} r="2.2" fill="#FEF08A" />
+            <circle cx="270" cy={waistY + 2} r="1.6" fill="#FFFFFF" />
+            <circle cx="346" cy={waistY - 4} r="2.2" fill="#FEF08A" />
+            <circle cx="330" cy={waistY + 2} r="1.6" fill="#FFFFFF" />
+            {/* Hanging Faceted Crystal Prism Drop */}
+            <line x1="300" y1={waistY + 12} x2="300" y2={waistY + 28} stroke="#F59E0B" strokeWidth="1.6" />
+            <polygon
+              points={`300,${waistY + 26} 308,${waistY + 38} 300,${waistY + 52} 292,${waistY + 38}`}
+              fill="#E0F2FE"
+              stroke="#F59E0B"
+              strokeWidth="1.4"
+            />
+            {/* Center Gold Knot Medallion */}
+            <ellipse cx="300" cy={waistY + 6} rx="12" ry="9.5" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.6" />
+            <path
+              d={`M300,${waistY - 2} L302,${waistY + 4} L308,${waistY + 6} L302,${waistY + 8} L300,${waistY + 14} L298,${waistY + 8} L292,${waistY + 6} L298,${waistY + 4} Z`}
+              fill="#FFFFFF"
+            />
+          </g>
+        </g>
+      )}
     </g>
   );
 };
@@ -725,7 +856,7 @@ export const BouquetRibbonSVG: React.FC<{
  * Helper to wrap greeting card message into clean SVG <tspan> lines so rotated cards
  * render with 100% vector precision without browser <foreignObject> rotation artifacts.
  */
-function wrapCardCanvasLines(text: string, maxChars = 25, maxLines = 4): string[] {
+function wrapCardCanvasLines(text: string, maxChars = 28, maxLines = 5): string[] {
   const cleaned = (text || '').replace(/\r\n/g, '\n').trim();
   if (!cleaned) return [];
   const paragraphs = cleaned.split('\n');
@@ -1816,6 +1947,170 @@ export const BouquetEnvironmentSVG: React.FC<{
           />
         </g>
       )}
+
+      {/* 7. GILDED AURORA PRISM & GOLDEN HALO ARCH ('aurora' — Couture) */}
+      {environment === 'aurora' && (
+        <g>
+          <defs>
+            <linearGradient id="envAuroraBg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#2D192B' : '#FFF5F8'} />
+              <stop offset="48%" stopColor={isDarkMode ? '#33251B' : '#FEF7E6'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1C223A' : '#EEF2FF'} />
+            </linearGradient>
+            <radialGradient id="envAuroraHalo" cx="50%" cy="42%" r="50%">
+              <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.26' : '0.45'} />
+              <stop offset="55%" stopColor="#F472B6" stopOpacity={isDarkMode ? '0.12' : '0.18'} />
+              <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <rect x="14" y="14" width="572" height="652" rx="36" fill="url(#envAuroraBg)" />
+          <circle cx="300" cy="290" r="260" fill="url(#envAuroraHalo)" />
+          {/* Flowing Iridescent Aurora Ribbons */}
+          <path
+            d="M28,230 C160,120 280,290 420,165 C485,110 535,145 572,125"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="2.2"
+            opacity="0.45"
+          />
+          <path
+            d="M28,295 C175,185 310,340 450,210 C505,160 545,190 572,175"
+            fill="none"
+            stroke="#EC4899"
+            strokeWidth="1.8"
+            strokeDasharray="6 4"
+            opacity="0.38"
+          />
+          {/* Gilded Cathedral Halo Arch */}
+          <path
+            d="M42,646 L42,260 A258,230 0 0,1 558,260 L558,646 Z"
+            fill="none"
+            stroke="#D97706"
+            strokeWidth="1.4"
+            opacity="0.65"
+          />
+          <path
+            d="M52,638 L52,264 A248,220 0 0,1 548,264 L548,638 Z"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="0.9"
+            strokeDasharray="4 4"
+            opacity="0.55"
+          />
+          {/* Crown Starburst & Shimmering Gold Motes */}
+          <g fill="#F59E0B" opacity="0.85">
+            <path d="M300,40 L303.5,52.5 L316,56 L303.5,59.5 L300,72 L296.5,59.5 L284,56 L296.5,52.5 Z" />
+            <path d="M112,118 L114,125 L121,127 L114,129 L112,136 L110,129 L103,127 L110,125 Z" />
+            <path d="M488,118 L490,125 L497,127 L490,129 L488,136 L486,129 L479,127 L486,125 Z" />
+            <circle cx="88" cy="195" r="2.5" />
+            <circle cx="512" cy="195" r="2.5" />
+            <circle cx="150" cy="88" r="2" />
+            <circle cx="450" cy="88" r="2" />
+          </g>
+        </g>
+      )}
+
+      {/* 8. ROYAL VELVET SALON & 24K GOLD FILIGREE ARCH ('velvetSalon' — Couture) */}
+      {environment === 'velvetSalon' && (
+        <g>
+          <defs>
+            <radialGradient id="envVelvetBg" cx="50%" cy="46%" r="62%">
+              <stop offset="0%" stopColor={isDarkMode ? '#3B1522' : '#4A192C'} />
+              <stop offset="65%" stopColor={isDarkMode ? '#240C15' : '#2D0F1B'} />
+              <stop offset="100%" stopColor="#17070D" />
+            </radialGradient>
+          </defs>
+          <rect x="14" y="14" width="572" height="652" rx="36" fill="url(#envVelvetBg)" />
+          {/* Subtle Warm Spotlight Behind Bouquet */}
+          <circle cx="300" cy="330" r="215" fill="#F59E0B" opacity="0.09" />
+          {/* Double Gilded Filigree Frame & Corner Baroque Scrollwork */}
+          <rect
+            x="30"
+            y="30"
+            width="540"
+            height="620"
+            rx="26"
+            fill="none"
+            stroke="#D97706"
+            strokeWidth="1.5"
+            opacity="0.72"
+          />
+          <path
+            d="M46,636 L46,252 A254,218 0 0,1 554,252 L554,636 Z"
+            fill="none"
+            stroke="#FDE68A"
+            strokeWidth="1.5"
+            opacity="0.75"
+          />
+          <path
+            d="M56,628 L56,256 A244,208 0 0,1 544,256 L544,628 Z"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="0.95"
+            strokeDasharray="5 3"
+            opacity="0.6"
+          />
+          {/* Corner Gilded Rosettes & Top Crest */}
+          <g fill="#FDE68A" opacity="0.88">
+            <path d="M300,44 L304,58 L318,62 L304,66 L300,80 L296,66 L282,62 L296,58 Z" />
+            <circle cx="300" cy="62" r="3.5" fill="#FFFFFF" />
+            <circle cx="54" cy="54" r="4" />
+            <circle cx="546" cy="54" r="4" />
+            <circle cx="110" cy="140" r="2.2" />
+            <circle cx="490" cy="140" r="2.2" />
+            <circle cx="78" cy="220" r="1.8" />
+            <circle cx="522" cy="220" r="1.8" />
+          </g>
+        </g>
+      )}
+
+      {/* 9. OPALINE SUNBEAM & MOTHER-OF-PEARL HALO ('opalMist' — Couture) */}
+      {environment === 'opalMist' && (
+        <g>
+          <defs>
+            <linearGradient id="envOpalBg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#1F242D' : '#FFFDF9'} />
+              <stop offset="45%" stopColor={isDarkMode ? '#2B222C' : '#FDF2F8'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1B2830' : '#F0F9FF'} />
+            </linearGradient>
+          </defs>
+          <rect x="14" y="14" width="572" height="652" rx="36" fill="url(#envOpalBg)" />
+          {/* Diagonal Luminous Sunbeam Rays */}
+          <g opacity={isDarkMode ? '0.14' : '0.35'}>
+            <polygon points="14,14 210,14 586,440 586,610" fill="#FEF08A" />
+            <polygon points="240,14 370,14 586,260 586,380" fill="#BAE6FD" />
+          </g>
+          {/* Concentric Mother-of-Pearl & Gold Halo Rings */}
+          <circle
+            cx="300"
+            cy="315"
+            r="238"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="1.3"
+            strokeDasharray="8 5"
+            opacity="0.55"
+          />
+          <circle
+            cx="300"
+            cy="315"
+            r="218"
+            fill="none"
+            stroke={isDarkMode ? '#BAE6FD' : '#D97706'}
+            strokeWidth="0.9"
+            opacity="0.45"
+          />
+          {/* Floating Opaline Motes & Sparkles */}
+          <g fill="#F59E0B" opacity="0.8">
+            <path d="M135,112 L137.5,120.5 L146,123 L137.5,125.5 L135,134 L132.5,125.5 L124,123 L132.5,120.5 Z" />
+            <path d="M468,128 L470.5,136.5 L479,139 L470.5,141.5 L468,150 L465.5,141.5 L457,139 L465.5,136.5 Z" />
+            <circle cx="96" cy="260" r="3.5" fill="#FDE68A" />
+            <circle cx="508" cy="248" r="3.5" fill="#BAE6FD" />
+            <circle cx="176" cy="84" r="2.2" />
+            <circle cx="424" cy="88" r="2.2" />
+          </g>
+        </g>
+      )}
     </g>
   );
 };
@@ -2291,7 +2586,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     updateBouquetPose,
     resetBouquetPose,
     toggleWrapVisibility,
-    moveItemLayer,
     deleteSelected,
     flipSelected,
     toggleItemLock,
@@ -2817,7 +3111,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   }, [interaction, applyPointerMoveAtClientCoords]);
 
   const selectedItem = items.find((i) => i.id === selectedId) || null;
-  const selectedItemIndex = selectedItem ? items.findIndex((i) => i.id === selectedItem.id) : -1;
   const selectedDisplay = selectedItem ? getStageItemDisplayTransform(selectedItem, wrapStyle) : null;
   const wrapperBottomClipY =
     wrapStyle === 'basket'
@@ -2834,113 +3127,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
   return (
     <div className="relative w-full h-full flex items-center justify-center p-0 sm:p-1 select-none overflow-hidden">
-      {/* COMPACT ICON-ONLY LAYERING & PHOTO CLIP CAPSULE (Positioned cleanly at top-left so it never covers the bouquet or greeting card) */}
-      {!isPreviewMode && selectedItem && !selectedItem.hidden && (
-        <div
-          data-export-ignore="true"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          className={`absolute top-2 left-2.5 z-30 inline-flex items-center gap-0.5 p-1 rounded-full border border-dashed shadow-[0_6px_18px_rgba(28,20,16,0.1)] backdrop-blur-md transition-all ${
-            isDarkMode
-              ? 'bg-[#2B2321]/95 border-[#5E4E49] text-[#FBF6F1]'
-              : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#2A201D]'
-          }`}
-          role="toolbar"
-          aria-label="Quick layer order controls"
-        >
-          <button
-            type="button"
-            disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
-            onClick={() => moveItemLayer(selectedItem.id, 'back')}
-            title="Send to Most Back"
-            aria-label="Send to Most Back"
-            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
-          >
-            <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
-          </button>
-
-          <button
-            type="button"
-            disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
-            onClick={() => moveItemLayer(selectedItem.id, 'down')}
-            title="Send Back 1 Layer"
-            aria-label="Send Back 1 Layer"
-            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
-          >
-            <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
-          </button>
-
-          <button
-            type="button"
-            disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
-            onClick={() => moveItemLayer(selectedItem.id, 'up')}
-            title="Bring Forward 1 Layer"
-            aria-label="Bring Forward 1 Layer"
-            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
-          >
-            <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
-          </button>
-
-          <button
-            type="button"
-            disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
-            onClick={() => moveItemLayer(selectedItem.id, 'front')}
-            title="Bring to Most Front"
-            aria-label="Bring to Most Front"
-            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
-          >
-            <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
-          </button>
-
-          {selectedItem.photoStyle && (
-            <>
-              <span aria-hidden="true" className="w-px h-3.5 bg-[#DECBB9] dark:bg-[#5E4E49] mx-0.5" />
-              <button
-                type="button"
-                disabled={Boolean(selectedItem.locked)}
-                onClick={() =>
-                  updateItem(
-                    selectedItem.id,
-                    { clippedToBouquet: !selectedItem.clippedToBouquet },
-                    true
-                  )
-                }
-                title={
-                  selectedItem.clippedToBouquet
-                    ? 'Tucked inside bouquet (Click to float unclipped)'
-                    : 'Floating attachment (Click to clip inside bouquet)'
-                }
-                aria-label={
-                  selectedItem.clippedToBouquet
-                    ? 'Unclip photo from bouquet'
-                    : 'Clip photo to bouquet'
-                }
-                aria-pressed={Boolean(selectedItem.clippedToBouquet)}
-                className={`w-7 h-7 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
-                  selectedItem.clippedToBouquet
-                    ? 'bg-[#B4846C] text-white'
-                    : 'text-[#B4846C] hover:bg-[#B4846C]/15'
-                }`}
-              >
-                <Paperclip className="w-3.5 h-3.5" />
-              </button>
-
-              {onPhotoCardUploadClick && (
-                <button
-                  type="button"
-                  onClick={() => onPhotoCardUploadClick(selectedItem.id)}
-                  title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
-                  aria-label="Upload photo into photocard"
-                  className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] transition cursor-pointer"
-                >
-                  <ImagePlus className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       <svg
         ref={svgRef as React.RefObject<SVGSVGElement>}
         viewBox="0 0 600 680"

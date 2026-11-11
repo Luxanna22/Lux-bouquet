@@ -17,7 +17,6 @@ import {
   RotateCw,
   Plus,
   ImagePlus,
-  Paperclip,
 } from 'lucide-react';
 import {
   BouquetItem,
@@ -36,6 +35,7 @@ import {
   MiniVoiceKeepsakeSVG,
   MiniPhotoFrameSVG,
   LayerOrderBoxIcon,
+  BouquetClipToggleIcon,
 } from './MiniThumbnails';
 import { useBouquetStore } from '../store/useBouquetStore';
 
@@ -840,7 +840,7 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
                     : 'bg-white dark:bg-[#1E1C1A] text-[#5C4438] dark:text-[#E6D6C7] border-[#DECBB9] dark:border-[#5C4B47] hover:border-[#B4846C]'
                 }`}
               >
-                <Paperclip className="w-3 h-3" />
+                <BouquetClipToggleIcon clipped={Boolean(selected.clippedToBouquet)} className="w-3.5 h-3.5" />
                 <span>{selected.clippedToBouquet ? 'Clipped to Bouquet' : 'Clip to Bouquet'}</span>
               </button>
 

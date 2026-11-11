@@ -321,16 +321,62 @@ function handlePaymentsMiddleware(
     });
 }
 
+function handleContactMiddleware(
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: () => void
+) {
+  if (!req.url || !req.url.startsWith('/api/contact')) {
+    next();
+    return;
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 200;
+    res.end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
+    return;
+  }
+
+  let rawBody = '';
+  req.on('data', (chunk: Buffer) => {
+    rawBody += chunk.toString();
+  });
+  req.on('end', async () => {
+    try {
+      // @ts-expect-error Shared ESM handler in /api/_lib/contactHandler.js
+      const { processContactSubmission } = await import('./api/_lib/contactHandler.js');
+      const parsed = JSON.parse(rawBody || '{}');
+      const result = await processContactSubmission(parsed);
+      res.statusCode = result.statusCode;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify(result.body));
+    } catch {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'Unable to send note right now.' }));
+    }
+  });
+}
+
 function bouquetImageApiPlugin(): Plugin {
   return {
     name: 'bouquet-image-api',
     configureServer(server) {
       server.middlewares.use(handlePaymentsMiddleware);
+      server.middlewares.use(handleContactMiddleware);
       server.middlewares.use(handleBouquetImageMiddleware);
       server.middlewares.use(handleShortenMiddleware);
     },
     configurePreviewServer(server) {
       server.middlewares.use(handlePaymentsMiddleware);
+      server.middlewares.use(handleContactMiddleware);
       server.middlewares.use(handleBouquetImageMiddleware);
       server.middlewares.use(handleShortenMiddleware);
     }

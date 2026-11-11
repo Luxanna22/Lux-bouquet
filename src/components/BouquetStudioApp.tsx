@@ -116,6 +116,8 @@ import {
   MiniVoiceKeepsakeSVG,
   MiniPhotoFrameSVG,
   MiniEnvironmentSVG,
+  LayerOrderBoxIcon,
+  BouquetClipToggleIcon,
 } from './MiniThumbnails';
 import { LayerManagerPanel } from './LayerManagerPanel';
 import { SelectedFlowerToolbar, UnifiedColorTarget } from './SelectedFlowerToolbar';
@@ -125,14 +127,19 @@ import { BouquetVaultModal } from './BouquetVaultModal';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
 import {
   formatPassRemainingTime,
+  FREE_CARD_NOTE_MAX_CHARS,
   getActivePremiumAssetConfig,
   getOrCreateDeviceTokenHash,
   getRetentionPolicyForPassTier,
   getStoredStudioPass,
   inspectBouquetPremiumUsage,
+  isEnvironmentPremium,
   isFlowerPremium,
+  isPhotoStylePremium,
   isRibbonPremium,
+  isVoiceStylePremium,
   isWrapPremium,
+  PREMIUM_CARD_NOTE_MAX_CHARS,
   PremiumAssetConfig,
   saveStoredStudioPass,
   StudioPassRecord,
@@ -200,6 +207,7 @@ export default function App() {
     redo,
     deleteSelected,
     duplicateSelected,
+    moveItemLayer,
     selectItem,
     loadSnapshot
   } = useBouquetStore();
@@ -318,10 +326,10 @@ export default function App() {
   const currentPremiumInspection = useMemo(
     () =>
       inspectBouquetPremiumUsage(
-        { items, wrapStyle, ribbonStyle, voice, lock },
+        { items, wrapStyle, ribbonStyle, environment, card, voice, lock },
         premiumAssetConfig
       ),
-    [items, wrapStyle, ribbonStyle, voice, lock, premiumAssetConfig]
+    [items, wrapStyle, ribbonStyle, environment, card, voice, lock, premiumAssetConfig]
   );
 
   const currentBouquetShortCode = useMemo(() => {
@@ -474,6 +482,10 @@ export default function App() {
   const selectedItem = useMemo(
     () => items.find((i) => i.id === selectedId) || null,
     [items, selectedId]
+  );
+  const selectedItemIndex = useMemo(
+    () => (selectedItem ? items.findIndex((i) => i.id === selectedItem.id) : -1),
+    [items, selectedItem]
   );
   const selectedMeta = useMemo(
     () => (selectedItem ? FLOWER_CATALOG.find((m) => m.type === selectedItem.type) : null),
@@ -1705,83 +1717,193 @@ export default function App() {
               </span>
             </button>
 
-            {/* Center: Icon-Only History, Save Draft & Reset Capsule */}
-            <div
-              className={`flex items-center gap-0 sm:gap-1 rounded-full px-0.5 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${
-                isDarkMode
-                  ? 'bg-[#2B2321]/80 border-[#52433E]'
-                  : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  undo();
-                  triggerToast('Undone');
-                }}
-                disabled={past.length === 0}
-                aria-label="Undo"
-                title="Undo"
-                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
-              >
-                <Undo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  redo();
-                  triggerToast('Redone');
-                }}
-                disabled={future.length === 0}
-                aria-label="Redo"
-                title="Redo"
-                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
-              >
-                <Redo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              </button>
-              <span
-                aria-hidden="true"
-                className={`w-[1px] h-3 mx-0.5 ${
-                  isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                }`}
-              />
-              <button
-                type="button"
-                data-testid="save-draft-device-btn"
-                onClick={handleSaveDraftOnDevice}
-                aria-label="Save bouquet draft on this device"
-                title="Save Draft on Device"
-                className={`w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
-                  savedDraftPulse
-                    ? 'bg-emerald-500/20 text-emerald-500 scale-105'
-                    : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
+            {/* Center: Undo / Redo / Save Draft / Start Over Capsule + Desktop/Tablet Selected Item Layer & Photo Controls */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div
+                className={`flex items-center gap-0 sm:gap-1 rounded-full px-0.5 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${
+                  isDarkMode
+                    ? 'bg-[#2B2321]/80 border-[#52433E]'
+                    : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
                 }`}
               >
-                <Check
-                  className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
-                    savedDraftPulse ? 'text-emerald-500' : 'text-[#B4846C]'
+                <button
+                  type="button"
+                  onClick={() => {
+                    undo();
+                    triggerToast('Undone');
+                  }}
+                  disabled={past.length === 0}
+                  aria-label="Undo"
+                  title="Undo"
+                  className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                >
+                  <Undo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    redo();
+                    triggerToast('Redone');
+                  }}
+                  disabled={future.length === 0}
+                  aria-label="Redo"
+                  title="Redo"
+                  className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                >
+                  <Redo2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                </button>
+                <span
+                  aria-hidden="true"
+                  className={`w-[1px] h-3 mx-0.5 ${
+                    isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                   }`}
                 />
-              </button>
-              <span
-                aria-hidden="true"
-                className={`w-[1px] h-3 mx-0.5 ${
-                  isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                }`}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  currentSessionVaultCodeRef.current = null;
-                  clearBouquet();
-                  triggerToast('Canvas reset');
-                }}
-                aria-label="Reset bouquet and start over"
-                title="Start Over"
-                className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              </button>
+                <button
+                  type="button"
+                  data-testid="save-draft-device-btn"
+                  onClick={handleSaveDraftOnDevice}
+                  aria-label="Save bouquet draft on this device"
+                  title="Save Draft on Device"
+                  className={`w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
+                    savedDraftPulse
+                      ? 'bg-emerald-500/20 text-emerald-500 scale-105'
+                      : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
+                  }`}
+                >
+                  <Check
+                    className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
+                      savedDraftPulse ? 'text-emerald-500' : 'text-[#B4846C]'
+                    }`}
+                  />
+                </button>
+                <span
+                  aria-hidden="true"
+                  className={`w-[1px] h-3 mx-0.5 ${
+                    isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    currentSessionVaultCodeRef.current = null;
+                    clearBouquet();
+                    triggerToast('Canvas reset');
+                  }}
+                  aria-label="Reset bouquet and start over"
+                  title="Start Over"
+                  className="w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                </button>
+              </div>
+
+              {/* Desktop & Tablet (sm: and up) Quick Layering & Photo Controls Capsule in Header */}
+              {selectedItem && !selectedItem.hidden && (
+                <div
+                  role="toolbar"
+                  aria-label="Quick layer order controls"
+                  className={`hidden sm:inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 border border-dashed shrink-0 transition-all ${
+                    isDarkMode
+                      ? 'bg-[#2B2321]/85 border-[#5E4E49] text-[#FBF6F1]'
+                      : 'bg-[#FAF4EE]/90 border-[#DECBB9] text-[#2A201D]'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    onClick={() => moveItemLayer(selectedItem.id, 'back')}
+                    title="Send to Most Back"
+                    aria-label="Send to Most Back"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    onClick={() => moveItemLayer(selectedItem.id, 'down')}
+                    title="Send Back 1 Layer"
+                    aria-label="Send Back 1 Layer"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    onClick={() => moveItemLayer(selectedItem.id, 'up')}
+                    title="Bring Forward 1 Layer"
+                    aria-label="Bring Forward 1 Layer"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    onClick={() => moveItemLayer(selectedItem.id, 'front')}
+                    title="Bring to Most Front"
+                    aria-label="Bring to Most Front"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+
+                  {selectedItem.photoStyle && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className={`w-[1px] h-3.5 mx-0.5 ${
+                          isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        disabled={Boolean(selectedItem.locked)}
+                        onClick={() =>
+                          updateItem(
+                            selectedItem.id,
+                            { clippedToBouquet: !selectedItem.clippedToBouquet },
+                            true
+                          )
+                        }
+                        title={
+                          selectedItem.clippedToBouquet
+                            ? 'Tucked inside bouquet wrapper (Click to float free)'
+                            : 'Floating photo (Click to tuck inside bouquet wrapper)'
+                        }
+                        aria-label={
+                          selectedItem.clippedToBouquet
+                            ? 'Unclip photo from bouquet'
+                            : 'Clip photo to bouquet'
+                        }
+                        aria-pressed={Boolean(selectedItem.clippedToBouquet)}
+                        className={`w-7 h-7 rounded-full inline-flex items-center justify-center active:scale-95 transition cursor-pointer ${
+                          selectedItem.clippedToBouquet
+                            ? 'bg-[#B4846C] text-white'
+                            : 'text-[#B4846C] hover:bg-[#B4846C]/15'
+                        }`}
+                      >
+                        <BouquetClipToggleIcon
+                          clipped={Boolean(selectedItem.clippedToBouquet)}
+                          className="w-3.5 h-3.5"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
+                        }
+                        title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                        aria-label="Upload photo into photocard"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Right: Premium + Icon-Only Utility Controls + Primary Share Button */}
@@ -3169,16 +3291,24 @@ export default function App() {
                       <div className="relative">
                         <textarea
                           rows={4}
-                          maxLength={86}
+                          maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
                           value={card.message}
                           placeholder="Write your heartfelt note..."
                           onChange={(e) => updateCard({ message: e.target.value })}
                           aria-label="Card message"
-                          className="w-full px-3 py-2 pb-5 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto placeholder:text-[#9A877B]/75"
+                          className="w-full px-3 py-2 pb-6 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto placeholder:text-[#9A877B]/75"
                           style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                         />
-                        <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
-                          {card.message.length}/86
+                        <span
+                          className={`absolute bottom-1.5 right-2.5 text-[10px] pointer-events-none ${
+                            card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                              ? 'text-[#B4846C] font-medium'
+                              : 'text-[#9A877B]'
+                          }`}
+                        >
+                          {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                            ? `✦ Couture Note · ${card.message.length}/${PREMIUM_CARD_NOTE_MAX_CHARS}`
+                            : `${card.message.length}/${FREE_CARD_NOTE_MAX_CHARS} free (${PREMIUM_CARD_NOTE_MAX_CHARS} Couture ✦)`}
                         </span>
                       </div>
                     </div>
@@ -3583,6 +3713,126 @@ export default function App() {
                 : 'bg-white border-stone-200/80 text-[#1C1917]'
             }`}
           >
+            {/* Mobile-Only (< sm) Contextual Layering & Photo Quick-Bar (keeps canvas 100% unobstructed on phones) */}
+            {selectedItem && !selectedItem.hidden && (
+              <div
+                role="toolbar"
+                aria-label="Mobile selected item quick controls"
+                className={`flex sm:hidden items-center justify-between gap-2 mb-2 px-2.5 py-1 rounded-full border border-dashed ${
+                  isDarkMode
+                    ? 'bg-[#2B2321]/90 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FAF4EE]/90 border-[#DECBB9] text-[#2A201D]'
+                }`}
+              >
+                <span className="text-[11px] font-medium truncate text-[#6E5D54] dark:text-[#D8C7BE] pl-0.5">
+                  {selectedItem.photoStyle
+                    ? selectedItem.photoStyle === 'raw'
+                      ? 'Photo'
+                      : PHOTO_FRAME_CATALOG.find((p) => p.id === selectedItem.photoStyle)?.shortLabel || 'Photocard'
+                    : selectedMeta?.shortName || 'Stem'}
+                </span>
+
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    onClick={() => moveItemLayer(selectedItem.id, 'back')}
+                    title="Send to Most Back"
+                    aria-label="Send to Most Back"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    onClick={() => moveItemLayer(selectedItem.id, 'down')}
+                    title="Send Back 1 Layer"
+                    aria-label="Send Back 1 Layer"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    onClick={() => moveItemLayer(selectedItem.id, 'up')}
+                    title="Bring Forward 1 Layer"
+                    aria-label="Bring Forward 1 Layer"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    onClick={() => moveItemLayer(selectedItem.id, 'front')}
+                    title="Bring to Most Front"
+                    aria-label="Bring to Most Front"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+
+                  {selectedItem.photoStyle && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className={`w-[1px] h-3.5 mx-0.5 ${
+                          isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        disabled={Boolean(selectedItem.locked)}
+                        onClick={() =>
+                          updateItem(
+                            selectedItem.id,
+                            { clippedToBouquet: !selectedItem.clippedToBouquet },
+                            true
+                          )
+                        }
+                        title={
+                          selectedItem.clippedToBouquet
+                            ? 'Tucked inside bouquet wrapper (Tap to float free)'
+                            : 'Floating photo (Tap to tuck inside bouquet wrapper)'
+                        }
+                        aria-label={
+                          selectedItem.clippedToBouquet
+                            ? 'Unclip photo from bouquet'
+                            : 'Clip photo to bouquet'
+                        }
+                        aria-pressed={Boolean(selectedItem.clippedToBouquet)}
+                        className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${
+                          selectedItem.clippedToBouquet
+                            ? 'bg-[#B4846C] text-white'
+                            : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
+                        }`}
+                      >
+                        <BouquetClipToggleIcon
+                          clipped={Boolean(selectedItem.clippedToBouquet)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span>{selectedItem.clippedToBouquet ? 'Tucked' : 'Tuck'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
+                        }
+                        title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                        aria-label="Upload photo into photocard"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Row 1: Category Pill Tabs + Reset & Collapse/Expand Tray Buttons (Works on Phone & Desktop) */}
             <div
               className={`flex items-center justify-between gap-2 ${
@@ -3918,7 +4168,7 @@ export default function App() {
                   );
                 })}
 
-              {/* CATEGORY 4B: PHOTOS & UNIQUE PHOTOCARD DESIGNS */}
+              {/* CATEGORY 4B: PHOTOS & UNIQUE PHOTOCARD DESIGNS (All Photos are Couture) */}
               {mobileCategory === 'photos' && (
                 <>
                   {/* Direct Photo Upload Button (Uploads user's picture directly with no frame, no caption, no extras) */}
@@ -3932,14 +4182,22 @@ export default function App() {
                     }}
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                   >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border border-dashed flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                        isDarkMode
-                          ? 'bg-[#292524] border-[#B4846C]/80 group-hover:border-[#E6B89C]'
-                          : 'bg-[#FAF4EE] border-[#B4846C]/80 group-hover:border-[#6E4434]'
-                      }`}
-                    >
-                      <ImagePlus className="w-5 h-5 text-[#B4846C]" />
+                    <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                      <div
+                        className={`w-full h-full rounded-full border border-dashed flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                          isDarkMode
+                            ? 'bg-[#292524] border-[#B4846C]/80 group-hover:border-[#E6B89C]'
+                            : 'bg-[#FAF4EE] border-[#B4846C]/80 group-hover:border-[#6E4434]'
+                        }`}
+                      >
+                        <ImagePlus className="w-5 h-5 text-[#B4846C]" />
+                      </div>
+                      {isPhotoStylePremium('raw', premiumAssetConfig) && (
+                        <CoutureItemBadge
+                          isDarkMode={isDarkMode}
+                          title="Couture photo attachment (free to try)"
+                        />
+                      )}
                     </div>
                     <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       Upload Photo
@@ -3948,6 +4206,7 @@ export default function App() {
 
                   {PHOTO_FRAME_CATALOG.map((pf) => {
                     const isSelected = selectedItem?.photoStyle === pf.id;
+                    const isPremPhoto = isPhotoStylePremium(pf.id, premiumAssetConfig);
                     return (
                       <button
                         key={pf.id}
@@ -3981,6 +4240,12 @@ export default function App() {
                               accentColor={pf.defaultAccentColor}
                             />
                           </div>
+                          {isPremPhoto && (
+                            <CoutureItemBadge
+                              isDarkMode={isDarkMode}
+                              title="Couture photocard frame (free to try)"
+                            />
+                          )}
                         </div>
                         <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {pf.shortLabel}
@@ -4040,6 +4305,7 @@ export default function App() {
                 <>
                   {ENVIRONMENT_CATALOG.map((env) => {
                     const isSelected = environment === env.id;
+                    const isPremEnv = isEnvironmentPremium(env.id as CanvasEnvironment, premiumAssetConfig);
                     return (
                       <button
                         key={env.id}
@@ -4062,6 +4328,12 @@ export default function App() {
                           >
                             <MiniEnvironmentSVG env={env.id as CanvasEnvironment} />
                           </div>
+                          {isPremEnv && (
+                            <CoutureItemBadge
+                              isDarkMode={isDarkMode}
+                              title="Couture background (free to try)"
+                            />
+                          )}
                         </div>
                         <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {env.shortLabel}
@@ -4165,7 +4437,7 @@ export default function App() {
                 </>
               )}
 
-              {/* CATEGORY 7: ROMANTIC VOICE KEEPSAKES (Mixtape, Vinyl, Voice Plushie, Music Box, Heart Locket) */}
+              {/* CATEGORY 7: ROMANTIC VOICE KEEPSAKES (All Voices are Couture) */}
               {mobileCategory === 'voice' && (
                 <>
                   <button
@@ -4177,21 +4449,27 @@ export default function App() {
                       setIsMobileToolsExpanded(true);
                       setMobilePopover((prev) => (prev === 'voice' ? null : 'voice'));
                     }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                   >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                        mobilePopover === 'voice'
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                          : isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
-                    >
-                      <Mic className="w-5 h-5 text-[#B4846C]" />
-                      {voice.audioDataUrl && (
-                        <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
-                      )}
+                    <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                      <div
+                        className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                          mobilePopover === 'voice'
+                            ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                            : isDarkMode
+                            ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                            : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                        }`}
+                      >
+                        <Mic className="w-5 h-5 text-[#B4846C]" />
+                        {voice.audioDataUrl && (
+                          <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
+                        )}
+                      </div>
+                      <CoutureItemBadge
+                        isDarkMode={isDarkMode}
+                        title="Couture voice keepsake (free to record & preview)"
+                      />
                     </div>
                     <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                       {voice.audioDataUrl ? 'Voice Studio' : 'Record Voice'}
@@ -4200,6 +4478,7 @@ export default function App() {
 
                   {VOICE_KEEPSAKE_CATALOG.map((vk) => {
                     const isSelected = voice.style === vk.id && voice.visibleOnStage;
+                    const isPremVoice = isVoiceStylePremium(vk.id, premiumAssetConfig);
                     return (
                       <button
                         key={vk.id}
@@ -4216,22 +4495,30 @@ export default function App() {
                           setActiveColorTarget('voicePrimary');
                           triggerToast(`Selected ${vk.label}`);
                         }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
                       >
-                        <div
-                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                              : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <MiniVoiceKeepsakeSVG
-                            styleType={vk.id}
-                            primaryColor={vk.defaultPrimary}
-                            accentColor={vk.defaultAccent}
-                          />
+                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                          <div
+                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                              isSelected
+                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                            }`}
+                          >
+                            <MiniVoiceKeepsakeSVG
+                              styleType={vk.id}
+                              primaryColor={vk.defaultPrimary}
+                              accentColor={vk.defaultAccent}
+                            />
+                          </div>
+                          {isPremVoice && (
+                            <CoutureItemBadge
+                              isDarkMode={isDarkMode}
+                              title="Couture voice keepsake (free to try)"
+                            />
+                          )}
                         </div>
                         <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {vk.shortLabel}
@@ -4661,17 +4948,25 @@ export default function App() {
                     <div className="relative">
                       <textarea
                         rows={4}
-                        maxLength={86}
+                        maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
                         value={card.message}
                         placeholder="Write your heartfelt note..."
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ message: e.target.value })}
                         aria-label="Card message"
-                        className="w-full px-3 py-2 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
+                        className="w-full px-3 py-2 pb-6 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
                         style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
                       />
-                      <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
-                        {card.message.length}/86
+                      <span
+                        className={`absolute bottom-1.5 right-2.5 text-[10px] pointer-events-none ${
+                          card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                            ? 'text-[#B4846C] font-medium'
+                            : 'text-[#9A877B]'
+                        }`}
+                      >
+                        {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                          ? `✦ Couture Note · ${card.message.length}/${PREMIUM_CARD_NOTE_MAX_CHARS}`
+                          : `${card.message.length}/${FREE_CARD_NOTE_MAX_CHARS} free (${PREMIUM_CARD_NOTE_MAX_CHARS} Couture ✦)`}
                       </span>
                     </div>
                   </div>
@@ -5003,16 +5298,24 @@ export default function App() {
             <div className="relative">
               <textarea
                 rows={4}
-                maxLength={86}
+                maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
                 value={card.message}
                 placeholder="Write your heartfelt note..."
                 onChange={(e) => updateCard({ message: e.target.value })}
                 aria-label="Card message"
-                className="w-full px-3 py-2 pb-5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
+                className="w-full px-3 py-2 pb-6 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
                 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
               />
-              <span className="absolute bottom-1.5 right-2.5 text-[10px] text-[#9A877B] pointer-events-none">
-                {card.message.length}/86
+              <span
+                className={`absolute bottom-1.5 right-2.5 text-[10px] pointer-events-none ${
+                  card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                    ? 'text-[#B4846C] font-medium'
+                    : 'text-[#9A877B]'
+                }`}
+              >
+                {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                  ? `✦ Couture Note · ${card.message.length}/${PREMIUM_CARD_NOTE_MAX_CHARS}`
+                  : `${card.message.length}/${FREE_CARD_NOTE_MAX_CHARS} free (${PREMIUM_CARD_NOTE_MAX_CHARS} Couture ✦)`}
               </span>
             </div>
 
