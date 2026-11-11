@@ -29,13 +29,31 @@ dist-ssr
 !firebase-applet-config.json
 !firebase-blueprint.json
 
-# AI Studio & Scratch Artifacts
+# AI Studio, Agent Instructions, Skills & Scratch Artifacts
 .aistudio
+.agent
+.agent/
 .agents
-.agents/teamwork
+.agents/
+.claude
+.claude/
+.cursor
+.cursor/
+.cursorrules
+.windsurfrules
+.clinerules
+.gemini
+.gemini/
+.github/copilot-instructions.md
+**/skills/
+**/rules/
+*SKILL.md
 AGENTS.md
 CLAUDE.md
+GEMINI.md
+AI_CONTEXT.md
 design-instructions.md
+*instructions*.md
 DRAFT_*
 security_spec.md
 
@@ -49,4 +67,3 @@ security_spec.md
 *.njsproj
 *.sln
 *.sw?
-AGENTS.md
