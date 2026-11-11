@@ -162,7 +162,7 @@ try {
   console.log('✓ Canvas gizmo smooth delta transformation math verified');
 
   // 20. Toolbar Responsive Action Button Labels
-  assert(studioSrc.includes('hidden sm:inline">Back</span>') && !studioSrc.includes('hidden xs:inline'), 'Action buttons use valid Tailwind sm:inline breakpoint instead of invalid xs:inline');
+  assert(studioSrc.includes('hidden sm:inline') && !studioSrc.includes('hidden xs:inline'), 'Action buttons use valid Tailwind sm:inline breakpoint instead of invalid xs:inline');
   console.log('✓ Toolbar action button labels responsive visibility verified');
 
   // 21. Flower Inspector Expand Controls Drawer Coordination

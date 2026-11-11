@@ -3,13 +3,9 @@ import {
   Trash2,
   Copy,
   FlipHorizontal,
-  ArrowUp,
-  ArrowDown,
-  Check,
   X,
   Palette,
   Layers,
-  PenLine,
   Eye,
   EyeOff,
   Lock,
@@ -20,12 +16,15 @@ import {
   Maximize2,
   RotateCw,
   Plus,
+  ImagePlus,
+  Paperclip,
 } from 'lucide-react';
 import {
   BouquetItem,
   FLOWER_CATALOG,
+  PHOTO_FRAME_CATALOG,
+  DEFAULT_BOUQUET_POSE,
   ROMANTIC_SWATCHES,
-  RIBBON_SWATCHES,
   CARD_COLOR_SWATCHES,
   getCardThemePalette,
 } from '../types/bouquet';
@@ -35,6 +34,8 @@ import {
   MiniRibbonBowSVG,
   MiniCardShapeSVG,
   MiniVoiceKeepsakeSVG,
+  MiniPhotoFrameSVG,
+  LayerOrderBoxIcon,
 } from './MiniThumbnails';
 import { useBouquetStore } from '../store/useBouquetStore';
 
@@ -67,6 +68,7 @@ export interface SelectedFlowerToolbarProps {
   onColorTargetChange?: (target: UnifiedColorTarget) => void;
   onCloseMobileSheet?: () => void;
   onOpenLayerManager?: () => void;
+  onUploadPhotoForItem?: (itemId: string) => void;
 }
 
 export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
@@ -76,7 +78,8 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
   activeColorTarget,
   onColorTargetChange,
   onCloseMobileSheet,
-  onOpenLayerManager
+  onOpenLayerManager,
+  onUploadPhotoForItem,
 }) => {
   const {
     items,
@@ -86,6 +89,7 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     wrapColor,
     ribbonColor,
     ribbonStyle,
+    bouquetPose,
     card,
     voice,
     setWrapStyle,
@@ -93,12 +97,13 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     setRibbonColor,
     updateCard,
     updateVoice,
+    updateBouquetPose,
+    resetBouquetPose,
     updateItem,
     duplicateSelected,
     deleteSelected,
     flipSelected,
-    bringForward,
-    sendBackward,
+    moveItemLayer,
     toggleItemLock,
     toggleItemHidden,
     selectItem,
@@ -135,7 +140,15 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
   };
 
   const selected = items.find((i) => i.id === selectedId);
+  const selectedIndex = selected ? items.findIndex((i) => i.id === selected.id) : -1;
   const meta = selected ? FLOWER_CATALOG.find((m) => m.type === selected.type) : undefined;
+  const photoMeta = selected?.photoStyle
+    ? PHOTO_FRAME_CATALOG.find((p) => p.id === selected.photoStyle)
+    : undefined;
+  const selectedDisplayName =
+    selected?.photoStyle === 'raw'
+      ? 'Uploaded Photo'
+      : photoMeta?.label || meta?.name || selected?.type || 'Stem';
 
   // Canva-Style Color Editor: Detects colors on active Flower, Card, Voice Keepsake, Wrapper & Ribbon
   if (mobileSheetMode === 'color') {
@@ -241,7 +254,9 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     const isWrapperMode = !isFlowerMode && !isCardMode && !isVoiceMode && !isRibbonMode;
 
     const simplifiedCategoryLabel = isFlowerMode
-      ? 'Flower'
+      ? targetFlower?.photoStyle
+        ? 'Photocard'
+        : 'Flower'
       : isCardMode
       ? 'Card'
       : isVoiceMode
@@ -254,17 +269,25 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
       <div className="space-y-3" role="region" aria-label="Unified Color Picker">
         {/* SINGLE DYNAMIC DETECTED-COLOR BAR (Shows the active item's thumbnail, simplified category label, and detected colors) */}
         <div className="flex items-center justify-between gap-2.5 px-3 py-2 rounded-2xl bg-[#FAF4EE]/80 dark:bg-[#2E2522]/90 border border-dashed border-[#DECBB9] dark:border-[#5C4B47]">
-          {/* Left: Miniature picture + simplified category label (Flower, Card, Voice, Ribbon, Wrapper) */}
+          {/* Left: Miniature picture + simplified category label (Flower, Photocard, Card, Voice, Ribbon, Wrapper) */}
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-[#FFFDF9] dark:bg-[#231C19] border border-[#E6D6C7] dark:border-[#4E403B] flex items-center justify-center shrink-0 overflow-hidden">
               {isFlowerMode && targetFlower ? (
-                <svg viewBox="-55 -62 110 124" className="w-7 h-7">
-                  <FlowerRenderer
-                    type={targetFlower.type}
-                    petalColor={targetFlower.petalColor}
-                    centerColor={targetFlower.centerColor}
+                targetFlower.photoStyle ? (
+                  <MiniPhotoFrameSVG
+                    styleType={targetFlower.photoStyle}
+                    frameColor={targetFlower.petalColor}
+                    accentColor={targetFlower.centerColor}
                   />
-                </svg>
+                ) : (
+                  <svg viewBox="-55 -62 110 124" className="w-7 h-7">
+                    <FlowerRenderer
+                      type={targetFlower.type}
+                      petalColor={targetFlower.petalColor}
+                      centerColor={targetFlower.centerColor}
+                    />
+                  </svg>
+                )
               ) : isCardMode ? (
                 <MiniCardShapeSVG
                   theme={card.theme}
@@ -467,8 +490,8 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
               </div>
               <input
                 type="range"
-                min="60"
-                max="175"
+                min="35"
+                max="240"
                 value={cardScalePct}
                 onChange={(e) => {
                   if (!isSliderDraggingRef.current) {
@@ -559,8 +582,8 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
               </div>
               <input
                 type="range"
-                min="60"
-                max="175"
+                min="35"
+                max="240"
                 value={voiceScalePct}
                 onChange={(e) => {
                   if (!isSliderDraggingRef.current) {
@@ -607,15 +630,87 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
     }
 
     if (!selected) {
+      const pose = bouquetPose || DEFAULT_BOUQUET_POSE;
+      const bScalePct = Math.round((pose.scale ?? 1) * 100);
+      const bTilt = Math.round(pose.rotation ?? 0);
       return (
-        <div className="py-6 text-center space-y-1.5" role="region" aria-label="Stem Settings">
-          <Sliders className="w-5 h-5 mx-auto text-[#B4846C]/70" />
-          <p className="text-xs font-medium text-stone-700 dark:text-stone-200">
-            No item selected
-          </p>
-          <p className="text-[11px] text-stone-500 dark:text-stone-400 px-2">
-            Tap any flower, greeting card, or voice keepsake on the canvas to adjust its size and tilt.
-          </p>
+        <div className="space-y-3" role="region" aria-label="Bouquet Adjust Settings">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-stone-200/80 dark:border-stone-800">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="w-3.5 h-3.5 rounded-full border border-stone-300 dark:border-stone-600 shrink-0"
+                style={{ backgroundColor: wrapColor }}
+              />
+              <span className="text-xs font-semibold text-[#1C1917] dark:text-stone-100 truncate">
+                Whole Bouquet Pose
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={resetBouquetPose}
+              className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition cursor-pointer"
+              title="Reset Bouquet Position, Size & Tilt"
+              aria-label="Reset Bouquet Position, Size and Tilt"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Bouquet Size</span>
+                <span>{bScalePct}%</span>
+              </div>
+              <input
+                type="range"
+                min="50"
+                max="200"
+                value={bScalePct}
+                onChange={(e) => {
+                  if (!isSliderDraggingRef.current) {
+                    commitHistorySnapshot();
+                    isSliderDraggingRef.current = true;
+                  }
+                  updateBouquetPose({ scale: Number(e.target.value) / 100 }, false);
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Bouquet Size"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Bouquet Tilt</span>
+                <span>{bTilt > 0 ? `+${bTilt}°` : `${bTilt}°`}</span>
+              </div>
+              <input
+                type="range"
+                min="-65"
+                max="65"
+                value={bTilt}
+                onChange={(e) => {
+                  if (!isSliderDraggingRef.current) {
+                    commitHistorySnapshot();
+                    isSliderDraggingRef.current = true;
+                  }
+                  updateBouquetPose({ rotation: Number(e.target.value) }, false);
+                }}
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Bouquet Tilt"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none"
+              />
+            </div>
+
+            <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed pt-1">
+              Tip: Drag the bouquet wrapper on the canvas to reposition or resize the whole arrangement, or tap any flower/photocard to adjust it individually.
+            </p>
+          </div>
         </div>
       );
     }
@@ -630,7 +725,7 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
               style={{ backgroundColor: selected.petalColor }}
             />
             <span className="text-xs font-semibold text-[#1C1917] dark:text-stone-100 truncate">
-              {meta?.name || selected.type}
+              {selectedDisplayName}
             </span>
           </div>
 
@@ -680,29 +775,125 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           </div>
         </div>
 
+        {/* Fast 4-Button Icon-Only Layer Order Bar (Most Back, Back, Front, Most Front) */}
+        <div className="grid grid-cols-4 gap-1.5">
+          <button
+            type="button"
+            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            onClick={() => moveItemLayer(selected.id, 'back')}
+            title="Send to Most Back"
+            aria-label="Send to Most Back"
+            className="h-8 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="back" className="w-4 h-4 text-[#B4846C]" />
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            onClick={() => moveItemLayer(selected.id, 'down')}
+            title="Send Back 1 Layer"
+            aria-label="Send Back 1 Layer"
+            className="h-8 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="down" className="w-4 h-4 text-[#B4846C]" />
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            onClick={() => moveItemLayer(selected.id, 'up')}
+            title="Bring Forward 1 Layer"
+            aria-label="Bring Forward 1 Layer"
+            className="h-8 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="up" className="w-4 h-4 text-[#B4846C]" />
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            onClick={() => moveItemLayer(selected.id, 'front')}
+            title="Bring to Most Front"
+            aria-label="Bring to Most Front"
+            className="h-8 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="front" className="w-4 h-4 text-[#B4846C]" />
+          </button>
+        </div>
+
+        {/* Photocard Upload, Clip Toggle & Caption Controls when a Photo / Photocard is Selected */}
+        {selected.photoStyle && (
+          <div className="space-y-2 p-2.5 rounded-xl bg-[#FAF4EE]/70 dark:bg-[#2B2321]/80 border border-dashed border-[#DECBB9] dark:border-[#5C4B47]">
+            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+              <button
+                type="button"
+                disabled={Boolean(selected.locked)}
+                onClick={() =>
+                  updateItem(
+                    selected.id,
+                    { clippedToBouquet: !selected.clippedToBouquet },
+                    true
+                  )
+                }
+                aria-pressed={Boolean(selected.clippedToBouquet)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 border transition cursor-pointer ${
+                  selected.clippedToBouquet
+                    ? 'bg-[#B4846C] text-white border-[#B4846C]'
+                    : 'bg-white dark:bg-[#1E1C1A] text-[#5C4438] dark:text-[#E6D6C7] border-[#DECBB9] dark:border-[#5C4B47] hover:border-[#B4846C]'
+                }`}
+              >
+                <Paperclip className="w-3 h-3" />
+                <span>{selected.clippedToBouquet ? 'Clipped to Bouquet' : 'Clip to Bouquet'}</span>
+              </button>
+
+              {onUploadPhotoForItem && (
+                <button
+                  type="button"
+                  onClick={() => onUploadPhotoForItem(selected.id)}
+                  className="px-2.5 py-1 rounded-full bg-[#B4846C] hover:bg-[#9F7058] text-white text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer"
+                >
+                  <ImagePlus className="w-3 h-3" />
+                  <span>{selected.photoDataUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                </button>
+              )}
+            </div>
+            {selected.photoStyle !== 'raw' && (
+              <input
+                type="text"
+                maxLength={22}
+                value={selected.photoCaption ?? ''}
+                onChange={(e) => updateItem(selected.id, { photoCaption: e.target.value }, false)}
+                placeholder="Caption (e.g. Our Memory)..."
+                aria-label="Photocard caption"
+                className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#1E1C1A] text-xs text-[#1C1917] dark:text-stone-100 focus:outline-none focus:border-[#B4846C]"
+              />
+            )}
+          </div>
+        )}
+
         {/* Sliders for Stem Length, Size & Tilt */}
         <div className="space-y-3 text-xs">
-          <div>
-            <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
-              <span className="text-stone-600 dark:text-stone-400">Stem Length</span>
-              <span>{Math.round((selected.stemLength ?? 1) * 100)}%</span>
+          {(!selected.photoStyle || selected.clippedToBouquet) && (
+            <div>
+              <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
+                <span className="text-stone-600 dark:text-stone-400">Stem Length</span>
+                <span>{Math.round((selected.stemLength ?? 1) * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="15"
+                max="130"
+                disabled={Boolean(selected.locked)}
+                value={Math.round((selected.stemLength ?? 1) * 100)}
+                onChange={(e) =>
+                  handleSliderChange({ stemLength: Number(e.target.value) / 100 })
+                }
+                onPointerUp={handleSliderPointerUp}
+                onPointerCancel={handleSliderPointerUp}
+                onBlur={handleSliderPointerUp}
+                aria-label="Flower Stem Length"
+                className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
+              />
             </div>
-            <input
-              type="range"
-              min="15"
-              max="130"
-              disabled={Boolean(selected.locked)}
-              value={Math.round((selected.stemLength ?? 1) * 100)}
-              onChange={(e) =>
-                handleSliderChange({ stemLength: Number(e.target.value) / 100 })
-              }
-              onPointerUp={handleSliderPointerUp}
-              onPointerCancel={handleSliderPointerUp}
-              onBlur={handleSliderPointerUp}
-              aria-label="Flower Stem Length"
-              className="w-full accent-[#B4846C] h-2 bg-stone-100 dark:bg-stone-800 rounded-lg cursor-pointer touch-none disabled:opacity-40"
-            />
-          </div>
+          )}
 
           <div>
             <div className="flex justify-between text-stone-700 dark:text-stone-300 mb-1 font-medium tabular-nums">
@@ -711,8 +902,8 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
             </div>
             <input
               type="range"
-              min="45"
-              max="200"
+              min="35"
+              max="250"
               disabled={Boolean(selected.locked)}
               value={Math.round(selected.scale * 100)}
               onChange={(e) =>
@@ -942,30 +1133,48 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
         </div>
       </div>
 
-      {/* Second Row: Layer Reordering & Quick Action Touch Buttons */}
+      {/* Second Row: 4-Button Fast Layer Reordering (Most Back, Back, Front, Most Front) & Quick Actions */}
       <div className="flex items-center justify-between gap-1 sm:gap-2">
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={sendBackward}
-            disabled={Boolean(selected.locked)}
-            className="h-8 px-2.5 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1.5 disabled:opacity-30 transition"
-            title="Send Backward"
-            aria-label="Send Flower Backward"
+            onClick={() => moveItemLayer(selected.id, 'back')}
+            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
+            title="Send to Most Back"
+            aria-label="Send Flower to Most Back"
           >
-            <ArrowDown className="w-3.5 h-3.5" />
-            <span className="text-[11px] hidden sm:inline">Back</span>
+            <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
           </button>
           <button
             type="button"
-            onClick={bringForward}
-            disabled={Boolean(selected.locked)}
-            className="h-8 px-2.5 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1.5 disabled:opacity-30 transition"
-            title="Bring Forward"
+            onClick={() => moveItemLayer(selected.id, 'down')}
+            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
+            title="Send Backward 1 Layer"
+            aria-label="Send Flower Backward"
+          >
+            <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => moveItemLayer(selected.id, 'up')}
+            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
+            title="Bring Forward 1 Layer"
             aria-label="Bring Flower Forward"
           >
-            <ArrowUp className="w-3.5 h-3.5" />
-            <span className="text-[11px] hidden sm:inline">Forward</span>
+            <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => moveItemLayer(selected.id, 'front')}
+            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
+            title="Bring to Most Front"
+            aria-label="Bring Flower to Most Front"
+          >
+            <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
           </button>
         </div>
 
@@ -1016,8 +1225,8 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           </div>
           <input
             type="range"
-            min="45"
-            max="200"
+            min="35"
+            max="250"
             disabled={Boolean(selected.locked)}
             value={Math.round(selected.scale * 100)}
             onChange={(e) =>
@@ -1076,7 +1285,7 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
         </div>
       </div>
 
-      {/* Fourth Row: Per-Flower Petal & Center Color Pickers */}
+      {/* Fourth Row: Per-Flower Petal/Frame & Center/Accent Color Pickers */}
       {mobileSheetMode !== 'layers' && (
         <div className="space-y-1.5 pt-1 border-t border-stone-100 dark:border-stone-800">
           <div className="flex items-center justify-between">
@@ -1094,7 +1303,7 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
                   className="w-2.5 h-2.5 rounded-full border border-white/50"
                   style={{ backgroundColor: selected.petalColor }}
                 />
-                Petals
+                {selected.photoStyle ? 'Frame' : 'Petals'}
               </button>
               <button
                 type="button"
@@ -1109,7 +1318,7 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
                   className="w-2.5 h-2.5 rounded-full border border-white/50"
                   style={{ backgroundColor: selected.centerColor }}
                 />
-                Center
+                {selected.photoStyle ? 'Accent' : 'Center'}
               </button>
             </div>
 

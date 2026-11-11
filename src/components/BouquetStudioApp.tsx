@@ -51,6 +51,7 @@ import {
   Home,
   BookOpen,
   Bookmark,
+  ImagePlus,
 } from 'lucide-react';
 import {
   FlowerType,
@@ -62,6 +63,8 @@ import {
   GreetingCardData,
   BouquetSnapshot,
   BouquetLockMode,
+  PhotoFrameStyle,
+  CanvasEnvironment,
   DEFAULT_BOUQUET_LOCK,
   RECIPIENT_REACTIONS,
   FLOWER_CATALOG,
@@ -72,6 +75,8 @@ import {
   CARD_COLOR_SWATCHES,
   VOICE_KEEPSAKE_CATALOG,
   DEFAULT_VOICE_KEEPSAKE,
+  PHOTO_FRAME_CATALOG,
+  ENVIRONMENT_CATALOG,
   ROMANTIC_SWATCHES,
   STARTER_TEMPLATES,
   getCardThemePalette,
@@ -87,6 +92,7 @@ import {
   decodeBouquetFromHash,
   isInAppBrowser,
   exportSvgElementToPng,
+  compressUploadedPhotoToDataUrl,
   musicBox,
 } from '../lib/shareAndExport';
 import {
@@ -108,6 +114,8 @@ import {
   MiniRibbonBowSVG,
   MiniCardShapeSVG,
   MiniVoiceKeepsakeSVG,
+  MiniPhotoFrameSVG,
+  MiniEnvironmentSVG,
 } from './MiniThumbnails';
 import { LayerManagerPanel } from './LayerManagerPanel';
 import { SelectedFlowerToolbar, UnifiedColorTarget } from './SelectedFlowerToolbar';
@@ -141,7 +149,16 @@ import { BotanicalQrCard } from './BotanicalQrCard';
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
 // ============================================================================
 
-type MobileCategory = 'templates' | 'wrapping' | 'flowers' | 'fillers' | 'ribbon' | 'card' | 'voice';
+type MobileCategory =
+  | 'templates'
+  | 'wrapping'
+  | 'flowers'
+  | 'fillers'
+  | 'photos'
+  | 'ribbon'
+  | 'environment'
+  | 'card'
+  | 'voice';
 
 const PAPER_SWATCHES = [
   { label: 'Warm Kraft', short: 'Kraft', hex: '#d6b38e' },
@@ -159,16 +176,21 @@ export default function App() {
     wrapColor,
     ribbonColor,
     ribbonStyle,
+    environment,
+    bouquetPose,
     card,
     voice,
     lock,
     past,
     future,
     addFlower,
+    addPhotoCard,
+    updateItem,
     setWrapStyle,
     setWrapColor,
     setRibbonColor,
     setRibbonStyle,
+    setEnvironment,
     updateCard,
     updateVoice,
     updateLock,
@@ -186,8 +208,11 @@ export default function App() {
   const [mobileCategory, setMobileCategory] = useState<MobileCategory>('wrapping');
   const [mobilePopover, setMobilePopover] = useState<'color' | 'stem' | 'layers' | 'card' | 'voice' | null>(null);
   const [activeColorTarget, setActiveColorTarget] = useState<UnifiedColorTarget>('wrapper');
-  const [isMobileToolsExpanded, setIsMobileToolsExpanded] = useState(false);
+  const [isMobileToolsExpanded, setIsMobileToolsExpanded] = useState(true);
   const [isDesktopDockCollapsed, setIsDesktopDockCollapsed] = useState(false);
+  const photoUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingPhotoTargetItemIdRef = useRef<string | null>(null);
+  const pendingPhotoStyleRef = useRef<PhotoFrameStyle>('polaroid');
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
@@ -306,12 +331,14 @@ export default function App() {
       wrapColor,
       ribbonColor,
       ribbonStyle,
+      environment,
+      bouquetPose,
       card,
       voice,
       lock,
     };
     return computeShortCode(encodeBouquetToCompactPayload(snap, true));
-  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock]);
 
   const currentPassCheck = useMemo(() => {
     const devHash = getOrCreateDeviceTokenHash();
@@ -485,6 +512,46 @@ export default function App() {
   const triggerToast = useCallback((msg: string) => {
     setToast(msg);
   }, []);
+
+  const triggerPhotoFilePicker = useCallback(
+    (targetItemId?: string | null, defaultStyle: PhotoFrameStyle = 'raw') => {
+      pendingPhotoTargetItemIdRef.current = targetItemId || null;
+      pendingPhotoStyleRef.current = defaultStyle;
+      if (photoUploadInputRef.current) {
+        photoUploadInputRef.current.value = '';
+        photoUploadInputRef.current.click();
+      }
+    },
+    []
+  );
+
+  const handlePhotoFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const compressedDataUrl = await compressUploadedPhotoToDataUrl(file, 440);
+        const targetId = pendingPhotoTargetItemIdRef.current;
+        const targetExists = targetId ? items.some((i) => i.id === targetId && i.photoStyle) : false;
+        if (targetId && targetExists) {
+          updateItem(targetId, { photoDataUrl: compressedDataUrl });
+          selectItem(targetId);
+          triggerToast('Photo updated!');
+        } else {
+          const nextStyle = pendingPhotoStyleRef.current || 'raw';
+          addPhotoCard(nextStyle, compressedDataUrl);
+          setActiveColorTarget('petal');
+          triggerToast(nextStyle === 'raw' ? 'Photo added!' : 'Photocard added!');
+        }
+      } catch {
+        triggerToast('Could not load photo');
+      } finally {
+        pendingPhotoTargetItemIdRef.current = null;
+        e.target.value = '';
+      }
+    },
+    [items, updateItem, selectItem, addPhotoCard, triggerToast]
+  );
 
   useEffect(() => {
     try {
@@ -1046,6 +1113,8 @@ export default function App() {
           wrapColor,
           ribbonColor,
           ribbonStyle,
+          environment,
+          bouquetPose,
           card,
           voice,
           lock,
@@ -1057,7 +1126,7 @@ export default function App() {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
 
   // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
@@ -1153,13 +1222,15 @@ export default function App() {
         wrapColor,
         ribbonColor,
         ribbonStyle,
+        environment,
+        bouquetPose,
         card,
         voice,
         lock,
       };
       return encodeBouquetToShareUrl(snap, asGift);
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock]
   );
 
   const registerShortCodeOnServer = useCallback(
@@ -1170,6 +1241,8 @@ export default function App() {
         wrapColor,
         ribbonColor,
         ribbonStyle,
+        environment,
+        bouquetPose,
         card,
         voice,
         lock,
@@ -1263,7 +1336,7 @@ export default function App() {
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, activeStudioPass]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, activeStudioPass]
   );
 
   const handleSaveDraftOnDevice = useCallback(() => {
@@ -1273,6 +1346,8 @@ export default function App() {
       wrapColor,
       ribbonColor,
       ribbonStyle,
+      environment,
+      bouquetPose,
       card,
       voice,
       lock,
@@ -1307,7 +1382,7 @@ export default function App() {
     setSavedDraftPulse(true);
     setTimeout(() => setSavedDraftPulse(false), 1600);
     triggerToast('Draft saved!');
-  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, card, voice, lock, triggerToast]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, triggerToast]);
 
   const handleResumeDraftFromDevice = useCallback(
     (draftPayload: string) => {
@@ -1437,6 +1512,16 @@ export default function App() {
         ...(viewportHeight ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px` } : {})
       }}
     >
+      {/* Hidden Device Photo Upload Input for Photocard Keepsakes */}
+      <input
+        ref={photoUploadInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handlePhotoFileChange}
+        className="hidden"
+        aria-label="Upload photo for photocard keepsake"
+      />
+
       {/* Google Fonts: Caveat (Handwriting), Cormorant Garamond & Inter */}
       <link
         rel="stylesheet"
@@ -2770,6 +2855,11 @@ export default function App() {
                   setMobileCategory('voice');
                 }
               }}
+              onPhotoCardUploadClick={(itemId) => {
+                if (isPreviewMode || isGiftView) return;
+                const found = items.find((i) => i.id === itemId);
+                triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+              }}
             />
 
             {/* ===============================================================
@@ -2781,17 +2871,17 @@ export default function App() {
             {!isGiftView && !isPreviewMode && !showLandingPage && (
               <div
                 ref={floatingToolStackRef}
-                className="absolute right-3 bottom-3 z-40 flex flex-col items-center gap-2"
+                className="absolute right-2 sm:right-3 bottom-1.5 sm:bottom-2.5 z-40 max-h-[calc(100%-0.5rem)] flex flex-col items-center justify-end gap-1"
               >
                 {isMobileToolsExpanded && (
-                  <div className="flex flex-col items-center gap-2 animate-in fade-in duration-150">
+                  <div className="flex flex-col items-center gap-1 overflow-y-auto no-scrollbar py-0.5 px-0.5 animate-in fade-in duration-150">
                     <button
                       type="button"
                       onClick={() => handleMobileFloatingTool('color')}
                       aria-pressed={mobilePopover === 'color'}
                       aria-label="Open Unified Color Picker"
                       title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon, Card & Voice)'}
-                      className={`w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                      className={`w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'color'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -2799,7 +2889,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Palette className="w-4 h-4" />
+                      <Palette className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -2808,7 +2898,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'stem'}
                       aria-label="Open Stem Length, Size & Tilt Settings"
                       title={mobilePopover === 'stem' ? 'Hide Stem Settings Drawer' : 'Stem Settings (Length, Size & Tilt)'}
-                      className={`w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                      className={`w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'stem'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -2816,7 +2906,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Sliders className="w-4 h-4" />
+                      <Sliders className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -2825,7 +2915,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'layers'}
                       aria-label="Open Layer Order Manager"
                       title={mobilePopover === 'layers' ? 'Hide Layer Order Drawer' : 'Layer Order (Drag to reorder, Lock & Hide)'}
-                      className={`w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                      className={`w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'layers'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -2833,7 +2923,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Layers className="w-4 h-4" />
+                      <Layers className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -2842,7 +2932,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'card'}
                       aria-label="Edit greeting card"
                       title={mobilePopover === 'card' ? 'Hide Greeting Card Drawer' : 'Edit Greeting Card'}
-                      className={`relative w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                      className={`relative w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'card'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -2850,7 +2940,7 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <PenLine className="w-4 h-4" />
+                      <PenLine className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -2859,7 +2949,7 @@ export default function App() {
                       aria-pressed={mobilePopover === 'voice'}
                       aria-label="Open Voice Keepsake Recorder"
                       title={mobilePopover === 'voice' ? 'Hide Voice Recorder Drawer' : 'Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)'}
-                      className={`relative w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                      className={`relative w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         mobilePopover === 'voice'
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -2867,9 +2957,9 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      <Mic className="w-4 h-4" />
+                      <Mic className="w-3.5 h-3.5" />
                       {voice.audioDataUrl && (
-                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border border-white" />
+                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
                       )}
                     </button>
 
@@ -2879,7 +2969,7 @@ export default function App() {
                       aria-pressed={isMusicPlaying}
                       aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
                       title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                      className={`sm:hidden w-10 h-10 rounded-full border shadow-md flex items-center justify-center active:scale-95 transition ${
+                      className={`sm:hidden w-8 h-8 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
                         isMusicPlaying
                           ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
                           : isDarkMode
@@ -2887,14 +2977,14 @@ export default function App() {
                           : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
                       }`}
                     >
-                      {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                      {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 )}
 
                 {/* Bottom Capsule: Collapse/Expand Toggle + Eye (Preview Bloom) */}
                 <div
-                  className={`flex flex-col items-center rounded-full border shadow-md backdrop-blur-md p-0.5 transition-all ${
+                  className={`flex flex-col items-center shrink-0 rounded-full border shadow-sm backdrop-blur-md p-0.5 transition-all ${
                     isDarkMode
                       ? 'bg-[#1E1C1A]/95 border-stone-700'
                       : 'bg-white/95 border-stone-200/90'
@@ -2916,7 +3006,7 @@ export default function App() {
                         : 'Expand canvas tools (Colors, Stem, Layers, Card, Voice)'
                     }
                     title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card, Voice)'}
-                    className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${
+                    className={`relative w-8 h-6 rounded-t-full flex items-center justify-center active:scale-95 transition ${
                       isMobileToolsExpanded
                         ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
                         : 'text-[#B4846C]'
@@ -2928,22 +3018,22 @@ export default function App() {
                       <>
                         <ChevronUp className="w-3.5 h-3.5" />
                         {(selectedId || mobilePopover) && (
-                          <span className="absolute top-1 right-2 w-1.5 h-1.5 rounded-full bg-[#B4846C]" />
+                          <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-[#B4846C]" />
                         )}
                       </>
                     )}
                   </button>
 
-                  <div className="w-5 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
+                  <div className="w-4 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
 
                   <button
                     type="button"
                     onClick={() => startGiftBloomAnimation(items.length, true)}
                     aria-label="Preview gift bloom"
                     title="Preview Bloom"
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
+                    className="w-8 h-7.5 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
                   >
-                    <Eye className="w-4 h-4" />
+                    <Eye className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -3017,6 +3107,10 @@ export default function App() {
                       activeColorTarget={activeColorTarget}
                       onColorTargetChange={setActiveColorTarget}
                       onCloseMobileSheet={() => setMobilePopover(null)}
+                      onUploadPhotoForItem={(itemId) => {
+                        const found = items.find((i) => i.id === itemId);
+                        triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+                      }}
                     />
                   )}
 
@@ -3027,6 +3121,10 @@ export default function App() {
                       activeColorTarget={activeColorTarget}
                       onColorTargetChange={setActiveColorTarget}
                       onCloseMobileSheet={() => setMobilePopover(null)}
+                      onUploadPhotoForItem={(itemId) => {
+                        const found = items.find((i) => i.id === itemId);
+                        triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+                      }}
                     />
                   )}
 
@@ -3501,7 +3599,9 @@ export default function App() {
                     { id: 'wrapping', label: 'Wrappers' },
                     { id: 'flowers', label: 'Flowers' },
                     { id: 'fillers', label: 'Fillers' },
+                    { id: 'photos', label: 'Photos' },
                     { id: 'ribbon', label: 'Ribbon' },
+                    { id: 'environment', label: 'Background' },
                     { id: 'card', label: 'Card' },
                     { id: 'voice', label: 'Voice' }
                   ] as { id: MobileCategory; label: string }[]
@@ -3523,7 +3623,7 @@ export default function App() {
                         else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
                         else if (cat.id === 'card') setActiveColorTarget('card');
                         else if (cat.id === 'voice') setActiveColorTarget('voicePrimary');
-                        else if (cat.id === 'flowers' || cat.id === 'fillers') setActiveColorTarget('petal');
+                        else if (cat.id === 'flowers' || cat.id === 'fillers' || cat.id === 'photos') setActiveColorTarget('petal');
 
                         if (isActive) {
                           setIsDesktopDockCollapsed((prev) => !prev);
@@ -3818,6 +3918,79 @@ export default function App() {
                   );
                 })}
 
+              {/* CATEGORY 4B: PHOTOS & UNIQUE PHOTOCARD DESIGNS */}
+              {mobileCategory === 'photos' && (
+                <>
+                  {/* Direct Photo Upload Button (Uploads user's picture directly with no frame, no caption, no extras) */}
+                  <button
+                    type="button"
+                    data-testid="dock-upload-photo-btn"
+                    onClick={() => {
+                      const activeRawPhoto =
+                        selectedItem?.photoStyle === 'raw' ? selectedItem : null;
+                      triggerPhotoFilePicker(activeRawPhoto?.id || null, 'raw');
+                    }}
+                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                  >
+                    <div
+                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border border-dashed flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                        isDarkMode
+                          ? 'bg-[#292524] border-[#B4846C]/80 group-hover:border-[#E6B89C]'
+                          : 'bg-[#FAF4EE] border-[#B4846C]/80 group-hover:border-[#6E4434]'
+                      }`}
+                    >
+                      <ImagePlus className="w-5 h-5 text-[#B4846C]" />
+                    </div>
+                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      Upload Photo
+                    </span>
+                  </button>
+
+                  {PHOTO_FRAME_CATALOG.map((pf) => {
+                    const isSelected = selectedItem?.photoStyle === pf.id;
+                    return (
+                      <button
+                        key={pf.id}
+                        type="button"
+                        onClick={() => {
+                          if (selectedItem?.photoStyle) {
+                            updateItem(selectedItem.id, { photoStyle: pf.id });
+                            setActiveColorTarget('petal');
+                            triggerToast(`Frame: ${pf.label}`);
+                          } else {
+                            addPhotoCard(pf.id);
+                            setActiveColorTarget('petal');
+                            triggerToast(`Added ${pf.label}`);
+                          }
+                        }}
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                      >
+                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                          <div
+                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                              isSelected
+                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                            }`}
+                          >
+                            <MiniPhotoFrameSVG
+                              styleType={pf.id}
+                              frameColor={pf.defaultFrameColor}
+                              accentColor={pf.defaultAccentColor}
+                            />
+                          </div>
+                        </div>
+                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                          {pf.shortLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
               {/* CATEGORY 5: RIBBON & LACE DESIGNS (Colors are unified in the Color drawer tab) */}
               {mobileCategory === 'ribbon' && (
                 <>
@@ -3855,6 +4028,43 @@ export default function App() {
                         </div>
                         <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
                           {rs.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* CATEGORY 5B: ENVIRONMENT / BACKGROUND VIBE */}
+              {mobileCategory === 'environment' && (
+                <>
+                  {ENVIRONMENT_CATALOG.map((env) => {
+                    const isSelected = environment === env.id;
+                    return (
+                      <button
+                        key={env.id}
+                        type="button"
+                        onClick={() => {
+                          setEnvironment(env.id as CanvasEnvironment);
+                          triggerToast(`Background: ${env.label}`);
+                        }}
+                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                      >
+                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                          <div
+                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                              isSelected
+                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                            }`}
+                          >
+                            <MiniEnvironmentSVG env={env.id as CanvasEnvironment} />
+                          </div>
+                        </div>
+                        <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                          {env.shortLabel}
                         </span>
                       </button>
                     );
@@ -4000,6 +4210,7 @@ export default function App() {
                           updateVoice({
                             style: vk.id,
                             ...(isSwitchingStyle ? { title: vk.defaultTitle } : {}),
+                            ...((voice.scale ?? 1) < 0.95 ? { scale: 1.0 } : {}),
                             visibleOnStage: true,
                           });
                           setActiveColorTarget('voicePrimary');

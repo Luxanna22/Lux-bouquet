@@ -3,8 +3,9 @@ import {
   CardTheme,
   RibbonStyle,
   VoiceKeepsakeStyle,
+  PhotoFrameStyle,
+  CanvasEnvironment,
   typeWrapStyle,
-  StarterTemplate,
   getCardThemePalette,
 } from '../types/bouquet';
 
@@ -700,5 +701,292 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
     </svg>
   );
 };
+
+export const MiniPhotoFrameSVG: React.FC<{
+  styleType: PhotoFrameStyle;
+  frameColor?: string;
+  accentColor?: string;
+}> = ({ styleType, frameColor = '#FFFDF9', accentColor = '#B4846C' }) => {
+  if (styleType === 'raw') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="13" y="13" width="38" height="38" rx="6" fill="#FAF0E6" stroke={accentColor} strokeWidth="1.4" />
+        <circle cx="25" cy="25" r="4.5" fill="#F472B6" fillOpacity="0.85" />
+        <path d="M16,44 Q28,32 38,41 T50,39 L50,48 L14,48 Z" fill="#84A98C" fillOpacity="0.65" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'stamp') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Perforated Postage Stamp Frame */}
+        <rect
+          x="13"
+          y="9"
+          width="38"
+          height="46"
+          rx="3"
+          fill={frameColor}
+          stroke={accentColor}
+          strokeWidth="1.8"
+          strokeDasharray="2.5 2"
+        />
+        <rect x="18" y="14" width="28" height="30" rx="1.5" fill="#FAF0E6" stroke={accentColor} strokeWidth="0.9" />
+        {/* Inner botanical silhouette */}
+        <circle cx="28" cy="24" r="4.5" fill="#F472B6" fillOpacity="0.8" />
+        <path d="M22,38 Q32,30 42,38" fill="none" stroke="#15803d" strokeWidth="1.6" strokeLinecap="round" />
+        {/* Postmark waves */}
+        <path d="M34,47 Q39,45 44,47 M34,50 Q39,48 44,50" fill="none" stroke={accentColor} strokeWidth="1" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'cameo') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Lace Cameo Oval Frame */}
+        <ellipse
+          cx="32"
+          cy="34"
+          rx="19"
+          ry="23"
+          fill={frameColor}
+          stroke={accentColor}
+          strokeWidth="1.8"
+          strokeDasharray="3 1.8"
+        />
+        <ellipse cx="32" cy="34" rx="14" ry="17.5" fill="#FFF7FA" stroke={accentColor} strokeWidth="1" />
+        <circle cx="32" cy="31" r="5" fill="#FB7185" fillOpacity="0.8" />
+        <path d="M27,40 Q32,35 37,40" fill="none" stroke="#16a34a" strokeWidth="1.5" strokeLinecap="round" />
+        {/* Top Ribbon Bow */}
+        <path d="M32,11 C25,6 24,14 32,12 C40,14 39,6 32,11 Z" fill={accentColor} />
+      </svg>
+    );
+  }
+
+  if (styleType === 'film') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* 35mm Vintage Film Strip */}
+        <rect x="12" y="9" width="40" height="46" rx="3" fill={frameColor} stroke={accentColor} strokeWidth="1.2" />
+        {/* Sprocket holes left & right */}
+        {[14, 22, 30, 38, 46].map((y) => (
+          <g key={y} fill="#FFFDF9">
+            <rect x="14.5" y={y} width="2.6" height="3.8" rx="0.6" />
+            <rect x="46.9" y={y} width="2.6" height="3.8" rx="0.6" />
+          </g>
+        ))}
+        <rect x="19.5" y="14" width="25" height="30" rx="1.5" fill="#FAF4EE" />
+        <circle cx="32" cy="27" r="5.5" fill="#F59E0B" fillOpacity="0.85" />
+        <line x1="23" y1="49" x2="41" y2="49" stroke={accentColor} strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'pressed') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Herbarium Octagonal Brass Glass Frame */}
+        <polygon
+          points="22,9 42,9 51,18 51,46 42,55 22,55 13,46 13,18"
+          fill={frameColor}
+          stroke={accentColor}
+          strokeWidth="1.8"
+        />
+        <polygon
+          points="24,13 40,13 47,20 47,44 40,51 24,51 17,44 17,20"
+          fill="none"
+          stroke={accentColor}
+          strokeWidth="0.9"
+          strokeDasharray="2 2"
+        />
+        <path d="M32,42 L32,22 M32,33 L25,27 M32,28 L39,23" stroke="#15803d" strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="32" cy="21" r="4" fill="#FB7185" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'arch') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Gilded Cathedral Arch Frame */}
+        <path
+          d="M14,54 L14,27 A18,18 0 0,1 50,27 L50,54 Z"
+          fill={frameColor}
+          stroke={accentColor}
+          strokeWidth="1.8"
+        />
+        <path
+          d="M18,50 L18,27 A14,14 0 0,1 46,27 L46,50 Z"
+          fill="#FFFDF9"
+          stroke={accentColor}
+          strokeWidth="0.9"
+        />
+        <circle cx="32" cy="30" r="5" fill="#F472B6" fillOpacity="0.85" />
+        <path d="M26,41 Q32,35 38,41" fill="none" stroke="#15803d" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  // Default: 'polaroid' (Instant Polaroid with top tape)
+  return (
+    <svg viewBox="0 0 64 64" className="w-11 h-11">
+      <rect x="13" y="11" width="38" height="45" rx="3" fill={frameColor} stroke="#D6C7B8" strokeWidth="1.4" />
+      <rect x="17" y="16" width="30" height="27" rx="1.5" fill="#F8EFE6" stroke={accentColor} strokeWidth="0.8" />
+      <circle cx="29" cy="27" r="5" fill="#FB7185" fillOpacity="0.85" />
+      <path d="M21,39 Q32,31 43,39" fill="none" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+      {/* Washi tape at top */}
+      <rect x="25" y="7.5" width="14" height="5.5" rx="1" fill={accentColor} fillOpacity="0.7" transform="rotate(-4 32 10)" />
+      <line x1="23" y1="49.5" x2="41" y2="49.5" stroke="#8C7A6B" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+};
+
+export const MiniEnvironmentSVG: React.FC<{
+  env: CanvasEnvironment;
+}> = ({ env }) => {
+  if (env === 'paper') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="8" fill="#F7EFE4" stroke="#C8B098" strokeWidth="1.4" />
+        <rect x="16" y="14" width="32" height="36" rx="5" fill="none" stroke="#B4846C" strokeWidth="1" strokeDasharray="2.5 2" />
+        <path d="M20,24 L44,24 M20,32 L40,32 M20,40 L44,40" stroke="#D5C0AB" strokeWidth="1.1" strokeLinecap="round" />
+        <circle cx="25" cy="20" r="1" fill="#B4846C" />
+        <circle cx="41" cy="36" r="1.2" fill="#B4846C" />
+      </svg>
+    );
+  }
+
+  if (env === 'meadow') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#F9FBF7" stroke="#A7C4A0" strokeWidth="1.3" />
+        <path d="M13,44 Q32,39 51,44 L51,52 Q32,54 13,52 Z" fill="#D9EAD3" />
+        <path
+          d="M20,49 Q18,40 22,35 M27,50 Q28,39 25,33 M35,50 Q37,40 40,34 M43,49 Q45,41 42,36"
+          fill="none"
+          stroke="#5E8C61"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <circle cx="22" cy="34" r="1.8" fill="#F472B6" />
+        <circle cx="40" cy="33" r="1.8" fill="#FBBF24" />
+        <circle cx="29" cy="38" r="1.5" fill="#FB7185" />
+      </svg>
+    );
+  }
+
+  if (env === 'sunlit') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#FFF9EE" stroke="#E5C185" strokeWidth="1.3" />
+        <polygon points="15,14 34,14 48,48 26,48" fill="#FDE68A" fillOpacity="0.48" />
+        <polygon points="36,14 47,14 50,36 42,36" fill="#FDE68A" fillOpacity="0.32" />
+        <circle cx="23" cy="21" r="4" fill="#F59E0B" fillOpacity="0.55" />
+      </svg>
+    );
+  }
+
+  if (env === 'linen') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#F4ECE1" stroke="#C5B09B" strokeWidth="1.3" />
+        <g stroke="#D5C2AF" strokeWidth="1">
+          <line x1="18" y1="14" x2="18" y2="50" />
+          <line x1="27" y1="14" x2="27" y2="50" />
+          <line x1="37" y1="14" x2="37" y2="50" />
+          <line x1="46" y1="14" x2="46" y2="50" />
+          <line x1="16" y1="20" x2="48" y2="20" />
+          <line x1="16" y1="29" x2="48" y2="29" />
+          <line x1="16" y1="38" x2="48" y2="38" />
+          <line x1="16" y1="46" x2="48" y2="46" />
+        </g>
+      </svg>
+    );
+  }
+
+  if (env === 'starlit') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#2A2438" stroke="#B4846C" strokeWidth="1.3" />
+        <path d="M36,20 A7,7 0 1,0 42,30 A5.5,5.5 0 1,1 36,20 Z" fill="#FDE68A" />
+        <circle cx="22" cy="24" r="1.4" fill="#FBBF24" />
+        <circle cx="26" cy="39" r="1.6" fill="#FDE68A" />
+        <circle cx="41" cy="42" r="1.3" fill="#F472B6" />
+        <path d="M22,24 L26,39 L41,42" fill="none" stroke="#FDE68A" strokeWidth="0.7" strokeDasharray="2 2" opacity="0.6" />
+      </svg>
+    );
+  }
+
+  // Default: 'studio'
+  return (
+    <svg viewBox="0 0 64 64" className="w-11 h-11">
+      <rect x="12" y="10" width="40" height="44" rx="10" fill="#FAF8F5" stroke="#DECBB9" strokeWidth="1.3" />
+      <circle cx="32" cy="32" r="13" fill="#FFFFFF" stroke="#E5D5C5" strokeWidth="1.1" strokeDasharray="3 2" />
+    </svg>
+  );
+};
+
+/**
+ * Custom "Arrow + Box" Layer Ordering Icon requested by user:
+ * - 'back'  (Most Back): Arrow pointing down into a bottom layer box + double base bar
+ * - 'down'  (Back 1 Layer): Arrow pointing down beside a layer box
+ * - 'up'    (Front 1 Layer): Arrow pointing up beside a layer box
+ * - 'front' (Most Front): Arrow pointing up into a top layer box + double top bar
+ */
+export const LayerOrderBoxIcon: React.FC<{
+  direction: 'back' | 'down' | 'up' | 'front';
+  className?: string;
+}> = ({ direction, className = 'w-4 h-4' }) => {
+  if (direction === 'back') {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+        {/* Top ghost layer box */}
+        <rect x="3" y="2.5" width="7.5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4" strokeDasharray="1.8 1.4" opacity="0.55" />
+        {/* Bottom target box (Most Back) */}
+        <rect x="3" y="11" width="7.5" height="5.5" rx="1.2" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.5" />
+        {/* Bottom floor line */}
+        <line x1="2.5" y1="18.2" x2="17.5" y2="18.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        {/* Down arrow on right */}
+        <path d="M14.5,3 L14.5,15 M12,12.5 L14.5,15.2 L17,12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (direction === 'down') {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+        {/* Layer box */}
+        <rect x="3" y="5.5" width="8" height="8" rx="1.5" fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.5" />
+        {/* Single step down arrow */}
+        <path d="M14.5,4.5 L14.5,15.5 M12,12.8 L14.5,15.5 L17,12.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (direction === 'up') {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+        {/* Layer box */}
+        <rect x="3" y="6.5" width="8" height="8" rx="1.5" fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.5" />
+        {/* Single step up arrow */}
+        <path d="M14.5,15.5 L14.5,4.5 M12,7.2 L14.5,4.5 L17,7.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  // 'front' (Most Front)
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+      {/* Top ceiling line */}
+      <line x1="2.5" y1="1.8" x2="17.5" y2="1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      {/* Top target box (Most Front) */}
+      <rect x="3" y="3.5" width="7.5" height="5.5" rx="1.2" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.5" />
+      {/* Bottom ghost layer box */}
+      <rect x="3" y="12.5" width="7.5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4" strokeDasharray="1.8 1.4" opacity="0.55" />
+      {/* Up arrow on right */}
+      <path d="M14.5,17 L14.5,5 M12,7.5 L14.5,4.8 L17,7.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+};
+
 
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Flower2 } from 'lucide-react';
+import { ImagePlus, Paperclip } from 'lucide-react';
 import {
   CardTheme,
   CardThemePalette,
@@ -9,9 +9,14 @@ import {
   BouquetItem,
   GreetingCardData,
   FLOWER_CATALOG,
+  PhotoFrameStyle,
+  PHOTO_FRAME_CATALOG,
+  CanvasEnvironment,
+  DEFAULT_BOUQUET_POSE,
   getCardThemePalette,
 } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
+import { LayerOrderBoxIcon } from './MiniThumbnails';
 import { useBouquetStore } from '../store/useBouquetStore';
 
 // ============================================================================
@@ -49,7 +54,7 @@ const WRAPPER_RIBBON_GEOMETRY: Record<
 };
 
 function getStageItemDisplayTransform(item: BouquetItem, wrap: typeWrapStyle) {
-  if (wrap !== 'cloche') {
+  if (wrap !== 'cloche' || (item.photoStyle && !item.clippedToBouquet)) {
     return {
       x: item.x,
       y: item.y,
@@ -1572,6 +1577,669 @@ export const BouquetVoiceKeepsakeSVG: React.FC<{
   );
 };
 
+/**
+ * Minimalist & Atmospheric Canvas Environment Backdrops (Clips inside the 560x648 rx=42 Stage Arch)
+ */
+export const BouquetEnvironmentSVG: React.FC<{
+  environment: CanvasEnvironment;
+  isDarkMode: boolean;
+}> = ({ environment, isDarkMode }) => {
+  if (environment === 'studio') return null;
+
+  return (
+    <g clipPath="url(#stageArchClip)" className="pointer-events-none select-none">
+      {/* 1. PAPER TEXTURE (Handmade deckle-edge cotton rag stationery grain & botanical watermark) */}
+      {environment === 'paper' && (
+        <g opacity={isDarkMode ? 0.32 : 0.85}>
+          <rect
+            x="6"
+            y="6"
+            width="588"
+            height="668"
+            fill={isDarkMode ? '#3A2F2B' : '#F8F1E7'}
+          />
+          {/* Subtle Laid Paper Horizontal Ribbing Lines */}
+          {Array.from({ length: 27 }, (_, idx) => {
+            const y = 26 + idx * 24;
+            return (
+              <line
+                key={`paper-rib-${idx}`}
+                x1="22"
+                y1={y}
+                x2="578"
+                y2={y}
+                stroke={isDarkMode ? '#6E5A50' : '#DFCBB8'}
+                strokeWidth="0.7"
+                strokeDasharray={idx % 2 === 0 ? '14 8 32 6' : '24 10 12 8'}
+                opacity="0.48"
+              />
+            );
+          })}
+          {/* Inner Deckle-Edge Stationery Border */}
+          <rect
+            x="24"
+            y="24"
+            width="552"
+            height="632"
+            rx="30"
+            fill="none"
+            stroke={isDarkMode ? '#8C7468' : '#C8B09B'}
+            strokeWidth="1.2"
+            strokeDasharray="8 4 2 4"
+            opacity="0.7"
+          />
+          {/* Tiny Pressed Botanical Flecks in Paper Fiber */}
+          <g fill={isDarkMode ? '#9A8276' : '#BFA38C'} opacity="0.45">
+            <circle cx="96" cy="112" r="1.4" />
+            <circle cx="488" cy="94" r="1.2" />
+            <circle cx="132" cy="540" r="1.5" />
+            <circle cx="512" cy="492" r="1.3" />
+            <path d="M84,260 Q90,254 94,262" fill="none" stroke={isDarkMode ? '#9A8276' : '#BFA38C'} strokeWidth="1" />
+            <path d="M504,290 Q510,284 514,292" fill="none" stroke={isDarkMode ? '#9A8276' : '#BFA38C'} strokeWidth="1" />
+          </g>
+        </g>
+      )}
+
+      {/* 2. SOFT MEADOW (Minimalist rolling hills, whisper-soft grass blades & tiny distant wildflowers) */}
+      {environment === 'meadow' && (
+        <g opacity={isDarkMode ? 0.38 : 0.88}>
+          {/* Soft Sky Wash at Top */}
+          <rect
+            x="6"
+            y="6"
+            width="588"
+            height="668"
+            fill={isDarkMode ? '#28312B' : '#F4F8F2'}
+            opacity="0.55"
+          />
+          {/* Distant & Foreground Minimalist Rolling Hills */}
+          <path
+            d="M6,520 Q175,472 340,510 T594,492 L594,674 L6,674 Z"
+            fill={isDarkMode ? '#324236' : '#E3EFE0'}
+            opacity="0.75"
+          />
+          <path
+            d="M6,564 Q230,526 420,558 T594,545 L594,674 L6,674 Z"
+            fill={isDarkMode ? '#3B4F40' : '#D4E7D0'}
+            opacity="0.82"
+          />
+          {/* Delicate Line-Art Grass Blades & Tiny Wildflower Dots (Minimalist, edges only so center stays clean) */}
+          <g
+            stroke={isDarkMode ? '#86A88E' : '#739B7B'}
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            fill="none"
+            opacity="0.75"
+          >
+            <path d="M68,595 Q62,568 54,554 M72,596 Q76,570 84,558" />
+            <path d="M124,618 Q118,594 112,582 M128,618 Q134,596 140,585" />
+            <path d="M478,610 Q472,586 464,572 M482,610 Q488,586 496,574" />
+            <path d="M528,582 Q522,558 516,546 M532,582 Q538,560 544,548" />
+          </g>
+          <g opacity="0.85">
+            <circle cx="54" cy="551" r="3" fill="#F9A8D4" />
+            <circle cx="84" cy="555" r="2.5" fill="#FDE047" />
+            <circle cx="112" cy="579" r="2.5" fill="#FFFDF9" />
+            <circle cx="464" cy="569" r="3" fill="#F9A8D4" />
+            <circle cx="496" cy="571" r="2.5" fill="#FFFDF9" />
+            <circle cx="516" cy="543" r="2.8" fill="#FDE047" />
+          </g>
+        </g>
+      )}
+
+      {/* 3. SUNLIT WINDOW (Warm afternoon diagonal window light beams & floating botanical dust motes) */}
+      {environment === 'sunlit' && (
+        <g opacity={isDarkMode ? 0.35 : 0.85}>
+          <polygon
+            points="6,6 260,6 594,440 594,674 210,674 6,290"
+            fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
+            opacity={isDarkMode ? 0.12 : 0.42}
+          />
+          <polygon
+            points="140,6 340,6 594,330 594,510"
+            fill="#FFFBEB"
+            opacity={isDarkMode ? 0.14 : 0.55}
+          />
+          {/* Subtle Window Mullion Shadow Lines */}
+          <line
+            x1="80"
+            y1="6"
+            x2="594"
+            y2="520"
+            stroke={isDarkMode ? '#FDE68A' : '#F59E0B'}
+            strokeWidth="1"
+            opacity="0.18"
+          />
+          <line
+            x1="220"
+            y1="6"
+            x2="594"
+            y2="380"
+            stroke={isDarkMode ? '#FDE68A' : '#F59E0B'}
+            strokeWidth="1"
+            opacity="0.18"
+          />
+          {/* Floating Golden Sun Motes */}
+          <g fill="#FBBF24" opacity="0.55">
+            <circle cx="135" cy="142" r="2.5" />
+            <circle cx="465" cy="168" r="2" />
+            <circle cx="105" cy="340" r="1.8" />
+            <circle cx="495" cy="360" r="2.4" />
+            <circle cx="165" cy="490" r="2" />
+          </g>
+        </g>
+      )}
+
+      {/* 4. PRESSED LINEN (Woven atelier flax linen canvas crosshatch & double tailored stitch border) */}
+      {environment === 'linen' && (
+        <g opacity={isDarkMode ? 0.34 : 0.85}>
+          <rect
+            x="6"
+            y="6"
+            width="588"
+            height="668"
+            fill={isDarkMode ? '#332925' : '#F3EAE0'}
+          />
+          {/* Minimalist Woven Linen Cross-Stitch Corner Accents */}
+          <rect
+            x="22"
+            y="22"
+            width="556"
+            height="636"
+            rx="32"
+            fill="none"
+            stroke={isDarkMode ? '#7D685E' : '#C2AB96'}
+            strokeWidth="1.3"
+            strokeDasharray="5 4"
+          />
+          <rect
+            x="30"
+            y="30"
+            width="540"
+            height="620"
+            rx="26"
+            fill="none"
+            stroke={isDarkMode ? '#635149' : '#D5C2B0'}
+            strokeWidth="0.8"
+          />
+          {/* Subtle Corner Botanical Stitch Marks */}
+          <g stroke={isDarkMode ? '#9C857A' : '#B4846C'} strokeWidth="1.2" fill="none" opacity="0.65">
+            <path d="M44,58 L44,42 L60,42" />
+            <path d="M556,58 L556,42 L540,42" />
+            <path d="M44,622 L44,638 L60,638" />
+            <path d="M556,622 L556,638 L540,638" />
+          </g>
+        </g>
+      )}
+
+      {/* 5. CELESTIAL GLOW (Soft twilight botanical arch, crescent moon & delicate constellation lineart) */}
+      {environment === 'starlit' && (
+        <g opacity={isDarkMode ? 0.75 : 0.85}>
+          <rect
+            x="6"
+            y="6"
+            width="588"
+            height="668"
+            fill={isDarkMode ? '#1F1B24' : '#F3EFFA'}
+            opacity={isDarkMode ? 0.65 : 0.72}
+          />
+          {/* Fine Gold Arch Frame */}
+          <path
+            d="M34,648 L34,256 A266,236 0 0,1 566,256 L566,648 Z"
+            fill="none"
+            stroke={isDarkMode ? '#FBBF24' : '#B4846C'}
+            strokeWidth="1.1"
+            strokeDasharray="4 4"
+            opacity="0.55"
+          />
+          {/* Top-Center Crescent Moon & Four-Point Stars */}
+          <path
+            d="M304,54 A14,14 0 1,0 318,72 A11,11 0 1,1 304,54 Z"
+            fill={isDarkMode ? '#FDE68A' : '#D97706'}
+            opacity="0.7"
+          />
+          <g fill={isDarkMode ? '#FDE68A' : '#D97706'} opacity="0.7">
+            <path d="M118,128 L120,134 L126,136 L120,138 L118,144 L116,138 L110,136 L116,134 Z" />
+            <path d="M482,138 L484,144 L490,146 L484,148 L482,154 L480,148 L474,146 L480,144 Z" />
+            <circle cx="92" cy="215" r="2" />
+            <circle cx="142" cy="182" r="1.6" />
+            <circle cx="508" cy="224" r="2" />
+            <circle cx="456" cy="192" r="1.6" />
+          </g>
+          <path
+            d="M92,215 L118,136 L142,182 M508,224 L482,146 L456,192"
+            fill="none"
+            stroke={isDarkMode ? '#FDE68A' : '#B4846C'}
+            strokeWidth="0.75"
+            strokeDasharray="2 3"
+            opacity="0.45"
+          />
+        </g>
+      )}
+    </g>
+  );
+};
+
+/**
+ * 6 Unique Botanical Photocard Keepsakes (Polaroid, Postage Stamp, Oval Cameo, Vintage Film, Pressed Frame, Arch Card)
+ */
+export const BouquetPhotoCardSVG: React.FC<{
+  item: BouquetItem;
+}> = ({ item }) => {
+  const style: PhotoFrameStyle = item.photoStyle || 'polaroid';
+  const frameColor = item.petalColor || '#FFFDF9';
+  const accentColor = item.centerColor || '#E11D48';
+  const caption = (item.photoCaption ?? 'Sweet Memory').slice(0, 22);
+  const clipId = `photo-frame-clip-${item.id}`;
+
+  const renderPhotoOrPlaceholder = (x: number, y: number, w: number, h: number) => {
+    if (item.photoDataUrl) {
+      return (
+        <image
+          href={item.photoDataUrl}
+          x={x}
+          y={y}
+          width={w}
+          height={h}
+          preserveAspectRatio="xMidYMid slice"
+          clipPath={`url(#${clipId})`}
+        />
+      );
+    }
+    // Delicate botanical lineart landscape/portrait placeholder when no image uploaded yet
+    return (
+      <g clipPath={`url(#${clipId})`}>
+        <rect x={x} y={y} width={w} height={h} fill="#F5EBE1" />
+        <circle cx={x + w * 0.72} cy={y + h * 0.28} r={w * 0.11} fill={accentColor} opacity="0.32" />
+        <path
+          d={`M${x},${y + h * 0.78} Q${x + w * 0.35},${y + h * 0.56} ${x + w * 0.68},${y + h * 0.76} T${x + w},${y + h * 0.72} L${x + w},${y + h} L${x},${y + h} Z`}
+          fill="#DECBB9"
+          opacity="0.7"
+        />
+        {/* Minimalist Pressed Flower Silhouette in Center */}
+        <g transform={`translate(${x + w / 2}, ${y + h * 0.48})`}>
+          <line x1="0" y1="4" x2="0" y2="24" stroke="#7D6B60" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M0,14 Q-8,10 -10,15 Q-6,19 0,14 Z M0,17 Q8,13 10,18 Q6,22 0,17 Z" fill="#84A98C" opacity="0.75" />
+          <circle cx="0" cy="-2" r="5" fill={accentColor} opacity="0.65" />
+          <circle cx="-6" cy="2" r="4.5" fill={accentColor} opacity="0.5" />
+          <circle cx="6" cy="2" r="4.5" fill={accentColor} opacity="0.5" />
+          <circle cx="-4" cy="8" r="4.5" fill={accentColor} opacity="0.55" />
+          <circle cx="4" cy="8" r="4.5" fill={accentColor} opacity="0.55" />
+          <circle cx="0" cy="3" r="2.8" fill="#FFFDF9" />
+        </g>
+      </g>
+    );
+  };
+
+  return (
+    <g>
+      {/* Only render wooden pick handle stem when explicitly clipped into the bouquet */}
+      {item.clippedToBouquet && (
+        <line
+          x1="0"
+          y1="38"
+          x2="0"
+          y2="148"
+          stroke="#C89B6E"
+          strokeWidth="3.2"
+          strokeLinecap="round"
+        />
+      )}
+
+      <defs>
+        {style === 'raw' && (
+          <clipPath id={clipId}>
+            <rect x="-44" y="-44" width="88" height="88" rx="6" />
+          </clipPath>
+        )}
+        {style === 'polaroid' && (
+          <clipPath id={clipId}>
+            <rect x="-35" y="-42" width="70" height="66" rx="3" />
+          </clipPath>
+        )}
+        {style === 'stamp' && (
+          <clipPath id={clipId}>
+            <rect x="-33" y="-39" width="66" height="78" rx="3" />
+          </clipPath>
+        )}
+        {style === 'cameo' && (
+          <clipPath id={clipId}>
+            <ellipse cx="0" cy="-2" rx="33" ry="42" />
+          </clipPath>
+        )}
+        {style === 'film' && (
+          <clipPath id={clipId}>
+            <rect x="-31" y="-38" width="62" height="66" rx="2" />
+          </clipPath>
+        )}
+        {style === 'pressed' && (
+          <clipPath id={clipId}>
+            <polygon points="-27,-42 27,-42 36,-33 36,33 27,42 -27,42 -36,33 -36,-33" />
+          </clipPath>
+        )}
+        {style === 'arch' && (
+          <clipPath id={clipId}>
+            <path d="M-34,34 L-34,-10 A34,34 0 0,1 34,-10 L34,34 Z" />
+          </clipPath>
+        )}
+      </defs>
+
+      {/* 0. FRAMELESS DIRECT PHOTO UPLOAD (Just the uploaded picture, no frame or caption) */}
+      {style === 'raw' && (
+        <g>
+          {renderPhotoOrPlaceholder(-44, -44, 88, 88)}
+          {!item.photoDataUrl && (
+            <rect
+              x="-44"
+              y="-44"
+              width="88"
+              height="88"
+              rx="6"
+              fill="none"
+              stroke="#B4846C"
+              strokeWidth="1.2"
+              strokeDasharray="4 3"
+              opacity="0.7"
+            />
+          )}
+        </g>
+      )}
+
+      {/* 1. INSTANT POLAROID WITH WASHI TAPE & CAPTION */}
+      {style === 'polaroid' && (
+        <g>
+          <rect
+            x="-43"
+            y="-50"
+            width="86"
+            height="104"
+            rx="5"
+            fill={frameColor}
+            stroke="#D6C7B8"
+            strokeWidth="1.5"
+          />
+          {renderPhotoOrPlaceholder(-35, -42, 70, 66)}
+          <rect
+            x="-35"
+            y="-42"
+            width="70"
+            height="66"
+            rx="3"
+            fill="none"
+            stroke="#E5D7C8"
+            strokeWidth="1"
+          />
+          {/* Diagonal Washi Tape Strip at Top */}
+          <rect
+            x="-18"
+            y="-56"
+            width="36"
+            height="12"
+            rx="2"
+            transform="rotate(-6 0 -50)"
+            fill={accentColor}
+            fillOpacity="0.78"
+            stroke="#FFFDF9"
+            strokeWidth="0.8"
+          />
+          {/* Handwritten Polaroid Caption */}
+          <text
+            x="0"
+            y="41"
+            textAnchor="middle"
+            fill="#2A201D"
+            fontSize="11"
+            fontWeight="600"
+            style={{ fontFamily: "'Caveat', 'Cormorant Garamond', cursive" }}
+          >
+            {caption}
+          </text>
+        </g>
+      )}
+
+      {/* 2. PERFORATED POSTAGE STAMP KEEPSAKE */}
+      {style === 'stamp' && (
+        <g>
+          <rect
+            x="-44"
+            y="-50"
+            width="88"
+            height="100"
+            rx="6"
+            fill={frameColor}
+            stroke={accentColor}
+            strokeWidth="2.8"
+            strokeDasharray="5 3.5"
+          />
+          <rect
+            x="-39"
+            y="-45"
+            width="78"
+            height="90"
+            rx="3"
+            fill={frameColor}
+            stroke={accentColor}
+            strokeWidth="1"
+            strokeOpacity="0.5"
+          />
+          {renderPhotoOrPlaceholder(-33, -39, 66, 78)}
+          {/* Postmark Cancellation Waves & Stamp Value */}
+          <g stroke={accentColor} strokeWidth="1.1" fill="none" opacity="0.75">
+            <circle cx="24" cy="-28" r="9" />
+            <path d="M10,-30 Q18,-33 26,-30 T42,-30 M10,-25 Q18,-28 26,-25 T42,-25" />
+          </g>
+          {caption && (
+            <rect x="-32" y="24" width="64" height="14" rx="7" fill={frameColor} fillOpacity="0.9" />
+          )}
+          <text
+            x="0"
+            y="34"
+            textAnchor="middle"
+            fill="#2A201D"
+            fontSize="9"
+            fontWeight="600"
+            style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.04em' }}
+          >
+            {caption}
+          </text>
+        </g>
+      )}
+
+      {/* 3. OVAL RIBBON CAMEO LOCKET */}
+      {style === 'cameo' && (
+        <g>
+          {/* Petite Top Ribbon Bow */}
+          <path
+            d="M-3,-50 C-18,-62 -22,-42 -4,-45 Z M3,-50 C18,-62 22,-42 4,-45 Z"
+            fill={accentColor}
+            stroke="#FFFDF9"
+            strokeWidth="1"
+          />
+          <ellipse
+            cx="0"
+            cy="-2"
+            rx="41"
+            ry="50"
+            fill={frameColor}
+            stroke={accentColor}
+            strokeWidth="2.2"
+          />
+          <ellipse
+            cx="0"
+            cy="-2"
+            rx="37"
+            ry="46"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="1.1"
+            strokeDasharray="3 2.5"
+            opacity="0.75"
+          />
+          {renderPhotoOrPlaceholder(-33, -44, 66, 84)}
+          <ellipse
+            cx="0"
+            cy="-2"
+            rx="33"
+            ry="42"
+            fill="none"
+            stroke="#FFFDF9"
+            strokeWidth="1.4"
+          />
+          {caption && (
+            <g transform="translate(0, 44)">
+              <rect
+                x="-36"
+                y="-8"
+                width="72"
+                height="16"
+                rx="8"
+                fill={frameColor}
+                stroke={accentColor}
+                strokeWidth="1.1"
+              />
+              <text
+                x="0"
+                y="3"
+                textAnchor="middle"
+                fill="#2A201D"
+                fontSize="9"
+                fontWeight="600"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {caption}
+              </text>
+            </g>
+          )}
+        </g>
+      )}
+
+      {/* 4. VINTAGE 35MM FILM FRAME */}
+      {style === 'film' && (
+        <g>
+          <rect
+            x="-44"
+            y="-48"
+            width="88"
+            height="98"
+            rx="4"
+            fill={frameColor}
+            stroke={accentColor}
+            strokeWidth="1.6"
+          />
+          {/* Left & Right Sprocket Holes */}
+          {[-36, -22, -8, 6, 20, 34].map((sy) => (
+            <g key={`sprocket-${sy}`} fill="#FFFDF9" opacity="0.88">
+              <rect x="-40" y={sy - 3} width="5" height="6" rx="1" />
+              <rect x="35" y={sy - 3} width="5" height="6" rx="1" />
+            </g>
+          ))}
+          {renderPhotoOrPlaceholder(-31, -38, 62, 66)}
+          <rect
+            x="-31"
+            y="-38"
+            width="62"
+            height="66"
+            rx="2"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="1"
+            strokeOpacity="0.6"
+          />
+          <text
+            x="0"
+            y="41"
+            textAnchor="middle"
+            fill={accentColor}
+            fontSize="9"
+            fontWeight="600"
+            style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.06em' }}
+          >
+            {caption || 'KODAK · 24'}
+          </text>
+        </g>
+      )}
+
+      {/* 5. PRESSED BOTANICAL SPECIMEN PLAQUE */}
+      {style === 'pressed' && (
+        <g>
+          <polygon
+            points="-31,-48 31,-48 42,-37 42,39 31,50 -31,50 -42,39 -42,-37"
+            fill={frameColor}
+            stroke={accentColor}
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          {renderPhotoOrPlaceholder(-36, -42, 72, 84)}
+          <polygon
+            points="-27,-42 27,-42 36,-33 36,33 27,42 -27,42 -36,33 -36,-33"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="1"
+            opacity="0.7"
+          />
+          {/* Corner Herbarium Brass Mounting Clips */}
+          <path
+            d="M-36,-29 L-23,-42 M23,-42 L36,-29 M-36,29 L-23,42 M23,42 L36,29"
+            stroke={accentColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          {caption && (
+            <g transform="translate(0, 34)">
+              <rect x="-30" y="-7" width="60" height="14" rx="4" fill={frameColor} fillOpacity="0.92" />
+              <text
+                x="0"
+                y="2.5"
+                textAnchor="middle"
+                fill="#2A201D"
+                fontSize="8.8"
+                fontWeight="600"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                {caption}
+              </text>
+            </g>
+          )}
+        </g>
+      )}
+
+      {/* 6. ATELIER ARCHED PORTRAIT CARD WITH WAX SEAL */}
+      {style === 'arch' && (
+        <g>
+          <path
+            d="M-42,48 L-42,-10 A42,42 0 0,1 42,-10 L42,48 Q42,54 36,54 L-36,54 Q-42,54 -42,48 Z"
+            fill={frameColor}
+            stroke={accentColor}
+            strokeWidth="1.8"
+          />
+          {renderPhotoOrPlaceholder(-34, -44, 68, 78)}
+          <path
+            d="M-34,34 L-34,-10 A34,34 0 0,1 34,-10 L34,34 Z"
+            fill="none"
+            stroke={accentColor}
+            strokeWidth="1"
+            strokeDasharray="3 2"
+            opacity="0.7"
+          />
+          {/* Petite Wax Seal on Arch Base */}
+          <circle cx="-26" cy="44" r="6" fill={accentColor} stroke="#FFFDF9" strokeWidth="1" />
+          <text
+            x="4"
+            y="47"
+            textAnchor="middle"
+            fill="#2A201D"
+            fontSize="9.5"
+            fontWeight="600"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            {caption}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+};
+
 export interface BouquetStageProps {
   svgRef: React.RefObject<SVGSVGElement | null> | React.RefObject<SVGSVGElement> | any;
   isPreviewMode: boolean;
@@ -1585,6 +2253,8 @@ export interface BouquetStageProps {
   onVoiceSelect?: () => void;
   onWrapperClick?: () => void;
   onRibbonClick?: () => void;
+  onPhotoCardUploadClick?: (itemId: string) => void;
+  onBouquetSelect?: () => void;
 }
 
 export const BouquetStage: React.FC<BouquetStageProps> = ({
@@ -1599,7 +2269,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   onCardSelect,
   onVoiceSelect,
   onWrapperClick,
-  onRibbonClick
+  onRibbonClick,
+  onPhotoCardUploadClick,
+  onBouquetSelect,
 }) => {
   const {
     items,
@@ -1608,22 +2280,37 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     wrapColor,
     ribbonColor,
     ribbonStyle,
+    environment,
+    bouquetPose,
     card,
     voice,
     selectItem,
     updateItem,
     updateCard,
     updateVoice,
+    updateBouquetPose,
+    resetBouquetPose,
+    toggleWrapVisibility,
+    moveItemLayer,
     deleteSelected,
     flipSelected,
     toggleItemLock,
     commitHistorySnapshot
   } = useBouquetStore();
 
-  const [activeSpecialObject, setActiveSpecialObject] = useState<'card' | 'voice' | null>(null);
+  const pose = bouquetPose || DEFAULT_BOUQUET_POSE;
+  const [activeSpecialObject, setActiveSpecialObject] = useState<'card' | 'voice' | 'bouquet' | null>(null);
 
   const [interaction, setInteraction] = useState<{
-    mode: 'move' | 'transform' | 'move-card' | 'move-voice' | 'resize-card' | 'resize-voice';
+    mode:
+      | 'move'
+      | 'transform'
+      | 'move-card'
+      | 'move-voice'
+      | 'resize-card'
+      | 'resize-voice'
+      | 'move-bouquet'
+      | 'resize-bouquet';
     itemId: string;
     startPointerX: number;
     startPointerY: number;
@@ -1656,6 +2343,22 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     [svgRef]
   );
 
+  // Convert SVG viewBox coordinates into local bouquet space (accounting for bouquetPose x, y, scale, rotation around 300,380)
+  const svgToBouquetLocalCoords = useCallback(
+    (svgX: number, svgY: number) => {
+      const dx = (svgX - pose.x) / (pose.scale || 1);
+      const dy = (svgY - pose.y) / (pose.scale || 1);
+      const rad = ((-pose.rotation || 0) * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return {
+        x: 300 + dx * cos - dy * sin,
+        y: 380 + dx * sin + dy * cos,
+      };
+    },
+    [pose.x, pose.y, pose.scale, pose.rotation]
+  );
+
   const captureSvgPointer = (e: React.PointerEvent) => {
     try {
       svgRef.current?.setPointerCapture?.(e.pointerId);
@@ -1677,16 +2380,66 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     captureSvgPointer(e);
     hasCommittedDragHistoryRef.current = false;
 
-    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    const svgPt = clientToSvgCoords(e.clientX, e.clientY);
+    const localPt = svgToBouquetLocalCoords(svgPt.x, svgPt.y);
     setInteraction({
       mode: 'move',
       itemId: item.id,
-      startPointerX: pt.x,
-      startPointerY: pt.y,
+      startPointerX: localPt.x,
+      startPointerY: localPt.y,
       startItemX: item.x,
       startItemY: item.y,
       startScale: item.scale,
       startRotation: item.rotation
+    });
+  };
+
+  const handleBouquetPointerDown = (e: React.PointerEvent, source: 'wrapper' | 'ribbon') => {
+    if (isPreviewMode) return;
+    e.stopPropagation();
+    selectItem(null);
+    setActiveSpecialObject('bouquet');
+    onBouquetSelect?.();
+    if (source === 'ribbon') {
+      onRibbonClick?.();
+    } else {
+      onWrapperClick?.();
+    }
+    captureSvgPointer(e);
+    hasCommittedDragHistoryRef.current = false;
+    hasDraggedSpecialRef.current = false;
+    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    setInteraction({
+      mode: 'move-bouquet',
+      itemId: 'bouquet',
+      startPointerX: pt.x,
+      startPointerY: pt.y,
+      startItemX: pose.x,
+      startItemY: pose.y,
+      startScale: pose.scale,
+      startRotation: pose.rotation,
+    });
+  };
+
+  const handleBouquetResizePointerDown = (e: React.PointerEvent) => {
+    if (isPreviewMode) return;
+    e.stopPropagation();
+    selectItem(null);
+    setActiveSpecialObject('bouquet');
+    onBouquetSelect?.();
+    captureSvgPointer(e);
+    hasCommittedDragHistoryRef.current = false;
+    hasDraggedSpecialRef.current = true;
+    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    setInteraction({
+      mode: 'resize-bouquet',
+      itemId: 'bouquet',
+      startPointerX: pt.x,
+      startPointerY: pt.y,
+      startItemX: pose.x,
+      startItemY: pose.y,
+      startScale: pose.scale,
+      startRotation: pose.rotation,
     });
   };
 
@@ -1753,7 +2506,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       startPointerY: pt.y,
       startItemX: voice?.x ?? 185,
       startItemY: voice?.y ?? 525,
-      startScale: voice?.scale ?? 0.84,
+      startScale: voice?.scale ?? 1.0,
       startRotation: voice?.rotation ?? 0
     });
   };
@@ -1775,7 +2528,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       startPointerY: pt.y,
       startItemX: voice?.x ?? 185,
       startItemY: voice?.y ?? 525,
-      startScale: voice?.scale ?? 0.84,
+      startScale: voice?.scale ?? 1.0,
       startRotation: voice?.rotation ?? 0
     });
   };
@@ -1787,12 +2540,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     hasCommittedDragHistoryRef.current = false;
 
     const disp = getStageItemDisplayTransform(item, wrapStyle);
-    const pt = clientToSvgCoords(e.clientX, e.clientY);
+    const svgPt = clientToSvgCoords(e.clientX, e.clientY);
+    const localPt = svgToBouquetLocalCoords(svgPt.x, svgPt.y);
     setInteraction({
       mode: 'transform',
       itemId: item.id,
-      startPointerX: pt.x,
-      startPointerY: pt.y,
+      startPointerX: localPt.x,
+      startPointerY: localPt.y,
       startItemX: disp.x,
       startItemY: disp.y,
       startScale: item.scale,
@@ -1806,17 +2560,76 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       const pt = clientToSvgCoords(clientX, clientY);
 
       if (interaction.mode === 'move') {
-        const dx = pt.x - interaction.startPointerX;
-        const dy = pt.y - interaction.startPointerY;
+        const localPt = svgToBouquetLocalCoords(pt.x, pt.y);
+        const dx = localPt.x - interaction.startPointerX;
+        const dy = localPt.y - interaction.startPointerY;
         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
           if (!hasCommittedDragHistoryRef.current) {
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(70, Math.min(530, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(95, Math.min(520, Math.round(interaction.startItemY + dy)));
+          const movingItem = items.find((it) => it.id === interaction.itemId);
+          const isUnclippedPhoto = Boolean(movingItem?.photoStyle && !movingItem?.clippedToBouquet);
+          const nx = Math.max(
+            isUnclippedPhoto ? 25 : 45,
+            Math.min(isUnclippedPhoto ? 575 : 555, Math.round(interaction.startItemX + dx))
+          );
+          const ny = Math.max(
+            isUnclippedPhoto ? 25 : 60,
+            Math.min(isUnclippedPhoto ? 655 : 580, Math.round(interaction.startItemY + dy))
+          );
           updateItem(interaction.itemId, { x: nx, y: ny }, false);
         }
+      } else if (interaction.mode === 'move-bouquet') {
+        const dx = pt.x - interaction.startPointerX;
+        const dy = pt.y - interaction.startPointerY;
+        if (Math.abs(dx) > 1.5 || Math.abs(dy) > 1.5) {
+          if (Math.hypot(dx, dy) > 3) {
+            hasDraggedSpecialRef.current = true;
+          }
+          if (!hasCommittedDragHistoryRef.current) {
+            commitHistorySnapshot();
+            hasCommittedDragHistoryRef.current = true;
+          }
+          const nx = Math.round(interaction.startItemX + dx);
+          const ny = Math.round(interaction.startItemY + dy);
+          updateBouquetPose({ x: nx, y: ny }, false);
+        }
+      } else if (interaction.mode === 'resize-bouquet') {
+        const startAngle = Math.atan2(
+          interaction.startPointerY - interaction.startItemY,
+          interaction.startPointerX - interaction.startItemX
+        );
+        const currentAngle = Math.atan2(
+          pt.y - interaction.startItemY,
+          pt.x - interaction.startItemX
+        );
+        let deltaDeg = ((currentAngle - startAngle) * 180) / Math.PI;
+        while (deltaDeg > 180) deltaDeg -= 360;
+        while (deltaDeg < -180) deltaDeg += 360;
+        const nextRotation = Math.max(
+          -65,
+          Math.min(65, Math.round(interaction.startRotation + deltaDeg))
+        );
+
+        const startDist = Math.hypot(
+          interaction.startPointerX - interaction.startItemX,
+          interaction.startPointerY - interaction.startItemY
+        );
+        const currentDist = Math.hypot(
+          pt.x - interaction.startItemX,
+          pt.y - interaction.startItemY
+        );
+        const ratio = startDist > 0 ? currentDist / startDist : 1;
+        const newScale = Math.max(
+          0.45,
+          Math.min(2.2, Number((interaction.startScale * ratio).toFixed(2)))
+        );
+        if (!hasCommittedDragHistoryRef.current) {
+          commitHistorySnapshot();
+          hasCommittedDragHistoryRef.current = true;
+        }
+        updateBouquetPose({ scale: newScale, rotation: nextRotation }, false);
       } else if (interaction.mode === 'move-card') {
         const dx = pt.x - interaction.startPointerX;
         const dy = pt.y - interaction.startPointerY;
@@ -1828,8 +2641,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(50, Math.min(550, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(50, Math.min(635, Math.round(interaction.startItemY + dy)));
+          const nx = Math.max(25, Math.min(575, Math.round(interaction.startItemX + dx)));
+          const ny = Math.max(25, Math.min(655, Math.round(interaction.startItemY + dy)));
           updateCard({ x: nx, y: ny });
         }
       } else if (interaction.mode === 'move-voice') {
@@ -1843,8 +2656,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(50, Math.min(550, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(50, Math.min(635, Math.round(interaction.startItemY + dy)));
+          const nx = Math.max(25, Math.min(575, Math.round(interaction.startItemX + dx)));
+          const ny = Math.max(25, Math.min(655, Math.round(interaction.startItemY + dy)));
           updateVoice({ x: nx, y: ny });
         }
       } else if (interaction.mode === 'resize-card') {
@@ -1873,8 +2686,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         );
         const ratio = startDist > 0 ? currentDist / startDist : 1;
         const newScale = Math.max(
-          0.45,
-          Math.min(2.0, Number((interaction.startScale * ratio).toFixed(2)))
+          0.35,
+          Math.min(2.4, Number((interaction.startScale * ratio).toFixed(2)))
         );
         if (!hasCommittedDragHistoryRef.current) {
           commitHistorySnapshot();
@@ -1907,8 +2720,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         );
         const ratio = startDist > 0 ? currentDist / startDist : 1;
         const newScale = Math.max(
-          0.45,
-          Math.min(2.0, Number((interaction.startScale * ratio).toFixed(2)))
+          0.35,
+          Math.min(2.4, Number((interaction.startScale * ratio).toFixed(2)))
         );
         if (!hasCommittedDragHistoryRef.current) {
           commitHistorySnapshot();
@@ -1916,20 +2729,21 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         }
         updateVoice({ scale: newScale, rotation: nextRotation });
       } else if (interaction.mode === 'transform') {
+        const localPt = svgToBouquetLocalCoords(pt.x, pt.y);
         const startAngle = Math.atan2(
           interaction.startPointerY - interaction.startItemY,
           interaction.startPointerX - interaction.startItemX
         );
         const currentAngle = Math.atan2(
-          pt.y - interaction.startItemY,
-          pt.x - interaction.startItemX
+          localPt.y - interaction.startItemY,
+          localPt.x - interaction.startItemX
         );
         let deltaDeg = ((currentAngle - startAngle) * 180) / Math.PI;
         while (deltaDeg > 180) deltaDeg -= 360;
         while (deltaDeg < -180) deltaDeg += 360;
         const nextRotation = Math.max(
-          -140,
-          Math.min(140, Math.round(interaction.startRotation + deltaDeg))
+          -180,
+          Math.min(180, Math.round(interaction.startRotation + deltaDeg))
         );
 
         const startDist = Math.hypot(
@@ -1937,11 +2751,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           interaction.startPointerY - interaction.startItemY
         );
         const currentDist = Math.hypot(
-          pt.x - interaction.startItemX,
-          pt.y - interaction.startItemY
+          localPt.x - interaction.startItemX,
+          localPt.y - interaction.startItemY
         );
         const ratio = startDist > 0 ? currentDist / startDist : 1;
-        const newScale = Math.max(0.45, Math.min(2.0, Number((interaction.startScale * ratio).toFixed(2))));
+        const newScale = Math.max(0.3, Math.min(2.8, Number((interaction.startScale * ratio).toFixed(2))));
 
         if (!hasCommittedDragHistoryRef.current) {
           commitHistorySnapshot();
@@ -1958,7 +2772,17 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         );
       }
     },
-    [interaction, clientToSvgCoords, commitHistorySnapshot, updateItem, updateCard, updateVoice]
+    [
+      interaction,
+      items,
+      clientToSvgCoords,
+      svgToBouquetLocalCoords,
+      commitHistorySnapshot,
+      updateItem,
+      updateBouquetPose,
+      updateCard,
+      updateVoice,
+    ]
   );
 
   const handleStagePointerMove = (e: React.PointerEvent) => {
@@ -1993,6 +2817,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   }, [interaction, applyPointerMoveAtClientCoords]);
 
   const selectedItem = items.find((i) => i.id === selectedId) || null;
+  const selectedItemIndex = selectedItem ? items.findIndex((i) => i.id === selectedItem.id) : -1;
   const selectedDisplay = selectedItem ? getStageItemDisplayTransform(selectedItem, wrapStyle) : null;
   const wrapperBottomClipY =
     wrapStyle === 'basket'
@@ -2005,12 +2830,121 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       ? 650
       : 618;
 
+  const bouquetTransform = `translate(${pose.x}, ${pose.y}) rotate(${pose.rotation}) scale(${pose.scale}) translate(-300, -380)`;
+
   return (
-    <div className="relative w-full h-full flex items-center justify-center p-2 sm:p-4 select-none overflow-hidden">
+    <div className="relative w-full h-full flex items-center justify-center p-0 sm:p-1 select-none overflow-hidden">
+      {/* COMPACT ICON-ONLY LAYERING & PHOTO CLIP CAPSULE (Positioned cleanly at top-left so it never covers the bouquet or greeting card) */}
+      {!isPreviewMode && selectedItem && !selectedItem.hidden && (
+        <div
+          data-export-ignore="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className={`absolute top-2 left-2.5 z-30 inline-flex items-center gap-0.5 p-1 rounded-full border border-dashed shadow-[0_6px_18px_rgba(28,20,16,0.1)] backdrop-blur-md transition-all ${
+            isDarkMode
+              ? 'bg-[#2B2321]/95 border-[#5E4E49] text-[#FBF6F1]'
+              : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#2A201D]'
+          }`}
+          role="toolbar"
+          aria-label="Quick layer order controls"
+        >
+          <button
+            type="button"
+            disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+            onClick={() => moveItemLayer(selectedItem.id, 'back')}
+            title="Send to Most Back"
+            aria-label="Send to Most Back"
+            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+          </button>
+
+          <button
+            type="button"
+            disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+            onClick={() => moveItemLayer(selectedItem.id, 'down')}
+            title="Send Back 1 Layer"
+            aria-label="Send Back 1 Layer"
+            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+          </button>
+
+          <button
+            type="button"
+            disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+            onClick={() => moveItemLayer(selectedItem.id, 'up')}
+            title="Bring Forward 1 Layer"
+            aria-label="Bring Forward 1 Layer"
+            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+          </button>
+
+          <button
+            type="button"
+            disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+            onClick={() => moveItemLayer(selectedItem.id, 'front')}
+            title="Bring to Most Front"
+            aria-label="Bring to Most Front"
+            className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 transition cursor-pointer"
+          >
+            <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
+          </button>
+
+          {selectedItem.photoStyle && (
+            <>
+              <span aria-hidden="true" className="w-px h-3.5 bg-[#DECBB9] dark:bg-[#5E4E49] mx-0.5" />
+              <button
+                type="button"
+                disabled={Boolean(selectedItem.locked)}
+                onClick={() =>
+                  updateItem(
+                    selectedItem.id,
+                    { clippedToBouquet: !selectedItem.clippedToBouquet },
+                    true
+                  )
+                }
+                title={
+                  selectedItem.clippedToBouquet
+                    ? 'Tucked inside bouquet (Click to float unclipped)'
+                    : 'Floating attachment (Click to clip inside bouquet)'
+                }
+                aria-label={
+                  selectedItem.clippedToBouquet
+                    ? 'Unclip photo from bouquet'
+                    : 'Clip photo to bouquet'
+                }
+                aria-pressed={Boolean(selectedItem.clippedToBouquet)}
+                className={`w-7 h-7 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
+                  selectedItem.clippedToBouquet
+                    ? 'bg-[#B4846C] text-white'
+                    : 'text-[#B4846C] hover:bg-[#B4846C]/15'
+                }`}
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+              </button>
+
+              {onPhotoCardUploadClick && (
+                <button
+                  type="button"
+                  onClick={() => onPhotoCardUploadClick(selectedItem.id)}
+                  title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                  aria-label="Upload photo into photocard"
+                  className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] transition cursor-pointer"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <svg
         ref={svgRef as React.RefObject<SVGSVGElement>}
         viewBox="0 0 600 680"
-        className="w-full h-full max-w-[560px] max-h-[650px] drop-shadow-sm touch-none"
+        className="w-full h-full max-w-[820px] max-h-[930px] aspect-[600/680] drop-shadow-sm touch-none"
         role="img"
         aria-label="Interactive Flower Bouquet Canvas"
         onPointerMove={handleStagePointerMove}
@@ -2067,6 +3001,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             <path d="M132,560 L132,276 A168,168 0 0,1 468,276 L468,560 Z" />
           </clipPath>
 
+          {/* Stage Arch Clip for Environment Backdrops */}
+          <clipPath id="stageArchClip">
+            <rect x="6" y="6" width="588" height="668" rx="38" />
+          </clipPath>
+
           {/* Per-Flower Adjustable Stem Length ClipPaths */}
           {items.map((item) => {
             const stemRatio = item.stemLength ?? 1;
@@ -2082,31 +3021,33 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           })}
         </defs>
 
-        {/* 1. Arch Backdrop (Cross-fades smoothly between Light & Soft Dark Mode) */}
+        {/* 1. Arch Backdrop (Upsized within 600x680 ratio; cross-fades smoothly between Light & Soft Dark Mode + Environment Vibe) */}
         <rect
-          x="20"
-          y="16"
-          width="560"
-          height="648"
-          rx="42"
+          x="6"
+          y="6"
+          width="588"
+          height="668"
+          rx="38"
           fill="url(#stageBgGrad)"
         />
         <rect
-          x="20"
-          y="16"
-          width="560"
-          height="648"
-          rx="42"
+          x="6"
+          y="6"
+          width="588"
+          height="668"
+          rx="38"
           fill="url(#stageBgGradDark)"
           style={{
             opacity: isDarkMode ? 1 : 0,
             transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         />
+        {/* Minimalist Environment Texture / Vibe Layer */}
+        <BouquetEnvironmentSVG environment={environment || 'studio'} isDarkMode={isDarkMode} />
         <circle
           cx="300"
           cy="285"
-          r="215"
+          r="230"
           fill="#ffffff"
           style={{
             opacity: isDarkMode ? 0.05 : 0.65,
@@ -2116,7 +3057,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         <circle
           cx="300"
           cy="285"
-          r="215"
+          r="230"
           fill="none"
           stroke={isDarkMode ? '#4E423E' : '#E8DDD3'}
           strokeWidth="1.5"
@@ -2124,30 +3065,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           style={{ transition: 'stroke 520ms cubic-bezier(0.22, 1, 0.36, 1)' }}
         />
 
-        {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable to edit wrapper color, not moveable) */}
+        {/* UNIFIED DRAGGABLE, RESIZABLE & ROTATABLE BOUQUET GROUP (Pivot at 300, 380) */}
+        <g transform={bouquetTransform}>
+        {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable & Draggable to move/resize bouquet) */}
         {wrapStyle !== 'plain' && (
           <g
             filter="url(#softShadow)"
             role={isPreviewMode ? undefined : 'button'}
-            aria-label={isPreviewMode ? undefined : 'Select bouquet wrapper to edit color'}
+            aria-label={isPreviewMode ? undefined : 'Select or drag bouquet wrapper'}
             onPointerDown={
               isPreviewMode
                 ? undefined
-                : (e) => {
-                    e.stopPropagation();
-                    selectItem(null);
-                    setActiveSpecialObject(null);
-                  }
+                : (e) => handleBouquetPointerDown(e, 'wrapper')
             }
-            onClick={
-              isPreviewMode
-                ? undefined
-                : (e) => {
-                    e.stopPropagation();
-                    onWrapperClick?.();
-                  }
-            }
-            className={isPreviewMode ? 'pointer-events-none' : 'cursor-pointer'}
+            className={isPreviewMode ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing'}
           >
             {/* STYLE 1: ORIGAMI KRAFT (Layered geometric sleeve + faceted side pleats) */}
             {wrapStyle === 'kraft' && (
@@ -2539,10 +3470,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           )
         )}
 
-        {/* 3. BOUQUET FLOWERS & FOLIAGE LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
+        {/* 3. BOUQUET FLOWERS, FOLIAGE & CLIPPED PHOTOCARDS LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
         <g clipPath={wrapStyle === 'cloche' ? 'url(#bouquetClocheBoundsClip)' : 'url(#bouquetWrapperBoundsClip)'}>
           {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
             if (item.hidden) return null;
+            if (item.photoStyle && !item.clippedToBouquet) return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
             return (
@@ -2567,40 +3499,32 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 >
                   {/* Invisible generous hit target for easy touch tapping */}
                   <circle cx="0" cy="-10" r="48" fill="transparent" />
-                  <FlowerRenderer
-                    type={item.type}
-                    petalColor={item.petalColor}
-                    centerColor={item.centerColor}
-                  />
+                  {item.photoStyle ? (
+                    <BouquetPhotoCardSVG item={item} />
+                  ) : (
+                    <FlowerRenderer
+                      type={item.type}
+                      petalColor={item.petalColor}
+                      centerColor={item.centerColor}
+                    />
+                  )}
                 </g>
               </g>
             );
           })}
         </g>
 
-        {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems — Clickable, not moveable) */}
+        {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems — Clickable & Draggable to move/resize bouquet) */}
         <g filter="url(#softShadow)">
           <g
             role={isPreviewMode ? undefined : 'button'}
-            aria-label={isPreviewMode ? undefined : 'Select bouquet wrapper to edit color'}
+            aria-label={isPreviewMode ? undefined : 'Select or drag bouquet wrapper'}
             onPointerDown={
               isPreviewMode
                 ? undefined
-                : (e) => {
-                    e.stopPropagation();
-                    selectItem(null);
-                    setActiveSpecialObject(null);
-                  }
+                : (e) => handleBouquetPointerDown(e, 'wrapper')
             }
-            onClick={
-              isPreviewMode
-                ? undefined
-                : (e) => {
-                    e.stopPropagation();
-                    onWrapperClick?.();
-                  }
-            }
-            className={isPreviewMode ? 'pointer-events-none' : 'cursor-pointer'}
+            className={isPreviewMode ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing'}
           >
             {/* STYLE 1 FRONT: ORIGAMI KRAFT */}
             {wrapStyle === 'kraft' && (
@@ -3182,6 +4106,182 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           )}
         </g>
 
+        {/* 4A. UNCLIPPED PHOTO ATTACHMENTS LAYER (Floating over the bouquet wrapper by default, not clipped by wrapper or stem bounds) */}
+        <g>
+          {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+            if (item.hidden || !item.photoStyle || item.clippedToBouquet) return null;
+            const isSelected = !isPreviewMode && item.id === selectedId;
+            const disp = getStageItemDisplayTransform(item, wrapStyle);
+            return (
+              <g
+                key={item.id}
+                transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
+                  item.flipX ? -disp.scale : disp.scale
+                }, ${disp.scale})`}
+                onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                className={
+                  isPreviewMode
+                    ? 'pointer-events-none cursor-default'
+                    : item.locked
+                    ? 'cursor-pointer'
+                    : 'cursor-grab active:cursor-grabbing'
+                }
+                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : 'url(#softShadow)' }}
+              >
+                <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
+                  <circle cx="0" cy="-10" r="48" fill="transparent" />
+                  <BouquetPhotoCardSVG item={item} />
+                </g>
+              </g>
+            );
+          })}
+        </g>
+        </g>
+
+        {/* 4B. BOUQUET SELECTION RING & RESIZE/ROTATE GIZMOS (When Bouquet Wrapper is clicked/dragged) */}
+        {!isPreviewMode &&
+          !selectedItem &&
+          (activeSpecialObject === 'bouquet' ||
+            interaction?.mode === 'move-bouquet' ||
+            interaction?.mode === 'resize-bouquet') && (() => {
+            const ringRadius = Math.max(125, Math.min(235, 185 * pose.scale));
+            return (
+              <g
+                data-export-ignore="true"
+                transform={`translate(${pose.x}, ${pose.y})`}
+              >
+                <circle
+                  cx="0"
+                  cy="0"
+                  r={ringRadius}
+                  fill="none"
+                  stroke="#B4846C"
+                  strokeWidth="1.6"
+                  strokeDasharray="7 5"
+                  opacity="0.85"
+                  className="pointer-events-none"
+                />
+
+                {/* TOP-LEFT HANDLE (-135°): Reset Bouquet Pose */}
+                <g
+                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * ringRadius}, ${
+                    Math.sin((-3 * Math.PI) / 4) * ringRadius
+                  })`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    resetBouquetPose();
+                  }}
+                  className="cursor-pointer select-none"
+                  role="button"
+                  aria-label="Reset bouquet position, size, and tilt"
+                >
+                  <title>Reset bouquet position, size &amp; tilt</title>
+                  <circle cx="0" cy="0" r="22" fill="transparent" />
+                  <circle cx="0" cy="0" r="12" fill="#ffffff" stroke="#B4846C" strokeWidth="1.8" />
+                  <path
+                    d="M-3.5,0 A3.5,3.5 0 1,1 2.5,-2.5 M2.5,-5 L2.5,-2 L-0.5,-2"
+                    stroke="#1C1917"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </g>
+
+                {/* TOP-RIGHT HANDLE (-45°): Toggle Wrapper Visibility */}
+                <g
+                  transform={`translate(${Math.cos(-Math.PI / 4) * ringRadius}, ${
+                    Math.sin(-Math.PI / 4) * ringRadius
+                  })`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    toggleWrapVisibility();
+                    setActiveSpecialObject(null);
+                  }}
+                  className="cursor-pointer select-none"
+                  role="button"
+                  aria-label="Toggle bouquet wrapper visibility"
+                >
+                  <title>Hide or show bouquet wrapper</title>
+                  <circle cx="0" cy="0" r="24" fill="transparent" />
+                  <circle cx="0" cy="0" r="13" fill="#e11d48" stroke="#ffffff" strokeWidth="2" />
+                  <path
+                    d="M-4,-4 L4,4 M4,-4 L-4,4"
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </g>
+
+                {/* BOTTOM-LEFT HANDLE (+135°): Pull In / Pull Out to Resize & Rotate Entire Bouquet (Clear of Greeting Card on Bottom-Right) */}
+                <g
+                  transform={`translate(${Math.cos((3 * Math.PI) / 4) * ringRadius}, ${
+                    Math.sin((3 * Math.PI) / 4) * ringRadius
+                  })`}
+                  onPointerDown={handleBouquetResizePointerDown}
+                  className="cursor-nesw-resize select-none"
+                  role="slider"
+                  aria-label="Pull in or out to resize and rotate bouquet"
+                  aria-valuenow={Math.round(pose.scale * 100)}
+                >
+                  <title>Drag corner to resize and rotate bouquet</title>
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r={interaction?.mode === 'resize-bouquet' ? 20 : 16}
+                    fill="#B4846C"
+                    opacity={interaction?.mode === 'resize-bouquet' ? 0.28 : 0.15}
+                    className="pointer-events-none"
+                  />
+                  <circle cx="0" cy="0" r="24" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="14"
+                    fill={interaction?.mode === 'resize-bouquet' ? '#B4846C' : '#1C1917'}
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                  />
+                  <path
+                    d="M-4.5,-4.5 L4.5,4.5 M-4.5,-1 L-4.5,-4.5 L-1,-4.5 M4.5,1 L4.5,4.5 L1,4.5"
+                    stroke="#ffffff"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  <g transform="translate(0, 26)" className="pointer-events-none">
+                    <rect
+                      x="-58"
+                      y="-9"
+                      width="116"
+                      height="18"
+                      rx="9"
+                      fill="#1C1917"
+                      fillOpacity="0.88"
+                      stroke="#ffffff"
+                      strokeWidth="0.8"
+                      strokeOpacity="0.4"
+                    />
+                    <text
+                      x="0"
+                      y="3.5"
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="9.2"
+                      fontWeight="600"
+                      style={{ fontFamily: "'Inter', sans-serif" }}
+                    >
+                      {interaction?.mode === 'resize-bouquet'
+                        ? `Bouquet ${Math.round(pose.scale * 100)}% · ${pose.rotation}°`
+                        : '⤡ Resize / tilt bouquet'}
+                    </text>
+                  </g>
+                </g>
+              </g>
+            );
+          })()}
+
         {/* 5. DRAGGABLE, ROTATABLE & RESIZABLE GREETING CARD ON BOUQUET */}
         {card.visibleOnStage && showCardInGiftView && (() => {
           const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
@@ -3363,7 +4463,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         {voice?.visibleOnStage && (() => {
           const voiceX = voice.x ?? 185;
           const voiceY = voice.y ?? 525;
-          const voiceScale = voice.scale ?? 0.84;
+          const voiceScale = voice.scale ?? 1.0;
           const voiceRotation = voice.rotation ?? 0;
           const isVoiceSelected =
             !isPreviewMode &&
@@ -3637,7 +4737,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             interaction?.mode === 'resize-voice') && (() => {
             const voiceX = voice.x ?? 185;
             const voiceY = voice.y ?? 525;
-            const voiceScale = voice.scale ?? 0.84;
+            const voiceScale = voice.scale ?? 1.0;
             const voiceRotation = voice.rotation ?? 0;
             const ringRadius = 62 * voiceScale;
             return (
@@ -3769,10 +4869,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             );
           })()}
 
-        {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE */}
+        {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE (Inside Bouquet Transform Space) */}
         {!isPreviewMode && selectedItem && selectedDisplay && !selectedItem.hidden && (
+          <g data-export-ignore="true" transform={bouquetTransform}>
           <g
-            data-export-ignore="true"
             transform={`translate(${selectedDisplay.x}, ${selectedDisplay.y})`}
           >
             {/* Outer Selection Ring */}
@@ -3786,6 +4886,43 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               strokeDasharray={selectedItem.locked ? '4 4' : '6 5'}
               className="pointer-events-none"
             />
+
+            {/* On-Canvas Upload Photo Pill for Selected Photocard */}
+            {selectedItem.photoStyle && !selectedItem.locked && onPhotoCardUploadClick && (
+              <g
+                transform={`translate(0, ${-58 * selectedDisplay.scale - 16})`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPhotoCardUploadClick(selectedItem.id);
+                }}
+                className="cursor-pointer select-none"
+                role="button"
+                aria-label="Upload photo for photocard"
+              >
+                <rect
+                  x="-48"
+                  y="-11"
+                  width="96"
+                  height="21"
+                  rx="10.5"
+                  fill="#1C1917"
+                  stroke="#ffffff"
+                  strokeWidth="1.2"
+                />
+                <text
+                  x="0"
+                  y="3"
+                  textAnchor="middle"
+                  fill="#ffffff"
+                  fontSize="9.2"
+                  fontWeight="600"
+                  style={{ fontFamily: "'Inter', sans-serif" }}
+                >
+                  {selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                </text>
+              </g>
+            )}
 
             {selectedItem.locked ? (
               /* Locked Indicator Pill on Ring Top — Tap to Unlock */
@@ -3818,7 +4955,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   fontWeight="600"
                   style={{ fontFamily: "'Inter', sans-serif" }}
                 >
-                  🔒 Locked · Tap to unlock
+                  Locked · Tap to unlock
                 </text>
               </g>
             ) : (
@@ -3836,7 +4973,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   role="button"
                   aria-label="Flip flower horizontally"
                 >
-                  <title>Flip flower horizontally</title>
+                  <title>Flip horizontally</title>
                   <circle cx="0" cy="0" r="22" fill="transparent" />
                   <circle cx="0" cy="0" r="12" fill="#ffffff" stroke="#B4846C" strokeWidth="1.8" />
                   <path
@@ -3862,7 +4999,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   role="button"
                   aria-label="Delete selected flower"
                 >
-                  <title>Remove flower</title>
+                  <title>Remove item</title>
                   <circle cx="0" cy="0" r="24" fill="transparent" />
                   <circle cx="0" cy="0" r="13" fill="#e11d48" stroke="#ffffff" strokeWidth="2" />
                   <path
@@ -3958,20 +5095,15 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </>
             )}
           </g>
+          </g>
         )}
       </svg>
 
-      {/* Empty Bouquet Prompt (Editor only — never shown in Recipient / Preview mode) */}
+      {/* Screen-reader only status when canvas has 0 stems (Visual 'Start arranging' card removed per user request) */}
       {items.length === 0 && !isPreviewMode && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center p-6">
-          <div className="bg-white/90 dark:bg-[#1E1C1A]/90 backdrop-blur-md px-6 py-5 rounded-2xl shadow-md border border-stone-200 dark:border-stone-800 max-w-xs">
-            <Flower2 className="w-7 h-7 text-stone-400 dark:text-stone-400 mx-auto mb-2" />
-            <p className="text-sm font-medium text-[#1C1917] dark:text-stone-100">Start arranging</p>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 leading-relaxed">
-              Add flowers from the palette, or try a random arrangement.
-            </p>
-          </div>
-        </div>
+        <span className="sr-only">
+          Start arranging — Add flowers from the palette, or try a random arrangement.
+        </span>
       )}
     </div>
   );

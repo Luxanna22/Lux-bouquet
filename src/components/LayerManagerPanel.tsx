@@ -6,14 +6,13 @@ import {
   Unlock,
   Trash2,
   GripVertical,
-  ChevronUp,
-  ChevronDown,
   Mail,
   Package,
 } from 'lucide-react';
 import { useBouquetStore } from '../store/useBouquetStore';
-import { FLOWER_CATALOG, WRAPPER_CATALOG } from '../types/bouquet';
+import { FLOWER_CATALOG, PHOTO_FRAME_CATALOG, WRAPPER_CATALOG } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
+import { MiniPhotoFrameSVG, LayerOrderBoxIcon } from './MiniThumbnails';
 
 interface LayerManagerPanelProps {
   onSelectStem?: (id: string) => void;
@@ -189,9 +188,16 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
           </div>
         </div>
 
-        {/* 2. Draggable Flower & Foliage Stems */}
+        {/* 2. Draggable Flower, Foliage & Photocard Stems */}
         {visualRows.map(({ item }, visualIdx) => {
           const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+          const photoMeta = item.photoStyle
+            ? PHOTO_FRAME_CATALOG.find((p) => p.id === item.photoStyle)
+            : undefined;
+          const displayLabel =
+            item.photoStyle === 'raw'
+              ? 'Uploaded Photo'
+              : photoMeta?.label || meta?.name || item.type;
           const isSelected = item.id === selectedId;
           const isLocked = Boolean(item.locked);
           const isHidden = Boolean(item.hidden);
@@ -227,7 +233,7 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 selectItem(item.id);
                 onSelectStem?.(item.id);
               }}
-              className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer select-none ${
+              className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-xl border transition-all cursor-pointer select-none ${
                 isDragging ? 'opacity-40 scale-[0.98]' : ''
               } ${
                 isDragOver
@@ -245,17 +251,25 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
               </span>
 
               <div className="w-7 h-7 rounded-lg bg-[#FAF4EE] dark:bg-[#231C19] border border-[#E6D6C7] dark:border-[#4A3C38] flex items-center justify-center shrink-0 overflow-hidden">
-                <svg viewBox="-55 -62 110 124" className="w-6 h-6">
-                  <FlowerRenderer
-                    type={item.type}
-                    petalColor={item.petalColor}
-                    centerColor={item.centerColor}
+                {item.photoStyle ? (
+                  <MiniPhotoFrameSVG
+                    styleType={item.photoStyle}
+                    frameColor={item.petalColor}
+                    accentColor={item.centerColor}
                   />
-                </svg>
+                ) : (
+                  <svg viewBox="-55 -62 110 124" className="w-6 h-6">
+                    <FlowerRenderer
+                      type={item.type}
+                      petalColor={item.petalColor}
+                      centerColor={item.centerColor}
+                    />
+                  </svg>
+                )}
               </div>
 
               <span className="flex-1 min-w-0 text-xs font-medium text-[#2A201D] dark:text-[#FBF6F1] truncate">
-                {meta?.name || item.type}
+                {displayLabel}
               </span>
 
               <div
@@ -264,26 +278,48 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
               >
                 <button
                   type="button"
-                  disabled={visualIdx === 0}
-                  onClick={() => moveItemLayer(item.id, 'up')}
-                  aria-label={`Move ${meta?.name || item.type} forward`}
+                  disabled={visualIdx === visualRows.length - 1}
+                  onClick={() => moveItemLayer(item.id, 'back')}
+                  title="Send to Most Back"
+                  aria-label={`Move ${displayLabel} to most back`}
                   className="p-1 rounded-lg text-[#9A877B] hover:text-[#2A201D] dark:hover:text-[#FBF6F1] disabled:opacity-25 transition cursor-pointer"
                 >
-                  <ChevronUp className="w-3.5 h-3.5" />
+                  <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   disabled={visualIdx === visualRows.length - 1}
                   onClick={() => moveItemLayer(item.id, 'down')}
-                  aria-label={`Move ${meta?.name || item.type} backward`}
+                  title="Send Back 1 Layer"
+                  aria-label={`Move ${displayLabel} backward`}
                   className="p-1 rounded-lg text-[#9A877B] hover:text-[#2A201D] dark:hover:text-[#FBF6F1] disabled:opacity-25 transition cursor-pointer"
                 >
-                  <ChevronDown className="w-3.5 h-3.5" />
+                  <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  disabled={visualIdx === 0}
+                  onClick={() => moveItemLayer(item.id, 'up')}
+                  title="Bring Forward 1 Layer"
+                  aria-label={`Move ${displayLabel} forward`}
+                  className="p-1 rounded-lg text-[#9A877B] hover:text-[#2A201D] dark:hover:text-[#FBF6F1] disabled:opacity-25 transition cursor-pointer"
+                >
+                  <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  disabled={visualIdx === 0}
+                  onClick={() => moveItemLayer(item.id, 'front')}
+                  title="Bring to Most Front"
+                  aria-label={`Move ${displayLabel} to most front`}
+                  className="p-1 rounded-lg text-[#9A877B] hover:text-[#2A201D] dark:hover:text-[#FBF6F1] disabled:opacity-25 transition cursor-pointer"
+                >
+                  <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   onClick={() => toggleItemLock(item.id)}
-                  aria-label={isLocked ? `Unlock ${meta?.name || item.type}` : `Lock ${meta?.name || item.type}`}
+                  aria-label={isLocked ? `Unlock ${displayLabel}` : `Lock ${displayLabel}`}
                   className={`p-1 rounded-lg transition cursor-pointer ${
                     isLocked
                       ? 'text-[#B4846C] bg-[#B4846C]/12'
@@ -295,7 +331,7 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleItemHidden(item.id)}
-                  aria-label={isHidden ? `Show ${meta?.name || item.type}` : `Hide ${meta?.name || item.type}`}
+                  aria-label={isHidden ? `Show ${displayLabel}` : `Hide ${displayLabel}`}
                   className={`p-1 rounded-lg transition cursor-pointer ${
                     isHidden
                       ? 'text-[#B4846C] bg-[#B4846C]/12'
@@ -307,7 +343,7 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => deleteItemById(item.id)}
-                  aria-label={`Delete ${meta?.name || item.type}`}
+                  aria-label={`Delete ${displayLabel}`}
                   className="p-1 rounded-lg text-[#9A877B] hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

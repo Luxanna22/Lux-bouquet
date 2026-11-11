@@ -315,12 +315,156 @@ export const WRAPPER_CATALOG: {
   { id: 'plain', label: 'Hand-Tied', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' }
 ];
 
+export type PhotoFrameStyle =
+  | 'raw'
+  | 'polaroid'
+  | 'stamp'
+  | 'cameo'
+  | 'film'
+  | 'pressed'
+  | 'arch';
+
+export interface PhotoFrameMeta {
+  id: PhotoFrameStyle;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+  defaultFrameColor: string;
+  defaultAccentColor: string;
+  defaultCaption: string;
+}
+
+export const PHOTO_FRAME_CATALOG: PhotoFrameMeta[] = [
+  {
+    id: 'polaroid',
+    label: 'Instant Polaroid',
+    shortLabel: 'Polaroid',
+    subtitle: 'Classic instant film & tape',
+    defaultFrameColor: '#FFFDF9',
+    defaultAccentColor: '#D6B38E',
+    defaultCaption: 'Forever moment'
+  },
+  {
+    id: 'stamp',
+    label: 'Postage Stamp',
+    shortLabel: 'Postage',
+    subtitle: 'Perforated airmail keepsake',
+    defaultFrameColor: '#FAF3EB',
+    defaultAccentColor: '#B4846C',
+    defaultCaption: 'PAR AVION'
+  },
+  {
+    id: 'cameo',
+    label: 'Lace Cameo',
+    shortLabel: 'Cameo',
+    subtitle: 'Scalloped oval & ribbon bow',
+    defaultFrameColor: '#FCE7F3',
+    defaultAccentColor: '#E11D48',
+    defaultCaption: 'My dearest'
+  },
+  {
+    id: 'film',
+    label: 'Vintage Film',
+    shortLabel: '35mm Film',
+    subtitle: 'Cinema sprocket strip',
+    defaultFrameColor: '#292524',
+    defaultAccentColor: '#F59E0B',
+    defaultCaption: 'BLOOM 400'
+  },
+  {
+    id: 'pressed',
+    label: 'Botanical Glass',
+    shortLabel: 'Herbarium',
+    subtitle: 'Brass octagon & pressed leaf',
+    defaultFrameColor: '#FEF9EE',
+    defaultAccentColor: '#D97706',
+    defaultCaption: 'Spec. No. 1'
+  },
+  {
+    id: 'arch',
+    label: 'Cathedral Arch',
+    shortLabel: 'Arch Frame',
+    subtitle: 'Gilded gallery arch',
+    defaultFrameColor: '#F5F0EB',
+    defaultAccentColor: '#8C624C',
+    defaultCaption: 'Souvenir'
+  }
+];
+
+export type CanvasEnvironment =
+  | 'studio'
+  | 'paper'
+  | 'meadow'
+  | 'sunlit'
+  | 'linen'
+  | 'starlit';
+
+export interface CanvasEnvironmentMeta {
+  id: CanvasEnvironment;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+}
+
+export const ENVIRONMENT_CATALOG: CanvasEnvironmentMeta[] = [
+  {
+    id: 'studio',
+    label: 'Warm Studio',
+    shortLabel: 'Studio',
+    subtitle: 'Clean editorial arch'
+  },
+  {
+    id: 'paper',
+    label: 'Pressed Paper',
+    shortLabel: 'Paper',
+    subtitle: 'Handmade cotton deckle grain'
+  },
+  {
+    id: 'meadow',
+    label: 'Soft Meadow',
+    shortLabel: 'Meadow',
+    subtitle: 'Minimal grass & wildflower mist'
+  },
+  {
+    id: 'sunlit',
+    label: 'Sunlit Window',
+    shortLabel: 'Sunlit',
+    subtitle: 'Golden-hour window shadow'
+  },
+  {
+    id: 'linen',
+    label: 'Woven Linen',
+    shortLabel: 'Linen',
+    subtitle: 'Fine raw flax canvas weave'
+  },
+  {
+    id: 'starlit',
+    label: 'Evening Glow',
+    shortLabel: 'Evening',
+    subtitle: 'Soft twilight & stardust motes'
+  }
+];
+
+export interface BouquetPose {
+  x: number; // SVG viewBox center X (default 300)
+  y: number; // SVG viewBox center Y (default 380)
+  scale: number; // 0.45 .. 2.2 (default 1)
+  rotation: number; // degrees -90 .. 90 (default 0)
+}
+
+export const DEFAULT_BOUQUET_POSE: BouquetPose = {
+  x: 300,
+  y: 380,
+  scale: 1,
+  rotation: 0
+};
+
 export interface BouquetItem {
   id: string;
   type: FlowerType;
   x: number; // SVG viewBox X (0..600)
   y: number; // SVG viewBox Y (0..680)
-  scale: number; // 0.4 .. 2.2
+  scale: number; // 0.3 .. 2.8
   rotation: number; // degrees -180..180
   flipX: boolean;
   petalColor: string;
@@ -328,6 +472,10 @@ export interface BouquetItem {
   stemLength?: number; // 0.15 .. 1.35 (1.0 default)
   locked?: boolean;
   hidden?: boolean;
+  photoStyle?: PhotoFrameStyle;
+  photoDataUrl?: string;
+  photoCaption?: string;
+  clippedToBouquet?: boolean;
 }
 
 export interface GreetingCardData {
@@ -436,7 +584,7 @@ export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
   duration: 0,
   x: 185,
   y: 525,
-  scale: 0.84,
+  scale: 1.0,
   rotation: 0
 };
 
@@ -495,6 +643,8 @@ export interface BouquetSnapshot {
   card: GreetingCardData;
   voice?: VoiceKeepsakeData;
   lock?: BouquetLockConfig;
+  environment?: CanvasEnvironment;
+  bouquetPose?: BouquetPose;
 }
 
 export interface FlowerCatalogMeta {

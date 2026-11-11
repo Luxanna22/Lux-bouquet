@@ -7,6 +7,11 @@ import {
   BouquetLockConfig,
   BouquetLockMode,
   DEFAULT_BOUQUET_LOCK,
+  PhotoFrameStyle,
+  PHOTO_FRAME_CATALOG,
+  CanvasEnvironment,
+  BouquetPose,
+  DEFAULT_BOUQUET_POSE,
   typeWrapStyle,
   BouquetItem,
   BouquetSnapshot,
@@ -103,6 +108,25 @@ const SHARE_VOICE_STYLES: VoiceKeepsakeStyle[] = [
   'locket'
 ];
 
+const SHARE_PHOTO_STYLES: PhotoFrameStyle[] = [
+  'polaroid',
+  'stamp',
+  'cameo',
+  'film',
+  'pressed',
+  'arch',
+  'raw'
+];
+
+const SHARE_ENVIRONMENTS: CanvasEnvironment[] = [
+  'studio',
+  'paper',
+  'meadow',
+  'sunlit',
+  'linen',
+  'starlit'
+];
+
 const DEFAULT_SHARE_CARD_TO = 'My Dearest';
 const DEFAULT_SHARE_CARD_FROM = 'Yours Always';
 const DEFAULT_SHARE_CARD_MSG =
@@ -144,6 +168,8 @@ function itemsMatchPreset(a: BouquetItem[], b: BouquetItem[]): boolean {
     const x = a[i];
     const y = b[i];
     if (
+      x.photoStyle ||
+      y.photoStyle ||
       x.type !== y.type ||
       Math.round(x.x) !== Math.round(y.x) ||
       Math.round(x.y) !== Math.round(y.y) ||
@@ -276,28 +302,42 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
         const yStr = Math.round(clampNum(item.y, 0, 680))
           .toString(36)
           .padStart(2, '0');
-        const sInt = clampNum(Math.round((clampNum(item.scale, 0.4, 2.2) - 0.4) * 19), 0, 35);
+        const sInt = clampNum(Math.round((clampNum(item.scale, 0.3, 2.8) - 0.3) * 14), 0, 35);
         const sStr = sInt.toString(36);
         const rInt = clampNum(Math.round((clampNum(item.rotation, -180, 180) + 180) / 2), 0, 180);
         const rStr = rInt.toString(36).padStart(2, '0');
 
         const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
         const isDefPetal =
-          meta && item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
+          !item.photoStyle &&
+          meta &&
+          item.petalColor.toLowerCase() === meta.defaultPetalColor.toLowerCase();
         const isDefCenter =
-          meta && item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
-        const extraFlags = (item.flipX ? 1 : 0) | (item.locked ? 2 : 0) | (item.hidden ? 4 : 0);
+          !item.photoStyle &&
+          meta &&
+          item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
+        const extraFlags =
+          (item.flipX ? 1 : 0) |
+          (item.locked ? 2 : 0) |
+          (item.hidden ? 4 : 0) |
+          (item.clippedToBouquet ? 8 : 0);
         const stemLen = item.stemLength ?? 1;
         const isDefStemLen = Math.abs(stemLen - 1) < 0.02;
         const stemLenStr = isDefStemLen ? '' : Math.round(clampNum(stemLen, 0.15, 1.35) * 20).toString(36);
 
         const base = `${typeChar}${xStr}${yStr}${sStr}${rStr}`;
-        if (isDefPetal && isDefCenter && extraFlags === 0 && isDefStemLen) {
+        if (!item.photoStyle && isDefPetal && isDefCenter && extraFlags === 0 && isDefStemLen) {
           return base;
         }
         const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
         const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
-        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}`.replace(/~+$/, '');
+        if (!item.photoStyle) {
+          return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}`.replace(/~+$/, '');
+        }
+        const pStyleIdx = Math.max(0, SHARE_PHOTO_STYLES.indexOf(item.photoStyle)).toString(36);
+        const pCapB64 = item.photoCaption ? toBase64Url(item.photoCaption) : '';
+        const pImgB64 = item.photoDataUrl ? toBase64Url(item.photoDataUrl) : '';
+        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}~${pStyleIdx}~${pCapB64}~${pImgB64}`.replace(/~+$/, '');
       })
       .join('.');
   }
@@ -321,7 +361,7 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
         ? Math.round(snapshot.voice.y).toString(36)
         : '';
     const vScale =
-      snapshot.voice.scale !== undefined && Math.abs(snapshot.voice.scale - 0.84) > 0.01
+      snapshot.voice.scale !== undefined && Math.abs(snapshot.voice.scale - 1.0) > 0.01
         ? Math.round(snapshot.voice.scale * 100).toString(36)
         : '';
     const vRot =
@@ -338,7 +378,28 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
     const aB64 = snapshot.lock.passcodeAnswer ? toBase64Url(snapshot.lock.passcodeAnswer) : '';
     lockSuffix = `&l=${modeCode}~${unlockAtB64}~${qB64}~${aB64}`.replace(/~+$/, '');
   }
-  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}${lockSuffix}`;
+  let envSuffix = '';
+  if (snapshot.environment && snapshot.environment !== 'studio') {
+    const eIdx = Math.max(0, SHARE_ENVIRONMENTS.indexOf(snapshot.environment)).toString(36);
+    envSuffix = `&e=${eIdx}`;
+  }
+  let poseSuffix = '';
+  if (snapshot.bouquetPose) {
+    const bp = snapshot.bouquetPose;
+    const isDefPose =
+      Math.round(bp.x) === 300 &&
+      Math.round(bp.y) === 380 &&
+      Math.abs(bp.scale - 1) < 0.02 &&
+      Math.round(bp.rotation) === 0;
+    if (!isDefPose) {
+      const bx = Math.round(bp.x).toString(36);
+      const by = Math.round(bp.y).toString(36);
+      const bs = Math.round(bp.scale * 100).toString(36);
+      const br = Math.round(bp.rotation + 180).toString(36);
+      poseSuffix = `&bp=${bx}~${by}~${bs}~${br}`;
+    }
+  }
+  return `#${prefix}=${headerPart}.${cardPart}.${itemsPart}${voiceSuffix}${lockSuffix}${envSuffix}${poseSuffix}`;
 }
 
 export function encodeBouquetToShareUrl(snapshot: BouquetSnapshot, asGift = false): string {
@@ -441,7 +502,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         const vMeta = VOICE_KEEPSAKE_CATALOG.find((k) => k.id === style) || VOICE_KEEPSAKE_CATALOG[0];
         const parsedVX = vXStr ? parseInt(vXStr, 36) : 185;
         const parsedVY = vYStr ? parseInt(vYStr, 36) : 525;
-        const parsedVScale = vScaleStr ? parseInt(vScaleStr, 36) / 100 : 0.84;
+        const parsedVScale = vScaleStr ? parseInt(vScaleStr, 36) / 100 : 1.0;
         const parsedVRot = vRotStr ? parseInt(vRotStr, 36) - 180 : 0;
         voice = {
           style,
@@ -454,9 +515,9 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           x: Number.isFinite(parsedVX) ? parsedVX : 185,
           y: Number.isFinite(parsedVY) ? parsedVY : 525,
           scale:
-            Number.isFinite(parsedVScale) && parsedVScale >= 0.35 && parsedVScale <= 2.0
+            Number.isFinite(parsedVScale) && parsedVScale >= 0.3 && parsedVScale <= 2.6
               ? Number(parsedVScale.toFixed(2))
-              : 0.84,
+              : 1.0,
           rotation:
             Number.isFinite(parsedVRot) && parsedVRot >= -180 && parsedVRot <= 180
               ? Math.round(parsedVRot)
@@ -475,6 +536,29 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           unlockAtIso: unlockAtB64 ? fromBase64Url(unlockAtB64) : '',
           questionPrompt: qB64 ? fromBase64Url(qB64) : DEFAULT_BOUQUET_LOCK.questionPrompt,
           passcodeAnswer: aB64 ? fromBase64Url(aB64) : ''
+        };
+      }
+
+      let environment: CanvasEnvironment = 'studio';
+      const eSegment = querySegments.find((seg) => seg.startsWith('e='));
+      if (eSegment) {
+        const eIdx = parseInt(eSegment.slice(2), 36);
+        environment = SHARE_ENVIRONMENTS[eIdx] || 'studio';
+      }
+
+      let bouquetPose: BouquetPose = { ...DEFAULT_BOUQUET_POSE };
+      const bpSegment = querySegments.find((seg) => seg.startsWith('bp='));
+      if (bpSegment) {
+        const [bxStr = '', byStr = '', bsStr = '', brStr = ''] = bpSegment.slice(3).split('~');
+        const bx = bxStr ? parseInt(bxStr, 36) : 300;
+        const by = byStr ? parseInt(byStr, 36) : 380;
+        const bs = bsStr ? parseInt(bsStr, 36) / 100 : 1;
+        const br = brStr ? parseInt(brStr, 36) - 180 : 0;
+        bouquetPose = {
+          x: Number.isFinite(bx) ? bx : 300,
+          y: Number.isFinite(by) ? by : 380,
+          scale: Number.isFinite(bs) && bs >= 0.4 && bs <= 2.4 ? Number(bs.toFixed(2)) : 1,
+          rotation: Number.isFinite(br) && br >= -180 && br <= 180 ? Math.round(br) : 0
         };
       }
 
@@ -525,24 +609,51 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         items = stemParts
           .filter((sp) => sp.length >= 8)
           .map((sp, idx) => {
-            const [base, flagsStr = '0', pHex = '', cHex = '', stemLenStr = ''] = sp.split('~');
+            const [
+              base,
+              flagsStr = '0',
+              pHex = '',
+              cHex = '',
+              stemLenStr = '',
+              pStyleStr = '',
+              pCapB64 = '',
+              pImgB64 = ''
+            ] = sp.split('~');
             const rawCode = parseInt(base[0], 36) || 0;
             const type = SHARE_FLOWER_TYPES[rawCode] || 'rose';
             const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
             const x = parseInt(base.slice(1, 3), 36);
             const y = parseInt(base.slice(3, 5), 36);
             const sInt = parseInt(base.slice(5, 6), 36);
-            const scale = Number((0.4 + sInt / 19).toFixed(2));
+            const scale = Number((0.3 + sInt / 14).toFixed(2));
             const rInt = parseInt(base.slice(6, 8), 36);
             const rotation = rInt * 2 - 180;
             const flags = parseInt(flagsStr, 36) || 0;
             const stemLength = stemLenStr
               ? Number((parseInt(stemLenStr, 36) / 20).toFixed(2))
               : 1;
+            const photoStyle =
+              pStyleStr !== '' ? SHARE_PHOTO_STYLES[parseInt(pStyleStr, 36)] : undefined;
+            const photoMeta = photoStyle
+              ? PHOTO_FRAME_CATALOG.find((p) => p.id === photoStyle)
+              : undefined;
 
             return {
-              id: `s-${idx}-${type}`,
+              id: `s-${idx}-${photoStyle || type}`,
               type,
+              ...(photoStyle
+                ? {
+                    photoStyle,
+                    photoCaption:
+                      photoStyle === 'raw'
+                        ? ''
+                        : pCapB64
+                        ? fromBase64Url(pCapB64)
+                        : photoMeta?.defaultCaption,
+                    photoDataUrl: pImgB64 ? fromBase64Url(pImgB64) : undefined,
+                    clippedToBouquet: Boolean(flags & 8)
+                  }
+                : {}),
               x: Number.isFinite(x) ? x : 300,
               y: Number.isFinite(y) ? y : 280,
               scale: Number.isFinite(scale) ? scale : meta.defaultScale,
@@ -550,8 +661,16 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               flipX: Boolean(flags & 1),
               locked: Boolean(flags & 2),
               hidden: Boolean(flags & 4),
-              petalColor: pHex ? `#${pHex}` : meta.defaultPetalColor,
-              centerColor: cHex ? `#${cHex}` : meta.defaultCenterColor,
+              petalColor: pHex
+                ? `#${pHex}`
+                : photoMeta
+                ? photoMeta.defaultFrameColor
+                : meta.defaultPetalColor,
+              centerColor: cHex
+                ? `#${cHex}`
+                : photoMeta
+                ? photoMeta.defaultAccentColor
+                : meta.defaultCenterColor,
               stemLength: Number.isFinite(stemLength) ? stemLength : 1
             };
           });
@@ -563,6 +682,8 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
         wrapColor,
         ribbonColor,
         ribbonStyle,
+        environment,
+        bouquetPose,
         card: {
           to,
           from,
@@ -574,7 +695,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           x: Number.isFinite(parsedCX) ? parsedCX : 410,
           y: Number.isFinite(parsedCY) ? parsedCY : 525,
           scale:
-            Number.isFinite(parsedCScale) && parsedCScale >= 0.35 && parsedCScale <= 2.0
+            Number.isFinite(parsedCScale) && parsedCScale >= 0.3 && parsedCScale <= 2.6
               ? Number(parsedCScale.toFixed(2))
               : 0.72,
           rotation:
@@ -968,4 +1089,60 @@ export class RomanticMusicBox {
 }
 
 export const musicBox = new RomanticMusicBox();
+
+/**
+ * Downscales & compresses an uploaded image file to a compact JPEG data URL
+ * so photocards render crisply, save to local drafts, and export cleanly in PNGs.
+ */
+export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 440): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image file'));
+    reader.onload = () => {
+      const rawDataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!rawDataUrl) {
+        reject(new Error('Empty image data'));
+        return;
+      }
+      if (typeof document === 'undefined') {
+        resolve(rawDataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let width = img.naturalWidth || img.width || 320;
+          let height = img.naturalHeight || img.height || 320;
+          if (width > maxDimension || height > maxDimension) {
+            if (width >= height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(rawDataUrl);
+            return;
+          }
+          ctx.fillStyle = '#FFFDF9';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.82);
+          resolve(compressed || rawDataUrl);
+        } catch {
+          resolve(rawDataUrl);
+        }
+      };
+      img.onerror = () => resolve(rawDataUrl);
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 

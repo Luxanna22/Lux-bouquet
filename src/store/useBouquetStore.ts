@@ -12,6 +12,11 @@ import {
   BouquetLockConfig,
   DEFAULT_BOUQUET_LOCK,
   BouquetSnapshot,
+  PhotoFrameStyle,
+  PHOTO_FRAME_CATALOG,
+  CanvasEnvironment,
+  BouquetPose,
+  DEFAULT_BOUQUET_POSE,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
   RIBBON_STYLE_CATALOG,
@@ -28,6 +33,8 @@ import { decodeBouquetFromHash, isGiftShareHash } from '../lib/shareAndExport';
 
 export interface BouquetStoreState extends BouquetSnapshot {
   selectedId: string | null;
+  environment: CanvasEnvironment;
+  bouquetPose: BouquetPose;
   lastNonPlainWrapStyle: typeWrapStyle;
   hasCustomWrapColor: boolean;
   hasCustomRibbonColor: boolean;
@@ -38,6 +45,7 @@ export interface BouquetStoreState extends BouquetSnapshot {
   // Actions
   selectItem: (id: string | null) => void;
   addFlower: (type: FlowerType) => void;
+  addPhotoCard: (style: PhotoFrameStyle, photoDataUrl?: string, caption?: string) => void;
   updateItem: (id: string, patch: Partial<BouquetItem>, recordHistory?: boolean) => void;
   commitHistorySnapshot: () => void;
   duplicateSelected: () => void;
@@ -57,6 +65,9 @@ export interface BouquetStoreState extends BouquetSnapshot {
   setWrapColor: (color: string) => void;
   setRibbonColor: (color: string) => void;
   setRibbonStyle: (style: RibbonStyle) => void;
+  setEnvironment: (env: CanvasEnvironment) => void;
+  updateBouquetPose: (patch: Partial<BouquetPose>, recordHistory?: boolean) => void;
+  resetBouquetPose: () => void;
   updateCard: (patch: Partial<GreetingCardData>) => void;
   voice: VoiceKeepsakeData;
   updateVoice: (patch: Partial<VoiceKeepsakeData>) => void;
@@ -78,7 +89,9 @@ function takeSnapshot(state: BouquetStoreState): BouquetSnapshot {
     ribbonStyle: state.ribbonStyle || 'satin',
     card: { ...state.card },
     voice: { ...(state.voice || DEFAULT_VOICE_KEEPSAKE) },
-    lock: { ...(state.lock || DEFAULT_BOUQUET_LOCK) }
+    lock: { ...(state.lock || DEFAULT_BOUQUET_LOCK) },
+    environment: state.environment || 'studio',
+    bouquetPose: { ...(state.bouquetPose || DEFAULT_BOUQUET_POSE) }
   };
 }
 
@@ -98,6 +111,10 @@ function getInitialStoreState() {
           wrapColor: shared.wrapColor || '#d6b38e',
           ribbonColor: shared.ribbonColor || '#e11d48',
           ribbonStyle: shared.ribbonStyle || ('satin' as RibbonStyle),
+          environment: (shared.environment || 'studio') as CanvasEnvironment,
+          bouquetPose: shared.bouquetPose
+            ? { ...DEFAULT_BOUQUET_POSE, ...shared.bouquetPose }
+            : { ...DEFAULT_BOUQUET_POSE },
           card: {
             to: shared.card?.to ?? 'My Dearest',
             from: shared.card?.from ?? 'Yours Always',
@@ -132,6 +149,8 @@ function getInitialStoreState() {
     wrapColor: '#d6b38e',
     ribbonColor: '#e11d48',
     ribbonStyle: 'satin' as RibbonStyle,
+    environment: 'studio' as CanvasEnvironment,
+    bouquetPose: { ...DEFAULT_BOUQUET_POSE },
     card: {
       to: 'My Dearest',
       from: 'Yours Always',
@@ -158,6 +177,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   wrapColor: INITIAL_STORE_STATE.wrapColor,
   ribbonColor: INITIAL_STORE_STATE.ribbonColor,
   ribbonStyle: INITIAL_STORE_STATE.ribbonStyle,
+  environment: INITIAL_STORE_STATE.environment,
+  bouquetPose: INITIAL_STORE_STATE.bouquetPose,
   hasCustomWrapColor: false,
   hasCustomRibbonColor: false,
   hasCustomCardColor: Boolean(INITIAL_STORE_STATE.card?.customBg || INITIAL_STORE_STATE.card?.customAccent),
@@ -207,6 +228,42 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       future: [],
       // Foliage naturally tucks behind focal flowers; blooms go on top
       items: meta.isFoliage ? [newItem, ...state.items] : [...state.items, newItem],
+      selectedId: id
+    }));
+  },
+
+  addPhotoCard: (style, photoDataUrl, caption) => {
+    const isRaw = style === 'raw';
+    const meta = PHOTO_FRAME_CATALOG.find((p) => p.id === style) || PHOTO_FRAME_CATALOG[0];
+    const snap = takeSnapshot(get());
+    const id = `pho-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const spreadX = 300 + (Math.random() - 0.5) * 90;
+    const spreadY = 305 + (Math.random() - 0.5) * 55;
+    const autoTilt = Math.round(((spreadX - 300) / 90) * 14);
+
+    const newItem: BouquetItem = {
+      id,
+      type: 'rose',
+      photoStyle: style,
+      photoDataUrl,
+      photoCaption: isRaw ? '' : caption ?? meta.defaultCaption,
+      clippedToBouquet: false,
+      x: Math.round(spreadX),
+      y: Math.round(spreadY),
+      scale: isRaw ? 1.05 : 1,
+      rotation: autoTilt,
+      flipX: false,
+      petalColor: isRaw ? '#FFFDF9' : meta.defaultFrameColor,
+      centerColor: isRaw ? '#B4846C' : meta.defaultAccentColor,
+      stemLength: 1,
+      locked: false,
+      hidden: false
+    };
+
+    set((state) => ({
+      past: [...state.past.slice(-29), snap],
+      future: [],
+      items: [...state.items, newItem],
       selectedId: id
     }));
   },
@@ -492,6 +549,36 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     }));
   },
 
+  setEnvironment: (environment) => {
+    const snap = takeSnapshot(get());
+    set((state) => ({
+      past: [...state.past.slice(-29), snap],
+      future: [],
+      environment
+    }));
+  },
+
+  updateBouquetPose: (patch, recordHistory = false) => {
+    const snap = recordHistory ? takeSnapshot(get()) : null;
+    set((state) => ({
+      past: snap ? [...state.past.slice(-29), snap] : state.past,
+      future: snap ? [] : state.future,
+      bouquetPose: {
+        ...(state.bouquetPose || DEFAULT_BOUQUET_POSE),
+        ...patch
+      }
+    }));
+  },
+
+  resetBouquetPose: () => {
+    const snap = takeSnapshot(get());
+    set((state) => ({
+      past: [...state.past.slice(-29), snap],
+      future: [],
+      bouquetPose: { ...DEFAULT_BOUQUET_POSE }
+    }));
+  },
+
   updateCard: (patch) => {
     set((state) => {
       const nextCard = { ...state.card, ...patch };
@@ -672,6 +759,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       wrapColor: '#C8B9AE',
       ribbonStyle: 'satin',
       ribbonColor: '#E11D48',
+      environment: 'studio',
+      bouquetPose: { ...DEFAULT_BOUQUET_POSE },
       hasCustomWrapColor: false,
       hasCustomRibbonColor: false,
       hasCustomCardColor: false,
@@ -696,6 +785,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     const current = takeSnapshot(get());
     set({
       ...previous,
+      environment: previous.environment || 'studio',
+      bouquetPose: previous.bouquetPose ? { ...previous.bouquetPose } : { ...DEFAULT_BOUQUET_POSE },
       voice: previous.voice ? { ...previous.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       lock: previous.lock ? { ...previous.lock } : { ...DEFAULT_BOUQUET_LOCK },
       past: past.slice(0, -1),
@@ -711,6 +802,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     const current = takeSnapshot(get());
     set({
       ...next,
+      environment: next.environment || 'studio',
+      bouquetPose: next.bouquetPose ? { ...next.bouquetPose } : { ...DEFAULT_BOUQUET_POSE },
       voice: next.voice ? { ...next.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       lock: next.lock ? { ...next.lock } : { ...DEFAULT_BOUQUET_LOCK },
       past: [...past, current],
@@ -722,6 +815,10 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   loadSnapshot: (snap) => {
     set({
       ...snap,
+      environment: snap.environment || 'studio',
+      bouquetPose: snap.bouquetPose
+        ? { ...DEFAULT_BOUQUET_POSE, ...snap.bouquetPose }
+        : { ...DEFAULT_BOUQUET_POSE },
       card: {
         ...snap.card,
         theme: snap.card?.theme || 'sealed'
