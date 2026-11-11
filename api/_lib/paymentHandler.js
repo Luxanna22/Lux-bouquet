@@ -3,6 +3,16 @@ import crypto from 'node:crypto';
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
 const FIRESTORE_PASSES_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/studio_passes`;
+const FIRESTORE_SHARED_BOUQUETS_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/shared_bouquets`;
+
+// Deterministic HMAC-derived Firestore document code for persistent Owner Analytics, Vouchers, Revenue & PIN across Vercel deploys
+export const OWNER_VAULT_DOC_CODE = `sab_ov_${crypto
+  .createHmac('sha256', 'sab-persistent-owner-vault-key-2026-v1')
+  .update('sab_owner_persistent_vault_v1')
+  .digest('hex')
+  .slice(0, 14)}`;
+const OWNER_VAULT_IMMUTABLE_CREATED_AT = '2026-11-08T00:00:00.000Z';
+const OWNER_VAULT_IMMUTABLE_PAYLOAD = '#sab_owner_vault_v1';
 
 const CLIENT_SIGNATURE_SALT = 'sab-pass-integrity-2026-v1';
 const PASS_KEY_REGEX = /^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$/;
@@ -945,8 +955,341 @@ export const OWNER_ANALYTICS_STATE = {
 };
 
 export const TESTER_VOUCHER_LEDGER = new Map();
+export const ISSUED_PASS_KEYS = new Set();
+
+export function mergeRemoteOwnerVaultIntoMemory(remote) {
+  if (!remote || typeof remote !== 'object') return;
+
+  if (typeof remote.customOwnerPin === 'string' && remote.customOwnerPin.trim().length >= 4) {
+    if (!cachedCustomOwnerPin) {
+      cachedCustomOwnerPin = remote.customOwnerPin.trim();
+    }
+  }
+
+  if (Array.isArray(remote.revokedVoucherKeys)) {
+    for (const k of remote.revokedVoucherKeys) {
+      if (k) REVOKED_VOUCHER_KEYS.add(normalizePassKey(k));
+    }
+  }
+
+  if (Array.isArray(remote.issuedPassKeys)) {
+    for (const k of remote.issuedPassKeys) {
+      if (k) ISSUED_PASS_KEYS.add(normalizePassKey(k));
+    }
+  }
+
+  if (Array.isArray(remote.pinAttemptTracker)) {
+    for (const entry of remote.pinAttemptTracker) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const [k, v] = entry;
+      if (!k || !v || typeof v !== 'object') continue;
+      const existing = PIN_ATTEMPT_TRACKER.get(k);
+      if (
+        !existing ||
+        Number(v.lockedUntilMs || 0) > Number(existing.lockedUntilMs || 0) ||
+        Number(v.count || 0) > Number(existing.count || 0)
+      ) {
+        PIN_ATTEMPT_TRACKER.set(String(k), {
+          count: Number(v.count || 0),
+          lockedUntilMs: Number(v.lockedUntilMs || 0),
+        });
+      }
+    }
+  }
+
+  if (Array.isArray(remote.testerVouchers)) {
+    for (const rv of remote.testerVouchers) {
+      if (!rv || typeof rv !== 'object' || !rv.passKey) continue;
+      const normKey = normalizePassKey(rv.passKey);
+      const localV = TESTER_VOUCHER_LEDGER.get(normKey);
+      if (!localV) {
+        TESTER_VOUCHER_LEDGER.set(normKey, { ...rv, passKey: normKey });
+        if (rv.passRecord && !SERVER_PASS_STORE.has(normKey)) {
+          SERVER_PASS_STORE.set(normKey, rv.passRecord);
+        }
+      } else {
+        const isRevoked =
+          localV.status === 'revoked' ||
+          rv.status === 'revoked' ||
+          REVOKED_VOUCHER_KEYS.has(normKey);
+        const isClaimed = !isRevoked && (localV.status === 'claimed' || rv.status === 'claimed');
+        const mergedPassRecord = localV.passRecord?.primaryDeviceHash
+          ? localV.passRecord
+          : rv.passRecord || localV.passRecord;
+        const mergedItem = {
+          ...rv,
+          ...localV,
+          passKey: normKey,
+          status: isRevoked ? 'revoked' : isClaimed ? 'claimed' : localV.status || rv.status || 'unclaimed',
+          claimedDeviceHash:
+            localV.claimedDeviceHash ||
+            rv.claimedDeviceHash ||
+            mergedPassRecord?.primaryDeviceHash ||
+            '',
+          bouquetsCreated: Math.max(
+            Number(localV.bouquetsCreated || 0),
+            Number(rv.bouquetsCreated || 0)
+          ),
+          blockedAttempts: Math.max(
+            Number(localV.blockedAttempts || 0),
+            Number(rv.blockedAttempts || 0)
+          ),
+          passRecord: mergedPassRecord,
+        };
+        TESTER_VOUCHER_LEDGER.set(normKey, mergedItem);
+        if (mergedPassRecord && !SERVER_PASS_STORE.has(normKey)) {
+          SERVER_PASS_STORE.set(normKey, mergedPassRecord);
+        }
+      }
+    }
+  }
+
+  const ra = remote.analytics;
+  if (ra && typeof ra === 'object') {
+    const scalarFields = [
+      'webVisits',
+      'uniqueVisitors',
+      'landingViews',
+      'studioSessions',
+      'showcaseViews',
+      'bouquetsCreated',
+      'coutureBouquetsCreated',
+      'freeBouquetsCreated',
+      'recipientUnwraps',
+      'voiceNotesRecorded',
+      'voicePlays',
+      'reactionsSent',
+      'repliesSent',
+      'recipientToStudioClicks',
+      'paywallOpens',
+      'checkoutsStarted',
+      'revenueUsdCents',
+      'revenuePhpCentavos',
+      'blockedShareAttempts',
+      'blockedPinAttempts',
+    ];
+    for (const f of scalarFields) {
+      OWNER_ANALYTICS_STATE[f] = Math.max(
+        Number(OWNER_ANALYTICS_STATE[f] || 0),
+        Number(ra[f] || 0)
+      );
+    }
+
+    const nestedFixedMaps = [
+      'passesIssued',
+      'shareChannels',
+      'devices',
+      'osBrowsers',
+      'regions',
+      'referrers',
+    ];
+    for (const mapKey of nestedFixedMaps) {
+      if (ra[mapKey] && typeof ra[mapKey] === 'object') {
+        for (const [k, val] of Object.entries(ra[mapKey])) {
+          if (k in OWNER_ANALYTICS_STATE[mapKey]) {
+            OWNER_ANALYTICS_STATE[mapKey][k] = Math.max(
+              Number(OWNER_ANALYTICS_STATE[mapKey][k] || 0),
+              Number(val || 0)
+            );
+          }
+        }
+      }
+    }
+
+    const dynamicMaps = [
+      'flowers',
+      'wraps',
+      'ribbons',
+      'environments',
+      'voiceStyles',
+      'photoStyles',
+      'lockModes',
+      'paywallTriggers',
+    ];
+    for (const mapKey of dynamicMaps) {
+      if (ra[mapKey] && typeof ra[mapKey] === 'object') {
+        for (const [k, val] of Object.entries(ra[mapKey])) {
+          const clean = String(k).trim().slice(0, 48);
+          if (!clean) continue;
+          OWNER_ANALYTICS_STATE[mapKey][clean] = Math.max(
+            Number(OWNER_ANALYTICS_STATE[mapKey][clean] || 0),
+            Number(val || 0)
+          );
+        }
+      }
+    }
+
+    if (Array.isArray(ra.dailySeries)) {
+      const byDate = new Map();
+      for (const pt of buildRolling14DaysServer()) {
+        byDate.set(pt.date, { ...pt });
+      }
+      for (const pt of OWNER_ANALYTICS_STATE.dailySeries) {
+        if (!pt || !pt.date) continue;
+        const cur = byDate.get(pt.date) || {
+          date: pt.date,
+          visits: 0,
+          studioSessions: 0,
+          bouquetsSealed: 0,
+          recipientUnwraps: 0,
+          passUnlocks: 0,
+        };
+        byDate.set(pt.date, {
+          date: pt.date,
+          visits: Math.max(cur.visits, Number(pt.visits || 0)),
+          studioSessions: Math.max(cur.studioSessions, Number(pt.studioSessions || 0)),
+          bouquetsSealed: Math.max(cur.bouquetsSealed, Number(pt.bouquetsSealed || 0)),
+          recipientUnwraps: Math.max(cur.recipientUnwraps, Number(pt.recipientUnwraps || 0)),
+          passUnlocks: Math.max(cur.passUnlocks, Number(pt.passUnlocks || 0)),
+        });
+      }
+      for (const pt of ra.dailySeries) {
+        if (!pt || !pt.date) continue;
+        const cur = byDate.get(pt.date) || {
+          date: pt.date,
+          visits: 0,
+          studioSessions: 0,
+          bouquetsSealed: 0,
+          recipientUnwraps: 0,
+          passUnlocks: 0,
+        };
+        byDate.set(pt.date, {
+          date: pt.date,
+          visits: Math.max(cur.visits, Number(pt.visits || 0)),
+          studioSessions: Math.max(cur.studioSessions, Number(pt.studioSessions || 0)),
+          bouquetsSealed: Math.max(cur.bouquetsSealed, Number(pt.bouquetsSealed || 0)),
+          recipientUnwraps: Math.max(cur.recipientUnwraps, Number(pt.recipientUnwraps || 0)),
+          passUnlocks: Math.max(cur.passUnlocks, Number(pt.passUnlocks || 0)),
+        });
+      }
+      OWNER_ANALYTICS_STATE.dailySeries = Array.from(byDate.values())
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-14);
+    }
+
+    if (Array.isArray(ra.recentEvents)) {
+      const seenIds = new Set();
+      const combinedEvents = [];
+      for (const ev of [...OWNER_ANALYTICS_STATE.recentEvents, ...ra.recentEvents]) {
+        if (!ev || !ev.id || seenIds.has(ev.id)) continue;
+        seenIds.add(ev.id);
+        combinedEvents.push(ev);
+      }
+      combinedEvents.sort((a, b) => Date.parse(b.ts || '') - Date.parse(a.ts || ''));
+      OWNER_ANALYTICS_STATE.recentEvents = combinedEvents.slice(0, 40);
+    }
+  }
+}
+
+export async function hydratePersistentOwnerVaultServer() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2800);
+    const resp = await fetch(
+      `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`,
+      { method: 'GET', signal: controller.signal }
+    );
+    clearTimeout(timer);
+    if (!resp.ok) return false;
+    const docJson = await resp.json();
+    const rawVaultJson = docJson?.fields?.voiceAudioDataUrl?.stringValue;
+    if (!rawVaultJson) return false;
+    const parsed = JSON.parse(rawVaultJson);
+    mergeRemoteOwnerVaultIntoMemory(parsed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function savePersistentOwnerVaultServer() {
+  try {
+    const nowMs = Date.now();
+    const pinEntries = [];
+    for (const [k, v] of PIN_ATTEMPT_TRACKER.entries()) {
+      if (v && (v.count > 0 || v.lockedUntilMs > nowMs)) {
+        pinEntries.push([k, v]);
+      }
+    }
+
+    const vaultPayload = {
+      v: 1,
+      updatedAt: new Date(nowMs).toISOString(),
+      customOwnerPin: cachedCustomOwnerPin || '',
+      revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
+      issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
+      pinAttemptTracker: pinEntries.slice(0, 200),
+      testerVouchers: Array.from(TESTER_VOUCHER_LEDGER.values()).slice(0, 250),
+      analytics: OWNER_ANALYTICS_STATE,
+    };
+
+    const jsonStr = JSON.stringify(vaultPayload);
+    if (jsonStr.length > 880_000) return false;
+
+    const fields = {
+      code: { stringValue: OWNER_VAULT_DOC_CODE },
+      payload: { stringValue: OWNER_VAULT_IMMUTABLE_PAYLOAD },
+      createdAt: { stringValue: OWNER_VAULT_IMMUTABLE_CREATED_AT },
+      voiceAudioDataUrl: { stringValue: jsonStr },
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const resp = await fetch(
+      `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timer);
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function recordPaidPassIssuanceServer(pass) {
+  if (!pass || !pass.passKey || isTesterVoucherPassServer(pass)) return false;
+  const normKey = normalizePassKey(pass.passKey);
+  if (normKey === 'BLOOM-KCFG-SHOP' || normKey.startsWith('BLOOM-KS')) return false;
+  if (ISSUED_PASS_KEYS.has(normKey)) return false;
+
+  ISSUED_PASS_KEYS.add(normKey);
+  const tier = pass.tier;
+  const region = pass.region === 'PH' ? 'PH' : 'INTL';
+
+  if (tier === 'single') {
+    OWNER_ANALYTICS_STATE.passesIssued.single += 1;
+    if (region === 'PH') OWNER_ANALYTICS_STATE.revenuePhpCentavos += 4900;
+    else OWNER_ANALYTICS_STATE.revenueUsdCents += 299;
+  } else if (tier === 'pass_7d') {
+    OWNER_ANALYTICS_STATE.passesIssued.pass_7d += 1;
+    if (region === 'PH') OWNER_ANALYTICS_STATE.revenuePhpCentavos += 9900;
+    else OWNER_ANALYTICS_STATE.revenueUsdCents += 499;
+  } else if (tier === 'pass_30d') {
+    OWNER_ANALYTICS_STATE.passesIssued.pass_30d += 1;
+    if (region === 'PH') OWNER_ANALYTICS_STATE.revenuePhpCentavos += 19900;
+    else OWNER_ANALYTICS_STATE.revenueUsdCents += 899;
+  }
+
+  getTodayDailyBucketServer().passUnlocks += 1;
+  pushAnalyticsEventServer(
+    'monetization',
+    'pass_issued',
+    `Issued ${tier} Studio Pass (${normKey})`,
+    'mobile',
+    region
+  );
+  return true;
+}
 
 async function syncRealAnalyticsSnapshotServer() {
+  // 0. Hydrate persistent Owner Analytics, Tester Vouchers, Revenue & Custom PIN from Firestore
+  await hydratePersistentOwnerVaultServer();
+
   // 1. Reconcile real issued Studio Passes & Tester Vouchers in SERVER_PASS_STORE
   let singleCount = 0;
   let pass7dCount = 0;
@@ -961,6 +1304,7 @@ async function syncRealAnalyticsSnapshotServer() {
       if (!TESTER_VOUCHER_LEDGER.has(key)) testerCount += 1;
       continue;
     }
+    ISSUED_PASS_KEYS.add(normalizePassKey(key));
     if (pass.tier === 'single') {
       singleCount += 1;
       if (pass.region === 'PH') phpCentavos += 4900;
@@ -1990,6 +2334,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
         SERVER_PASS_STORE.set(boundPass.passKey, boundPass);
         await saveStudioPassToFirestoreRest(boundPass);
+        await hydratePersistentOwnerVaultServer();
+        recordPaidPassIssuanceServer(boundPass);
+        await savePersistentOwnerVaultServer();
         sendJson(res, 200, {
           ok: true,
           pass: boundPass,
@@ -1997,7 +2344,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      // Case C: Local Sandbox Preview (only when no live tokens / Vercel env / email is active)
+      // Case C: Local Sandbox Preview / Confirmed PayMongo Session
       pending.status = 'paid';
       let passRecord = SERVER_PASS_STORE.get(pending.passKey);
       if (!passRecord) {
@@ -2013,6 +2360,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         SERVER_PASS_STORE.set(passRecord.passKey, passRecord);
       }
       await saveStudioPassToFirestoreRest(passRecord);
+      await hydratePersistentOwnerVaultServer();
+      recordPaidPassIssuanceServer(passRecord);
+      await savePersistentOwnerVaultServer();
 
       sendJson(res, 200, {
         ok: true,
@@ -2059,6 +2409,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
+      await hydratePersistentOwnerVaultServer();
+
       let existingRecord =
         SERVER_PASS_STORE.get(passKey) || (await fetchStudioPassFromFirestoreRest(passKey));
       if (!existingRecord && parsed.existingRecord && typeof parsed.existingRecord === 'object') {
@@ -2097,6 +2449,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             'mobile',
             existingRecord.region || 'INTL'
           );
+          await savePersistentOwnerVaultServer();
         }
         sendJson(res, 403, {
           ok: false,
@@ -2110,7 +2463,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       await saveStudioPassToFirestoreRest(result.updatedPass);
 
       if (isTesterVoucherPassServer(result.updatedPass)) {
-        const meta = parseTesterVoucherMetaServer(result.updatedPass.paymentReference);
+        const meta = parseTesterVoucherMetaServer(result.updatedPass.boundBouquetCode);
         const existingItem = TESTER_VOUCHER_LEDGER.get(passKey);
         const wasUnclaimed = !existingRecord.primaryDeviceHash;
         TESTER_VOUCHER_LEDGER.set(passKey, {
@@ -2149,6 +2502,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             result.updatedPass.region || 'INTL'
           );
         }
+        await savePersistentOwnerVaultServer();
       }
 
       sendJson(res, 200, {
@@ -2167,9 +2521,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' ? parsed.deviceTokenHash : '';
 
-      // 4A. First-party telemetry event ingestion
+      // 4A. First-party telemetry event ingestion (Persisted to Firestore so Vercel redeploys never reset visits/analytics)
       if (actionType === 'telemetry_event') {
+        await hydratePersistentOwnerVaultServer();
         applyServerTelemetryEvent(parsed.telemetry);
+        await savePersistentOwnerVaultServer();
         sendJson(res, 200, { ok: true });
         return true;
       }
@@ -2198,6 +2554,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
+        // Hydrate custom PIN & lockout state from Firestore before verifying PIN
+        await hydratePersistentOwnerVaultServer();
+
         const pinResult = verifyOwnerPinWithRateLimit(pin, deviceTokenHash || 'anon');
         if (!pinResult.ok) {
           OWNER_ANALYTICS_STATE.blockedPinAttempts += 1;
@@ -2210,6 +2569,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             'desktop',
             'INTL'
           );
+          await savePersistentOwnerVaultServer();
           sendJson(res, 200, {
             ok: false,
             unauthorized: true,
@@ -2229,6 +2589,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           'desktop',
           'INTL'
         );
+        await savePersistentOwnerVaultServer();
         sendJson(res, 200, {
           ok: true,
           adminSessionToken,
@@ -2251,6 +2612,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
         await syncRealAnalyticsSnapshotServer();
+        await savePersistentOwnerVaultServer();
         sendJson(res, 200, {
           ok: true,
           analytics: OWNER_ANALYTICS_STATE,
@@ -2271,6 +2633,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           });
           return true;
         }
+
+        await hydratePersistentOwnerVaultServer();
 
         const label =
           String(parsed.label || 'Tester Invite')
@@ -2310,7 +2674,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           passRecord: signedPass,
         };
         TESTER_VOUCHER_LEDGER.set(signedPass.passKey, voucherEntry);
-        OWNER_ANALYTICS_STATE.passesIssued.tester += 1;
+        OWNER_ANALYTICS_STATE.passesIssued.tester = Math.max(
+          OWNER_ANALYTICS_STATE.passesIssued.tester + 1,
+          TESTER_VOUCHER_LEDGER.size
+        );
         getTodayDailyBucketServer().passUnlocks += 1;
         pushAnalyticsEventServer(
           'monetization',
@@ -2319,6 +2686,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           'desktop',
           'INTL'
         );
+        await savePersistentOwnerVaultServer();
 
         sendJson(res, 200, {
           ok: true,
@@ -2342,6 +2710,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           });
           return true;
         }
+
+        await hydratePersistentOwnerVaultServer();
 
         const targetKey = normalizePassKey(parsed.passKey || '');
         if (!isValidPassKeyFormat(targetKey)) {
@@ -2375,6 +2745,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           'desktop',
           'INTL'
         );
+        await savePersistentOwnerVaultServer();
 
         sendJson(res, 200, {
           ok: true,
@@ -2406,6 +2777,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
+        await hydratePersistentOwnerVaultServer();
         cachedCustomOwnerPin = newPin;
         pushAnalyticsEventServer(
           'security',
@@ -2414,7 +2786,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           'desktop',
           'INTL'
         );
-        sendJson(res, 200, { ok: true, message: 'Owner passphrase updated for this server.' });
+        await savePersistentOwnerVaultServer();
+        sendJson(res, 200, { ok: true, message: 'Owner passphrase updated and saved.' });
         return true;
       }
 
@@ -2432,6 +2805,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         });
         return true;
       }
+
+      await hydratePersistentOwnerVaultServer();
 
       const normKey = normalizePassKey(clientPass.passKey);
       const canonicalPass =
@@ -2464,6 +2839,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
         entry.passRecord = check.updatedPass;
         TESTER_VOUCHER_LEDGER.set(normKey, entry);
+        await savePersistentOwnerVaultServer();
       }
 
       sendJson(res, 200, {
@@ -2509,6 +2885,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           });
           SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
           await saveStudioPassToFirestoreRest(signedPass);
+          await hydratePersistentOwnerVaultServer();
+          recordPaidPassIssuanceServer(signedPass);
+          await savePersistentOwnerVaultServer();
         } else if (isValidPassKeyFormat(passKey)) {
           const tier = isValidTier(metadata.tier) ? metadata.tier : 'pass_7d';
           const region = isValidRegion(metadata.region) ? metadata.region : 'PH';
@@ -2522,6 +2901,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           });
           SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
           await saveStudioPassToFirestoreRest(signedPass);
+          await hydratePersistentOwnerVaultServer();
+          recordPaidPassIssuanceServer(signedPass);
+          await savePersistentOwnerVaultServer();
         }
       }
 

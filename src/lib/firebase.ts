@@ -469,6 +469,59 @@ export function removeBouquetFromLocalVault(code: string): SavedVaultBouquet[] {
   }
 }
 
+const GARLAND_FEED_DOC_CODE = 'sab_garland_feed_v1';
+const GARLAND_FEED_IMMUTABLE_CREATED_AT = '2026-11-08T00:00:00.000Z';
+const GARLAND_FEED_IMMUTABLE_PAYLOAD = '#sab_garland_feed_v1';
+
+export async function fetchGlobalGarlandFeedFromFirestore(): Promise<SavedVaultBouquet[]> {
+  try {
+    const snap = await getDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE));
+    if (!snap.exists()) return [];
+    const data = snap.data() as Partial<SharedBouquetRecord>;
+    if (!data?.voiceAudioDataUrl) return [];
+    const parsed = JSON.parse(data.voiceAudioDataUrl);
+    if (!Array.isArray(parsed)) return [];
+    return deduplicateVaultList(
+      parsed.filter((item) => item && typeof item.code === 'string' && !item.isDraft && item.pinToShowcase !== false)
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function publishBouquetToGlobalGarlandFeed(
+  entry: SavedVaultBouquet,
+  replaceCode?: string | null
+): Promise<boolean> {
+  if (!entry || !entry.code || entry.isDraft || entry.pinToShowcase === false) return false;
+  if (entry.lockMode && entry.lockMode !== 'none') return false;
+  try {
+    const existing = await fetchGlobalGarlandFeedFromFirestore();
+    const compactEntry: SavedVaultBouquet = {
+      ...entry,
+      isDraft: false,
+      pinToShowcase: true,
+      draftPayload: stripInlineAudioFromPayload(entry.draftPayload),
+    };
+    const filtered = existing.filter(
+      (b) => b.code !== compactEntry.code && (!replaceCode || b.code !== replaceCode)
+    );
+    const merged = deduplicateVaultList([compactEntry, ...filtered]).slice(0, 24);
+    const jsonStr = JSON.stringify(merged);
+    if (jsonStr.length > 880_000) return false;
+
+    await setDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE), {
+      code: GARLAND_FEED_DOC_CODE,
+      payload: GARLAND_FEED_IMMUTABLE_PAYLOAD,
+      createdAt: GARLAND_FEED_IMMUTABLE_CREATED_AT,
+      voiceAudioDataUrl: jsonStr,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const PASS_KEY_DOC_REGEX = /^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$/;
 
 export async function saveStudioPassToFirestore(pass: {

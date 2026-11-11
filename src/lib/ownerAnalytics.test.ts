@@ -18,7 +18,7 @@ import {
   TESTER_SINGLE_DEVICE_SENTINEL,
 } from './monetization';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
-import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken } from '../../api/_lib/paymentHandler.js';
+import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER } from '../../api/_lib/paymentHandler.js';
 
 describe('Stealth Bouquet Gate & Encrypted Per-Visit URL Routing', () => {
   it('generates and verifies per-visit HMAC-signed stealth gate slugs bound to deviceTokenHash', () => {
@@ -216,5 +216,54 @@ describe('First-Party Web & Studio Telemetry Aggregation', () => {
       lockMode: 'passcode',
     });
     assert.equal(summary.bouquetsCreated, initialBouquets + 1);
+  });
+
+  it('persists and merges Owner Vault analytics, paid pass revenue, and tester vouchers across Vercel redeploys', () => {
+    mergeRemoteOwnerVaultIntoMemory({
+      analytics: {
+        webVisits: 420,
+        uniqueVisitors: 310,
+        landingViews: 390,
+        studioSessions: 215,
+        showcaseViews: 95,
+        bouquetsCreated: 88,
+        flowers: { peony: 34, rose: 29 },
+      },
+      testerVouchers: [
+        {
+          passKey: 'BLOOM-TV99-TEST',
+          label: 'QA Deploy Persistence',
+          createdAt: '2026-11-10T00:00:00.000Z',
+          expiresAt: '2026-11-15T00:00:00.000Z',
+          durationHours: 120,
+          dailyCap: 5,
+          retentionDays: 30,
+          status: 'claimed',
+          claimedDeviceHash: 'qa_device_hash_1',
+          bouquetsCreated: 3,
+          blockedAttempts: 1,
+          magicLinkPath: '/?voucher=BLOOM-TV99-TEST',
+        },
+      ],
+    });
+
+    assert.ok(OWNER_ANALYTICS_STATE.webVisits >= 420);
+    assert.ok(OWNER_ANALYTICS_STATE.uniqueVisitors >= 310);
+    assert.ok(OWNER_ANALYTICS_STATE.flowers.peony >= 34);
+    assert.equal(TESTER_VOUCHER_LEDGER.get('BLOOM-TV99-TEST')?.bouquetsCreated, 3);
+
+    const paidPass = createSignedStudioPass({
+      tier: 'pass_7d',
+      region: 'PH',
+      deviceTokenHash: 'buyer_dev_1',
+      paymentProvider: 'paymongo',
+      paymentReference: 'pm_ref_123',
+    });
+    const recordedFirst = recordPaidPassIssuanceServer(paidPass);
+    const recordedDuplicate = recordPaidPassIssuanceServer(paidPass);
+    assert.equal(recordedFirst, true);
+    assert.equal(recordedDuplicate, false);
+    assert.ok(OWNER_ANALYTICS_STATE.passesIssued.pass_7d >= 1);
+    assert.ok(OWNER_ANALYTICS_STATE.revenuePhpCentavos >= 9900);
   });
 });

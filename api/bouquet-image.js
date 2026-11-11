@@ -4,7 +4,12 @@ import os from 'node:os';
 
 const memoryStore = new Map();
 
-function saveBuffer(id, buffer) {
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'amiable-alloy-sw1sf';
+const FIRESTORE_DATABASE_ID =
+  process.env.FIRESTORE_DATABASE_ID || 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
+const FIRESTORE_REST_BASE_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_ID}/documents/shared_bouquets`;
+
+async function saveBuffer(id, buffer) {
   memoryStore.set(id, buffer);
   // Keep memory store bounded
   if (memoryStore.size > 60) {
@@ -17,20 +22,64 @@ function saveBuffer(id, buffer) {
   } catch {
     // Ignore tmp write errors
   }
+
+  // Persist to Firestore so cross-instance GET /api/bouquet-image?id=... or post-deploy downloads never 404
+  try {
+    const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const b64 = buffer.toString('base64');
+    if (safeId.length >= 7 && safeId.length <= 24 && b64.length > 0 && b64.length <= 880000) {
+      const url = `${FIRESTORE_REST_BASE_URL}?documentId=${encodeURIComponent(safeId)}`;
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            code: { stringValue: safeId },
+            payload: { stringValue: '#sab_png_stage_v1' },
+            createdAt: { stringValue: new Date().toISOString() },
+            voiceAudioDataUrl: { stringValue: b64 },
+          },
+        }),
+      });
+    }
+  } catch {
+    // Ignore Firestore fallback errors
+  }
 }
 
-function loadBuffer(id) {
+async function loadBuffer(id) {
   if (memoryStore.has(id)) {
     return memoryStore.get(id);
   }
+  const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '');
   try {
-    const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '');
     const filePath = path.join(os.tmpdir(), `bouquet_${safeId}.png`);
     if (fs.existsSync(filePath)) {
       return fs.readFileSync(filePath);
     }
   } catch {
     // Ignore tmp read errors
+  }
+
+  // Fallback to Firestore if the GET request hit a different serverless instance or followed a redeploy
+  if (safeId.length >= 7 && safeId.length <= 24) {
+    try {
+      const response = await fetch(`${FIRESTORE_REST_BASE_URL}/${encodeURIComponent(safeId)}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (response.ok) {
+        const doc = await response.json();
+        const b64 = doc?.fields?.voiceAudioDataUrl?.stringValue;
+        if (typeof b64 === 'string' && b64.length > 0) {
+          const buf = Buffer.from(b64, 'base64');
+          memoryStore.set(safeId, buf);
+          return buf;
+        }
+      }
+    } catch {
+      // Ignore Firestore read errors
+    }
   }
   return null;
 }
@@ -65,7 +114,7 @@ export default async function handler(req, res) {
   const isDownload = urlObj.searchParams.get('download') === '1';
 
   if (req.method === 'GET' && idParam) {
-    const buffer = loadBuffer(idParam);
+    const buffer = await loadBuffer(idParam);
     if (!buffer) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -97,8 +146,8 @@ export default async function handler(req, res) {
           res.end('Invalid image payload');
           return;
         }
-        const id = `bq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        saveBuffer(id, buffer);
+        const id = `bq_${Date.now()}_${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`;
+        await saveBuffer(id, buffer);
         if (isDownload) {
           res.statusCode = 200;
           res.setHeader('Content-Type', 'image/png');
@@ -145,8 +194,8 @@ export default async function handler(req, res) {
         return;
       }
 
-      const id = `bq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      saveBuffer(id, buffer);
+      const id = `bq_${Date.now()}_${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`;
+      await saveBuffer(id, buffer);
 
       if (isDownload) {
         res.statusCode = 200;

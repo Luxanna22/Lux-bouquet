@@ -129,6 +129,14 @@ async function saveToFirestoreRest(code, payload, extra = {}) {
         integerValue: String(Math.max(0, Math.min(600, Math.round(extra.voiceDurationSec))))
       };
     }
+    if (typeof extra.isPremium === 'boolean') {
+      fields.isPremium = { booleanValue: extra.isPremium };
+    }
+    if (typeof extra.retentionDays === 'number' && Number.isFinite(extra.retentionDays)) {
+      fields.retentionDays = {
+        integerValue: String(Math.max(1, Math.min(36500, Math.round(extra.retentionDays))))
+      };
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
@@ -157,6 +165,12 @@ async function saveToFirestoreRest(code, payload, extra = {}) {
       }
       if (exFields?.repliedAt?.stringValue !== undefined) {
         fields.repliedAt = { stringValue: exFields.repliedAt.stringValue };
+      }
+      if (!fields.isPremium && exFields?.isPremium?.booleanValue !== undefined) {
+        fields.isPremium = { booleanValue: Boolean(exFields.isPremium.booleanValue) };
+      }
+      if (!fields.retentionDays && exFields?.retentionDays?.integerValue !== undefined) {
+        fields.retentionDays = { integerValue: String(exFields.retentionDays.integerValue) };
       }
     }
     const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
@@ -264,7 +278,10 @@ export default async function handler(req, res) {
         voiceStyle: bodyObj.voiceStyle || null,
         voiceTitle: bodyObj.voiceTitle || null,
         voiceDurationSec:
-          typeof bodyObj.voiceDurationSec === 'number' ? bodyObj.voiceDurationSec : null
+          typeof bodyObj.voiceDurationSec === 'number' ? bodyObj.voiceDurationSec : null,
+        isPremium: typeof bodyObj.isPremium === 'boolean' ? bodyObj.isPremium : undefined,
+        retentionDays:
+          typeof bodyObj.retentionDays === 'number' ? bodyObj.retentionDays : undefined
       };
 
       if (!code || !payload) {

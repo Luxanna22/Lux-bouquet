@@ -13,29 +13,47 @@ import {
   ShowcaseBouquetEntry,
 } from '../lib/showcaseGallery';
 import {
+  fetchGlobalGarlandFeedFromFirestore,
   fetchSharedBouquetFromFirestore,
   getSavedVaultBouquets,
 } from '../lib/firebase';
+import { SavedVaultBouquet } from '../types/bouquet';
 import {
   decodeBouquetFromHash,
   localShortCodeCache,
 } from '../lib/shareAndExport';
 
 /**
- * Shared hook to merge user's locally saved/shared bouquets with the curated community showcase,
- * deduplicating identical recipient/sender entries so duplicate drafts never clutter the garland,
- * hydrating any missing payloads from Firestore for 100% database consistency,
+ * Shared hook to merge user's locally saved/shared bouquets and the Firestore global Lace Garland feed
+ * with the curated community showcase, deduplicating identical recipient/sender entries so duplicate drafts
+ * never clutter the garland, hydrating any missing payloads from Firestore for 100% database consistency,
  * and filtering out any >30-day expired bouquets (unless marked `isPremium: true`).
  */
 export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
   const [hydratedPayloads, setHydratedPayloads] = useState<Record<string, string>>({});
+  const [remoteFeedEntries, setRemoteFeedEntries] = useState<SavedVaultBouquet[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let cancelled = false;
-    const localVault = getSavedVaultBouquets();
+    fetchGlobalGarlandFeedFromFirestore()
+      .then((feed) => {
+        if (!cancelled && Array.isArray(feed)) {
+          setRemoteFeedEntries(feed);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultCount]);
 
-    for (const v of localVault) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    const combinedVault = [...getSavedVaultBouquets(), ...remoteFeedEntries];
+
+    for (const v of combinedVault) {
       if (!v || v.isDraft || v.pinToShowcase === false || !v.code || v.code.startsWith('draft_')) {
         continue;
       }
@@ -66,7 +84,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
     return () => {
       cancelled = true;
     };
-  }, [vaultCount, hydratedPayloads]);
+  }, [vaultCount, remoteFeedEntries, hydratedPayloads]);
 
   return useMemo(() => {
     const curated = buildCuratedShowcaseBouquets(nowMs);
@@ -74,13 +92,13 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       return filterShowcaseBouquets(curated, { nowMs });
     }
 
-    const localVault = getSavedVaultBouquets();
+    const combinedVault = [...getSavedVaultBouquets(), ...remoteFeedEntries];
     const seenCodes = new Set<string>();
     const seenRecipientSender = new Set<string>();
     const userEntries: ShowcaseBouquetEntry[] = [];
 
-    for (let idx = 0; idx < localVault.length; idx++) {
-      const v = localVault[idx];
+    for (let idx = 0; idx < combinedVault.length; idx++) {
+      const v = combinedVault[idx];
       if (!v || v.isDraft || v.pinToShowcase === false || (v.code && v.code.startsWith('draft_'))) {
         continue;
       }
@@ -111,13 +129,13 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
         // Ignore decode errors
       }
       userEntries.push(convertVaultBouquetToShowcaseEntry(v, decodedSnap, userEntries.length));
-      if (userEntries.length >= 6) break;
+      if (userEntries.length >= 12) break;
     }
 
     const userCodes = new Set<string>(userEntries.map((u) => u.code));
     const merged = [...userEntries, ...curated.filter((c) => !userCodes.has(c.code))];
     return filterShowcaseBouquets(merged, { nowMs });
-  }, [nowMs, vaultCount, hydratedPayloads]);
+  }, [nowMs, vaultCount, remoteFeedEntries, hydratedPayloads]);
 }
 
 /**

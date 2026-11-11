@@ -105,6 +105,7 @@ import {
   incrementStudioGlobalStat,
   getSavedVaultBouquets,
   saveBouquetToLocalVault,
+  publishBouquetToGlobalGarlandFeed,
 } from '../lib/firebase';
 import { useBouquetStore } from '../store/useBouquetStore';
 import { BouquetStage, FallingPetalsOverlay } from './BouquetStage';
@@ -1395,26 +1396,33 @@ export default function App() {
       }).catch(() => {});
 
       // Save to local account-free Bouquet Vault
+      const vaultEntry = {
+        code,
+        to: card.to || 'Someone Special',
+        from: card.from || 'Yours',
+        recipientName: card.to || 'Someone Special',
+        senderName: card.from || 'Yours',
+        createdAt: new Date().toISOString(),
+        shareUrl: firstPartyUrl,
+        lockMode: lock?.mode || 'none',
+        hasVoice: Boolean(voice?.audioDataUrl),
+        flowerCount: items.length,
+        isPremium: policy.isPremiumEternal,
+        retentionDays: policy.retentionDays,
+        isDraft: false,
+        pinToShowcase: pinToShowcaseChecked,
+        draftPayload: hashPayload,
+      };
       const updatedVault = saveBouquetToLocalVault(
-        {
-          code,
-          to: card.to || 'Someone Special',
-          from: card.from || 'Yours',
-          recipientName: card.to || 'Someone Special',
-          senderName: card.from || 'Yours',
-          createdAt: new Date().toISOString(),
-          shareUrl: firstPartyUrl,
-          lockMode: lock?.mode || 'none',
-          hasVoice: Boolean(voice?.audioDataUrl),
-          flowerCount: items.length,
-          isPremium: policy.isPremiumEternal,
-          retentionDays: policy.retentionDays,
-          isDraft: false,
-          pinToShowcase: true,
-          draftPayload: hashPayload,
-        },
+        vaultEntry,
         currentSessionVaultCodeRef.current
       );
+      if (pinToShowcaseChecked && (lock?.mode || 'none') === 'none') {
+        publishBouquetToGlobalGarlandFeed(
+          vaultEntry,
+          currentSessionVaultCodeRef.current
+        ).catch(() => {});
+      }
       currentSessionVaultCodeRef.current = code;
       setVaultCount(updatedVault.length);
 
@@ -1442,7 +1450,7 @@ export default function App() {
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, activeStudioPass]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, activeStudioPass, pinToShowcaseChecked]
   );
 
   const handleSaveDraftOnDevice = useCallback(() => {
