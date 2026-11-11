@@ -889,29 +889,38 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               </div>
 
               {pendingCheckout.provider === 'kofi' ? (
-                <div className="space-y-3 text-left">
-                  <div className="text-center">
+                <div className="space-y-3.5 text-left pt-1">
+                  {/* Prominent Primary Action: Open Ko-fi Shop */}
+                  <div className="space-y-1.5 text-center">
                     <a
                       href={pendingCheckout.checkoutUrl || 'https://ko-fi.com/luxinnamon/shop'}
                       target="_blank"
                       rel="noopener noreferrer"
                       data-testid="open-kofi-shop-btn"
-                      className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium border border-dashed transition ${
+                      className={`w-full py-3 px-5 rounded-full text-xs sm:text-sm font-semibold shadow-sm ring-2 flex items-center justify-center gap-2 transition active:scale-99 cursor-pointer ${
                         isDarkMode
-                          ? 'border-[#E6B89C] text-[#F0C8B0] hover:bg-[#3B302C]'
-                          : 'border-[#6E4434] text-[#6E4434] bg-[#FFFDF9] hover:bg-[#F3E9DF]'
+                          ? 'bg-[#E6B89C] text-[#231C18] ring-[#E6B89C]/35 hover:bg-[#F0C8B0]'
+                          : 'bg-[#6E4434] text-[#FFFDF9] ring-[#6E4434]/25 hover:bg-[#5B3729]'
                       }`}
                     >
+                      <CoutureBloomSeal className="w-4 h-4 shrink-0" />
                       <span>Open {pendingCheckout.plan.name} on Ko-fi Shop ↗</span>
                     </a>
+                    <p className="text-[10.5px] opacity-70">
+                      1. Complete your order on Ko-fi, then verify your checkout email below
+                    </p>
                   </div>
 
-                  <div className="space-y-1">
+                  <div
+                    className={`pt-3 border-t border-dashed space-y-1.5 ${
+                      isDarkMode ? 'border-[#544540]' : 'border-[#DECBB9]'
+                    }`}
+                  >
                     <label
                       htmlFor="kofi-buyer-email"
-                      className="block text-[10.5px] font-medium opacity-80 text-center"
+                      className="block text-[11px] font-medium opacity-85 text-center"
                     >
-                      Email typed on Ko-fi checkout (not your name)
+                      2. Email typed on Ko-fi checkout (not your name)
                     </label>
                     <input
                       id="kofi-buyer-email"
@@ -920,7 +929,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       value={buyerEmail}
                       onChange={(e) => setBuyerEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className={`w-full px-3.5 py-2 rounded-xl border border-dashed text-xs text-center focus:outline-none focus:border-[#B4846C] ${
+                      className={`w-full px-3.5 py-2.5 rounded-xl border border-dashed text-xs text-center focus:outline-none focus:border-[#B4846C] ${
                         isDarkMode
                           ? 'bg-[#221B19] border-[#66554F] text-[#FBF6F1]'
                           : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#231C18]'

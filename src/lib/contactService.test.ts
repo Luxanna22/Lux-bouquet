@@ -5,10 +5,11 @@ import {
   CONTACT_TOPICS,
   getContactTopicOption,
   validateContactSubmission,
+  validateBouquetEmailDelivery,
   generateClientContactMessageId,
 } from './contactService';
 // @ts-expect-error Testing shared backend handler functions
-import { validateContactPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail } from '../../api/_lib/contactHandler.js';
+import { validateContactPayload, validateBouquetEmailPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail, buildBouquetSurpriseEmail } from '../../api/_lib/contactHandler.js';
 
 test('OFFICIAL_STUDIO_EMAIL is set to hello@sendabouquet.online', () => {
   assert.equal(OFFICIAL_STUDIO_EMAIL, 'hello@sendabouquet.online');
@@ -64,7 +65,7 @@ test('generateClientContactMessageId matches Firestore security rule pattern', (
   assert.match(id, /^msg_[0-9]{10,16}_[a-zA-Z0-9]{4,16}$/);
 });
 
-test('backend email builders include sender details, reply-to, and hello@sendabouquet.online', () => {
+test('backend email builders include sender details, reply-to, ruled paper lines, lace, and drawn crest', () => {
   const backendCheck = validateContactPayload({
     topic: 'flower_wish',
     name: 'Mina',
@@ -84,6 +85,8 @@ test('backend email builders include sender details, reply-to, and hello@sendabo
   assert.match(studioEmail.subject, /Flower Wish/);
   assert.match(studioEmail.subject, /Mina/);
   assert.match(studioEmail.html, /mina@example\.com/);
+  assert.match(studioEmail.html, /<svg[\s\S]*?<\/svg>/);
+  assert.match(studioEmail.html, /border-bottom:1px dashed #DFCEC0/);
 
   const visitorEmail = buildVisitorConfirmationEmail({
     topicLabel: 'Flower Wish',
@@ -93,4 +96,40 @@ test('backend email builders include sender details, reply-to, and hello@sendabo
   assert.match(visitorEmail.subject, /Send A Bouquet/);
   assert.match(visitorEmail.html, /hello@sendabouquet\.online/);
   assert.match(visitorEmail.html, /white gardenia/);
+  assert.match(visitorEmail.html, /<svg[\s\S]*?<\/svg>/);
+  assert.match(visitorEmail.html, /border-bottom:1px dashed #DFCEC0/);
 });
+
+test('Surprise Bouquet Email delivery keeps sender unnamed and formats "Someone sent you a Bouquet"', () => {
+  const invalidCheck = validateBouquetEmailDelivery({
+    recipientEmail: 'invalid-email',
+    giftUrl: 'https://www.sendabouquet.online/abc1234',
+  });
+  assert.equal(invalidCheck.ok, false);
+
+  const validCheck = validateBouquetEmailPayload({
+    recipientEmail: 'sophia@example.com',
+    recipientName: 'Sophia',
+    giftUrl: 'https://www.sendabouquet.online/abc1234',
+    hasVoiceNote: true,
+    hasPhotoCard: true,
+    isLocked: false,
+  });
+  assert.equal(validCheck.ok, true);
+
+  const surpriseMail = buildBouquetSurpriseEmail({
+    recipientName: 'Sophia',
+    giftUrl: 'https://www.sendabouquet.online/abc1234',
+    hasVoiceNote: true,
+    hasPhotoCard: true,
+    isLocked: true,
+  });
+  assert.equal(surpriseMail.subject, 'For Sophia — Someone sent you a Bouquet');
+  assert.match(surpriseMail.html, /Someone sent you a Bouquet/);
+  assert.match(surpriseMail.html, /For Sophia,/);
+  assert.match(surpriseMail.html, /https:\/\/www\.sendabouquet\.online\/abc1234/);
+  assert.doesNotMatch(surpriseMail.html, /Julian/);
+});
+
+
+

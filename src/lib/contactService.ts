@@ -232,3 +232,97 @@ export async function submitContactNote(
     };
   }
 }
+
+export interface BouquetEmailDeliveryInput {
+  recipientEmail: string;
+  recipientName?: string;
+  giftUrl: string;
+  hasVoiceNote?: boolean;
+  hasPhotoCard?: boolean;
+  isLocked?: boolean;
+}
+
+export interface BouquetEmailDeliveryResult {
+  ok: boolean;
+  recipientEmail?: string;
+  subject?: string;
+  emailDispatched?: boolean;
+  error?: string;
+}
+
+export function validateBouquetEmailDelivery(
+  input: BouquetEmailDeliveryInput
+): { ok: true; value: Required<BouquetEmailDeliveryInput> } | { ok: false; error: string } {
+  const recipientEmail =
+    typeof input.recipientEmail === 'string' ? input.recipientEmail.trim().slice(0, 120) : '';
+  const recipientName =
+    typeof input.recipientName === 'string' ? input.recipientName.trim().slice(0, 60) : '';
+  const giftUrl = typeof input.giftUrl === 'string' ? input.giftUrl.trim().slice(0, 2000) : '';
+
+  if (!recipientEmail || !EMAIL_REGEX.test(recipientEmail)) {
+    return {
+      ok: false,
+      error: "Please enter a valid email address for your loved one.",
+    };
+  }
+
+  if (!giftUrl || !/^https?:\/\//i.test(giftUrl)) {
+    return {
+      ok: false,
+      error: 'Please seal your bouquet first so a valid gift link is ready to send.',
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      recipientEmail,
+      recipientName,
+      giftUrl,
+      hasVoiceNote: Boolean(input.hasVoiceNote),
+      hasPhotoCard: Boolean(input.hasPhotoCard),
+      isLocked: Boolean(input.isLocked),
+    },
+  };
+}
+
+export async function sendBouquetSurpriseEmail(
+  input: BouquetEmailDeliveryInput
+): Promise<BouquetEmailDeliveryResult> {
+  const validated = validateBouquetEmailDelivery(input);
+  if (!validated.ok) {
+    return {
+      ok: false,
+      error: validated.error,
+    };
+  }
+
+  try {
+    const resp = await fetch('/api/send-bouquet-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validated.value),
+    });
+
+    const data = await resp.json().catch(() => null);
+    if (resp.ok && data?.ok) {
+      return {
+        ok: true,
+        recipientEmail: data.recipientEmail || validated.value.recipientEmail,
+        subject: data.subject,
+        emailDispatched: Boolean(data.emailDispatched),
+      };
+    }
+
+    return {
+      ok: false,
+      error: data?.error || 'Could not send surprise email right now. Please try again.',
+    };
+  } catch {
+    return {
+      ok: false,
+      error: 'Could not send surprise email right now. Please try again.',
+    };
+  }
+}
+

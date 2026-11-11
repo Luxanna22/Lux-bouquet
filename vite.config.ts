@@ -326,7 +326,10 @@ function handleContactMiddleware(
   res: ServerResponse,
   next: () => void
 ) {
-  if (!req.url || !req.url.startsWith('/api/contact')) {
+  const isContactRoute = Boolean(req.url && req.url.startsWith('/api/contact'));
+  const isBouquetEmailRoute = Boolean(req.url && req.url.startsWith('/api/send-bouquet-email'));
+
+  if (!isContactRoute && !isBouquetEmailRoute) {
     next();
     return;
   }
@@ -351,16 +354,18 @@ function handleContactMiddleware(
   req.on('end', async () => {
     try {
       // @ts-expect-error Shared ESM handler in /api/_lib/contactHandler.js
-      const { processContactSubmission } = await import('./api/_lib/contactHandler.js');
+      const { processContactSubmission, processBouquetEmailDelivery } = await import('./api/_lib/contactHandler.js');
       const parsed = JSON.parse(rawBody || '{}');
-      const result = await processContactSubmission(parsed);
+      const result = isBouquetEmailRoute
+        ? await processBouquetEmailDelivery(parsed)
+        : await processContactSubmission(parsed);
       res.statusCode = result.statusCode;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify(result.body));
     } catch {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ ok: false, error: 'Unable to send note right now.' }));
+      res.end(JSON.stringify({ ok: false, error: 'Unable to send email right now.' }));
     }
   });
 }

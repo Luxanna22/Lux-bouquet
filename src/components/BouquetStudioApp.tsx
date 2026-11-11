@@ -125,6 +125,7 @@ import { VoiceRecorderStudio, VoiceKeepsakePlayerModal } from './VoiceRecorderSt
 import { LandingPageView } from './LandingPageView';
 import { BouquetVaultModal } from './BouquetVaultModal';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
+import { sendBouquetSurpriseEmail } from '../lib/contactService';
 import {
   formatPassRemainingTime,
   FREE_CARD_NOTE_MAX_CHARS,
@@ -286,6 +287,10 @@ export default function App() {
   const [shortShareUrl, setShortShareUrl] = useState<string | null>(null);
   const [isShorteningUrl, setIsShorteningUrl] = useState(false);
   const [copiedSealedLink, setCopiedSealedLink] = useState(false);
+  const [surpriseRecipientEmail, setSurpriseRecipientEmail] = useState<string>('');
+  const [isSendingSurpriseEmail, setIsSendingSurpriseEmail] = useState<boolean>(false);
+  const [surpriseEmailSentTo, setSurpriseEmailSentTo] = useState<string | null>(null);
+  const [surpriseEmailError, setSurpriseEmailError] = useState<string | null>(null);
   const [savedDraftPulse, setSavedDraftPulse] = useState(false);
   const [isInAppBrowserModalOpen, setIsInAppBrowserModalOpen] = useState(false);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
@@ -1452,6 +1457,8 @@ export default function App() {
     setSealedGiftUrl(firstPartyUrl);
     setSealedBouquetCode(currentBouquetShortCode);
     setIsShorteningUrl(false);
+    setSurpriseEmailSentTo(null);
+    setSurpriseEmailError(null);
     isSealedBouquetPaidRef.current = Boolean(passVerify.valid && effectivePass);
     setShareStep('ready');
     setIsShareModalOpen(true);
@@ -2564,7 +2571,7 @@ export default function App() {
                     </svg>
                   </div>
 
-                  {/* Minimal Editorial Dedication Lockup Over the Living Peony Bloom */}
+                  {/* Minimal Editorial Dedication Lockup Over the Living Peony Bloom (Keeps Sender Unnamed for Surprise) */}
                   <h2
                     className="mx-auto leading-[0.98] tracking-[-0.02em]"
                     style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -2581,27 +2588,19 @@ export default function App() {
                         isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                       }`}
                     >
-                      {card.to || 'Someone Special'}
+                      {card.to || 'You'}
                     </span>
                   </h2>
 
-                  {card.from && (
-                    <p
-                      className={`mt-3 sm:mt-4 text-lg sm:text-xl italic font-normal ${
-                        isDarkMode ? 'text-[#E5D6CE]' : 'text-[#5C473C]'
-                      }`}
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                    >
-                      with love,{' '}
-                      <span
-                        className={`not-italic font-semibold ${
-                          isDarkMode ? 'text-[#F0C2AE]' : 'text-[#7A4B3A]'
-                        }`}
-                      >
-                        {card.from}
-                      </span>
-                    </p>
-                  )}
+                  <p
+                    data-testid="recipient-surprise-subtitle"
+                    className={`mt-3 sm:mt-4 text-lg sm:text-xl italic font-normal ${
+                      isDarkMode ? 'text-[#E5D6CE]' : 'text-[#5C473C]'
+                    }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Someone sent you a bouquet
+                  </p>
 
                   {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK (Clean Editorial Numerals, Zero Box Clutter) */}
                   {isCountdownLocked ? (
@@ -3287,29 +3286,48 @@ export default function App() {
                         </button>
                       </div>
 
-                      {/* Card Note Input Only (Recipient & Sender are added when sealing/sending) */}
-                      <div className="relative">
-                        <textarea
-                          rows={4}
-                          maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
-                          value={card.message}
-                          placeholder="Write your heartfelt note..."
-                          onChange={(e) => updateCard({ message: e.target.value })}
-                          aria-label="Card message"
-                          className="w-full px-3 py-2 pb-6 rounded-xl border border-dashed border-[#DECBB9] dark:border-[#5C4B47] bg-[#FAF4EE]/60 dark:bg-[#2B2321] text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto placeholder:text-[#9A877B]/75"
-                          style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
-                        />
-                        <span
-                          className={`absolute bottom-1.5 right-2.5 text-[10px] pointer-events-none ${
-                            card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                              ? 'text-[#B4846C] font-medium'
-                              : 'text-[#9A877B]'
-                          }`}
-                        >
-                          {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                            ? `✦ Couture Note · ${card.message.length}/${PREMIUM_CARD_NOTE_MAX_CHARS}`
-                            : `${card.message.length}/${FREE_CARD_NOTE_MAX_CHARS} free (${PREMIUM_CARD_NOTE_MAX_CHARS} Couture ✦)`}
-                        </span>
+                      {/* Card Note Input Only — Letterpress Stationery Sheet */}
+                      <div
+                        className={`p-3 rounded-2xl border border-dashed transition-colors ${
+                          isDarkMode
+                            ? 'bg-[#352C29] border-[#5E4E49]'
+                            : 'bg-[#FFFDF9] border-[#DECBB9]'
+                        }`}
+                      >
+                        <div className="relative">
+                          <textarea
+                            rows={4}
+                            maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
+                            value={card.message}
+                            placeholder="Write your heartfelt note..."
+                            onChange={(e) => updateCard({ message: e.target.value })}
+                            aria-label="Card message"
+                            className={`w-full px-3.5 py-2.5 pb-7 rounded-xl border border-dashed text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto transition-colors ${
+                              isDarkMode
+                                ? 'bg-[#2B2321] border-[#544540] text-[#FBF6F1] placeholder:text-[#9A877B]/75'
+                                : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#2A201D] placeholder:text-[#9A877B]/80'
+                            }`}
+                            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
+                          />
+                          <span
+                            className={`absolute bottom-2 right-3 text-[10px] pointer-events-none inline-flex items-center gap-1 ${
+                              card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                                ? 'text-[#B4846C] font-medium'
+                                : 'text-[#9A877B]'
+                            }`}
+                          >
+                            {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
+                              <>
+                                <CoutureBloomSeal className="w-3 h-3" />
+                                <span>Couture Note · {card.message.length}/{PREMIUM_CARD_NOTE_MAX_CHARS}</span>
+                              </>
+                            ) : (
+                              <span>
+                                {card.message.length}/{FREE_CARD_NOTE_MAX_CHARS} free ({PREMIUM_CARD_NOTE_MAX_CHARS} Couture)
+                              </span>
+                            )}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -3363,16 +3381,14 @@ export default function App() {
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
                   <span className="italic opacity-75 mr-1">For</span>
-                  <span className="font-semibold tracking-tight">{card.to || 'My Dearest'}</span>
-                  {card.from && (
-                    <span
-                      className={`ml-1.5 sm:ml-2 italic text-[11px] sm:text-sm ${
-                        isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
-                      }`}
-                    >
-                      · with love, {card.from}
-                    </span>
-                  )}
+                  <span className="font-semibold tracking-tight">{card.to || 'You'}</span>
+                  <span
+                    className={`ml-1.5 sm:ml-2 italic text-[11px] sm:text-sm ${
+                      isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                    }`}
+                  >
+                    · Someone sent you a bouquet
+                  </span>
                 </div>
               </div>
 
@@ -4943,8 +4959,14 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* Card Note Input Only (Recipient & Sender are added when sealing/sending) */}
-                  <div className="p-3.5 rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1C1A]">
+                  {/* Card Note Input Only — Letterpress Stationery Sheet */}
+                  <div
+                    className={`p-3.5 rounded-2xl border border-dashed transition-colors ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#5E4E49]'
+                        : 'bg-[#FFFDF9] border-[#DECBB9]'
+                    }`}
+                  >
                     <div className="relative">
                       <textarea
                         rows={4}
@@ -4954,19 +4976,30 @@ export default function App() {
                         onFocus={handleCardInputFocus}
                         onChange={(e) => updateCard({ message: e.target.value })}
                         aria-label="Card message"
-                        className="w-full px-3 py-2 pb-6 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-[#1C1917] dark:text-stone-100 text-sm focus:outline-none focus:border-[#B4846C] focus:ring-1 focus:ring-[#B4846C]/20 resize-none transition"
-                        style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
+                        className={`w-full px-3.5 py-2.5 pb-7 rounded-xl border border-dashed text-sm focus:outline-none focus:border-[#B4846C] resize-none transition ${
+                          isDarkMode
+                            ? 'bg-[#2B2321] border-[#544540] text-[#FBF6F1] placeholder:text-[#9A877B]/75'
+                            : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#2A201D] placeholder:text-[#9A877B]/80'
+                        }`}
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
                       />
                       <span
-                        className={`absolute bottom-1.5 right-2.5 text-[10px] pointer-events-none ${
+                        className={`absolute bottom-2 right-3 text-[10px] pointer-events-none inline-flex items-center gap-1 ${
                           card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
                             ? 'text-[#B4846C] font-medium'
                             : 'text-[#9A877B]'
                         }`}
                       >
-                        {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                          ? `✦ Couture Note · ${card.message.length}/${PREMIUM_CARD_NOTE_MAX_CHARS}`
-                          : `${card.message.length}/${FREE_CARD_NOTE_MAX_CHARS} free (${PREMIUM_CARD_NOTE_MAX_CHARS} Couture ✦)`}
+                        {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
+                          <>
+                            <CoutureBloomSeal className="w-3 h-3" />
+                            <span>Couture Note · {card.message.length}/{PREMIUM_CARD_NOTE_MAX_CHARS}</span>
+                          </>
+                        ) : (
+                          <span>
+                            {card.message.length}/{FREE_CARD_NOTE_MAX_CHARS} free ({PREMIUM_CARD_NOTE_MAX_CHARS} Couture)
+                          </span>
+                        )}
                       </span>
                     </div>
                   </div>
@@ -5125,38 +5158,13 @@ export default function App() {
                   <X className="w-4 h-4" />
                 </button>
 
-                {/* Embossed Botanical Wax Seal & Pressed Sage Leaf Header (Zero All-Caps Shouting) */}
-                <div className="flex items-center gap-2.5 mb-3">
-                  <svg viewBox="0 0 56 38" className="w-14 h-9 overflow-visible select-none" aria-hidden="true">
-                    {/* Delicate Sage Leaf Sprig Behind Seal */}
-                    <path
-                      d="M 22,19 C 34,10 46,12 52,18 C 44,24 32,24 22,19 Z"
-                      fill="rgba(122, 163, 135, 0.28)"
-                      stroke="#6A9478"
-                      strokeWidth="1.1"
-                    />
-                    {/* Embossed Wax Seal */}
-                    <circle
-                      cx="19"
-                      cy="19"
-                      r="14"
-                      fill={cardPalette.seal}
-                    />
-                    <circle
-                      cx="19"
-                      cy="19"
-                      r="10"
-                      fill="none"
-                      stroke="#FFFDF9"
-                      strokeWidth="0.9"
-                      strokeDasharray="2.5 2"
-                      opacity="0.75"
-                    />
-                    <path
-                      d="M19,16.2 C16.6,13.6 13,15.4 15,18.8 L19,22.6 L23,18.8 C25,15.4 21.4,13.6 19,16.2 Z"
-                      fill="#FFFDF9"
-                    />
-                  </svg>
+                {/* Signature Botanical Bloom Crest & Wax Seal Header */}
+                <div className="flex flex-col items-center justify-center mb-3 pt-0.5">
+                  <BrandLogoMark
+                    variant="crest"
+                    isDarkMode={false}
+                    className="w-22 h-13 select-none"
+                  />
                 </div>
 
                 {/* Handwritten Greeting ("Dearest ...,") */}
@@ -5251,80 +5259,121 @@ export default function App() {
         );
       })()}
 
-      {/* MOBILE / COMPACT GREETING CARD EDITOR MODAL */}
+      {/* GREETING CARD STATIONERY NOTE MODAL (Matches Email & Letterpress Aesthetic) */}
       {isCardModalOpen && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label="Edit Greeting Card"
           onClick={() => setIsCardModalOpen(false)}
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-2xl p-4 shadow-xl border relative space-y-3 ${
+            className={`w-full max-w-md rounded-[26px] border border-dashed p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.2)] relative space-y-4 transition-colors ${
               isDarkMode
-                ? 'bg-[#1E1C1A] border-stone-700 text-stone-100'
-                : 'bg-white border-stone-200 text-[#1C1917]'
+                ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
+                : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18]'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-[#B4846C]" />
-                <h3 className="text-sm font-semibold">Greeting Card</h3>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer text-stone-600 dark:text-stone-300">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setIsCardModalOpen(false)}
+              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+                isDarkMode
+                  ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                  : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#F5EDE4]'
+              }`}
+              aria-label="Close card editor"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Centered Drawn Botanical Crest & Serif Title (Email Stationery Style) */}
+            <div className="text-center space-y-1 pt-0.5">
+              <BrandLogoMark
+                variant="crest"
+                isDarkMode={isDarkMode}
+                className="w-20 h-12 mx-auto"
+              />
+              <h3
+                className="text-2xl font-semibold tracking-tight"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                Card Note
+              </h3>
+              <div className="flex items-center justify-center pt-0.5">
+                <label
+                  className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border border-dashed text-[11px] font-medium cursor-pointer transition ${
+                    isDarkMode
+                      ? 'bg-[#2B2321] border-[#544540] text-[#D8C7BE]'
+                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#6E5D54]'
+                  }`}
+                >
                   <input
                     type="checkbox"
                     checked={card.visibleOnStage}
                     onChange={(e) => updateCard({ visibleOnStage: e.target.checked })}
-                    className="accent-[#B4846C] rounded cursor-pointer w-3.5 h-3.5"
+                    className="accent-[#6E4434] rounded cursor-pointer w-3 h-3"
                   />
-                  <span>Show</span>
+                  <span>Show envelope on bouquet</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsCardModalOpen(false)}
-                  className="p-1 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400"
-                  aria-label="Close card editor"
-                >
-                  <X className="w-4 h-4" />
-                </button>
               </div>
             </div>
 
-            {/* Card Note Input Only */}
-            <div className="relative">
+            {/* Recessed Parchment Note Box with Dashed Border */}
+            <div
+              className={`p-3.5 rounded-2xl border border-dashed relative ${
+                isDarkMode
+                  ? 'bg-[#2B2321] border-[#544540]'
+                  : 'bg-[#FAF4EE] border-[#E2D1C1]'
+              }`}
+            >
               <textarea
                 rows={4}
                 maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
                 value={card.message}
-                placeholder="Write your heartfelt note..."
+                placeholder="Write a heartfelt note for your bouquet..."
                 onChange={(e) => updateCard({ message: e.target.value })}
                 aria-label="Card message"
-                className="w-full px-3 py-2 pb-6 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-[#141211] text-sm focus:outline-none focus:border-[#B4846C] resize-none"
-                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '16px' }}
+                className={`w-full px-1 py-0.5 pb-6 bg-transparent border-0 text-base leading-relaxed focus:outline-none resize-none ${
+                  isDarkMode
+                    ? 'text-[#FBF6F1] placeholder:text-[#9A877B]/75'
+                    : 'text-[#2A201D] placeholder:text-[#9A877B]/85'
+                }`}
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               />
               <span
-                className={`absolute bottom-1.5 right-2.5 text-[10px] pointer-events-none ${
+                className={`absolute bottom-2.5 right-3.5 text-[10.5px] pointer-events-none inline-flex items-center gap-1 ${
                   card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
                     ? 'text-[#B4846C] font-medium'
                     : 'text-[#9A877B]'
                 }`}
               >
-                {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                  ? `✦ Couture Note · ${card.message.length}/${PREMIUM_CARD_NOTE_MAX_CHARS}`
-                  : `${card.message.length}/${FREE_CARD_NOTE_MAX_CHARS} free (${PREMIUM_CARD_NOTE_MAX_CHARS} Couture ✦)`}
+                {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
+                  <>
+                    <CoutureBloomSeal className="w-3 h-3" />
+                    <span>Couture Note · {card.message.length}/{PREMIUM_CARD_NOTE_MAX_CHARS}</span>
+                  </>
+                ) : (
+                  <span>
+                    {card.message.length}/{FREE_CARD_NOTE_MAX_CHARS} free ({PREMIUM_CARD_NOTE_MAX_CHARS} Couture)
+                  </span>
+                )}
               </span>
             </div>
 
             <button
               type="button"
               onClick={() => setIsCardModalOpen(false)}
-              className="w-full py-2 rounded-xl bg-[#1C1917] text-white dark:bg-stone-100 dark:text-[#1C1917] text-xs font-medium"
+              className={`w-full py-2.5 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
+                isDarkMode
+                  ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                  : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+              }`}
             >
-              Done
+              Save Note
             </button>
           </div>
         </div>
@@ -5911,6 +5960,172 @@ export default function App() {
                       </>
                     )}
                   </button>
+                </div>
+
+                {/* Couture Feature: Send Surprise Bouquet via Email ("Someone sent you a Bouquet") */}
+                <div
+                  data-testid="share-email-delivery-card"
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-2.5 ${
+                    isDarkMode
+                      ? 'bg-[#2B2321]/90 border-[#5E4E49]'
+                      : 'bg-[#FAF4EE]/95 border-[#DFCDBB]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Mail className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                      <span
+                        className="text-[15px] font-semibold leading-tight truncate"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        Send Surprise Bouquet via Email
+                      </span>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed text-[10px] font-medium shrink-0 ${
+                        isBouquetUnlockedByPass || isSealedBouquetPaidRef.current
+                          ? isDarkMode
+                            ? 'bg-[#352C29] border-[#E6B89C]/60 text-[#E6B89C]'
+                            : 'bg-[#FFFDF9] border-[#C9A88E] text-[#6E4434]'
+                          : isDarkMode
+                          ? 'bg-[#352C29] border-[#66554F] text-[#E6B89C]'
+                          : 'bg-[#FFFDF9] border-[#D8C3B0] text-[#7A4B3A]'
+                      }`}
+                    >
+                      <CoutureBloomSeal className="w-2.5 h-2.5" />
+                      <span>
+                        {isBouquetUnlockedByPass || isSealedBouquetPaidRef.current
+                          ? 'Couture Ready'
+                          : 'Couture'}
+                      </span>
+                    </span>
+                  </div>
+
+                  <p
+                    className={`text-[11px] leading-relaxed ${
+                      isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                    }`}
+                  >
+                    Sends a stationery letter titled{' '}
+                    <span className="italic font-medium">
+                      “{card.to ? `For ${card.to} — ` : ''}Someone sent you a Bouquet”
+                    </span>{' '}
+                    — keeping your name a surprise until they unwrap it.
+                  </p>
+
+                  {surpriseEmailSentTo ? (
+                    <div
+                      data-testid="surprise-email-sent-badge"
+                      className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 text-xs ${
+                        isDarkMode
+                          ? 'bg-[#352C29] border-[#66554F] text-[#E6B89C]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#6E4434]'
+                      }`}
+                    >
+                      <span className="truncate">
+                        Surprise bouquet sent to <span className="font-semibold">{surpriseEmailSentTo}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSurpriseEmailSentTo(null);
+                          setSurpriseRecipientEmail('');
+                          setSurpriseEmailError(null);
+                        }}
+                        className="text-[11px] underline decoration-dashed underline-offset-2 shrink-0 cursor-pointer"
+                      >
+                        Send another
+                      </button>
+                    </div>
+                  ) : isBouquetUnlockedByPass || isSealedBouquetPaidRef.current ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="email"
+                          data-testid="share-recipient-email-input"
+                          aria-label="Loved one's email address"
+                          disabled={isSendingSurpriseEmail}
+                          value={surpriseRecipientEmail}
+                          onChange={(e) => {
+                            setSurpriseRecipientEmail(e.target.value);
+                            if (surpriseEmailError) setSurpriseEmailError(null);
+                          }}
+                          placeholder="Loved one's email address..."
+                          className={`flex-1 min-w-0 px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none transition-colors ${
+                            isDarkMode
+                              ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
+                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18] placeholder:text-[#9A897E] focus:border-[#7A4B3A]'
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          data-testid="send-surprise-email-btn"
+                          disabled={isSendingSurpriseEmail}
+                          onClick={async () => {
+                            const giftUrl = sealedGiftUrl || shortShareUrl || getShareUrl(true);
+                            setIsSendingSurpriseEmail(true);
+                            setSurpriseEmailError(null);
+                            const res = await sendBouquetSurpriseEmail({
+                              recipientEmail: surpriseRecipientEmail,
+                              recipientName: card.to,
+                              giftUrl,
+                              hasVoiceNote: Boolean(voice?.visibleOnStage && voice?.audioDataUrl),
+                              hasPhotoCard: items.some((it) => Boolean(it.photoStyle)),
+                              isLocked: Boolean(lock && lock.mode !== 'none'),
+                            });
+                            setIsSendingSurpriseEmail(false);
+                            if (!res.ok) {
+                              setSurpriseEmailError(res.error || 'Could not send email right now.');
+                              return;
+                            }
+                            setSurpriseEmailSentTo(res.recipientEmail || surpriseRecipientEmail.trim());
+                            triggerToast('Surprise bouquet email sent!');
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer disabled:opacity-60 ${
+                            isDarkMode
+                              ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                              : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                          }`}
+                        >
+                          <Send className="w-3 h-3" />
+                          <span>{isSendingSurpriseEmail ? 'Sending...' : 'Send Email'}</span>
+                        </button>
+                      </div>
+
+                      {surpriseEmailError && (
+                        <div
+                          role="alert"
+                          data-testid="surprise-email-error"
+                          className={`px-3 py-1.5 rounded-xl border border-dashed text-[11px] ${
+                            isDarkMode
+                              ? 'bg-[#352C29] border-[#8C6A5D] text-[#E6B89C]'
+                              : 'bg-[#FFFDF9] border-[#C8A992] text-[#6E4434]'
+                          }`}
+                        >
+                          {surpriseEmailError}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid="unlock-email-delivery-btn"
+                      onClick={() => {
+                        shouldResetStudioOnShareCloseRef.current = false;
+                        setIsShareModalOpen(false);
+                        setCheckoutTriggerAction('share');
+                        setIsCheckoutModalOpen(true);
+                      }}
+                      className={`w-full py-2 px-3.5 rounded-xl border border-dashed text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        isDarkMode
+                          ? 'bg-[#352C29] border-[#E6B89C]/60 text-[#E6B89C] hover:bg-[#463A36]'
+                          : 'bg-[#FFFDF9] border-[#C9A88E] text-[#6E4434] hover:bg-[#F3E9DF]'
+                      }`}
+                    >
+                      <CoutureBloomSeal className="w-3.5 h-3.5" />
+                      <span>Unlock Surprise Email Delivery</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Custom Lineart / Soft Botanical QR Code with Center Logo & Top-Left Download Icon */}

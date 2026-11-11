@@ -6,11 +6,11 @@ import {
   Heart,
   Sun,
   Moon,
-  X,
 } from 'lucide-react';
 import { fetchStudioGlobalStats, StudioGlobalStats } from '../lib/firebase';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
 import { BrandLogoMark } from './BrandLogoMark';
+import { LegalStationeryModal } from './LegalStationeryModal';
 import {
   MiniWrapConeSVG,
   MiniRibbonBowSVG,
@@ -51,20 +51,24 @@ interface LandingPageViewProps {
 
 const FAQ_ITEMS = [
   {
-    q: 'Is it free to craft bouquets?',
-    a: 'Yes! You can craft unlimited custom digital bouquets and share with loved ones completely for free.',
+    q: 'Is it free to craft and share bouquets?',
+    a: 'Yes! You can arrange unlimited custom digital bouquets with signature flowers, wraps, ribbons, and a personal card note completely for free. Free sealed bouquets stay active for 30 days.',
   },
   {
-    q: 'Can I record a voice message?',
-    a: 'Yes! Record your voice directly into a Mixtape, Vintage Vinyl, Voice Plushie, Music Box, or Locket attached to your bouquet.',
+    q: 'What comes with a Couture Pass or Single Bouquet unlock?',
+    a: 'Unlocking a Single Bouquet ($0.99), 7-Day Pass ($2.99), or 30-Day Eternal Pass ($5.99) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 500-character notes, and eternal links on 30-day passes.',
   },
   {
-    q: 'How do the date & secret locks work?',
-    a: 'You can seal your bouquet, card, and voice note behind a live date countdown or a secret question only your recipient knows.',
+    q: 'Can I add photos and a recorded voice message?',
+    a: 'Yes! You can upload personal photos into Polaroid, Postage, Cameo, 35mm Film, or Herbarium frames—either tucked inside the bouquet or floating freely—and record your voice into a Mixtape, Vinyl, Plushie, Music Box, or Locket.',
   },
   {
-    q: 'How do they receive the bouquet?',
-    a: 'You get a short gift link to send anywhere—when opened, the bouquet unwraps and blooms stem-by-stem on their screen.',
+    q: 'How do gift links, QR codes, and secret locks work?',
+    a: 'When you seal a bouquet, you receive a shareable link and a customizable botanical QR code with our floral emblem in the center. You can also lock the reveal behind a live date countdown or a secret question.',
+  },
+  {
+    q: 'Do I need an account to save drafts or use my pass?',
+    a: 'No account or login is ever required. Your saved bouquets live privately on your device, and your portable BLOOM-XXXX-XXXX pass key can be restored anytime across devices.',
   },
 ];
 
@@ -2220,16 +2224,26 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     strokeWidth="0.8"
                   />
                 </g>
-                {/* Pressed Blush Blossom */}
+                {/* Pressed Multi-Layered Blush & Peach Blossom */}
                 <g transform="translate(60, 38) scale(0.72)">
                   {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
                     <path
-                      key={a}
+                      key={`outer-${a}`}
                       transform={`rotate(${a})`}
                       d="M 0,0 C -8,-7 -11,-20 0,-25 C 11,-20 8,-7 0,0 Z"
                       fill={isDarkMode ? 'rgba(244, 166, 190, 0.32)' : 'rgba(252, 224, 234, 0.92)'}
                       stroke={isDarkMode ? '#E5A3B7' : '#C87A90'}
-                      strokeWidth="1.3"
+                      strokeWidth="1.25"
+                    />
+                  ))}
+                  {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((a) => (
+                    <path
+                      key={`mid-${a}`}
+                      transform={`rotate(${a})`}
+                      d="M 0,0 C -6,-5 -8,-14 0,-18 C 8,-14 6,-5 0,0 Z"
+                      fill={isDarkMode ? 'rgba(251, 207, 184, 0.38)' : 'rgba(254, 229, 208, 0.88)'}
+                      stroke={isDarkMode ? '#E5A3B7' : '#C87A90'}
+                      strokeWidth="1.05"
                     />
                   ))}
                   <circle
@@ -2251,7 +2265,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     : 'bg-[#FFFDF9] border-[#D8C3B0]'
                 }`}
               >
-                {/* Top Row of Letter Paper: "Dear Studio," Salutation + Perforated Floral Postage Stamp & Postmark */}
+                {/* Top Row of Letter Paper: "Dear Studio," Salutation + Drawn Botanical Brand Crest on the Right */}
                 <div className="relative flex items-start justify-between gap-3 mb-2 sm:mb-3 pt-1">
                   <div className="pt-2 sm:pt-3">
                     <span
@@ -2264,91 +2278,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </span>
                   </div>
 
-                  {/* Perforated Botanical Postage Stamp & Wavy Cancellation Postmark */}
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 136 58"
-                    className="w-24 sm:w-30 h-11 sm:h-13 shrink-0 select-none overflow-visible opacity-90"
-                  >
-                    {/* Wavy Postmark Lines */}
-                    <path
-                      d="M 4,20 Q 16,15 28,20 T 52,20 T 76,20"
-                      fill="none"
-                      stroke={isDarkMode ? '#8C766C' : '#C2AEA0'}
-                      strokeWidth="1"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M 4,28 Q 16,23 28,28 T 52,28 T 76,28"
-                      fill="none"
-                      stroke={isDarkMode ? '#8C766C' : '#C2AEA0'}
-                      strokeWidth="1"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M 4,36 Q 16,31 28,36 T 52,36 T 76,36"
-                      fill="none"
-                      stroke={isDarkMode ? '#8C766C' : '#C2AEA0'}
-                      strokeWidth="1"
-                      strokeLinecap="round"
-                    />
-                    {/* Circular Postmark Ring */}
-                    <circle
-                      cx="72"
-                      cy="28"
-                      r="14"
-                      fill="none"
-                      stroke={isDarkMode ? '#A48B80' : '#B49B8C'}
-                      strokeWidth="1.05"
-                      strokeDasharray="2.5 2"
-                    />
-                    <circle
-                      cx="72"
-                      cy="28"
-                      r="10"
-                      fill="none"
-                      stroke={isDarkMode ? '#8C766C' : '#C7B4A7'}
-                      strokeWidth="0.75"
-                    />
-                    {/* Perforated Postage Stamp */}
-                    <g transform="translate(86, 4) rotate(3)">
-                      <rect
-                        x="0"
-                        y="0"
-                        width="40"
-                        height="48"
-                        rx="3"
-                        fill={isDarkMode ? '#2B2321' : '#F6ECE0'}
-                        stroke={isDarkMode ? '#9E857A' : '#C4AE9E'}
-                        strokeWidth="1.35"
-                        strokeDasharray="2 2.2"
-                      />
-                      <rect
-                        x="4.5"
-                        y="4.5"
-                        width="31"
-                        height="39"
-                        rx="1.5"
-                        fill={isDarkMode ? '#382E2B' : '#FFFDF9'}
-                        stroke={isDarkMode ? '#6E5A52' : '#DFCFC0'}
-                        strokeWidth="0.85"
-                      />
-                      <g transform="translate(20, 22) scale(0.44)">
-                        {[0, 60, 120, 180, 240, 300].map((deg) => (
-                          <path
-                            key={deg}
-                            transform={`rotate(${deg})`}
-                            d="M 0,0 C -7,-6 -9,-18 0,-22 C 9,-18 7,-6 0,0 Z"
-                            fill={isDarkMode ? 'rgba(244, 166, 190, 0.34)' : 'rgba(252, 220, 232, 0.9)'}
-                            stroke={isDarkMode ? '#E5A3B7' : '#C87A90'}
-                            strokeWidth="1.8"
-                          />
-                        ))}
-                        <circle cx="0" cy="0" r="3.5" fill="#F59E0B" />
-                      </g>
-                      <line x1="11" y1="37" x2="29" y2="37" stroke={isDarkMode ? '#8C766C' : '#C4AE9E'} strokeWidth="0.9" strokeLinecap="round" />
-                    </g>
-                  </svg>
+                  {/* Signature Drawn Botanical Logo Crest (Replaced Postage Stamp per Screenshot) */}
+                  <BrandLogoMark
+                    variant="crest"
+                    isDarkMode={isDarkMode}
+                    className="w-24 sm:w-28 h-12 sm:h-14 shrink-0 select-none"
+                  />
                 </div>
 
                 {isContactSent ? (
@@ -2773,15 +2708,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         >
           <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-8">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-8 border-b border-dashed border-[#DFCFC2]/50 dark:border-[#4D403C]">
-              {/* Brand Signature Column (Pure Serif Wordmark — No Icon Before Label) */}
+              {/* Brand Signature Column with Drawn Botanical Logo Mark */}
               <div className="md:col-span-5 space-y-2 text-left">
-                <div
-                  className={`text-2xl font-semibold tracking-tight ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                  }`}
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  Send A Bouquet
+                <div className="flex items-center gap-2.5">
+                  <BrandLogoMark isDarkMode={isDarkMode} className="w-7 h-7 shrink-0" />
+                  <div
+                    className={`text-2xl font-semibold tracking-tight ${
+                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                    }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Send A Bouquet
+                  </div>
                 </div>
                 <p className="text-xs leading-relaxed max-w-xs">
                   Handcrafted digital bouquets, wraps, and voice keepsakes.
@@ -2880,6 +2818,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <li>
                       <button
                         type="button"
+                        data-testid="footer-terms-btn"
                         onClick={() => setLegalModal('terms')}
                         className="hover:underline cursor-pointer"
                       >
@@ -2889,6 +2828,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <li>
                       <button
                         type="button"
+                        data-testid="footer-privacy-btn"
                         onClick={() => setLegalModal('privacy')}
                         className="hover:underline cursor-pointer"
                       >
@@ -2914,66 +2854,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
         </footer>
 
-        {/* CLEAN MINIMAL LEGAL MODAL (Terms / Privacy) */}
-        {legalModal && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            onClick={() => setLegalModal(null)}
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className={`w-full max-w-md rounded-[24px] border border-dashed p-6 shadow-xl relative text-left space-y-3 ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
-                  : 'bg-white border-[#DECBB9] text-[#231C18]'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <h3
-                  className="text-2xl font-semibold"
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  {legalModal === 'terms' ? 'Terms of Use' : 'Privacy Policy'}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setLegalModal(null)}
-                  aria-label="Close"
-                  className={`p-1.5 rounded-full transition cursor-pointer ${
-                    isDarkMode ? 'hover:bg-[#463A36] text-[#D8C7BE]' : 'hover:bg-stone-100 text-stone-500'
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <p
-                className={`text-xs leading-relaxed ${
-                  isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                }`}
-              >
-                {legalModal === 'terms'
-                  ? 'Send A Bouquet is a free digital floral studio for creating and sharing personal flower arrangements, notes, and voice keepsakes with loved ones. Shared links are intended for personal, non-commercial gifting.'
-                  : 'We respect your privacy. No account or login is required. Your saved history is stored locally on your device, and shared bouquets or voice notes are only accessible via the private gift link you share.'}
-              </p>
-              <p
-                className={`pt-2 border-t border-dashed text-[11.5px] leading-relaxed ${
-                  isDarkMode ? 'border-[#544540] text-[#C9B6AC]' : 'border-[#E2D3C4] text-[#7D6B61]'
-                }`}
-              >
-                Questions or support? Write anytime to{' '}
-                <a
-                  href={`mailto:${OFFICIAL_STUDIO_EMAIL}`}
-                  className="underline decoration-dashed underline-offset-2 font-medium"
-                >
-                  {OFFICIAL_STUDIO_EMAIL}
-                </a>
-                .
-              </p>
-            </div>
-          </div>
-        )}
+        {/* DEDICATED STATIONERY LEGAL MODAL (Terms of Use & Privacy Policy) */}
+        <LegalStationeryModal
+          activeTab={legalModal}
+          isDarkMode={isDarkMode}
+          onSelectTab={(tab) => setLegalModal(tab)}
+          onClose={() => setLegalModal(null)}
+        />
 
         {/* DEDICATED ALL CREATIONS GALLERY PAGE (Single-Screen Single-Lace Right-to-Left Lenis Carousel) */}
         {isCreationsPageOpen && (

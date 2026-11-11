@@ -277,69 +277,136 @@ export const BotanicalQrCard: React.FC<BotanicalQrCardProps> = ({
               strokeDasharray="3 2.2"
             />
 
-            {/* Embedded BrandLogoMark Rosette */}
-            <g transform="scale(0.66) translate(-32, -32)">
+            {/* Embedded Signature BrandLogoMark Blossom & Tendrils */}
+            <g transform="scale(0.095)">
+              {/* Left & Right Sage Leaves + Arched Dashed Tendrils & Buds */}
               <path
-                d="M 18,35 C 9,30 6,22 13,19 C 19,17 23,24 24,31"
+                d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
                 fill={logoLeafFill}
                 stroke={logoLeafStroke}
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                strokeWidth="3.2"
               />
               <path
-                d="M 46,35 C 55,30 58,22 51,19 C 45,17 41,24 40,31"
+                d="M -60,10 Q -135,4 -198,17 M -115,7 L -138,-6 M -145,10 L -168,0 M -125,11 L -148,24"
+                fill="none"
+                stroke={logoLeafStroke}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M -75,-18 C -128,-58 -168,-54 -194,-32"
+                fill="none"
+                stroke={logoInnerStroke}
+                strokeWidth="2.8"
+                strokeDasharray="6 6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
+                fill={logoOuterFill}
+                stroke={logoOuterStroke}
+                strokeWidth="3"
+              />
+
+              <path
+                d="M 55,10 C 115,-28 175,-18 212,18 C 170,48 110,44 55,10 Z"
                 fill={logoLeafFill}
                 stroke={logoLeafStroke}
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                strokeWidth="3.2"
               />
-              <g transform="translate(32, 32)">
-                {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-                  <g key={`qr-logo-outer-${angle}`} transform={`rotate(${angle})`}>
-                    <path
-                      d="M 0,0 C -8.5,-7.5 -11.5,-21.5 0,-26.5 C 11.5,-21.5 8.5,-7.5 0,0 Z"
-                      fill={logoOuterFill}
-                      stroke={logoOuterStroke}
-                      strokeWidth="1.5"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M 0,-5 L 0,-20"
-                      stroke={logoOuterStroke}
-                      strokeWidth="0.9"
-                      strokeLinecap="round"
-                      strokeOpacity="0.5"
-                    />
-                  </g>
-                ))}
-                {[22.5, 112.5, 202.5, 292.5].map((angle) => (
-                  <g key={`qr-logo-inner-${angle}`} transform={`rotate(${angle})`}>
-                    <path
-                      d="M 0,0 C -6,-5 -8,-14.5 0,-17.5 C 8,-14.5 6,-5 0,0 Z"
-                      fill={logoInnerFill}
-                      stroke={logoInnerStroke}
-                      strokeWidth="1.35"
-                      strokeLinejoin="round"
-                    />
-                  </g>
-                ))}
-                <circle
-                  cx="0"
-                  cy="0"
-                  r="4.5"
-                  fill={theme.isDark ? '#FDE68A' : '#FEF3C7'}
-                  stroke={theme.isDark ? '#F59E0B' : '#D97706'}
-                  strokeWidth="1.35"
+              <path
+                d="M 60,10 Q 135,4 198,17 M 115,7 L 138,-6 M 145,10 L 168,0 M 125,11 L 148,24"
+                fill="none"
+                stroke={logoLeafStroke}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 75,-18 C 128,-58 168,-54 194,-32"
+                fill="none"
+                stroke={logoInnerStroke}
+                strokeWidth="2.8"
+                strokeDasharray="6 6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
+                fill={logoOuterFill}
+                stroke={logoOuterStroke}
+                strokeWidth="3"
+              />
+
+              {/* 8 Outer Blush Petals */}
+              {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                <g key={`qr-logo-outer-${angle}`} transform={`rotate(${angle})`}>
+                  <path
+                    d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
+                    fill={logoOuterFill}
+                    stroke={logoOuterStroke}
+                    strokeWidth="3.2"
+                  />
+                  <path
+                    d="M 0,-14 L 0,-108"
+                    stroke={logoOuterStroke}
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeOpacity="0.55"
+                  />
+                </g>
+              ))}
+
+              {/* 8 Middle Peach Petals */}
+              {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
+                <g key={`qr-logo-mid-${angle}`} transform={`rotate(${angle})`}>
+                  <path
+                    d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
+                    fill={logoInnerFill}
+                    stroke={logoInnerStroke}
+                    strokeWidth="2.8"
+                  />
+                </g>
+              ))}
+
+              {/* 6 Inner Rose Petals */}
+              {[0, 60, 120, 180, 240, 300].map((angle) => (
+                <path
+                  key={`qr-logo-inner-${angle}`}
+                  transform={`rotate(${angle})`}
+                  d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
+                  fill={logoOuterFill}
+                  stroke={logoOuterStroke}
+                  strokeWidth="2.6"
                 />
-                <circle
-                  cx="0"
-                  cy="0"
-                  r="1.7"
-                  fill={theme.isDark ? '#F59E0B' : '#D97706'}
-                />
-              </g>
+              ))}
+
+              {/* 12 Golden Stamens & Center */}
+              {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
+                <g key={`qr-stamen-${deg}`} transform={`rotate(${deg})`}>
+                  <line
+                    x1="0"
+                    y1="-4"
+                    x2="0"
+                    y2="-22"
+                    stroke={theme.isDark ? '#FCD34D' : '#D97706'}
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                  />
+                  <circle
+                    cx="0"
+                    cy="-24"
+                    r="3.2"
+                    fill={theme.isDark ? '#FDE68A' : '#F59E0B'}
+                  />
+                </g>
+              ))}
+              <circle
+                cx="0"
+                cy="0"
+                r="9"
+                fill={theme.isDark ? '#FDE68A' : '#FEF3C7'}
+                stroke={theme.isDark ? '#F59E0B' : '#D97706'}
+                strokeWidth="2.8"
+              />
             </g>
           </g>
         </svg>
