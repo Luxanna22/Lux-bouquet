@@ -61,6 +61,7 @@ import {
   typeWrapStyle,
   WrapStyle,
   BouquetItem,
+  getEffectiveItemPlane,
   GreetingCardData,
   BouquetSnapshot,
   BouquetLockMode,
@@ -166,6 +167,10 @@ import {
   detectInitialSeoRoute,
   syncDocumentSeoMeta,
 } from '../lib/seoMeta';
+import {
+  getActiveSeasonalEvent,
+  getAvailableSeasonalCatalog,
+} from '../lib/seasonalCalendar';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -176,6 +181,8 @@ type MobileCategory =
   | 'wrapping'
   | 'flowers'
   | 'fillers'
+  | 'others'
+  | 'seasonal'
   | 'photos'
   | 'ribbon'
   | 'environment'
@@ -1686,12 +1693,33 @@ export default function App() {
   };
 
   const focalFlowers = useMemo(
-    () => FLOWER_CATALOG.filter((f) => !f.isFoliage && !f.isFiller),
-    []
+    () =>
+      FLOWER_CATALOG.filter((f) => !f.isFoliage && !f.isFiller && !f.isOther && !f.isSeasonal).sort(
+        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
+      ),
+    [premiumAssetConfig]
   );
   const fillerFlowers = useMemo(
-    () => FLOWER_CATALOG.filter((f) => Boolean(f.isFoliage || f.isFiller)),
-    []
+    () =>
+      FLOWER_CATALOG.filter((f) => Boolean(f.isFoliage || f.isFiller) && !f.isOther && !f.isSeasonal).sort(
+        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
+      ),
+    [premiumAssetConfig]
+  );
+  const otherFlowers = useMemo(
+    () =>
+      FLOWER_CATALOG.filter((f) => Boolean(f.isOther)).sort(
+        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
+      ),
+    [premiumAssetConfig]
+  );
+  const activeSeasonalEvent = useMemo(() => getActiveSeasonalEvent(), []);
+  const seasonalFlowers = useMemo(
+    () =>
+      [...getAvailableSeasonalCatalog()].sort(
+        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
+      ),
+    [premiumAssetConfig]
   );
 
   return (
@@ -2026,9 +2054,12 @@ export default function App() {
                 >
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'back')}
-                    title="Send to Most Back"
+                    title="Send Behind / Inside Bouquet"
                     aria-label="Send to Most Back"
                     className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                   >
@@ -2036,7 +2067,10 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'down')}
                     title="Send Back 1 Layer"
                     aria-label="Send Back 1 Layer"
@@ -2046,7 +2080,11 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex >= items.length - 1 &&
+                        getEffectiveItemPlane(selectedItem) === 'front')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'up')}
                     title="Bring Forward 1 Layer"
                     aria-label="Bring Forward 1 Layer"
@@ -2056,9 +2094,13 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex >= items.length - 1 &&
+                        getEffectiveItemPlane(selectedItem) === 'front')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'front')}
-                    title="Bring to Most Front"
+                    title="Bring to Overlay / Front of Bouquet"
                     aria-label="Bring to Most Front"
                     className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                   >
@@ -2076,32 +2118,36 @@ export default function App() {
                       <button
                         type="button"
                         disabled={Boolean(selectedItem.locked)}
-                        onClick={() =>
+                        onClick={() => {
+                          const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
                           updateItem(
                             selectedItem.id,
-                            { clippedToBouquet: !selectedItem.clippedToBouquet },
+                            {
+                              clippedToBouquet: nextClipped,
+                              layerPlane: nextClipped ? 'inside' : 'front',
+                            },
                             true
-                          )
-                        }
+                          );
+                        }}
                         title={
-                          selectedItem.clippedToBouquet
+                          getEffectiveItemPlane(selectedItem) === 'inside'
                             ? 'Tucked inside bouquet wrapper (Click to float free)'
                             : 'Floating photo (Click to tuck inside bouquet wrapper)'
                         }
                         aria-label={
-                          selectedItem.clippedToBouquet
+                          getEffectiveItemPlane(selectedItem) === 'inside'
                             ? 'Unclip photo from bouquet'
                             : 'Clip photo to bouquet'
                         }
-                        aria-pressed={Boolean(selectedItem.clippedToBouquet)}
+                        aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
                         className={`w-7 h-7 rounded-full inline-flex items-center justify-center active:scale-95 transition cursor-pointer ${
-                          selectedItem.clippedToBouquet
+                          getEffectiveItemPlane(selectedItem) === 'inside'
                             ? 'bg-[#B4846C] text-white'
                             : 'text-[#B4846C] hover:bg-[#B4846C]/15'
                         }`}
                       >
                         <BouquetClipToggleIcon
-                          clipped={Boolean(selectedItem.clippedToBouquet)}
+                          clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
                           className="w-3.5 h-3.5"
                         />
                       </button>
@@ -3967,9 +4013,12 @@ export default function App() {
                 <div className="flex items-center gap-0.5 shrink-0">
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'back')}
-                    title="Send to Most Back"
+                    title="Send Behind / Inside Bouquet"
                     aria-label="Send to Most Back"
                     className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                   >
@@ -3977,7 +4026,10 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex <= 0}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'down')}
                     title="Send Back 1 Layer"
                     aria-label="Send Back 1 Layer"
@@ -3987,7 +4039,11 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex >= items.length - 1 &&
+                        getEffectiveItemPlane(selectedItem) === 'front')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'up')}
                     title="Bring Forward 1 Layer"
                     aria-label="Bring Forward 1 Layer"
@@ -3997,9 +4053,13 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(selectedItem.locked) || selectedItemIndex >= items.length - 1}
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex >= items.length - 1 &&
+                        getEffectiveItemPlane(selectedItem) === 'front')
+                    }
                     onClick={() => moveItemLayer(selectedItem.id, 'front')}
-                    title="Bring to Most Front"
+                    title="Bring to Overlay / Front of Bouquet"
                     aria-label="Bring to Most Front"
                     className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                   >
@@ -4017,35 +4077,39 @@ export default function App() {
                       <button
                         type="button"
                         disabled={Boolean(selectedItem.locked)}
-                        onClick={() =>
+                        onClick={() => {
+                          const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
                           updateItem(
                             selectedItem.id,
-                            { clippedToBouquet: !selectedItem.clippedToBouquet },
+                            {
+                              clippedToBouquet: nextClipped,
+                              layerPlane: nextClipped ? 'inside' : 'front',
+                            },
                             true
-                          )
-                        }
+                          );
+                        }}
                         title={
-                          selectedItem.clippedToBouquet
+                          getEffectiveItemPlane(selectedItem) === 'inside'
                             ? 'Tucked inside bouquet wrapper (Tap to float free)'
                             : 'Floating photo (Tap to tuck inside bouquet wrapper)'
                         }
                         aria-label={
-                          selectedItem.clippedToBouquet
+                          getEffectiveItemPlane(selectedItem) === 'inside'
                             ? 'Unclip photo from bouquet'
                             : 'Clip photo to bouquet'
                         }
-                        aria-pressed={Boolean(selectedItem.clippedToBouquet)}
+                        aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
                         className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${
-                          selectedItem.clippedToBouquet
+                          getEffectiveItemPlane(selectedItem) === 'inside'
                             ? 'bg-[#B4846C] text-white'
                             : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
                         }`}
                       >
                         <BouquetClipToggleIcon
-                          clipped={Boolean(selectedItem.clippedToBouquet)}
+                          clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
                           className="w-3.5 h-3.5"
                         />
-                        <span>{selectedItem.clippedToBouquet ? 'Tucked' : 'Tuck'}</span>
+                        <span>{getEffectiveItemPlane(selectedItem) === 'inside' ? 'Tucked' : 'Tuck'}</span>
                       </button>
 
                       <button
@@ -4081,6 +4145,10 @@ export default function App() {
                     { id: 'wrapping', label: 'Wrappers' },
                     { id: 'flowers', label: 'Flowers' },
                     { id: 'fillers', label: 'Fillers' },
+                    { id: 'others', label: 'Others' },
+                    ...(activeSeasonalEvent && seasonalFlowers.length > 0
+                      ? [{ id: 'seasonal' as MobileCategory, label: 'Seasonal' }]
+                      : []),
                     { id: 'photos', label: 'Photos' },
                     { id: 'ribbon', label: 'Ribbon' },
                     { id: 'environment', label: 'Background' },
@@ -4105,7 +4173,15 @@ export default function App() {
                         else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
                         else if (cat.id === 'card') setActiveColorTarget('card');
                         else if (cat.id === 'voice') setActiveColorTarget('voicePrimary');
-                        else if (cat.id === 'flowers' || cat.id === 'fillers' || cat.id === 'photos') setActiveColorTarget('petal');
+                        else if (
+                          cat.id === 'flowers' ||
+                          cat.id === 'fillers' ||
+                          cat.id === 'others' ||
+                          cat.id === 'seasonal' ||
+                          cat.id === 'photos'
+                        ) {
+                          setActiveColorTarget('petal');
+                        }
 
                         if (isActive) {
                           setIsDesktopDockCollapsed((prev) => !prev);
@@ -4123,6 +4199,12 @@ export default function App() {
                       }`}
                     >
                       <span>{cat.label}</span>
+                      {cat.id === 'seasonal' && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                          title={activeSeasonalEvent?.name || 'Upcoming seasonal collection'}
+                        />
+                      )}
                       {cat.id === 'voice' && voice.audioDataUrl && (
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                       )}
@@ -4225,7 +4307,7 @@ export default function App() {
                     >
                       <RotateCcw className="w-5 h-5 text-[#B4846C] group-hover:text-red-500" />
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                       Start Over
                     </span>
                   </button>
@@ -4254,7 +4336,7 @@ export default function App() {
                           bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
                         />
                       </div>
-                      <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                         {tpl.name}
                       </span>
                     </button>
@@ -4301,7 +4383,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                           {ws.label}
                         </span>
                       </button>
@@ -4348,7 +4430,7 @@ export default function App() {
                           />
                         )}
                       </div>
-                      <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                         {entry.shortName}
                       </span>
                     </button>
@@ -4393,7 +4475,97 @@ export default function App() {
                           />
                         )}
                       </div>
-                      <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                        {entry.shortName}
+                      </span>
+                    </button>
+                  );
+                })}
+
+              {/* CATEGORY 4A: OTHERS (Butterflies, Hearts, Sparkles, Romantic & Whimsical Accents) */}
+              {mobileCategory === 'others' &&
+                otherFlowers.map((entry) => {
+                  const isPremOther = isFlowerPremium(entry.type, premiumAssetConfig);
+                  return (
+                    <button
+                      key={entry.type}
+                      type="button"
+                      onClick={() => {
+                        addFlower(entry.type);
+                        setActiveColorTarget('petal');
+                        triggerToast(`Added ${entry.name}`);
+                      }}
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                    >
+                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                        <div
+                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                            isDarkMode
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                          }`}
+                        >
+                          <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
+                            <FlowerRenderer
+                              type={entry.type}
+                              petalColor={entry.defaultPetalColor}
+                              centerColor={entry.defaultCenterColor}
+                            />
+                          </svg>
+                        </div>
+                        {isPremOther && (
+                          <CoutureItemBadge
+                            isDarkMode={isDarkMode}
+                            title="Couture charm (free to try)"
+                          />
+                        )}
+                      </div>
+                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                        {entry.shortName}
+                      </span>
+                    </button>
+                  );
+                })}
+
+              {/* CATEGORY 4A-2: SEASONAL (Conditional — Only Appears During Active/Upcoming Season) */}
+              {mobileCategory === 'seasonal' &&
+                seasonalFlowers.map((entry) => {
+                  const isPremSeasonal = isFlowerPremium(entry.type, premiumAssetConfig);
+                  return (
+                    <button
+                      key={entry.type}
+                      type="button"
+                      onClick={() => {
+                        addFlower(entry.type);
+                        setActiveColorTarget('petal');
+                        triggerToast(`Added ${entry.name}`);
+                      }}
+                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                    >
+                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                        <div
+                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
+                            isDarkMode
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                          }`}
+                        >
+                          <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
+                            <FlowerRenderer
+                              type={entry.type}
+                              petalColor={entry.defaultPetalColor}
+                              centerColor={entry.defaultCenterColor}
+                            />
+                          </svg>
+                        </div>
+                        {isPremSeasonal && (
+                          <CoutureItemBadge
+                            isDarkMode={isDarkMode}
+                            title="Couture seasonal item (free to try)"
+                          />
+                        )}
+                      </div>
+                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                         {entry.shortName}
                       </span>
                     </button>
@@ -4431,7 +4603,7 @@ export default function App() {
                         />
                       )}
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                       Upload Photo
                     </span>
                   </button>
@@ -4479,7 +4651,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                           {pf.shortLabel}
                         </span>
                       </button>
@@ -4523,7 +4695,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                           {rs.label}
                         </span>
                       </button>
@@ -4567,7 +4739,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                           {env.shortLabel}
                         </span>
                       </button>
@@ -4601,7 +4773,7 @@ export default function App() {
                     >
                       <PenLine className="w-5 h-5 text-[#B4846C]" />
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                       Write Note
                     </span>
                   </button>
@@ -4635,7 +4807,7 @@ export default function App() {
                             theme={th.id}
                           />
                         </div>
-                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                           {th.label}
                         </span>
                       </button>
@@ -4662,7 +4834,7 @@ export default function App() {
                         <Eye className="w-5 h-5 text-[#B4846C]" />
                       )}
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                       {card.visibleOnStage ? 'Hide Tag' : 'Show Tag'}
                     </span>
                   </button>
@@ -4703,7 +4875,7 @@ export default function App() {
                         title="Couture voice keepsake (free to record & preview)"
                       />
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                       {voice.audioDataUrl ? 'Voice Studio' : 'Record Voice'}
                     </span>
                   </button>
@@ -4752,7 +4924,7 @@ export default function App() {
                             />
                           )}
                         </div>
-                        <span className="text-[11px] sm:text-xs leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                           {vk.shortLabel}
                         </span>
                       </button>
@@ -4783,7 +4955,7 @@ export default function App() {
                         <Eye className="w-5 h-5 text-[#B4846C]" />
                       )}
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-[1.15] font-medium text-stone-700 dark:text-stone-300 line-clamp-2 w-full text-center">
+                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
                       {voice.visibleOnStage ? 'Hide Voice' : 'Show Voice'}
                     </span>
                   </button>

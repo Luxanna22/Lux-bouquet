@@ -998,6 +998,70 @@ export const MiniEnvironmentSVG: React.FC<{
     );
   }
 
+  if (env === 'blushSilk') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#FCE7F3" stroke="#F472B6" strokeWidth="1.3" />
+        <path d="M14,26 Q32,18 50,28 L50,38 Q32,28 14,38 Z" fill="#FFFFFF" opacity="0.7" />
+        <path d="M14,42 Q32,34 50,42" fill="none" stroke="#F472B6" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (env === 'botanicalArch') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#ECFDF5" stroke="#34D399" strokeWidth="1.3" />
+        <path d="M18,50 L18,28 A14,14 0 0,1 46,28 L46,50" fill="none" stroke="#10B981" strokeWidth="1.3" />
+        <line x1="32" y1="14" x2="32" y2="50" stroke="#6EE7B7" strokeWidth="1" />
+        <line x1="18" y1="30" x2="46" y2="30" stroke="#6EE7B7" strokeWidth="1" />
+      </svg>
+    );
+  }
+
+  if (env === 'nordicSnow') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#E0F2FE" stroke="#7DD3FC" strokeWidth="1.3" />
+        <path d="M32,18 L32,30 M26,24 L38,24 M28,20 L36,28 M36,20 L28,28" stroke="#0284C7" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="22" cy="36" r="2.2" fill="#FFFFFF" />
+        <circle cx="41" cy="34" r="2.5" fill="#FFFFFF" />
+        <circle cx="30" cy="44" r="2" fill="#FFFFFF" />
+      </svg>
+    );
+  }
+
+  if (env === 'crystalPalace') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#FEF3C7" stroke="#D97706" strokeWidth="1.4" />
+        <path d="M18,20 Q32,30 46,20" fill="none" stroke="#D97706" strokeWidth="1.2" strokeDasharray="2 2" />
+        <polygon points="32,22 28,29 32,36 36,29" fill="#E0F2FE" stroke="#D97706" strokeWidth="1" />
+        <path d="M20,50 L20,32 A12,12 0 0,1 44,32 L44,50" fill="none" stroke="#F59E0B" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+
+  if (env === 'midnightNoel') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#0F2E22" stroke="#10B981" strokeWidth="1.2" />
+        {/* Top Evergreen Pine Garland Swag */}
+        <path d="M13,18 Q22,25 32,17 Q42,25 51,18" fill="none" stroke="#059669" strokeWidth="4" strokeLinecap="round" />
+        {/* Hanging Bauble Threads */}
+        <line x1="23" y1="21" x2="23" y2="30" stroke="#FBBF24" strokeWidth="1" />
+        <line x1="32" y1="18" x2="32" y2="26" stroke="#FBBF24" strokeWidth="1" />
+        <line x1="41" y1="21" x2="41" y2="30" stroke="#FBBF24" strokeWidth="1" />
+        {/* Hanging Ornaments */}
+        <circle cx="23" cy="33" r="3.2" fill="#EF4444" stroke="#FDE68A" strokeWidth="0.8" />
+        <polygon points="32,25 29,30 32,35 35,30" fill="#F59E0B" stroke="#FEF08A" strokeWidth="0.8" />
+        <circle cx="41" cy="33" r="3.2" fill="#E11D48" stroke="#FDE68A" strokeWidth="0.8" />
+        {/* Bottom Snowdrift */}
+        <path d="M14,49 Q24,45 32,48 Q40,51 50,47" fill="none" stroke="#F8FAFC" strokeWidth="2" strokeLinecap="round" opacity="0.65" />
+      </svg>
+    );
+  }
+
   // Default: 'studio'
   return (
     <svg viewBox="0 0 64 64" className="w-11 h-11">

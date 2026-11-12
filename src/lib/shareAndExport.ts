@@ -14,6 +14,8 @@ import {
   DEFAULT_BOUQUET_POSE,
   typeWrapStyle,
   BouquetItem,
+  BouquetLayerPlane,
+  getEffectiveItemPlane,
   BouquetSnapshot,
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
@@ -63,7 +65,48 @@ const SHARE_FLOWER_TYPES: FlowerType[] = [
   'crystalOrchid',
   'luminaPeony',
   'gildedFern',
-  'starlightGypsophila'
+  'starlightGypsophila',
+  // 10 New Free Flowers & Fillers
+  'cosmos',
+  'magnolia',
+  'hibiscus',
+  'zinnia',
+  'forgetMeNot',
+  'lilyOfTheValley',
+  'marigold',
+  'morningGlory',
+  'plumeria',
+  'delphinium',
+  // 5 New Couture Flowers
+  'auroraGardenia',
+  'velvetBaccara',
+  'imperialFritillaria',
+  'julietAustinRose',
+  'lunariaHonesty',
+  // 10 'Others' Category Designs
+  'monarchButterfly',
+  'crystalButterfly',
+  'velvetHeartPick',
+  'doubleHeartCharm',
+  'starburstSparkle',
+  'cupidArrowPick',
+  'lovebirdPerch',
+  'waxSealCrest',
+  'fairyLightGarland',
+  'ribbonBowPick',
+  // 12 'Seasonal' Category Designs
+  'poinsettia',
+  'hollyBerries',
+  'mistletoeBough',
+  'amaryllis',
+  'hellebore',
+  'frostedPinecone',
+  'crystalSnowflake',
+  'candyCanePick',
+  'glassOrnament',
+  'gingerbreadHeart',
+  'sleighBellsPick',
+  'cinnamonStarAnise'
 ];
 
 const SHARE_WRAP_STYLES: typeWrapStyle[] = [
@@ -134,7 +177,12 @@ const SHARE_ENVIRONMENTS: CanvasEnvironment[] = [
   'starlit',
   'aurora',
   'velvetSalon',
-  'opalMist'
+  'opalMist',
+  'blushSilk',
+  'botanicalArch',
+  'nordicSnow',
+  'crystalPalace',
+  'midnightNoel'
 ];
 
 const DEFAULT_SHARE_CARD_TO = 'My Dearest';
@@ -341,11 +389,22 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
           !item.photoStyle &&
           meta &&
           item.centerColor.toLowerCase() === meta.defaultCenterColor.toLowerCase();
+        const plane = getEffectiveItemPlane(item);
+        const defaultPlane = item.photoStyle ? 'front' : meta?.isOther ? 'front' : 'inside';
+        const planeBits =
+          plane === defaultPlane
+            ? 0
+            : plane === 'front'
+            ? 16
+            : plane === 'back'
+            ? 32
+            : 64;
         const extraFlags =
           (item.flipX ? 1 : 0) |
           (item.locked ? 2 : 0) |
           (item.hidden ? 4 : 0) |
-          (item.clippedToBouquet ? 8 : 0);
+          (item.clippedToBouquet ? 8 : 0) |
+          planeBits;
         const stemLen = item.stemLength ?? 1;
         const isDefStemLen = Math.abs(stemLen - 1) < 0.02;
         const stemLenStr = isDefStemLen ? '' : Math.round(clampNum(stemLen, 0.15, 1.35) * 20).toString(36);
@@ -412,10 +471,10 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
   if (snapshot.bouquetPose) {
     const bp = snapshot.bouquetPose;
     const isDefPose =
-      Math.round(bp.x) === 300 &&
-      Math.round(bp.y) === 380 &&
-      Math.abs(bp.scale - 1) < 0.02 &&
-      Math.round(bp.rotation) === 0;
+      Math.round(bp.x) === DEFAULT_BOUQUET_POSE.x &&
+      Math.round(bp.y) === DEFAULT_BOUQUET_POSE.y &&
+      Math.abs(bp.scale - DEFAULT_BOUQUET_POSE.scale) < 0.02 &&
+      Math.round(bp.rotation) === DEFAULT_BOUQUET_POSE.rotation;
     if (!isDefPose) {
       const bx = Math.round(bp.x).toString(36);
       const by = Math.round(bp.y).toString(36);
@@ -575,25 +634,25 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const bpSegment = querySegments.find((seg) => seg.startsWith('bp='));
       if (bpSegment) {
         const [bxStr = '', byStr = '', bsStr = '', brStr = ''] = bpSegment.slice(3).split('~');
-        const bx = bxStr ? parseInt(bxStr, 36) : 300;
-        const by = byStr ? parseInt(byStr, 36) : 380;
-        const bs = bsStr ? parseInt(bsStr, 36) / 100 : 1;
-        const br = brStr ? parseInt(brStr, 36) - 180 : 0;
+        const bx = bxStr ? parseInt(bxStr, 36) : DEFAULT_BOUQUET_POSE.x;
+        const by = byStr ? parseInt(byStr, 36) : DEFAULT_BOUQUET_POSE.y;
+        const bs = bsStr ? parseInt(bsStr, 36) / 100 : DEFAULT_BOUQUET_POSE.scale;
+        const br = brStr ? parseInt(brStr, 36) - 180 : DEFAULT_BOUQUET_POSE.rotation;
         bouquetPose = {
-          x: Number.isFinite(bx) ? bx : 300,
-          y: Number.isFinite(by) ? by : 380,
-          scale: Number.isFinite(bs) && bs >= 0.4 && bs <= 2.4 ? Number(bs.toFixed(2)) : 1,
-          rotation: Number.isFinite(br) && br >= -180 && br <= 180 ? Math.round(br) : 0
+          x: Number.isFinite(bx) ? bx : DEFAULT_BOUQUET_POSE.x,
+          y: Number.isFinite(by) ? by : DEFAULT_BOUQUET_POSE.y,
+          scale: Number.isFinite(bs) && bs >= 0.4 && bs <= 2.4 ? Number(bs.toFixed(2)) : DEFAULT_BOUQUET_POSE.scale,
+          rotation: Number.isFinite(br) && br >= -180 && br <= 180 ? Math.round(br) : DEFAULT_BOUQUET_POSE.rotation
         };
       }
 
       const [headerPart, cardPart, ...stemParts] = parts;
       const [wIdxStr = '0', wHex = '', rHex = '', rStyleStr = ''] = headerPart.split('~');
-      const wrapStyle = SHARE_WRAP_STYLES[parseInt(wIdxStr, 36)] || 'kraft';
+      const wrapStyle = SHARE_WRAP_STYLES[parseInt(wIdxStr, 36)] || 'chalice';
       const defaultWrapHex =
-        WRAPPER_CATALOG.find((w) => w.id === wrapStyle)?.defaultHex || '#C8B9AE';
+        WRAPPER_CATALOG.find((w) => w.id === wrapStyle)?.defaultHex || '#EDE0F5';
       const wrapColor = wHex ? `#${wHex}` : defaultWrapHex;
-      const ribbonColor = rHex ? `#${rHex}` : '#e11d48';
+      const ribbonColor = rHex ? `#${rHex}` : '#C084FC';
       const ribbonStyle = rStyleStr ? SHARE_RIBBON_STYLES[parseInt(rStyleStr, 36)] || 'satin' : 'satin';
 
       const [
@@ -644,14 +703,15 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               pCapB64 = '',
               pImgB64 = ''
             ] = sp.split('~');
-            const rawCode = parseInt(base[0], 36) || 0;
+            const typeLen = Math.max(1, base.length - 7);
+            const rawCode = parseInt(base.slice(0, typeLen), 36) || 0;
             const type = SHARE_FLOWER_TYPES[rawCode] || 'rose';
             const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
-            const x = parseInt(base.slice(1, 3), 36);
-            const y = parseInt(base.slice(3, 5), 36);
-            const sInt = parseInt(base.slice(5, 6), 36);
+            const x = parseInt(base.slice(typeLen, typeLen + 2), 36);
+            const y = parseInt(base.slice(typeLen + 2, typeLen + 4), 36);
+            const sInt = parseInt(base.slice(typeLen + 4, typeLen + 5), 36);
             const scale = Number((0.3 + sInt / 14).toFixed(2));
-            const rInt = parseInt(base.slice(6, 8), 36);
+            const rInt = parseInt(base.slice(typeLen + 5, typeLen + 7), 36);
             const rotation = rInt * 2 - 180;
             const flags = parseInt(flagsStr, 36) || 0;
             const stemLength = stemLenStr
@@ -663,9 +723,26 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               ? PHOTO_FRAME_CATALOG.find((p) => p.id === photoStyle)
               : undefined;
 
+            const decodedLayerPlane: BouquetLayerPlane | undefined =
+              flags & 16
+                ? 'front'
+                : flags & 32
+                ? 'back'
+                : flags & 64
+                ? 'inside'
+                : photoStyle
+                ? Boolean(flags & 8)
+                  ? 'inside'
+                  : 'front'
+                : meta.isOther
+                ? 'front'
+                : 'inside';
+
             return {
               id: `s-${idx}-${photoStyle || type}`,
               type,
+              layerPlane: decodedLayerPlane,
+              clippedToBouquet: decodedLayerPlane === 'inside',
               ...(photoStyle
                 ? {
                     photoStyle,
@@ -676,7 +753,6 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
                         ? fromBase64Url(pCapB64)
                         : photoMeta?.defaultCaption,
                     photoDataUrl: pImgB64 ? fromBase64Url(pImgB64) : undefined,
-                    clippedToBouquet: Boolean(flags & 8)
                   }
                 : {}),
               x: Number.isFinite(x) ? x : 300,

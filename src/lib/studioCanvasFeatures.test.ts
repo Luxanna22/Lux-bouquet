@@ -8,23 +8,152 @@ import {
 import {
   PHOTO_FRAME_CATALOG,
   ENVIRONMENT_CATALOG,
+  FLOWER_CATALOG,
+  WRAPPER_CATALOG,
+  RIBBON_STYLE_CATALOG,
   DEFAULT_BOUQUET_POSE,
+  getEffectiveItemPlane,
 } from '../types/bouquet';
+import {
+  getActiveSeasonalEvent,
+  isSeasonalCategoryAvailable,
+  getAvailableSeasonalCatalog,
+} from './seasonalCalendar';
+import {
+  isFlowerPremium,
+  isWrapPremium,
+  isRibbonPremium,
+  isEnvironmentPremium,
+} from './monetization';
 
-test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (9), FLOWER_CATALOG (36), and RIBBON_STYLE_CATALOG (12) provide unique designs', () => {
+test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (14), and FLOWER_CATALOG (73) provide unique designs with Free-first ordering and Seasonal Free/Couture split', () => {
   assert.equal(PHOTO_FRAME_CATALOG.length, 6);
-  assert.equal(ENVIRONMENT_CATALOG.length, 9);
+  assert.equal(ENVIRONMENT_CATALOG.length, 14);
+  assert.equal(FLOWER_CATALOG.length, 73);
   const photoIds = new Set(PHOTO_FRAME_CATALOG.map((p) => p.id));
   const envIds = new Set(ENVIRONMENT_CATALOG.map((e) => e.id));
+  const flowerIds = new Set(FLOWER_CATALOG.map((f) => f.type));
   assert.equal(photoIds.size, 6);
-  assert.equal(envIds.size, 9);
+  assert.equal(envIds.size, 14);
+  assert.equal(flowerIds.size, 73);
+
+  const others = FLOWER_CATALOG.filter((f) => Boolean(f.isOther));
+  const seasonals = FLOWER_CATALOG.filter((f) => Boolean(f.isSeasonal));
+  assert.equal(others.length, 10);
+  assert.equal(seasonals.length, 12);
+
+  // Verify default wrapper is Tulip Organza ('chalice') and default bouquet scale is slightly smaller (0.86)
+  assert.equal(WRAPPER_CATALOG[0].id, 'chalice');
+  assert.equal(DEFAULT_BOUQUET_POSE.scale, 0.86);
+
+  // Verify Seasonal Free (5 items: hellebore, crystalSnowflake, candyCanePick, sleighBellsPick, gingerbreadHeart) vs Couture (7 items)
+  assert.equal(isFlowerPremium('hellebore'), false);
+  assert.equal(isFlowerPremium('crystalSnowflake'), false);
+  assert.equal(isFlowerPremium('candyCanePick'), false);
+  assert.equal(isFlowerPremium('sleighBellsPick'), false);
+  assert.equal(isFlowerPremium('gingerbreadHeart'), false);
+  assert.equal(isFlowerPremium('poinsettia'), true);
+  assert.equal(isFlowerPremium('hollyBerries'), true);
+  assert.equal(isFlowerPremium('mistletoeBough'), true);
+  assert.equal(isFlowerPremium('amaryllis'), true);
+  assert.equal(isFlowerPremium('frostedPinecone'), true);
+  assert.equal(isFlowerPremium('glassOrnament'), true);
+  assert.equal(isFlowerPremium('cinnamonStarAnise'), true);
+
+  // Verify Free-first ordering across Wrappers, Ribbons, Backgrounds, and Seasonal
+  const wrapFlags = WRAPPER_CATALOG.map((w) => isWrapPremium(w.id));
+  assert.deepEqual(wrapFlags, [...wrapFlags].sort((a, b) => Number(a) - Number(b)));
+  const ribbonFlags = RIBBON_STYLE_CATALOG.map((r) => isRibbonPremium(r.id));
+  assert.deepEqual(ribbonFlags, [...ribbonFlags].sort((a, b) => Number(a) - Number(b)));
+  const envFlags = ENVIRONMENT_CATALOG.map((e) => isEnvironmentPremium(e.id));
+  assert.deepEqual(envFlags, [...envFlags].sort((a, b) => Number(a) - Number(b)));
+  const seasonalFlags = seasonals.map((s) => isFlowerPremium(s.type));
+  assert.deepEqual(seasonalFlags, [...seasonalFlags].sort((a, b) => Number(a) - Number(b)));
+
+  // Verify new Couture flowers and backgrounds
+  assert.equal(isFlowerPremium('auroraGardenia'), true);
+  assert.equal(isFlowerPremium('velvetBaccara'), true);
+  assert.equal(isFlowerPremium('imperialFritillaria'), true);
+  assert.equal(isFlowerPremium('julietAustinRose'), true);
+  assert.equal(isFlowerPremium('lunariaHonesty'), true);
+  assert.equal(isFlowerPremium('cosmos'), false);
+  assert.equal(isEnvironmentPremium('crystalPalace'), true);
+  assert.equal(isEnvironmentPremium('midnightNoel'), true);
+  assert.equal(isEnvironmentPremium('blushSilk'), false);
+  assert.equal(isEnvironmentPremium('botanicalArch'), false);
+  assert.equal(isEnvironmentPremium('nordicSnow'), false);
 });
 
-test('useBouquetStore supports photocards, environment, bouquetPose, and 4-way fast layering (back, down, up, front)', () => {
+test('seasonalCalendar only exposes the Seasonal category during active or upcoming event windows', () => {
+  // November 12 and December 24 are inside the Christmas & Winter Holidays window (Oct 25 – Jan 6)
+  const novDate = new Date('2026-11-12T12:00:00Z');
+  const decDate = new Date('2026-12-24T12:00:00Z');
+  const janDate = new Date('2027-01-03T12:00:00Z');
+  assert.equal(isSeasonalCategoryAvailable(novDate), true);
+  assert.equal(getActiveSeasonalEvent(novDate)?.id, 'christmas_holiday');
+  assert.equal(getAvailableSeasonalCatalog(decDate).length, 12);
+  assert.equal(getAvailableSeasonalCatalog(janDate).length, 12);
+
+  // Mid-summer non-event date (July 15) hides the Seasonal category
+  const julyDate = new Date('2026-07-15T12:00:00Z');
+  assert.equal(isSeasonalCategoryAvailable(julyDate), false);
+  assert.equal(getActiveSeasonalEvent(julyDate), null);
+  assert.equal(getAvailableSeasonalCatalog(julyDate).length, 0);
+});
+
+test('shareAndExport losslessly encodes and decodes all new flowers, others, seasonal designs, backgrounds, and layerPlane', () => {
+  const store = useBouquetStore.getState();
+  store.clearBouquet();
+  assert.equal(useBouquetStore.getState().wrapStyle, 'chalice');
+  store.addFlower('cosmos');
+  store.addFlower('velvetBaccara');
+  store.addFlower('monarchButterfly');
+  store.addFlower('ribbonBowPick');
+  store.addFlower('poinsettia');
+  store.addFlower('cinnamonStarAnise');
+  // Move monarchButterfly inside the bouquet wrapper and cosmos behind the back wrapper
+  const itemsBefore = useBouquetStore.getState().items;
+  const butterfly = itemsBefore.find((i) => i.type === 'monarchButterfly')!;
+  const cosmos = itemsBefore.find((i) => i.type === 'cosmos')!;
+  assert.equal(getEffectiveItemPlane(butterfly), 'front');
+  store.moveItemLayer(butterfly.id, 'back'); // 'front' -> 'inside'
+  store.moveItemLayer(cosmos.id, 'back'); // 'inside' -> 'back'
+  store.setEnvironment('midnightNoel');
+
+  const state = useBouquetStore.getState();
+  const payload = encodeBouquetToCompactPayload(
+    {
+      items: state.items,
+      wrapStyle: state.wrapStyle,
+      wrapColor: state.wrapColor,
+      ribbonColor: state.ribbonColor,
+      ribbonStyle: state.ribbonStyle,
+      environment: state.environment,
+      bouquetPose: state.bouquetPose,
+      card: state.card,
+      voice: state.voice,
+      lock: state.lock,
+    },
+    true
+  );
+
+  const decoded = decodeBouquetFromHash(payload);
+  assert.ok(decoded);
+  assert.equal(decoded.environment, 'midnightNoel');
+  assert.equal(decoded.wrapStyle, 'chalice');
+  const decButterfly = decoded.items.find((i) => i.type === 'monarchButterfly')!;
+  const decCosmos = decoded.items.find((i) => i.type === 'cosmos')!;
+  const decBow = decoded.items.find((i) => i.type === 'ribbonBowPick')!;
+  assert.equal(getEffectiveItemPlane(decButterfly), 'inside');
+  assert.equal(getEffectiveItemPlane(decCosmos), 'back');
+  assert.equal(getEffectiveItemPlane(decBow), 'front');
+});
+
+test('useBouquetStore supports photocards, environment, bouquetPose, and 4-way fast layering across planes (back, down, up, front)', () => {
   const store = useBouquetStore.getState();
   store.clearBouquet();
 
-  // Add two flowers and one photocard
+  // Add two flowers ('inside' plane) and one photocard ('front' overlay plane)
   store.addFlower('rose');
   store.addFlower('tulip');
   store.addPhotoCard('polaroid', 'data:image/jpeg;base64,abc123');
@@ -34,11 +163,13 @@ test('useBouquetStore supports photocards, environment, bouquetPose, and 4-way f
   const [rose, tulip, photo] = state.items;
   assert.equal(photo.photoStyle, 'polaroid');
   assert.equal(photo.photoDataUrl, 'data:image/jpeg;base64,abc123');
+  assert.equal(getEffectiveItemPlane(photo), 'front');
 
-  // Test 4-way fast layering: move photocard from top (index 2) to Most Back (index 0)
+  // Test 4-way fast layering: move photocard from 'front' overlay into 'inside' bouquet plane at index 0
   store.moveItemLayer(photo.id, 'back');
   state = useBouquetStore.getState();
   assert.equal(state.items[0].id, photo.id);
+  assert.equal(getEffectiveItemPlane(state.items[0]), 'inside');
 
   // Move photocard forward one step (index 0 -> index 1)
   store.moveItemLayer(photo.id, 'up');
@@ -50,10 +181,11 @@ test('useBouquetStore supports photocards, environment, bouquetPose, and 4-way f
   state = useBouquetStore.getState();
   assert.equal(state.items[0].id, photo.id);
 
-  // Move photocard to Most Front (index 0 -> index 2)
+  // Move photocard to Most Front (index 0 -> index 2 and transitions from 'inside' back to 'front' overlay)
   store.moveItemLayer(photo.id, 'front');
   state = useBouquetStore.getState();
   assert.equal(state.items[2].id, photo.id);
+  assert.equal(getEffectiveItemPlane(state.items[2]), 'front');
   assert.equal(state.items[0].id, rose.id);
   assert.equal(state.items[1].id, tulip.id);
 

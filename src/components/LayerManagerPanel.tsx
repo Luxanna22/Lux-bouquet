@@ -10,7 +10,7 @@ import {
   Package,
 } from 'lucide-react';
 import { useBouquetStore } from '../store/useBouquetStore';
-import { FLOWER_CATALOG, PHOTO_FRAME_CATALOG, WRAPPER_CATALOG } from '../types/bouquet';
+import { FLOWER_CATALOG, PHOTO_FRAME_CATALOG, WRAPPER_CATALOG, getEffectiveItemPlane } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
 import { MiniPhotoFrameSVG, LayerOrderBoxIcon } from './MiniThumbnails';
 
@@ -278,9 +278,12 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
               >
                 <button
                   type="button"
-                  disabled={visualIdx === visualRows.length - 1}
+                  disabled={
+                    visualIdx === visualRows.length - 1 &&
+                    getEffectiveItemPlane(item) === 'back'
+                  }
                   onClick={() => moveItemLayer(item.id, 'back')}
-                  title="Send to Most Back"
+                  title="Send Behind / Inside Bouquet"
                   aria-label={`Move ${displayLabel} to most back`}
                   className="p-1 rounded-lg text-[#9A877B] hover:text-[#2A201D] dark:hover:text-[#FBF6F1] disabled:opacity-25 transition cursor-pointer"
                 >
@@ -288,7 +291,10 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 </button>
                 <button
                   type="button"
-                  disabled={visualIdx === visualRows.length - 1}
+                  disabled={
+                    visualIdx === visualRows.length - 1 &&
+                    getEffectiveItemPlane(item) === 'back'
+                  }
                   onClick={() => moveItemLayer(item.id, 'down')}
                   title="Send Back 1 Layer"
                   aria-label={`Move ${displayLabel} backward`}
@@ -298,7 +304,10 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 </button>
                 <button
                   type="button"
-                  disabled={visualIdx === 0}
+                  disabled={
+                    visualIdx === 0 &&
+                    getEffectiveItemPlane(item) === 'front'
+                  }
                   onClick={() => moveItemLayer(item.id, 'up')}
                   title="Bring Forward 1 Layer"
                   aria-label={`Move ${displayLabel} forward`}
@@ -308,9 +317,12 @@ export const LayerManagerPanel: React.FC<LayerManagerPanelProps> = ({
                 </button>
                 <button
                   type="button"
-                  disabled={visualIdx === 0}
+                  disabled={
+                    visualIdx === 0 &&
+                    getEffectiveItemPlane(item) === 'front'
+                  }
                   onClick={() => moveItemLayer(item.id, 'front')}
-                  title="Bring to Most Front"
+                  title="Bring to Overlay / Front of Bouquet"
                   aria-label={`Move ${displayLabel} to most front`}
                   className="p-1 rounded-lg text-[#9A877B] hover:text-[#2A201D] dark:hover:text-[#FBF6F1] disabled:opacity-25 transition cursor-pointer"
                 >

@@ -1,5 +1,44 @@
 import React from 'react';
 import { FlowerType } from '../../types/bouquet';
+import {
+  CosmosSVG,
+  MagnoliaSVG,
+  HibiscusSVG,
+  ZinniaSVG,
+  MarigoldSVG,
+  MorningGlorySVG,
+  PlumeriaSVG,
+  ForgetMeNotSVG,
+  LilyOfTheValleySVG,
+  DelphiniumSVG,
+  AuroraGardeniaSVG,
+  VelvetBaccaraSVG,
+  ImperialFritillariaSVG,
+  JulietAustinRoseSVG,
+  LunariaHonestySVG,
+  MonarchButterflySVG,
+  CrystalButterflySVG,
+  VelvetHeartPickSVG,
+  DoubleHeartCharmSVG,
+  StarburstSparkleSVG,
+  CupidArrowPickSVG,
+  LovebirdPerchSVG,
+  WaxSealCrestSVG,
+  FairyLightGarlandSVG,
+  RibbonBowPickSVG,
+  PoinsettiaSVG,
+  HollyBerriesSVG,
+  MistletoeBoughSVG,
+  AmaryllisSVG,
+  HelleboreSVG,
+  FrostedPineconeSVG,
+  CrystalSnowflakeSVG,
+  CandyCanePickSVG,
+  GlassOrnamentSVG,
+  GingerbreadHeartSVG,
+  SleighBellsPickSVG,
+  CinnamonStarAniseSVG,
+} from './ExtendedBotanicalsAndAccents';
 
 // ============================================================================
 // MODULE 2: flowers/ — 11 INLINE SVG BOTANICAL COMPONENTS
@@ -1722,6 +1761,80 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <QueenAnnesLaceSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'astilbe':
       return <AstilbeSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'cosmos':
+      return <CosmosSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'magnolia':
+      return <MagnoliaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'hibiscus':
+      return <HibiscusSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'zinnia':
+      return <ZinniaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'marigold':
+      return <MarigoldSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'morningGlory':
+      return <MorningGlorySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'plumeria':
+      return <PlumeriaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'forgetMeNot':
+      return <ForgetMeNotSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'lilyOfTheValley':
+      return <LilyOfTheValleySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'delphinium':
+      return <DelphiniumSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'auroraGardenia':
+      return <AuroraGardeniaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'velvetBaccara':
+      return <VelvetBaccaraSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'imperialFritillaria':
+      return <ImperialFritillariaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'julietAustinRose':
+      return <JulietAustinRoseSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'lunariaHonesty':
+      return <LunariaHonestySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'monarchButterfly':
+      return <MonarchButterflySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'crystalButterfly':
+      return <CrystalButterflySVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'velvetHeartPick':
+      return <VelvetHeartPickSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'doubleHeartCharm':
+      return <DoubleHeartCharmSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'starburstSparkle':
+      return <StarburstSparkleSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'cupidArrowPick':
+      return <CupidArrowPickSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'lovebirdPerch':
+      return <LovebirdPerchSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'waxSealCrest':
+      return <WaxSealCrestSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'fairyLightGarland':
+      return <FairyLightGarlandSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'ribbonBowPick':
+      return <RibbonBowPickSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'poinsettia':
+      return <PoinsettiaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'hollyBerries':
+      return <HollyBerriesSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'mistletoeBough':
+      return <MistletoeBoughSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'amaryllis':
+      return <AmaryllisSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'hellebore':
+      return <HelleboreSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'frostedPinecone':
+      return <FrostedPineconeSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'crystalSnowflake':
+      return <CrystalSnowflakeSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'candyCanePick':
+      return <CandyCanePickSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'glassOrnament':
+      return <GlassOrnamentSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'gingerbreadHeart':
+      return <GingerbreadHeartSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'sleighBellsPick':
+      return <SleighBellsPickSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'cinnamonStarAnise':
+      return <CinnamonStarAniseSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
   }
 };
 

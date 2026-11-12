@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import {
   BouquetItem,
+  getEffectiveItemPlane,
   FLOWER_CATALOG,
   PHOTO_FRAME_CATALOG,
   DEFAULT_BOUQUET_POSE,
@@ -775,13 +776,16 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           </div>
         </div>
 
-        {/* Fast 4-Button Icon-Only Layer Order Bar (Most Back, Back, Front, Most Front) */}
+        {/* Fast 4-Button Icon-Only Layer Order Bar (Most Back, Back, Front, Most Front across wrapper planes) */}
         <div className="grid grid-cols-4 gap-1.5">
           <button
             type="button"
-            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex <= 0 && getEffectiveItemPlane(selected) === 'back')
+            }
             onClick={() => moveItemLayer(selected.id, 'back')}
-            title="Send to Most Back"
+            title="Send Behind / Inside Bouquet"
             aria-label="Send to Most Back"
             className="h-8 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center disabled:opacity-30 transition cursor-pointer"
           >
@@ -789,7 +793,10 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           </button>
           <button
             type="button"
-            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex <= 0 && getEffectiveItemPlane(selected) === 'back')
+            }
             onClick={() => moveItemLayer(selected.id, 'down')}
             title="Send Back 1 Layer"
             aria-label="Send Back 1 Layer"
@@ -799,7 +806,10 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           </button>
           <button
             type="button"
-            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex >= items.length - 1 && getEffectiveItemPlane(selected) === 'front')
+            }
             onClick={() => moveItemLayer(selected.id, 'up')}
             title="Bring Forward 1 Layer"
             aria-label="Bring Forward 1 Layer"
@@ -809,9 +819,12 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           </button>
           <button
             type="button"
-            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex >= items.length - 1 && getEffectiveItemPlane(selected) === 'front')
+            }
             onClick={() => moveItemLayer(selected.id, 'front')}
-            title="Bring to Most Front"
+            title="Bring to Overlay / Front of Bouquet"
             aria-label="Bring to Most Front"
             className="h-8 rounded-lg bg-stone-100 hover:bg-stone-200/80 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center disabled:opacity-30 transition cursor-pointer"
           >
@@ -826,22 +839,26 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
               <button
                 type="button"
                 disabled={Boolean(selected.locked)}
-                onClick={() =>
+                onClick={() => {
+                  const nextClipped = getEffectiveItemPlane(selected) !== 'inside';
                   updateItem(
                     selected.id,
-                    { clippedToBouquet: !selected.clippedToBouquet },
+                    {
+                      clippedToBouquet: nextClipped,
+                      layerPlane: nextClipped ? 'inside' : 'front',
+                    },
                     true
-                  )
-                }
-                aria-pressed={Boolean(selected.clippedToBouquet)}
+                  );
+                }}
+                aria-pressed={getEffectiveItemPlane(selected) === 'inside'}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 border transition cursor-pointer ${
-                  selected.clippedToBouquet
+                  getEffectiveItemPlane(selected) === 'inside'
                     ? 'bg-[#B4846C] text-white border-[#B4846C]'
                     : 'bg-white dark:bg-[#1E1C1A] text-[#5C4438] dark:text-[#E6D6C7] border-[#DECBB9] dark:border-[#5C4B47] hover:border-[#B4846C]'
                 }`}
               >
-                <BouquetClipToggleIcon clipped={Boolean(selected.clippedToBouquet)} className="w-3.5 h-3.5" />
-                <span>{selected.clippedToBouquet ? 'Clipped to Bouquet' : 'Clip to Bouquet'}</span>
+                <BouquetClipToggleIcon clipped={getEffectiveItemPlane(selected) === 'inside'} className="w-3.5 h-3.5" />
+                <span>{getEffectiveItemPlane(selected) === 'inside' ? 'Clipped to Bouquet' : 'Clip to Bouquet'}</span>
               </button>
 
               {onUploadPhotoForItem && (
@@ -1139,9 +1156,12 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           <button
             type="button"
             onClick={() => moveItemLayer(selected.id, 'back')}
-            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex <= 0 && getEffectiveItemPlane(selected) === 'back')
+            }
             className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
-            title="Send to Most Back"
+            title="Send Behind / Inside Bouquet"
             aria-label="Send Flower to Most Back"
           >
             <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
@@ -1149,7 +1169,10 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           <button
             type="button"
             onClick={() => moveItemLayer(selected.id, 'down')}
-            disabled={Boolean(selected.locked) || selectedIndex <= 0}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex <= 0 && getEffectiveItemPlane(selected) === 'back')
+            }
             className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
             title="Send Backward 1 Layer"
             aria-label="Send Flower Backward"
@@ -1159,7 +1182,10 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           <button
             type="button"
             onClick={() => moveItemLayer(selected.id, 'up')}
-            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex >= items.length - 1 && getEffectiveItemPlane(selected) === 'front')
+            }
             className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
             title="Bring Forward 1 Layer"
             aria-label="Bring Flower Forward"
@@ -1169,9 +1195,12 @@ export const SelectedFlowerToolbar: React.FC<SelectedFlowerToolbarProps> = ({
           <button
             type="button"
             onClick={() => moveItemLayer(selected.id, 'front')}
-            disabled={Boolean(selected.locked) || selectedIndex >= items.length - 1}
+            disabled={
+              Boolean(selected.locked) ||
+              (selectedIndex >= items.length - 1 && getEffectiveItemPlane(selected) === 'front')
+            }
             className="h-8 px-2 rounded-lg bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-medium flex items-center gap-1 disabled:opacity-30 transition cursor-pointer"
-            title="Bring to Most Front"
+            title="Bring to Overlay / Front of Bouquet"
             aria-label="Bring Flower to Most Front"
           >
             <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />

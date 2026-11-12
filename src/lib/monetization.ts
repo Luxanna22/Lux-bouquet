@@ -53,6 +53,18 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
     'pampas',
     'queenanneslace',
     'astilbe',
+    'auroraGardenia',
+    'velvetBaccara',
+    'imperialFritillaria',
+    'julietAustinRose',
+    'lunariaHonesty',
+    'poinsettia',
+    'hollyBerries',
+    'mistletoeBough',
+    'amaryllis',
+    'frostedPinecone',
+    'glassOrnament',
+    'cinnamonStarAnise',
   ],
   // Couture Vessels & Architectural Wraps (4 items: Ceramic Vase, Velvet Hatbox, Glass Cloche, Korean Mesh)
   wraps: ['vase', 'hatbox', 'cloche', 'koreanmesh'],
@@ -67,8 +79,8 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
     'goldchain',
     'raffia',
   ],
-  // Couture Atmospheric & Shimmering Backgrounds (4 items)
-  environments: ['aurora', 'velvetSalon', 'opalMist', 'starlit'],
+  // Couture Atmospheric & Shimmering Backgrounds (6 items)
+  environments: ['aurora', 'velvetSalon', 'opalMist', 'starlit', 'crystalPalace', 'midnightNoel'],
   // All Photo Uploads & Botanical Photocards are Couture Keepsakes
   photoStyles: ['raw', 'polaroid', 'stamp', 'cameo', 'film', 'pressed', 'arch'],
   // All 5 Voice Keepsake styles & Voice Recording are Couture Keepsakes
@@ -186,6 +198,18 @@ const FLOWER_LABELS: Record<string, string> = {
   pampas: 'Pampas',
   queenanneslace: 'Lace Umbel',
   astilbe: 'Astilbe',
+  auroraGardenia: 'Silk Gardenia',
+  velvetBaccara: 'Noir Baccara',
+  imperialFritillaria: 'Crown Bell',
+  julietAustinRose: 'Juliet Rose',
+  lunariaHonesty: 'Moonwort',
+  poinsettia: 'Poinsettia',
+  hollyBerries: 'Holly Berry',
+  mistletoeBough: 'Mistletoe',
+  amaryllis: 'Amaryllis',
+  frostedPinecone: 'Pinecone',
+  glassOrnament: 'Glass Bauble',
+  cinnamonStarAnise: 'Spice & Anise',
 };
 
 const WRAP_LABELS: Record<string, string> = {
@@ -211,6 +235,8 @@ const ENVIRONMENT_LABELS: Record<string, string> = {
   velvetSalon: 'Royal Filigree',
   opalMist: 'Opaline Sunbeam',
   starlit: 'Evening Glow',
+  crystalPalace: 'Versailles Crystal',
+  midnightNoel: 'Midnight Noel',
 };
 
 /**

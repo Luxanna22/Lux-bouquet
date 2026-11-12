@@ -38,7 +38,48 @@ export type FlowerType =
   | 'queenanneslace'
   | 'astilbe'
   | 'gildedFern'
-  | 'starlightGypsophila';
+  | 'starlightGypsophila'
+  // 10 New Free Flowers
+  | 'cosmos'
+  | 'magnolia'
+  | 'hibiscus'
+  | 'zinnia'
+  | 'forgetMeNot'
+  | 'lilyOfTheValley'
+  | 'marigold'
+  | 'morningGlory'
+  | 'plumeria'
+  | 'delphinium'
+  // 5 New Couture (Premium) Flowers
+  | 'auroraGardenia'
+  | 'velvetBaccara'
+  | 'imperialFritillaria'
+  | 'julietAustinRose'
+  | 'lunariaHonesty'
+  // 10 'Others' Category Designs (Butterflies, Hearts, Sparkles, Romantics & Fun)
+  | 'monarchButterfly'
+  | 'crystalButterfly'
+  | 'velvetHeartPick'
+  | 'doubleHeartCharm'
+  | 'starburstSparkle'
+  | 'cupidArrowPick'
+  | 'lovebirdPerch'
+  | 'waxSealCrest'
+  | 'fairyLightGarland'
+  | 'ribbonBowPick'
+  // 12 'Seasonal' Category Designs (Christmas & Winter Holiday Wonderland)
+  | 'poinsettia'
+  | 'hollyBerries'
+  | 'mistletoeBough'
+  | 'amaryllis'
+  | 'hellebore'
+  | 'frostedPinecone'
+  | 'crystalSnowflake'
+  | 'candyCanePick'
+  | 'glassOrnament'
+  | 'gingerbreadHeart'
+  | 'sleighBellsPick'
+  | 'cinnamonStarAnise';
 
 export type CardTheme =
   | 'sealed'
@@ -275,18 +316,20 @@ export const RIBBON_STYLE_CATALOG: {
   subtitle: string;
   defaultHex: string;
 }[] = [
+  // Free Ribbons First
   { id: 'satin', label: 'Satin Bow', subtitle: 'Classic tailored loops', defaultHex: '#E11D48' },
   { id: 'lace', label: 'Eyelet Lace', subtitle: 'Scalloped bridal lace & pearl', defaultHex: '#F472B6' },
   { id: 'corset', label: 'Corset Tie', subtitle: 'Criss-cross ribbon waist', defaultHex: '#BE185D' },
-  { id: 'double', label: 'Couture Rosette', subtitle: 'Multi-loop Parisian bow', defaultHex: '#EC4899' },
-  { id: 'pearlStrand', label: 'Akoya Pearl', subtitle: 'Lustrous pearl strands & starburst', defaultHex: '#F59E0B' },
-  { id: 'celestialSilk', label: 'Starlight Silk', subtitle: '24k gold filigree & crystal drops', defaultHex: '#EC4899' },
+  { id: 'double', label: 'Rosette Bow', subtitle: 'Multi-loop Parisian bow', defaultHex: '#EC4899' },
+  // Couture Ribbons After
   { id: 'waxCord', label: 'Twine & Seal', subtitle: 'Artisan cord & wax emblem', defaultHex: '#B4846C' },
-  { id: 'organza', label: 'Sheer Chiffon', subtitle: 'Billowy translucent veil', defaultHex: '#F9A8D4' },
-  { id: 'velvet', label: 'Cameo Velvet', subtitle: 'Draped sash & pearl clasp', defaultHex: '#9F1239' },
-  { id: 'chiffon', label: 'Chiffon Fringe', subtitle: 'Frayed raw-edge silk drape', defaultHex: '#D48C70' },
+  { id: 'pearlStrand', label: 'Akoya Pearl', subtitle: 'Lustrous pearl strands & starburst', defaultHex: '#F59E0B' },
+  { id: 'celestialSilk', label: 'Star Silk', subtitle: '24k gold filigree & crystal drops', defaultHex: '#EC4899' },
+  { id: 'organza', label: 'Chiffon Veil', subtitle: 'Billowy translucent veil', defaultHex: '#F9A8D4' },
+  { id: 'velvet', label: 'Velvet Sash', subtitle: 'Draped sash & pearl clasp', defaultHex: '#9F1239' },
+  { id: 'chiffon', label: 'Silk Fringe', subtitle: 'Frayed raw-edge silk drape', defaultHex: '#D48C70' },
   { id: 'goldchain', label: 'Gold Chain', subtitle: 'Golden links & heart charm', defaultHex: '#D97706' },
-  { id: 'raffia', label: 'Botanical Raffia', subtitle: 'Woven palm knot & dried sprig', defaultHex: '#C69C6D' }
+  { id: 'raffia', label: 'Raffia Tie', subtitle: 'Woven palm knot & dried sprig', defaultHex: '#C69C6D' }
 ];
 
 export type typeWrapStyle =
@@ -310,18 +353,20 @@ export const WRAPPER_CATALOG: {
   defaultHex: string;
   defaultRibbon: string;
 }[] = [
-  { id: 'kraft', label: 'Origami Kraft', defaultHex: '#C8B9AE', defaultRibbon: '#F5F5F4' },
-  { id: 'tissue', label: 'Butterfly Petal', defaultHex: '#FFD1DC', defaultRibbon: '#E11D48' },
+  // Free Wrappers First (Tulip Organza default first)
   { id: 'chalice', label: 'Tulip Organza', defaultHex: '#EDE0F5', defaultRibbon: '#C084FC' },
+  { id: 'kraft', label: 'Origami Kraft', defaultHex: '#C8B9AE', defaultRibbon: '#F5F5F4' },
+  { id: 'tissue', label: 'Petal Wrap', defaultHex: '#FFD1DC', defaultRibbon: '#E11D48' },
   { id: 'basket', label: 'Wicker Basket', defaultHex: '#C69C6D', defaultRibbon: '#D97706' },
-  { id: 'vintage', label: 'Parisian Script', defaultHex: '#EFE6D5', defaultRibbon: '#B4846C' },
+  { id: 'vintage', label: 'Newsprint', defaultHex: '#EFE6D5', defaultRibbon: '#B4846C' },
   { id: 'lace', label: 'Eyelet Lace', defaultHex: '#FFF5F7', defaultRibbon: '#F472B6' },
   { id: 'celestial', label: 'Starlit Noir', defaultHex: '#1E293B', defaultRibbon: '#F59E0B' },
+  { id: 'plain', label: 'Hand-Tied', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' },
+  // Couture Wrappers After
   { id: 'vase', label: 'Ceramic Vase', defaultHex: '#E7DCD1', defaultRibbon: '#B4846C' },
   { id: 'hatbox', label: 'Velvet Hatbox', defaultHex: '#9F1239', defaultRibbon: '#F59E0B' },
   { id: 'cloche', label: 'Glass Cloche', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' },
-  { id: 'koreanmesh', label: 'Korean Mesh', defaultHex: '#F3E8FF', defaultRibbon: '#EC4899' },
-  { id: 'plain', label: 'Hand-Tied', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' }
+  { id: 'koreanmesh', label: 'Korean Mesh', defaultHex: '#F3E8FF', defaultRibbon: '#EC4899' }
 ];
 
 export type PhotoFrameStyle =
@@ -406,10 +451,15 @@ export type CanvasEnvironment =
   | 'meadow'
   | 'sunlit'
   | 'linen'
+  | 'blushSilk'
+  | 'botanicalArch'
+  | 'nordicSnow'
   | 'starlit'
   | 'aurora'
   | 'velvetSalon'
-  | 'opalMist';
+  | 'opalMist'
+  | 'crystalPalace'
+  | 'midnightNoel';
 
 export interface CanvasEnvironmentMeta {
   id: CanvasEnvironment;
@@ -450,6 +500,24 @@ export const ENVIRONMENT_CATALOG: CanvasEnvironmentMeta[] = [
     subtitle: 'Fine raw flax canvas weave'
   },
   {
+    id: 'blushSilk',
+    label: 'Rosewater Silk',
+    shortLabel: 'Rose Silk',
+    subtitle: 'Draped ballet-pink charmeuse folds'
+  },
+  {
+    id: 'botanicalArch',
+    label: 'Glass Conservatory',
+    shortLabel: 'Greenhouse',
+    subtitle: 'Victorian glasshouse arch & mist'
+  },
+  {
+    id: 'nordicSnow',
+    label: 'Winter Snowfall',
+    shortLabel: 'Snowfall',
+    subtitle: 'Soft frost halo & drifting snow motes'
+  },
+  {
     id: 'aurora',
     label: 'Gilded Aurora',
     shortLabel: 'Aurora',
@@ -472,22 +540,36 @@ export const ENVIRONMENT_CATALOG: CanvasEnvironmentMeta[] = [
     label: 'Evening Glow',
     shortLabel: 'Evening',
     subtitle: 'Soft twilight & stardust motes'
+  },
+  {
+    id: 'crystalPalace',
+    label: 'Versailles Crystal',
+    shortLabel: 'Versailles',
+    subtitle: 'Chandelier prisms & gilded rococo arch'
+  },
+  {
+    id: 'midnightNoel',
+    label: 'Midnight Noel',
+    shortLabel: 'Noel Pine',
+    subtitle: 'Festive pine garland, baubles & snow'
   }
 ];
 
 export interface BouquetPose {
   x: number; // SVG viewBox center X (default 300)
-  y: number; // SVG viewBox center Y (default 380)
-  scale: number; // 0.45 .. 2.2 (default 1)
+  y: number; // SVG viewBox center Y (default 386)
+  scale: number; // 0.45 .. 2.2 (default 0.86)
   rotation: number; // degrees -90 .. 90 (default 0)
 }
 
 export const DEFAULT_BOUQUET_POSE: BouquetPose = {
   x: 300,
-  y: 380,
-  scale: 1,
+  y: 386,
+  scale: 0.86,
   rotation: 0
 };
+
+export type BouquetLayerPlane = 'back' | 'inside' | 'front';
 
 export interface BouquetItem {
   id: string;
@@ -506,6 +588,24 @@ export interface BouquetItem {
   photoDataUrl?: string;
   photoCaption?: string;
   clippedToBouquet?: boolean;
+  layerPlane?: BouquetLayerPlane;
+}
+
+export function getEffectiveItemPlane(item: BouquetItem): BouquetLayerPlane {
+  if (item.layerPlane === 'back' || item.layerPlane === 'inside' || item.layerPlane === 'front') {
+    return item.layerPlane;
+  }
+  if (item.photoStyle) {
+    return item.clippedToBouquet ? 'inside' : 'front';
+  }
+  const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+  if (meta?.isOther) {
+    return item.clippedToBouquet ? 'inside' : 'front';
+  }
+  if (item.clippedToBouquet === false) {
+    return 'front';
+  }
+  return 'inside';
 }
 
 export interface GreetingCardData {
@@ -688,10 +788,14 @@ export interface FlowerCatalogMeta {
   defaultScale: number;
   isFoliage?: boolean;
   isFiller?: boolean;
+  isOther?: boolean;
+  isSeasonal?: boolean;
 }
 
 export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
-  // --- 15 FOCAL FLOWERS ---
+  // ==========================================================================
+  // 1. FOCAL FLOWERS — FREE FIRST (19), COUTURE AFTER (14)
+  // ==========================================================================
   {
     type: 'rose',
     name: 'Garden Rose',
@@ -801,9 +905,73 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultScale: 1.14
   },
   {
+    type: 'cosmos',
+    name: 'Garden Cosmos',
+    shortName: 'Cosmos',
+    subtitle: 'Pleated saucer petals',
+    defaultPetalColor: '#f472b6',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.04
+  },
+  {
+    type: 'magnolia',
+    name: 'Empress Magnolia',
+    shortName: 'Magnolia',
+    subtitle: 'Sculpted ivory cup & bough',
+    defaultPetalColor: '#fffdf9',
+    defaultCenterColor: '#db2777',
+    defaultScale: 1.12
+  },
+  {
+    type: 'hibiscus',
+    name: 'Tropical Hibiscus',
+    shortName: 'Hibiscus',
+    subtitle: 'Ruffled island trumpet',
+    defaultPetalColor: '#fb7185',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.1
+  },
+  {
+    type: 'zinnia',
+    name: 'Queen Zinnia',
+    shortName: 'Zinnia',
+    subtitle: 'Multi-tiered fiesta rosette',
+    defaultPetalColor: '#f97316',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.08
+  },
+  {
+    type: 'marigold',
+    name: 'Velvet Marigold',
+    shortName: 'Marigold',
+    subtitle: 'Crinkled saffron pompon',
+    defaultPetalColor: '#f59e0b',
+    defaultCenterColor: '#b45309',
+    defaultScale: 1.06
+  },
+  {
+    type: 'morningGlory',
+    name: 'Morning Glory',
+    shortName: 'Dayglory',
+    subtitle: 'Star-rayed azure funnel',
+    defaultPetalColor: '#38bdf8',
+    defaultCenterColor: '#ffffff',
+    defaultScale: 1.05
+  },
+  {
+    type: 'plumeria',
+    name: 'Island Plumeria',
+    shortName: 'Plumeria',
+    subtitle: 'Frangipani pinwheel bloom',
+    defaultPetalColor: '#fffbeb',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 1.04
+  },
+  // --- Couture Focal Flowers ---
+  {
     type: 'celestialRose',
     name: 'Gilded Celestial Rose',
-    shortName: 'Gilded Rose',
+    shortName: 'Gold Rose',
     subtitle: '24k gold-rimmed velvet & starlight',
     defaultPetalColor: '#fb7185',
     defaultCenterColor: '#fde047',
@@ -812,7 +980,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'crystalOrchid',
     name: 'Crystal Moonbow Orchid',
-    shortName: 'Crystal Orchid',
+    shortName: 'Moon Orchid',
     subtitle: 'Iridescent prism petals & diamond dew',
     defaultPetalColor: '#e9d5ff',
     defaultCenterColor: '#facc15',
@@ -821,7 +989,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'luminaPeony',
     name: 'Lumina Starlight Peony',
-    shortName: 'Starlight Peony',
+    shortName: 'Star Peony',
     subtitle: 'Glowing silk blush & golden halo',
     defaultPetalColor: '#fbcfe8',
     defaultCenterColor: '#fde68a',
@@ -890,7 +1058,45 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultCenterColor: '#f97316',
     defaultScale: 1.06
   },
-  // --- 14 FILLERS & FOLIAGE ---
+  {
+    type: 'auroraGardenia',
+    name: 'Opaline Silk Gardenia',
+    shortName: 'Gardenia',
+    subtitle: 'Spiral ivory rosette & gold dew',
+    defaultPetalColor: '#fffdf9',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 1.14
+  },
+  {
+    type: 'velvetBaccara',
+    name: 'Noir Baccara Rose',
+    shortName: 'Baccara',
+    subtitle: 'Burgundy-noir velvet & 24k rim',
+    defaultPetalColor: '#881337',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 1.14
+  },
+  {
+    type: 'imperialFritillaria',
+    name: 'Crown Imperial Bell',
+    shortName: 'Crown Bell',
+    subtitle: 'Royal pendant bells & pearl drops',
+    defaultPetalColor: '#fb923c',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.15
+  },
+  {
+    type: 'julietAustinRose',
+    name: 'Juliet Cabbage Rose',
+    shortName: 'Juliet Rose',
+    subtitle: 'Quartered peach-blush couture bloom',
+    defaultPetalColor: '#fdba74',
+    defaultCenterColor: '#fb7185',
+    defaultScale: 1.16
+  },
+  // ==========================================================================
+  // 2. FILLERS & FOLIAGE — FREE FIRST (10), COUTURE AFTER (8)
+  // ==========================================================================
   {
     type: 'lavender',
     name: 'French Lavender',
@@ -904,7 +1110,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'babysBreath',
     name: "Baby's Breath",
-    shortName: "Baby's Breath",
+    shortName: 'Gypsophila',
     subtitle: 'Delicate cloud filler',
     defaultPetalColor: '#ffffff',
     defaultCenterColor: '#fef08a',
@@ -964,9 +1170,40 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     isFiller: true
   },
   {
+    type: 'forgetMeNot',
+    name: 'Forget-Me-Not Spray',
+    shortName: 'Myosotis',
+    subtitle: 'Dainty sky-blue cluster',
+    defaultPetalColor: '#60a5fa',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.05,
+    isFiller: true
+  },
+  {
+    type: 'lilyOfTheValley',
+    name: 'Lily of the Valley',
+    shortName: 'May Bells',
+    subtitle: 'Arching porcelain bell raceme',
+    defaultPetalColor: '#ffffff',
+    defaultCenterColor: '#86efac',
+    defaultScale: 1.08,
+    isFiller: true
+  },
+  {
+    type: 'delphinium',
+    name: 'Larkspur Delphinium',
+    shortName: 'Delphinium',
+    subtitle: 'Tall sapphire floral spire',
+    defaultPetalColor: '#818cf8',
+    defaultCenterColor: '#e0e7ff',
+    defaultScale: 1.12,
+    isFiller: true
+  },
+  // --- Couture Fillers & Foliage ---
+  {
     type: 'gildedFern',
     name: '24k Gilded Maidenhair',
-    shortName: 'Gilded Fern',
+    shortName: 'Gold Fern',
     subtitle: 'Metallic champagne-gold fronds & sparkles',
     defaultPetalColor: '#fde68a',
     defaultCenterColor: '#d97706',
@@ -977,7 +1214,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'starlightGypsophila',
     name: 'Starlight Pearl Cloud',
-    shortName: 'Starlight Spray',
+    shortName: 'Pearl Cloud',
     subtitle: 'Glimmering Akoya pearls & diamond stars',
     defaultPetalColor: '#fffdf9',
     defaultCenterColor: '#facc15',
@@ -1020,7 +1257,7 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
   {
     type: 'queenanneslace',
     name: "Queen Anne's Lace",
-    shortName: 'Lace Umbel',
+    shortName: 'Laceflower',
     subtitle: 'Starry filigree canopy',
     defaultPetalColor: '#ffffff',
     defaultCenterColor: '#86efac',
@@ -1036,6 +1273,245 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultCenterColor: '#e11d48',
     defaultScale: 1.1,
     isFiller: true
+  },
+  {
+    type: 'lunariaHonesty',
+    name: 'Silver Dollar Moonwort',
+    shortName: 'Moonwort',
+    subtitle: 'Mother-of-pearl translucent coins',
+    defaultPetalColor: '#f8fafc',
+    defaultCenterColor: '#fde68a',
+    defaultScale: 1.12,
+    isFoliage: true,
+    isFiller: true
+  },
+  // ==========================================================================
+  // 3. 'OTHERS' ROMANTIC, WHIMSICAL & FUN ACCENTS (10)
+  // ==========================================================================
+  {
+    type: 'monarchButterfly',
+    name: 'Swallowtail Butterfly',
+    shortName: 'Butterfly',
+    subtitle: 'Filigree winged flutter',
+    defaultPetalColor: '#f472b6',
+    defaultCenterColor: '#fde047',
+    defaultScale: 0.96,
+    isOther: true
+  },
+  {
+    type: 'crystalButterfly',
+    name: 'Blue Morpho Butterfly',
+    shortName: 'Morpho',
+    subtitle: 'Iridescent azure wings & sparkles',
+    defaultPetalColor: '#38bdf8',
+    defaultCenterColor: '#1e3a8a',
+    defaultScale: 0.98,
+    isOther: true
+  },
+  {
+    type: 'velvetHeartPick',
+    name: 'Puffed Velvet Heart',
+    shortName: 'Heart',
+    subtitle: 'Quilted satin heart & bow',
+    defaultPetalColor: '#e11d48',
+    defaultCenterColor: '#fde68a',
+    defaultScale: 0.95,
+    isOther: true
+  },
+  {
+    type: 'doubleHeartCharm',
+    name: 'Interlocked Twin Hearts',
+    shortName: 'Twin Heart',
+    subtitle: 'Linked rose & gold filigree hearts',
+    defaultPetalColor: '#fb7185',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 0.96,
+    isOther: true
+  },
+  {
+    type: 'starburstSparkle',
+    name: 'Celestial Sparkles',
+    shortName: 'Sparkles',
+    subtitle: 'Twinkling 8-point stars & pearls',
+    defaultPetalColor: '#fde047',
+    defaultCenterColor: '#fffdf9',
+    defaultScale: 1.0,
+    isOther: true
+  },
+  {
+    type: 'cupidArrowPick',
+    name: "Cupid's Gilded Arrow",
+    shortName: 'Cupid',
+    subtitle: 'Heart-tipped arrow & feathers',
+    defaultPetalColor: '#f43f5e',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 1.02,
+    isOther: true
+  },
+  {
+    type: 'lovebirdPerch',
+    name: 'Porcelain Lovebird',
+    shortName: 'Lovebird',
+    subtitle: 'Dove carrying a sealed love note',
+    defaultPetalColor: '#fffdf9',
+    defaultCenterColor: '#f472b6',
+    defaultScale: 0.98,
+    isOther: true
+  },
+  {
+    type: 'waxSealCrest',
+    name: 'Wax Seal Medallion',
+    shortName: 'Wax Seal',
+    subtitle: 'Stamped heart crest & ribbons',
+    defaultPetalColor: '#be123c',
+    defaultCenterColor: '#fde68a',
+    defaultScale: 0.92,
+    isOther: true
+  },
+  {
+    type: 'fairyLightGarland',
+    name: 'Firefly Fairy Lights',
+    shortName: 'Fireflies',
+    subtitle: 'Warm glowing micro-bulb strand',
+    defaultPetalColor: '#fef08a',
+    defaultCenterColor: '#d97706',
+    defaultScale: 1.05,
+    isOther: true
+  },
+  {
+    type: 'ribbonBowPick',
+    name: 'Coquette Organza Bow',
+    shortName: 'Silk Bow',
+    subtitle: 'Fluttering bow & pearl drop',
+    defaultPetalColor: '#f9a8d4',
+    defaultCenterColor: '#e11d48',
+    defaultScale: 0.96,
+    isOther: true
+  },
+  // ==========================================================================
+  // 4. 'SEASONAL' DESIGNS — FREE FIRST (5), COUTURE AFTER (7)
+  // Free: Snow Rose, Snowflake, Candy Cane, Jingle Bells, Gingerbread
+  // ==========================================================================
+  {
+    type: 'hellebore',
+    name: 'Christmas Snow Rose',
+    shortName: 'Snow Rose',
+    subtitle: 'Frosted winter hellebore & gold',
+    defaultPetalColor: '#fff1f2',
+    defaultCenterColor: '#fde047',
+    defaultScale: 1.06,
+    isSeasonal: true
+  },
+  {
+    type: 'crystalSnowflake',
+    name: 'Crystal Filigree Snowflake',
+    shortName: 'Snowflake',
+    subtitle: '6-point ice crystal & frost glints',
+    defaultPetalColor: '#e0f2fe',
+    defaultCenterColor: '#38bdf8',
+    defaultScale: 0.98,
+    isSeasonal: true
+  },
+  {
+    type: 'candyCanePick',
+    name: 'Peppermint Candy Cane',
+    shortName: 'Candy Cane',
+    subtitle: 'Striped cane & festive satin bow',
+    defaultPetalColor: '#ef4444',
+    defaultCenterColor: '#ffffff',
+    defaultScale: 0.98,
+    isSeasonal: true
+  },
+  {
+    type: 'sleighBellsPick',
+    name: 'Gilded Jingle Bells',
+    shortName: 'Jingle Bells',
+    subtitle: 'Twin brass bells & velvet bow',
+    defaultPetalColor: '#f59e0b',
+    defaultCenterColor: '#dc2626',
+    defaultScale: 0.98,
+    isSeasonal: true
+  },
+  {
+    type: 'gingerbreadHeart',
+    name: 'Iced Gingerbread Heart',
+    shortName: 'Gingerbread',
+    subtitle: 'Royal-icing piped cookie charm',
+    defaultPetalColor: '#b45309',
+    defaultCenterColor: '#fffdf9',
+    defaultScale: 0.96,
+    isSeasonal: true
+  },
+  // --- Couture Seasonal Designs ---
+  {
+    type: 'poinsettia',
+    name: 'Velvet Poinsettia Star',
+    shortName: 'Poinsettia',
+    subtitle: 'Crimson Yuletide star bracts',
+    defaultPetalColor: '#dc2626',
+    defaultCenterColor: '#facc15',
+    defaultScale: 1.14,
+    isSeasonal: true
+  },
+  {
+    type: 'hollyBerries',
+    name: 'Holly & Winter Berries',
+    shortName: 'Holly',
+    subtitle: 'Glossy holly leaves & red berries',
+    defaultPetalColor: '#ef4444',
+    defaultCenterColor: '#15803d',
+    defaultScale: 1.05,
+    isSeasonal: true
+  },
+  {
+    type: 'mistletoeBough',
+    name: 'Kissing Mistletoe Bough',
+    shortName: 'Mistletoe',
+    subtitle: 'Snow-pearl berries & ribbon tie',
+    defaultPetalColor: '#fffdf9',
+    defaultCenterColor: '#4ade80',
+    defaultScale: 1.06,
+    isSeasonal: true
+  },
+  {
+    type: 'amaryllis',
+    name: 'Noel Striped Amaryllis',
+    shortName: 'Amaryllis',
+    subtitle: 'Candy-striped holiday trumpet',
+    defaultPetalColor: '#e11d48',
+    defaultCenterColor: '#ffffff',
+    defaultScale: 1.14,
+    isSeasonal: true
+  },
+  {
+    type: 'frostedPinecone',
+    name: 'Snow-Dusted Pinecone',
+    shortName: 'Pinecone',
+    subtitle: 'Noble fir needles & frosted cone',
+    defaultPetalColor: '#92400e',
+    defaultCenterColor: '#166534',
+    defaultScale: 1.04,
+    isSeasonal: true
+  },
+  {
+    type: 'glassOrnament',
+    name: 'Heirloom Glass Bauble',
+    shortName: 'Bauble',
+    subtitle: 'Gilded starburst ornament & cap',
+    defaultPetalColor: '#e11d48',
+    defaultCenterColor: '#fde047',
+    defaultScale: 0.96,
+    isSeasonal: true
+  },
+  {
+    type: 'cinnamonStarAnise',
+    name: 'Spiced Orange & Anise',
+    shortName: 'Spice Pick',
+    subtitle: 'Dried blood-orange & cinnamon',
+    defaultPetalColor: '#ea580c',
+    defaultCenterColor: '#78350f',
+    defaultScale: 1.0,
+    isSeasonal: true
   }
 ];
 
@@ -1140,7 +1616,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
   },
   {
     id: 'getWell',
-    name: 'Get Well Soon',
+    name: 'Get Well',
     subtitle: 'Calming lavender & pure hydrangeas',
     badgeColor: '#8b5cf6',
     snapshot: {

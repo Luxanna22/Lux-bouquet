@@ -6,6 +6,8 @@ import {
   typeWrapStyle,
   WrapStyle,
   BouquetItem,
+  BouquetLayerPlane,
+  getEffectiveItemPlane,
   GreetingCardData,
   VoiceKeepsakeData,
   DEFAULT_VOICE_KEEPSAKE,
@@ -103,13 +105,13 @@ function getInitialStoreState() {
       if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
         return {
           items: shared.items,
-          wrapStyle: shared.wrapStyle || ('kraft' as WrapStyle),
+          wrapStyle: shared.wrapStyle || ('chalice' as WrapStyle),
           lastNonPlainWrapStyle:
             shared.wrapStyle && shared.wrapStyle !== 'plain'
               ? shared.wrapStyle
-              : ('kraft' as Exclude<WrapStyle, 'plain'>),
-          wrapColor: shared.wrapColor || '#d6b38e',
-          ribbonColor: shared.ribbonColor || '#e11d48',
+              : ('chalice' as Exclude<WrapStyle, 'plain'>),
+          wrapColor: shared.wrapColor || '#EDE0F5',
+          ribbonColor: shared.ribbonColor || '#C084FC',
           ribbonStyle: shared.ribbonStyle || ('satin' as RibbonStyle),
           environment: (shared.environment || 'studio') as CanvasEnvironment,
           bouquetPose: shared.bouquetPose
@@ -144,10 +146,10 @@ function getInitialStoreState() {
   const isBrowser = typeof window !== 'undefined';
   return {
     items: isBrowser ? [] : INITIAL_ITEMS,
-    wrapStyle: 'kraft' as WrapStyle,
-    lastNonPlainWrapStyle: 'kraft' as Exclude<WrapStyle, 'plain'>,
-    wrapColor: '#d6b38e',
-    ribbonColor: '#e11d48',
+    wrapStyle: 'chalice' as WrapStyle,
+    lastNonPlainWrapStyle: 'chalice' as Exclude<WrapStyle, 'plain'>,
+    wrapColor: '#EDE0F5',
+    ribbonColor: '#C084FC',
     ribbonStyle: 'satin' as RibbonStyle,
     environment: 'studio' as CanvasEnvironment,
     bouquetPose: { ...DEFAULT_BOUQUET_POSE },
@@ -208,9 +210,12 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     const spreadY = meta.isFoliage ? 255 + (Math.random() - 0.5) * 45 : 305 + (Math.random() - 0.5) * 75;
     const autoTilt = ((spreadX - 300) / 140) * 24;
 
+    const initialPlane: BouquetLayerPlane = meta.isOther ? 'front' : 'inside';
     const newItem: BouquetItem = {
       id,
       type,
+      layerPlane: initialPlane,
+      clippedToBouquet: initialPlane === 'inside',
       x: Math.round(spreadX),
       y: Math.round(spreadY),
       scale: meta.defaultScale,
@@ -247,6 +252,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       photoStyle: style,
       photoDataUrl,
       photoCaption: isRaw ? '' : caption ?? meta.defaultCaption,
+      layerPlane: 'front',
       clippedToBouquet: false,
       x: Math.round(spreadX),
       y: Math.round(spreadY),
@@ -278,11 +284,15 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     ) {
       return;
     }
+    const normalizedPatch: Partial<BouquetItem> =
+      patch.clippedToBouquet !== undefined && patch.layerPlane === undefined
+        ? { ...patch, layerPlane: patch.clippedToBouquet ? 'inside' : 'front' }
+        : patch;
     const snap = recordHistory ? takeSnapshot(get()) : null;
     set((state) => ({
       past: snap ? [...state.past.slice(-29), snap] : state.past,
       future: snap ? [] : state.future,
-      items: state.items.map((item) => (item.id === id ? { ...item, ...patch } : item))
+      items: state.items.map((item) => (item.id === id ? { ...item, ...normalizedPatch } : item))
     }));
   },
 
@@ -362,37 +372,15 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   },
 
   bringForward: () => {
-    const { selectedId, items } = get();
+    const { selectedId } = get();
     if (!selectedId) return;
-    const idx = items.findIndex((i) => i.id === selectedId);
-    if (idx === -1 || idx === items.length - 1) return;
-    if (items[idx].locked) return;
-    const snap = takeSnapshot(get());
-    const next = [...items];
-    const [picked] = next.splice(idx, 1);
-    next.push(picked);
-    set((state) => ({
-      past: [...state.past.slice(-29), snap],
-      future: [],
-      items: next
-    }));
+    get().moveItemLayer(selectedId, 'front');
   },
 
   sendBackward: () => {
-    const { selectedId, items } = get();
+    const { selectedId } = get();
     if (!selectedId) return;
-    const idx = items.findIndex((i) => i.id === selectedId);
-    if (idx <= 0) return;
-    if (items[idx].locked) return;
-    const snap = takeSnapshot(get());
-    const next = [...items];
-    const [picked] = next.splice(idx, 1);
-    next.unshift(picked);
-    set((state) => ({
-      past: [...state.past.slice(-29), snap],
-      future: [],
-      items: next
-    }));
+    get().moveItemLayer(selectedId, 'back');
   },
 
   reorderItems: (fromIndex, toIndex) => {
@@ -422,16 +410,55 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     const { items } = get();
     const idx = items.findIndex((i) => i.id === id);
     if (idx === -1 || items[idx].locked) return;
+    const currentItem = items[idx];
+    const currentPlane = getEffectiveItemPlane(currentItem);
+    let nextPlane: BouquetLayerPlane = currentPlane;
     let targetIdx = idx;
-    if (direction === 'up') targetIdx = Math.min(items.length - 1, idx + 1);
-    else if (direction === 'down') targetIdx = Math.max(0, idx - 1);
-    else if (direction === 'front') targetIdx = items.length - 1;
-    else if (direction === 'back') targetIdx = 0;
-    if (targetIdx === idx) return;
+
+    if (direction === 'front') {
+      // If inside or back, 'To Front' brings it to the top of its plane first, or steps it forward to overlay the bouquet wrapper ('front')
+      if (currentPlane === 'back') {
+        nextPlane = 'inside';
+      } else if (currentPlane === 'inside') {
+        nextPlane = 'front';
+      }
+      targetIdx = items.length - 1;
+    } else if (direction === 'back') {
+      // 'To Back' steps an overlay ('front') inside the bouquet wrapper ('inside'), or from 'inside' behind the back wrapper ('back')
+      if (currentPlane === 'front') {
+        nextPlane = 'inside';
+      } else if (currentPlane === 'inside') {
+        nextPlane = 'back';
+      }
+      targetIdx = 0;
+    } else if (direction === 'up') {
+      if (idx < items.length - 1) {
+        targetIdx = idx + 1;
+      } else if (currentPlane === 'back') {
+        nextPlane = 'inside';
+      } else if (currentPlane === 'inside') {
+        nextPlane = 'front';
+      }
+    } else if (direction === 'down') {
+      if (idx > 0) {
+        targetIdx = idx - 1;
+      } else if (currentPlane === 'front') {
+        nextPlane = 'inside';
+      } else if (currentPlane === 'inside') {
+        nextPlane = 'back';
+      }
+    }
+
+    if (targetIdx === idx && nextPlane === currentPlane) return;
     const snap = takeSnapshot(get());
     const next = [...items];
     const [moved] = next.splice(idx, 1);
-    next.splice(targetIdx, 0, moved);
+    const updatedMoved: BouquetItem = {
+      ...moved,
+      layerPlane: nextPlane,
+      clippedToBouquet: nextPlane === 'inside'
+    };
+    next.splice(targetIdx, 0, updatedMoved);
     set((state) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
@@ -493,7 +520,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       set((state) => ({
         past: [...state.past.slice(-29), snap],
         future: [],
-        wrapStyle: lastNonPlainWrapStyle || 'kraft'
+        wrapStyle: lastNonPlainWrapStyle || 'chalice'
       }));
     } else {
       set((state) => ({
@@ -755,10 +782,10 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       past: [...state.past.slice(-29), snap],
       future: [],
       items: [],
-      wrapStyle: 'kraft',
-      wrapColor: '#C8B9AE',
+      wrapStyle: 'chalice',
+      wrapColor: '#EDE0F5',
       ribbonStyle: 'satin',
-      ribbonColor: '#E11D48',
+      ribbonColor: '#C084FC',
       environment: 'studio',
       bouquetPose: { ...DEFAULT_BOUQUET_POSE },
       hasCustomWrapColor: false,

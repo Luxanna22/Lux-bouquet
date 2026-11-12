@@ -6,6 +6,7 @@ import {
   VoiceKeepsakeData,
   typeWrapStyle,
   BouquetItem,
+  getEffectiveItemPlane,
   BouquetSnapshot,
   GreetingCardData,
   FLOWER_CATALOG,
@@ -1905,47 +1906,65 @@ export const BouquetEnvironmentSVG: React.FC<{
         </g>
       )}
 
-      {/* 5. CELESTIAL GLOW (Soft twilight botanical arch, crescent moon & delicate constellation lineart) */}
+      {/* 5. EVENING GLOW ('starlit' — Deep twilight night sky, luminous crescent moon & golden constellations) */}
       {environment === 'starlit' && (
-        <g opacity={isDarkMode ? 0.75 : 0.85}>
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envStarlitSky`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#14112A" />
+              <stop offset="52%" stopColor="#221A3B" />
+              <stop offset="100%" stopColor="#35234B" />
+            </linearGradient>
+            <radialGradient id={`${idPrefix}envStarlitMoonGlow`} cx="50%" cy="22%" r="48%">
+              <stop offset="0%" stopColor="#FDE68A" stopOpacity="0.24" />
+              <stop offset="55%" stopColor="#C084FC" stopOpacity="0.1" />
+              <stop offset="100%" stopColor="#14112A" stopOpacity="0" />
+            </radialGradient>
+          </defs>
           <rect
             x="6"
             y="6"
             width="588"
             height="668"
-            fill={isDarkMode ? '#1F1B24' : '#F3EFFA'}
-            opacity={isDarkMode ? 0.65 : 0.72}
+            rx="38"
+            fill={`url(#${idPrefix}envStarlitSky)`}
           />
-          {/* Fine Gold Arch Frame */}
+          <circle cx="300" cy="180" r="260" fill={`url(#${idPrefix}envStarlitMoonGlow)`} />
+          {/* Fine Gold Celestial Arch Frame */}
           <path
-            d="M34,648 L34,256 A266,236 0 0,1 566,256 L566,648 Z"
+            d="M36,648 L36,256 A264,234 0 0,1 564,256 L564,648 Z"
             fill="none"
-            stroke={isDarkMode ? '#FBBF24' : '#B4846C'}
-            strokeWidth="1.1"
+            stroke="#FBBF24"
+            strokeWidth="1.2"
             strokeDasharray="4 4"
             opacity="0.55"
           />
-          {/* Top-Center Crescent Moon & Four-Point Stars */}
+          {/* Top-Center Luminous Crescent Moon & Stars */}
           <path
-            d="M304,54 A14,14 0 1,0 318,72 A11,11 0 1,1 304,54 Z"
-            fill={isDarkMode ? '#FDE68A' : '#D97706'}
-            opacity="0.7"
+            d="M292,46 A22,22 0 1,0 318,76 A17,17 0 1,1 292,46 Z"
+            fill="#FDE68A"
+            opacity="0.92"
           />
-          <g fill={isDarkMode ? '#FDE68A' : '#D97706'} opacity="0.7">
-            <path d="M118,128 L120,134 L126,136 L120,138 L118,144 L116,138 L110,136 L116,134 Z" />
-            <path d="M482,138 L484,144 L490,146 L484,148 L482,154 L480,148 L474,146 L480,144 Z" />
-            <circle cx="92" cy="215" r="2" />
-            <circle cx="142" cy="182" r="1.6" />
-            <circle cx="508" cy="224" r="2" />
-            <circle cx="456" cy="192" r="1.6" />
+          <g fill="#FDE68A" opacity="0.88">
+            <path d="M118,122 L121,131 L130,134 L121,137 L118,146 L115,137 L106,134 L115,131 Z" />
+            <path d="M482,132 L485,141 L494,144 L485,147 L482,156 L479,147 L470,144 L479,141 Z" />
+            <path d="M168,74 L170,80 L176,82 L170,84 L168,90 L166,84 L160,82 L166,80 Z" />
+            <path d="M436,78 L438,84 L444,86 L438,88 L436,94 L434,88 L428,86 L434,84 Z" />
+            <circle cx="88" cy="212" r="2.4" />
+            <circle cx="144" cy="182" r="2" />
+            <circle cx="182" cy="222" r="1.8" fill="#F472B6" />
+            <circle cx="512" cy="220" r="2.4" />
+            <circle cx="456" cy="190" r="2" />
+            <circle cx="418" cy="228" r="1.8" fill="#C084FC" />
           </g>
+          {/* Constellation Lineart */}
           <path
-            d="M92,215 L118,136 L142,182 M508,224 L482,146 L456,192"
+            d="M88,212 L118,134 L144,182 L182,222 M512,220 L482,144 L456,190 L418,228"
             fill="none"
-            stroke={isDarkMode ? '#FDE68A' : '#B4846C'}
-            strokeWidth="0.75"
-            strokeDasharray="2 3"
-            opacity="0.45"
+            stroke="#FDE68A"
+            strokeWidth="0.9"
+            strokeDasharray="3 3"
+            opacity="0.55"
           />
         </g>
       )}
@@ -1955,9 +1974,9 @@ export const BouquetEnvironmentSVG: React.FC<{
         <g>
           <defs>
             <linearGradient id={`${idPrefix}envAuroraBg`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={isDarkMode ? '#2D192B' : '#FFF5F8'} />
-              <stop offset="48%" stopColor={isDarkMode ? '#33251B' : '#FEF7E6'} />
-              <stop offset="100%" stopColor={isDarkMode ? '#1C223A' : '#EEF2FF'} />
+              <stop offset="0%" stopColor={isDarkMode ? '#2D192B' : '#FFEAF2'} />
+              <stop offset="48%" stopColor={isDarkMode ? '#33251B' : '#FEF3C7'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1C223A' : '#E0E7FF'} />
             </linearGradient>
             <radialGradient id={`${idPrefix}envAuroraHalo`} cx="50%" cy="42%" r="50%">
               <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.26' : '0.45'} />
@@ -1965,7 +1984,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
             </radialGradient>
           </defs>
-          <rect x="14" y="14" width="572" height="652" rx="36" fill={`url(#${idPrefix}envAuroraBg)`} />
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envAuroraBg)`} />
           <circle cx="300" cy="290" r="260" fill={`url(#${idPrefix}envAuroraHalo)`} />
           {/* Flowing Iridescent Aurora Ribbons */}
           <path
@@ -2022,7 +2041,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor="#17070D" />
             </radialGradient>
           </defs>
-          <rect x="14" y="14" width="572" height="652" rx="36" fill={`url(#${idPrefix}envVelvetBg)`} />
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envVelvetBg)`} />
           {/* Subtle Warm Spotlight Behind Bouquet */}
           <circle cx="300" cy="330" r="215" fill="#F59E0B" opacity="0.09" />
           {/* Double Gilded Filigree Frame & Corner Baroque Scrollwork */}
@@ -2071,12 +2090,12 @@ export const BouquetEnvironmentSVG: React.FC<{
         <g>
           <defs>
             <linearGradient id={`${idPrefix}envOpalBg`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={isDarkMode ? '#1F242D' : '#FFFDF9'} />
-              <stop offset="45%" stopColor={isDarkMode ? '#2B222C' : '#FDF2F8'} />
-              <stop offset="100%" stopColor={isDarkMode ? '#1B2830' : '#F0F9FF'} />
+              <stop offset="0%" stopColor={isDarkMode ? '#1F242D' : '#FFF7ED'} />
+              <stop offset="45%" stopColor={isDarkMode ? '#2B222C' : '#FCE7F3'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1B2830' : '#E0F2FE'} />
             </linearGradient>
           </defs>
-          <rect x="14" y="14" width="572" height="652" rx="36" fill={`url(#${idPrefix}envOpalBg)`} />
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envOpalBg)`} />
           {/* Diagonal Luminous Sunbeam Rays */}
           <g opacity={isDarkMode ? '0.14' : '0.35'}>
             <polygon points="14,14 210,14 586,440 586,610" fill="#FEF08A" />
@@ -2110,6 +2129,247 @@ export const BouquetEnvironmentSVG: React.FC<{
             <circle cx="508" cy="248" r="3.5" fill="#BAE6FD" />
             <circle cx="176" cy="84" r="2.2" />
             <circle cx="424" cy="88" r="2.2" />
+          </g>
+        </g>
+      )}
+
+      {/* 10. ROSEWATER SILK DRAPERY ('blushSilk' — Free) */}
+      {environment === 'blushSilk' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envBlushSilkBg`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#352229' : '#FFF0F5'} />
+              <stop offset="50%" stopColor={isDarkMode ? '#2B1B22' : '#FCE7F3'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#24171D' : '#FFE4E6'} />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envBlushSilkBg)`} />
+          {/* Flowing Charmeuse Silk Folds */}
+          <path
+            d="M14,160 C180,90 290,260 586,130 L586,320 C340,420 190,240 14,350 Z"
+            fill={isDarkMode ? '#4A2B36' : '#FFFFFF'}
+            opacity={isDarkMode ? '0.28' : '0.52'}
+          />
+          <path
+            d="M14,420 C210,330 360,510 586,390 L586,580 C380,640 200,490 14,590 Z"
+            fill={isDarkMode ? '#5B3241' : '#FBCFE8'}
+            opacity={isDarkMode ? '0.22' : '0.36'}
+          />
+          <rect
+            x="30"
+            y="30"
+            width="540"
+            height="620"
+            rx="28"
+            fill="none"
+            stroke={isDarkMode ? '#F472B6' : '#F9A8D4'}
+            strokeWidth="1.2"
+            strokeDasharray="6 4"
+            opacity="0.65"
+          />
+        </g>
+      )}
+
+      {/* 11. GLASS CONSERVATORY ARCH ('botanicalArch' — Free) */}
+      {environment === 'botanicalArch' && (
+        <g>
+          <rect
+            x="6"
+            y="6"
+            width="588"
+            height="668"
+            rx="38"
+            fill={isDarkMode ? '#1A2821' : '#EBF7F0'}
+          />
+          {/* Victorian Wrought-Iron Glasshouse Arch & Mullions */}
+          <path
+            d="M48,646 L48,268 A252,224 0 0,1 552,268 L552,646 Z"
+            fill="none"
+            stroke={isDarkMode ? '#6EE7B7' : '#6EE7B7'}
+            strokeWidth="1.8"
+            opacity="0.75"
+          />
+          <path
+            d="M132,646 L132,125 M468,646 L468,125 M300,44 L300,646 M48,268 L552,268 M48,430 L552,430"
+            stroke={isDarkMode ? '#6EE7B7' : '#86EFAC'}
+            strokeWidth="1.2"
+            opacity="0.6"
+          />
+          <circle
+            cx="300"
+            cy="268"
+            r="68"
+            fill="none"
+            stroke={isDarkMode ? '#6EE7B7' : '#6EE7B7'}
+            strokeWidth="1.4"
+            opacity="0.65"
+          />
+        </g>
+      )}
+
+      {/* 12. WINTER SNOWFALL & FROST HALO ('nordicSnow' — Free) */}
+      {environment === 'nordicSnow' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envNordicBg`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#1B263B' : '#DBEAFE'} />
+              <stop offset="55%" stopColor={isDarkMode ? '#22304A' : '#EFF6FF'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#172032' : '#E0F2FE'} />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envNordicBg)`} />
+          {/* Frosted Arch Frame */}
+          <path
+            d="M44,646 L44,258 A256,220 0 0,1 556,258 L556,646 Z"
+            fill="none"
+            stroke={isDarkMode ? '#93C5FD' : '#60A5FA'}
+            strokeWidth="1.5"
+            strokeDasharray="6 4"
+            opacity="0.7"
+          />
+          {/* Drifting Bokeh Snowflakes & Frost Crystals */}
+          <g fill="#FFFFFF" opacity={isDarkMode ? '0.75' : '0.95'}>
+            <circle cx="94" cy="112" r="5" />
+            <circle cx="156" cy="76" r="3.5" />
+            <circle cx="462" cy="88" r="5.5" />
+            <circle cx="510" cy="148" r="4" />
+            <circle cx="82" cy="240" r="3.8" />
+            <circle cx="520" cy="264" r="4.5" />
+            <circle cx="112" cy="410" r="3.2" />
+            <circle cx="496" cy="428" r="3.8" />
+          </g>
+          <g stroke={isDarkMode ? '#BAE6FD' : '#38BDF8'} strokeWidth="1.4" strokeLinecap="round" opacity="0.75">
+            <path d="M300,48 L300,72 M288,60 L312,60 M292,52 L308,68 M308,52 L292,68" />
+            <path d="M118,168 L118,184 M110,176 L126,176" />
+            <path d="M482,188 L482,204 M474,196 L490,196" />
+          </g>
+        </g>
+      )}
+
+      {/* 13. VERSAILLES CRYSTAL MIRROR HALL ('crystalPalace' — Couture) */}
+      {environment === 'crystalPalace' && (
+        <g>
+          <defs>
+            <radialGradient id={`${idPrefix}envVersaillesBg`} cx="50%" cy="38%" r="62%">
+              <stop offset="0%" stopColor={isDarkMode ? '#332B22' : '#FFFBEB'} />
+              <stop offset="60%" stopColor={isDarkMode ? '#261F18' : '#FEF3C7'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1A1510' : '#FDE68A'} />
+            </radialGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envVersaillesBg)`} />
+          {/* Gilded Rococo Mirror Arch & Double Molding */}
+          <path
+            d="M42,642 L42,248 A258,214 0 0,1 558,248 L558,642 Z"
+            fill="none"
+            stroke="#D97706"
+            strokeWidth="1.8"
+            opacity="0.75"
+          />
+          <path
+            d="M54,632 L54,254 A246,202 0 0,1 546,254 L546,632 Z"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="1"
+            strokeDasharray="6 3"
+            opacity="0.65"
+          />
+          {/* Crystal Chandelier Swags & Prism Drops at Crown */}
+          <path
+            d="M170,84 Q235,132 300,76 Q365,132 430,84"
+            fill="none"
+            stroke="#F59E0B"
+            strokeWidth="1.4"
+            strokeDasharray="3 3"
+            opacity="0.8"
+          />
+          {[170, 235, 300, 365, 430].map((cx, idx) => (
+            <polygon
+              key={`cp-prism-${idx}`}
+              points={`${cx},${idx === 2 ? 78 : 92} ${cx - 6},${idx === 2 ? 92 : 104} ${cx},${idx === 2 ? 106 : 116} ${cx + 6},${idx === 2 ? 92 : 104}`}
+              fill="#E0F2FE"
+              stroke="#F59E0B"
+              strokeWidth="1.1"
+            />
+          ))}
+        </g>
+      )}
+
+      {/* 14. NOEL PINE GARLAND & HANGING BAUBLES ('midnightNoel' — Couture) */}
+      {environment === 'midnightNoel' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envNoelBg`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#0D281D" />
+              <stop offset="55%" stopColor="#133829" />
+              <stop offset="100%" stopColor="#091C14" />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envNoelBg)`} />
+          {/* Soft Frosted Snowbank Drifts at Bottom */}
+          <path
+            d="M6,612 Q150,586 300,606 Q450,624 594,592 L594,640 Q594,674 560,674 L40,674 Q6,674 6,640 Z"
+            fill="#F8FAFC"
+            opacity="0.16"
+          />
+          {/* Warm Fairy Light Swags Across Top */}
+          <path
+            d="M24,64 Q162,138 300,72 Q438,138 576,64"
+            fill="none"
+            stroke="#FDE68A"
+            strokeWidth="1.2"
+            strokeDasharray="3 4"
+            opacity="0.75"
+          />
+          {/* Draped Evergreen Pine Bough Swags at Top Crown */}
+          <path
+            d="M16,42 Q158,118 300,52 Q442,118 584,42 L584,14 Q584,6 560,6 L40,6 Q16,6 16,14 Z"
+            fill="#164E35"
+            stroke="#34D399"
+            strokeWidth="1"
+            strokeOpacity="0.35"
+          />
+          <path
+            d="M32,56 Q165,126 300,66 Q435,126 568,56"
+            fill="none"
+            stroke="#065F46"
+            strokeWidth="14"
+            strokeLinecap="round"
+            strokeDasharray="8 10"
+          />
+          {/* Hanging Christmas Baubles on Golden Threads (Left Ruby, Center Gold Drop, Right Emerald/Gold) */}
+          <g stroke="#FBBF24" strokeWidth="1.2">
+            <line x1="148" y1="84" x2="148" y2="144" />
+            <line x1="300" y1="62" x2="300" y2="118" />
+            <line x1="452" y1="84" x2="452" y2="144" />
+          </g>
+          {/* Left Ruby Glass Bauble */}
+          <circle cx="148" cy="158" r="14" fill="#DC2626" stroke="#FDE68A" strokeWidth="1.5" />
+          <circle cx="143" cy="153" r="4" fill="#FCA5A5" opacity="0.7" />
+          {/* Center Gilded Finial Bauble */}
+          <polygon points="300,116 286,136 300,162 314,136" fill="#F59E0B" stroke="#FEF08A" strokeWidth="1.5" />
+          <circle cx="300" cy="136" r="4" fill="#FFFFFF" opacity="0.8" />
+          {/* Right Crimson Glass Bauble */}
+          <circle cx="452" cy="158" r="14" fill="#E11D48" stroke="#FDE68A" strokeWidth="1.5" />
+          <circle cx="447" cy="153" r="4" fill="#FDA4AF" opacity="0.7" />
+          {/* Holly Berry Clusters & Warm Twinkling Snowflakes */}
+          <g fill="#EF4444">
+            <circle cx="295" cy="58" r="4.5" />
+            <circle cx="305" cy="58" r="4.5" />
+            <circle cx="300" cy="51" r="4.5" />
+            <circle cx="144" cy="82" r="3.8" />
+            <circle cx="152" cy="82" r="3.8" />
+            <circle cx="448" cy="82" r="3.8" />
+            <circle cx="456" cy="82" r="3.8" />
+          </g>
+          <g fill="#FEF08A" opacity="0.85">
+            <circle cx="92" cy="118" r="3" />
+            <circle cx="222" cy="108" r="3.2" />
+            <circle cx="378" cy="108" r="3.2" />
+            <circle cx="508" cy="118" r="3" />
+            <circle cx="76" cy="248" r="2.4" fill="#FFFFFF" />
+            <circle cx="524" cy="248" r="2.4" fill="#FFFFFF" />
+            <circle cx="96" cy="390" r="2.2" fill="#FFFFFF" />
+            <circle cx="504" cy="390" r="2.2" fill="#FFFFFF" />
           </g>
         </g>
       )}
@@ -3262,29 +3522,77 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               : undefined
           }
         >
-        <circle
-          cx="300"
-          cy="285"
-          r="230"
-          fill="#ffffff"
-          style={{
-            opacity: isDarkMode ? 0.05 : 0.65,
-            transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
-          }}
-        />
-        <circle
-          cx="300"
-          cy="285"
-          r="230"
-          fill="none"
-          stroke={isDarkMode ? '#4E423E' : '#E8DDD3'}
-          strokeWidth="1.5"
-          strokeDasharray="6 6"
-          style={{ transition: 'stroke 520ms cubic-bezier(0.22, 1, 0.36, 1)' }}
-        />
+        {(environment || 'studio') === 'studio' && (
+          <>
+            <circle
+              cx="300"
+              cy="285"
+              r="230"
+              fill="#ffffff"
+              style={{
+                opacity: isDarkMode ? 0.05 : 0.65,
+                transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+              }}
+            />
+            <circle
+              cx="300"
+              cy="285"
+              r="230"
+              fill="none"
+              stroke={isDarkMode ? '#4E423E' : '#E8DDD3'}
+              strokeWidth="1.5"
+              strokeDasharray="6 6"
+              style={{ transition: 'stroke 520ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+            />
+          </>
+        )}
 
         {/* UNIFIED DRAGGABLE, RESIZABLE & ROTATABLE BOUQUET GROUP (Pivot at 300, 380) */}
         <g transform={bouquetTransform}>
+        {/* 1A. BACK ITEMS LAYER (Behind Back Wrapping Paper — items sent all the way to 'back' plane) */}
+        <g>
+          {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+            if (item.hidden || getEffectiveItemPlane(item) !== 'back') return null;
+            const isSelected = !isPreviewMode && item.id === selectedId;
+            const disp = getStageItemDisplayTransform(item, wrapStyle);
+            const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+            return (
+              <g
+                key={`back-${item.id}`}
+                transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
+                  item.flipX ? -disp.scale : disp.scale
+                }, ${disp.scale})`}
+                onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                className={
+                  isPreviewMode
+                    ? 'pointer-events-none cursor-default'
+                    : item.locked
+                    ? 'cursor-pointer'
+                    : 'cursor-grab active:cursor-grabbing'
+                }
+                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : `url(#${idPrefix}softShadow)` }}
+              >
+                <g
+                  clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
+                  className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                >
+                  <circle cx="0" cy="-10" r="48" fill="transparent" />
+                  {item.photoStyle ? (
+                    <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
+                  ) : (
+                    <FlowerRenderer
+                      type={item.type}
+                      petalColor={item.petalColor}
+                      centerColor={item.centerColor}
+                      hideStem={Boolean(meta?.isOther)}
+                    />
+                  )}
+                </g>
+              </g>
+            );
+          })}
+        </g>
+
         {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable & Draggable to move/resize bouquet) */}
         {wrapStyle !== 'plain' && (
           <g
@@ -3647,7 +3955,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         {wrapStyle === 'cloche' ? (
           <g clipPath={`url(#${idPrefix}bouquetClocheBoundsClip)`} opacity="0.94">
             {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item, idx) => {
-              if (item.hidden) return null;
+              if (item.hidden || item.photoStyle) return null;
+              const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+              if (meta?.isOther || getEffectiveItemPlane(item) === 'front') return null;
               const disp = getStageItemDisplayTransform(item, wrapStyle);
               const startY = disp.y + 16;
               const bottomSpreadX = Math.round(300 + (disp.x - 300) * 0.25);
@@ -3688,13 +3998,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           )
         )}
 
-        {/* 3. BOUQUET FLOWERS, FOLIAGE & CLIPPED PHOTOCARDS LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
+        {/* 3. BOUQUET FLOWERS, FOLIAGE & INSIDE-PLANE ITEMS LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
         <g clipPath={wrapStyle === 'cloche' ? `url(#${idPrefix}bouquetClocheBoundsClip)` : `url(#${idPrefix}bouquetWrapperBoundsClip)`}>
           {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
-            if (item.hidden) return null;
-            if (item.photoStyle && !item.clippedToBouquet) return null;
+            if (item.hidden || getEffectiveItemPlane(item) !== 'inside') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
+            const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
             return (
               <g
                 key={item.id}
@@ -3724,6 +4034,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       type={item.type}
                       petalColor={item.petalColor}
                       centerColor={item.centerColor}
+                      hideStem={Boolean(meta?.isOther)}
                     />
                   )}
                 </g>
@@ -4324,15 +4635,15 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           )}
         </g>
 
-        {/* 4A. UNCLIPPED PHOTO ATTACHMENTS LAYER (Floating over the bouquet wrapper by default, not clipped by wrapper or stem bounds) */}
+        {/* 4A. FRONT OVERLAY ITEMS & ATTACHMENTS LAYER (Floating over the front bouquet wrapper & ribbon, unclipped by wrapper bounds) */}
         <g>
           {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
-            if (item.hidden || !item.photoStyle || item.clippedToBouquet) return null;
+            if (item.hidden || getEffectiveItemPlane(item) !== 'front') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
             return (
               <g
-                key={item.id}
+                key={`front-${item.id}`}
                 transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                   item.flipX ? -disp.scale : disp.scale
                 }, ${disp.scale})`}
@@ -4348,7 +4659,16 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               >
                 <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
                   <circle cx="0" cy="-10" r="48" fill="transparent" />
-                  <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
+                  {item.photoStyle ? (
+                    <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
+                  ) : (
+                    <FlowerRenderer
+                      type={item.type}
+                      petalColor={item.petalColor}
+                      centerColor={item.centerColor}
+                      hideStem={true}
+                    />
+                  )}
                 </g>
               </g>
             );
