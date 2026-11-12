@@ -8,6 +8,7 @@ import {
   isSuspiciousBotRequest,
   readSafeJsonBody,
 } from './_lib/securityGuard.js';
+import { verifyShortenCouturePermission } from './_lib/coutureGuard.js';
 
 const shortCodeMemory = new Map();
 
@@ -335,6 +336,23 @@ export default async function handler(req, res) {
         res.end(JSON.stringify({ error: 'Missing code or payload' }));
         return;
       }
+
+      const coutureCheck = await verifyShortenCouturePermission(bodyObj);
+      if (!coutureCheck.ok) {
+        res.statusCode = coutureCheck.statusCode || 403;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(
+          JSON.stringify({
+            error:
+              coutureCheck.error ||
+              'This bouquet requires a verified Bloom Key before saving.',
+          })
+        );
+        return;
+      }
+
+      extra.isPremium = coutureCheck.isPremium;
+      extra.retentionDays = coutureCheck.retentionDays;
 
       saveShortPayload(code, payload, extra);
 

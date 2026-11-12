@@ -588,10 +588,12 @@ export interface StudioPassRecord {
   boundBouquetCode: string | null; // For 'single' tier: locks unlock to that bouquet's short code; for tester voucher: 'TV:<cap>:<label>'
   dailyUsageDate: string; // YYYY-MM-DD
   dailyUsageCount: number;
-  paymentProvider: 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
+  paymentProvider: 'bayadgate' | 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
   paymentReference: string;
   signature: string; // Cryptographic signature preventing localStorage manipulation
 }
+
+export type BayadgatePaymentMethod = 'GCASH' | 'MAYA' | 'GOTYME';
 
 const PASS_KEY_REGEX = /^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$/;
 const PASS_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -818,7 +820,7 @@ export function createSignedStudioPass(params: {
   region: PricingRegion;
   deviceTokenHash: string;
   boundBouquetCode?: string | null;
-  paymentProvider?: 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
+  paymentProvider?: 'bayadgate' | 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
   paymentReference?: string;
   durationHours?: number;
   isTesterVoucher?: boolean;
@@ -1184,6 +1186,63 @@ export function saveStoredStudioPass(pass: StudioPassRecord | null): void {
   }
 }
 
+export async function verifyStudioPassOnServer(params: {
+  pass: StudioPassRecord | null | undefined;
+  bouquetCode?: string | null;
+  incrementUsage?: boolean;
+}): Promise<PassValidationResult> {
+  const pass = params.pass;
+  if (!pass || !isValidPassKeyFormat(pass.passKey)) {
+    return {
+      valid: false,
+      status: 'INVALID_FORMAT',
+      message: 'No active Studio Pass found.',
+    };
+  }
+  try {
+    const deviceTokenHash = getOrCreateDeviceTokenHash();
+    const res = await fetch('/api/payments/verify-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'verify_pass',
+        passKey: pass.passKey,
+        activeSessionNonce: pass.activeSessionNonce,
+        deviceTokenHash,
+        bouquetCode: params.bouquetCode || null,
+        incrementUsage: Boolean(params.incrementUsage),
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      status?: PassValidationStatus;
+      message?: string;
+      pass?: StudioPassRecord;
+    };
+    if (!res.ok || !data.ok || !data.pass) {
+      return {
+        valid: false,
+        status: data.status || 'TAMPERED_SIGNATURE',
+        message:
+          data.message ||
+          'Your Studio Pass could not be verified on the server. Please unlock or re-enter your Pass Key.',
+      };
+    }
+    return {
+      valid: true,
+      status: 'VALID',
+      message: 'Studio Pass verified.',
+      updatedPass: data.pass,
+    };
+  } catch {
+    return {
+      valid: false,
+      status: 'TAMPERED_SIGNATURE',
+      message: 'Could not verify your Studio Pass right now. Please try again.',
+    };
+  }
+}
+
 export function formatPassRemainingTime(expiresAtIso: string, nowMs: number = Date.now()): string {
   const expiresMs = Date.parse(expiresAtIso);
   if (!Number.isFinite(expiresMs) || expiresMs <= nowMs) return 'Expired';
@@ -1264,4 +1323,54 @@ export function saveStoredKofiShopConfig(config: KofiShopItemConfig): KofiShopIt
   }
   return normalized;
 }
+
+// ============================================================================
+// 6. PENDING BAYADGATE / REDIRECT CHECKOUT RECOVERY STORAGE
+// ============================================================================
+
+export interface PendingCheckoutStorageRecord {
+  checkoutId: string;
+  checkoutToken: string;
+  provider: 'bayadgate' | 'paymongo' | 'kofi';
+  orderId?: string | null;
+  paymentMethod?: BayadgatePaymentMethod | null;
+  resumeAction: 'share' | 'png' | 'pass_menu';
+  createdAtMs: number;
+}
+
+const PENDING_CHECKOUT_STORAGE_KEY = 'sab_pending_checkout_v1';
+
+export function savePendingCheckoutStorage(record: PendingCheckoutStorageRecord): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PENDING_CHECKOUT_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadPendingCheckoutStorage(): PendingCheckoutStorageRecord | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(PENDING_CHECKOUT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingCheckoutStorageRecord>;
+    if (!parsed || typeof parsed.checkoutId !== 'string' || typeof parsed.checkoutToken !== 'string') {
+      return null;
+    }
+    return parsed as PendingCheckoutStorageRecord;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingCheckoutStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(PENDING_CHECKOUT_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 

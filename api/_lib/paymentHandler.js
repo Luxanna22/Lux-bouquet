@@ -280,6 +280,96 @@ export function deriveKofiEmailTierSlotKey(rawEmail, tier) {
   return `BLOOM-${p1}-${p2}`;
 }
 
+/**
+ * Derives a deterministic, Firestore-valid `BLOOM-BGXX-XXXX` pending/paid order slot key
+ * from a BayadGate `order_id` so `create-checkout`, `/api/webhooks/bayadgate`, and
+ * `/api/payments/verify-and-issue` share state cleanly across serverless instances.
+ */
+export function deriveBayadgateOrderSlotKey(orderId) {
+  const cleanOrderId = String(orderId || '').trim();
+  const digest = crypto
+    .createHash('sha256')
+    .update(`sab_bayadgate_order_v1:${cleanOrderId}`)
+    .digest();
+
+  let p1 = 'BG';
+  for (let i = 0; i < 2; i++) {
+    p1 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  let p2 = '';
+  for (let i = 2; i < 6; i++) {
+    p2 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  return `BLOOM-${p1}-${p2}`;
+}
+
+export const BAYADGATE_PAYMENT_METHODS = ['GCASH', 'MAYA', 'GOTYME'];
+
+export function getBayadgateConfig() {
+  const merchantId = (process.env.BAYADGATE_MERCHANT_ID || '').trim();
+  const secretKey = (process.env.BAYADGATE_SECRET_KEY || '').trim();
+  const baseUrl = (process.env.BAYADGATE_API_BASE_URL || 'https://BayadGate.com')
+    .trim()
+    .replace(/\/+$/, '');
+  return {
+    merchantId,
+    secretKey,
+    baseUrl,
+    configured: Boolean(merchantId && secretKey),
+  };
+}
+
+export function normalizeBayadgatePaymentMethod(rawMethod) {
+  const upper = String(rawMethod || '')
+    .trim()
+    .toUpperCase();
+  if (upper === 'MAYA' || upper === 'PAYMAYA') return 'MAYA';
+  if (upper === 'GOTYME') return 'GOTYME';
+  return 'GCASH';
+}
+
+/**
+ * BayadGate MD5 signature:
+ * - Exclude empty values ('', null, undefined) and `sign`
+ * - Sort keys ASCII ascending
+ * - Join as k1=v1&k2=v2&key=SECRET_KEY
+ * - Lowercase MD5 hex digest
+ */
+export function computeBayadgateSignature(params, secretKey) {
+  if (!params || typeof params !== 'object') return '';
+  const keys = Object.keys(params)
+    .filter((k) => {
+      if (k === 'sign') return false;
+      const val = params[k];
+      return val !== '' && val !== null && val !== undefined;
+    })
+    .sort();
+  const queryStr = keys.map((k) => `${k}=${String(params[k])}`).join('&');
+  const stringSignTemp = `${queryStr}&key=${String(secretKey || '')}`;
+  return crypto.createHash('md5').update(stringSignTemp, 'utf8').digest('hex').toLowerCase();
+}
+
+export function verifyBayadgateSignature(params, secretKey) {
+  const incomingSign = String(params?.sign || '').trim().toLowerCase();
+  if (!incomingSign || !secretKey) return false;
+  const expected = computeBayadgateSignature(params, secretKey);
+  return timingSafeMatch(expected, incomingSign);
+}
+
+export function formatBayadgateAmountForTier(tier) {
+  const minor = PRICING_CATALOG.PH?.[tier]?.amountMinor;
+  if (!Number.isFinite(minor)) return '99.00';
+  return (minor / 100).toFixed(2);
+}
+
+export function parseBayadgateAmountToMinor(rawAmount) {
+  const str = String(rawAmount ?? '').trim().replace(/,/g, '');
+  if (!str) return NaN;
+  const parsed = Number.parseFloat(str);
+  if (!Number.isFinite(parsed) || parsed <= 0) return NaN;
+  return Math.round(parsed * 100);
+}
+
 export function timingSafeMatch(a, b) {
   const bufA = Buffer.from(String(a || ''), 'utf8');
   const bufB = Buffer.from(String(b || ''), 'utf8');
@@ -545,15 +635,26 @@ export function validateAndBindPassRedemptionServer(
     };
   }
 
-  if (!verifyPassIntegritySignature(existingRecord)) {
+  const normKey = normalizePassKey(existingRecord.passKey);
+  if (
+    normKey.startsWith('BLOOM-KS') ||
+    normKey.startsWith('BLOOM-BG') ||
+    normKey === 'BLOOM-KCFG-SHOP'
+  ) {
     return {
       valid: false,
-      status: 'TAMPERED_SIGNATURE',
-      message: 'This Pass Key failed security verification.',
+      status: 'INVALID_FORMAT',
+      message: 'Please enter a valid Pass Key (e.g., BLOOM-7K4M-9P2X).',
     };
   }
 
-  const normKey = normalizePassKey(existingRecord.passKey);
+  if (!verifyPassIntegritySignature(existingRecord) || !verifyServerPaymentReference(existingRecord)) {
+    return {
+      valid: false,
+      status: 'TAMPERED_SIGNATURE',
+      message: 'This Pass Key failed server security verification.',
+    };
+  }
   if (
     REVOKED_VOUCHER_KEYS.has(normKey) ||
     existingRecord.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
@@ -641,15 +742,26 @@ export function verifyActiveStudioPassForActionServer(params) {
     };
   }
 
-  if (!verifyPassIntegritySignature(pass)) {
+  const normKey = normalizePassKey(pass.passKey);
+  if (
+    normKey.startsWith('BLOOM-KS') ||
+    normKey.startsWith('BLOOM-BG') ||
+    normKey === 'BLOOM-KCFG-SHOP'
+  ) {
     return {
       valid: false,
-      status: 'TAMPERED_SIGNATURE',
-      message: 'Studio Pass signature verification failed.',
+      status: 'INVALID_FORMAT',
+      message: 'No valid Studio Pass found.',
     };
   }
 
-  const normKey = normalizePassKey(pass.passKey);
+  if (!verifyPassIntegritySignature(pass) || !verifyServerPaymentReference(pass)) {
+    return {
+      valid: false,
+      status: 'TAMPERED_SIGNATURE',
+      message: 'Studio Pass cryptographic verification failed.',
+    };
+  }
   if (
     REVOKED_VOUCHER_KEYS.has(normKey) ||
     pass.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
@@ -693,7 +805,10 @@ export function verifyActiveStudioPassForActionServer(params) {
     };
   }
 
-  if (params.clientSessionNonce && params.clientSessionNonce !== pass.activeSessionNonce) {
+  if (
+    pass.activeSessionNonce &&
+    (!params.clientSessionNonce || params.clientSessionNonce !== pass.activeSessionNonce)
+  ) {
     return {
       valid: false,
       status: 'SESSION_SUPERSEDED',
@@ -1279,7 +1394,13 @@ export async function savePersistentOwnerVaultServer() {
 export function recordPaidPassIssuanceServer(pass) {
   if (!pass || !pass.passKey || isTesterVoucherPassServer(pass)) return false;
   const normKey = normalizePassKey(pass.passKey);
-  if (normKey === 'BLOOM-KCFG-SHOP' || normKey.startsWith('BLOOM-KS')) return false;
+  if (
+    normKey === 'BLOOM-KCFG-SHOP' ||
+    normKey.startsWith('BLOOM-KS') ||
+    normKey.startsWith('BLOOM-BG')
+  ) {
+    return false;
+  }
   if (ISSUED_PASS_KEYS.has(normKey)) return false;
 
   ISSUED_PASS_KEYS.add(normKey);
@@ -1324,7 +1445,7 @@ async function syncRealAnalyticsSnapshotServer() {
   let phpCentavos = 0;
 
   for (const [key, pass] of SERVER_PASS_STORE.entries()) {
-    if (!pass || key === 'BLOOM-KCFG-SHOP' || key.startsWith('BLOOM-KS')) continue;
+    if (!pass || key === 'BLOOM-KCFG-SHOP' || key.startsWith('BLOOM-KS') || key.startsWith('BLOOM-BG')) continue;
     if (isTesterVoucherPassServer(pass)) {
       if (!TESTER_VOUCHER_LEDGER.has(key)) testerCount += 1;
       continue;
@@ -1793,6 +1914,9 @@ async function readRequestBody(req) {
           return { raw: trimmed, parsed: {} };
         }
       }
+      if (trimmed.includes('=')) {
+        return { raw: trimmed, parsed: sanitizeJsonValue(Object.fromEntries(params.entries())) };
+      }
       return { raw: trimmed, parsed: {} };
     }
   };
@@ -1964,19 +2088,23 @@ export function resolveCheckoutRegionAndProvider({
   requestedRegion,
   requestedProvider,
   paymongoSecret = '',
+  bayadgateMerchantId = '',
+  bayadgateSecret = '',
   vercelCountry = '',
 } = {}) {
   const hasPaymongo = Boolean(String(paymongoSecret || '').trim());
+  const hasBayadgate = Boolean(
+    String(bayadgateMerchantId || '').trim() && String(bayadgateSecret || '').trim()
+  );
   const normalizedCountry = String(vercelCountry || '').trim().toUpperCase();
 
-  // While PayMongo is dormant/unconfigured, strictly enforce USD ('INTL') + Ko-fi Shop.
-  if (!hasPaymongo) {
+  // While no PH local gateway is configured, strictly enforce USD ('INTL') + Ko-fi Shop.
+  if (!hasPaymongo && !hasBayadgate) {
     return { region: 'INTL', provider: 'kofi' };
   }
 
-  let provider = requestedProvider === 'kofi' ? 'kofi' : 'paymongo';
   // Ko-fi Shop only operates in USD ('INTL'); never allow PHP pricing on Ko-fi/card checkouts.
-  if (provider === 'kofi') {
+  if (requestedProvider === 'kofi') {
     return { region: 'INTL', provider: 'kofi' };
   }
 
@@ -1990,6 +2118,12 @@ export function resolveCheckoutRegionAndProvider({
     return { region: 'INTL', provider: 'kofi' };
   }
 
+  if (requestedProvider === 'paymongo' && hasPaymongo) {
+    return { region: 'PH', provider: 'paymongo' };
+  }
+  if (hasBayadgate) {
+    return { region: 'PH', provider: 'bayadgate' };
+  }
   return { region: 'PH', provider: 'paymongo' };
 }
 
@@ -2034,6 +2168,33 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
   }
 
   try {
+    // 0. GET /api/payments/create-checkout — Server-authoritative gateway & regional capability check
+    if (pathname === '/api/payments/create-checkout' && req.method === 'GET') {
+      const bayadgate = getBayadgateConfig();
+      const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
+      const hasPaymongo = Boolean(paymongoSecret);
+      const vercelCountry =
+        typeof req.headers?.['x-vercel-ip-country'] === 'string'
+          ? req.headers['x-vercel-ip-country'].trim().toUpperCase()
+          : '';
+      const phGateway = bayadgate.configured ? 'bayadgate' : hasPaymongo ? 'paymongo' : null;
+      const isCountryPhOrLocal = !vercelCountry || vercelCountry === 'PH';
+      const isPhEligible = Boolean(phGateway && isCountryPhOrLocal);
+      const defaultRegion = phGateway && vercelCountry === 'PH' ? 'PH' : 'INTL';
+      const availableProviders = isPhEligible ? [phGateway, 'kofi'] : ['kofi'];
+
+      sendJson(res, 200, {
+        ok: true,
+        detectedCountry: vercelCountry,
+        isPhEligible,
+        defaultRegion,
+        phGateway,
+        phMethods: bayadgate.configured ? BAYADGATE_PAYMENT_METHODS : [],
+        availableProviders,
+      });
+      return true;
+    }
+
     // 1. POST /api/payments/create-checkout
     if (pathname === '/api/payments/create-checkout' && req.method === 'POST') {
       const { parsed } = await readRequestBody(req);
@@ -2047,6 +2208,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const tier = isValidTier(parsed.tier) ? parsed.tier : 'pass_7d';
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
+      const bayadgate = getBayadgateConfig();
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
       const vercelCountry =
         typeof req.headers?.['x-vercel-ip-country'] === 'string'
@@ -2061,6 +2223,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const isProductionEnv = Boolean(
         process.env.VERCEL ||
           paymongoSecret ||
+          bayadgate.configured ||
           kofiVerificationToken ||
           process.env.KOFI_PAGE_URL ||
           tierDirectLinkCode
@@ -2070,6 +2233,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         requestedRegion: parsed.region,
         requestedProvider: parsed.provider,
         paymongoSecret,
+        bayadgateMerchantId: bayadgate.merchantId,
+        bayadgateSecret: bayadgate.secretKey,
         vercelCountry,
       });
 
@@ -2088,9 +2253,83 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       let checkoutUrl = null;
       let paymongoSessionId;
+      let bayadgateOrderId = null;
+      let bayadgatePaymentMethod = null;
       let liveGatewayConfigured = false;
 
-      if (provider === 'paymongo' && paymongoSecret && region === 'PH') {
+      if (provider === 'bayadgate' && bayadgate.configured && region === 'PH') {
+        liveGatewayConfigured = true;
+        bayadgatePaymentMethod = normalizeBayadgatePaymentMethod(parsed.paymentMethod);
+        bayadgateOrderId = `BG${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+        const amountStr = formatBayadgateAmountForTier(tier);
+        const origin =
+          typeof parsed.origin === 'string' && parsed.origin.startsWith('http')
+            ? parsed.origin.replace(/\/+$/, '')
+            : 'https://www.sendabouquet.online';
+        const redirectUrl = `${origin}/?checkout_success=${encodeURIComponent(checkoutId)}`;
+
+        const bgPayload = {
+          merchant_id: bayadgate.merchantId,
+          amount: amountStr,
+          order_id: bayadgateOrderId,
+          payment_method: bayadgatePaymentMethod,
+          redirect_url: redirectUrl,
+        };
+        bgPayload.sign = computeBayadgateSignature(bgPayload, bayadgate.secretKey);
+
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          const bgRes = await fetch(`${bayadgate.baseUrl}/api/checkout.php`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+              Accept: 'application/json',
+            },
+            body: new URLSearchParams(bgPayload).toString(),
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+
+          const bgJson = await bgRes.json().catch(() => null);
+          if (!bgRes.ok || !bgJson || String(bgJson.status || '').toUpperCase() !== 'SUCCESS' || !bgJson.payment_url) {
+            sendJson(res, 502, {
+              ok: false,
+              status: 'GATEWAY_ERROR',
+              message:
+                bgJson?.message ||
+                'BayadGate checkout could not be created right now. Please try another wallet or Ko-fi.',
+            });
+            return true;
+          }
+
+          checkoutUrl = String(bgJson.payment_url);
+
+          // Persist pending order slot in Firestore so webhook / return verification works across serverless lambdas
+          const slotKey = deriveBayadgateOrderSlotKey(bayadgateOrderId);
+          const pendingSlot = createSignedStudioPassServer({
+            passKey: slotKey,
+            tier,
+            region: 'PH',
+            deviceTokenHash,
+            secondaryDeviceHash: 'PENDING_PAYMENT',
+            boundBouquetCode: `${passKey}|${boundBouquetCode || ''}`,
+            paymentProvider: 'bayadgate',
+            paymentReference: `bgpend_${bayadgateOrderId}`,
+          });
+          pendingSlot.activeSessionNonce = bayadgateOrderId;
+          pendingSlot.signature = computePassIntegritySignature(pendingSlot, CLIENT_SIGNATURE_SALT);
+          SERVER_PASS_STORE.set(slotKey, pendingSlot);
+          await saveStudioPassToFirestoreRest(pendingSlot);
+        } catch {
+          sendJson(res, 502, {
+            ok: false,
+            status: 'GATEWAY_UNREACHABLE',
+            message: 'Could not reach BayadGate right now. Please try again in a moment.',
+          });
+          return true;
+        }
+      } else if (provider === 'paymongo' && paymongoSecret && region === 'PH') {
         liveGatewayConfigured = true;
         try {
           const authHeader = `Basic ${Buffer.from(`${paymongoSecret}:`).toString('base64')}`;
@@ -2159,6 +2398,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         b: boundBouquetCode,
         dlc: tierDirectLinkCode || null,
         pmId: paymongoSessionId || null,
+        bgOid: bayadgateOrderId || null,
+        bgMethod: bayadgatePaymentMethod || null,
         live: liveGatewayConfigured,
         ts: Date.now(),
       });
@@ -2175,6 +2416,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         directLinkCode: tierDirectLinkCode || null,
         provider,
         paymongoSessionId,
+        bayadgateOrderId,
+        bayadgatePaymentMethod,
         checkoutUrl,
         liveGatewayConfigured,
         status: 'pending',
@@ -2188,6 +2431,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         passKeyPreview: passKey,
         plan,
         provider,
+        orderId: bayadgateOrderId,
+        paymentMethod: bayadgatePaymentMethod,
         checkoutUrl,
         directLinkCode: tierDirectLinkCode || null,
         liveGatewayConfigured,
@@ -2223,6 +2468,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           boundBouquetCode: decodedToken.b || null,
           directLinkCode: decodedToken.dlc || null,
           paymongoSessionId: decodedToken.pmId || undefined,
+          bayadgateOrderId: decodedToken.bgOid || null,
+          bayadgatePaymentMethod: decodedToken.bgMethod || null,
           liveGatewayConfigured: Boolean(decodedToken.live),
           status: 'pending',
           createdAtMs: decodedToken.ts || Date.now(),
@@ -2250,6 +2497,120 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ok: false,
           message: 'Device mismatch during checkout verification.',
         });
+        return true;
+      }
+
+      // Case A0: BayadGate Order Verification (Webhook slot OR server-to-server query_status.php)
+      if (pending.provider === 'bayadgate') {
+        const bayadgate = getBayadgateConfig();
+        const orderId = pending.bayadgateOrderId || '';
+        const slotKey = orderId ? deriveBayadgateOrderSlotKey(orderId) : '';
+
+        // 1. Check if webhook (or prior check) already minted and persisted the final pass
+        const existingPass =
+          SERVER_PASS_STORE.get(pending.passKey) ||
+          (await fetchStudioPassFromFirestoreRest(pending.passKey));
+        if (
+          existingPass &&
+          verifyPassIntegritySignature(existingPass) &&
+          verifyServerPaymentReference(existingPass)
+        ) {
+          pending.status = 'paid';
+          SERVER_PASS_STORE.set(existingPass.passKey, existingPass);
+          sendJson(res, 200, { ok: true, pass: existingPass });
+          return true;
+        }
+
+        // 2. Check Firestore order slot status in case webhook marked PAID across instances
+        const orderSlot = slotKey
+          ? SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey))
+          : null;
+        let confirmedPaid = orderSlot?.secondaryDeviceHash === 'PAID';
+
+        // 3. Fallback: Query BayadGate status endpoint directly
+        if (!confirmedPaid && bayadgate.configured && orderId) {
+          try {
+            const qParams = {
+              merchant_id: bayadgate.merchantId,
+              order_id: orderId,
+            };
+            qParams.sign = computeBayadgateSignature(qParams, bayadgate.secretKey);
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const qRes = await fetch(`${bayadgate.baseUrl}/api/query_status.php`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+                Accept: 'application/json',
+              },
+              body: new URLSearchParams(qParams).toString(),
+              signal: controller.signal,
+            });
+            clearTimeout(timer);
+            if (qRes.ok) {
+              const qJson = await qRes.json().catch(() => null);
+              const qStatus = String(
+                qJson?.payment_status ??
+                  qJson?.order_status ??
+                  qJson?.data?.status ??
+                  qJson?.data?.payment_status ??
+                  (qJson?.status === '5' || qJson?.status === 5 ? '5' : '')
+              )
+                .trim()
+                .toUpperCase();
+              const expectedMinor = PRICING_CATALOG.PH[pending.tier]?.amountMinor;
+              const qAmountRaw = qJson?.amount ?? qJson?.data?.amount;
+              const qAmountMinor =
+                qAmountRaw !== undefined && qAmountRaw !== null && String(qAmountRaw).trim() !== ''
+                  ? parseBayadgateAmountToMinor(qAmountRaw)
+                  : expectedMinor;
+              if (
+                (qStatus === '5' || qStatus === 'PAID' || qStatus === 'COMPLETED') &&
+                qAmountMinor === expectedMinor
+              ) {
+                confirmedPaid = true;
+              }
+            }
+          } catch {
+            // Keep pending if upstream status endpoint unreachable
+          }
+        }
+
+        if (!confirmedPaid) {
+          sendJson(res, 402, {
+            ok: false,
+            status: 'PENDING_PAYMENT',
+            message:
+              'Payment is still awaiting confirmation from GCash / Maya / GoTyme. Please complete your payment and tap Verify again.',
+          });
+          return true;
+        }
+
+        pending.status = 'paid';
+        const mintedPass = createSignedStudioPassServer({
+          passKey: pending.passKey,
+          tier: pending.tier,
+          region: 'PH',
+          deviceTokenHash: pending.deviceTokenHash,
+          boundBouquetCode: pending.boundBouquetCode,
+          paymentProvider: 'bayadgate',
+          paymentReference: `bg_${orderId || pending.checkoutId}`,
+        });
+        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+        await saveStudioPassToFirestoreRest(mintedPass);
+
+        if (orderSlot) {
+          const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+          paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+          SERVER_PASS_STORE.set(slotKey, paidSlot);
+          await saveStudioPassToFirestoreRest(paidSlot);
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        recordPaidPassIssuanceServer(mintedPass);
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, { ok: true, pass: mintedPass });
         return true;
       }
 
@@ -2476,11 +2837,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const passKey = normalizePassKey(rawKey);
 
-      // Prevent internal Ko-fi receipt slots (`BLOOM-KS...` or `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
+      // Prevent internal Ko-fi/BayadGate receipt slots (`BLOOM-KS...`, `BLOOM-BG...`, `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
       if (
         !isValidPassKeyFormat(passKey) ||
         !deviceTokenHash ||
         passKey.startsWith('BLOOM-KS') ||
+        passKey.startsWith('BLOOM-BG') ||
         passKey === 'BLOOM-KCFG-SHOP'
       ) {
         sendJson(res, 400, {
@@ -2493,11 +2855,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       await hydratePersistentOwnerVaultServer();
 
-      let existingRecord =
+      const existingRecord =
         SERVER_PASS_STORE.get(passKey) || (await fetchStudioPassFromFirestoreRest(passKey));
-      if (!existingRecord && parsed.existingRecord && typeof parsed.existingRecord === 'object') {
-        existingRecord = parsed.existingRecord;
-      }
 
       if (!existingRecord) {
         sendJson(res, 404, {
@@ -2873,13 +3232,27 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      // 4H. Standard Studio Pass Verification for Couture Actions
-      const clientPass = parsed.pass || null;
+      // 4H. Standard Studio Pass Verification for Couture Actions (Strict Server-Only Authority)
+      const clientPass = parsed.pass && typeof parsed.pass === 'object' ? parsed.pass : null;
+      const rawPassKey =
+        typeof parsed.passKey === 'string' && parsed.passKey
+          ? parsed.passKey
+          : clientPass?.passKey || '';
+      const clientSessionNonce =
+        typeof parsed.activeSessionNonce === 'string' && parsed.activeSessionNonce
+          ? parsed.activeSessionNonce
+          : clientPass?.activeSessionNonce || '';
       const bouquetCode =
         typeof parsed.bouquetCode === 'string' ? parsed.bouquetCode : null;
       const incrementUsage = Boolean(parsed.incrementUsage);
 
-      if (!clientPass || !isValidPassKeyFormat(clientPass.passKey)) {
+      const normKey = normalizePassKey(rawPassKey);
+      if (
+        !isValidPassKeyFormat(normKey) ||
+        normKey.startsWith('BLOOM-KS') ||
+        normKey.startsWith('BLOOM-BG') ||
+        normKey === 'BLOOM-KCFG-SHOP'
+      ) {
         sendJson(res, 403, {
           ok: false,
           status: 'INVALID_FORMAT',
@@ -2890,16 +3263,22 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       await hydratePersistentOwnerVaultServer();
 
-      const normKey = normalizePassKey(clientPass.passKey);
       const canonicalPass =
-        SERVER_PASS_STORE.get(normKey) ||
-        (await fetchStudioPassFromFirestoreRest(normKey)) ||
-        clientPass;
+        SERVER_PASS_STORE.get(normKey) || (await fetchStudioPassFromFirestoreRest(normKey));
+
+      if (!canonicalPass) {
+        sendJson(res, 403, {
+          ok: false,
+          status: 'NOT_FOUND',
+          message: 'Studio Pass could not be verified on the server.',
+        });
+        return true;
+      }
 
       const check = verifyActiveStudioPassForActionServer({
         pass: canonicalPass,
         deviceTokenHash,
-        clientSessionNonce: clientPass.activeSessionNonce,
+        clientSessionNonce,
         bouquetCode,
         incrementUsage,
       });
@@ -3075,6 +3454,143 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         matchedTiers,
         directLinkCode,
       });
+      return true;
+    }
+
+    // 7. POST /api/webhooks/bayadgate — BayadGate Callback Notification (Returns raw plaintext "SUCCESS")
+    if (pathname === '/api/webhooks/bayadgate' && req.method === 'POST') {
+      const { parsed } = await readRequestBody(req);
+      const bayadgate = getBayadgateConfig();
+
+      if (!bayadgate.configured) {
+        res.statusCode = 503;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_NOT_CONFIGURED');
+        return true;
+      }
+
+      const incomingMerchantId = String(parsed.merchant_id || '').trim();
+      if (!timingSafeMatch(bayadgate.merchantId, incomingMerchantId)) {
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_INVALID_MERCHANT');
+        return true;
+      }
+
+      if (!verifyBayadgateSignature(parsed, bayadgate.secretKey)) {
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_INVALID_SIGN');
+        return true;
+      }
+
+      const txStatus = String(parsed.status || '').trim();
+      const orderId = String(parsed.order_id || '').trim();
+      if (!orderId) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_MISSING_ORDER');
+        return true;
+      }
+
+      // BayadGate status "5" indicates completed payment; acknowledge non-5 callbacks gracefully
+      if (txStatus !== '5') {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('SUCCESS');
+        return true;
+      }
+
+      const slotKey = deriveBayadgateOrderSlotKey(orderId);
+      const orderSlot =
+        SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+
+      let pendingEntry = null;
+      for (const entry of PENDING_CHECKOUT_STORE.values()) {
+        if (entry.bayadgateOrderId === orderId) {
+          pendingEntry = entry;
+          break;
+        }
+      }
+
+      if (!orderSlot && !pendingEntry) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_ORDER_NOT_FOUND');
+        return true;
+      }
+
+      // Verify slot cryptographic provenance when loaded from store/Firestore
+      if (orderSlot && !verifyServerPaymentReference(orderSlot)) {
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_INVALID_ORDER_RECORD');
+        return true;
+      }
+
+      const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
+        ? orderSlot?.tier || pendingEntry?.tier
+        : 'pass_7d';
+      const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+      const incomingMinor = parseBayadgateAmountToMinor(parsed.amount);
+      if (!Number.isFinite(incomingMinor) || incomingMinor !== expectedMinor) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('FAIL_AMOUNT_MISMATCH');
+        return true;
+      }
+
+      // Idempotent guard: already processed
+      if (orderSlot?.secondaryDeviceHash === 'PAID' || pendingEntry?.status === 'paid') {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end('SUCCESS');
+        return true;
+      }
+
+      const packedMeta = String(orderSlot?.boundBouquetCode || '');
+      const pipeIdx = packedMeta.indexOf('|');
+      const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
+      const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+      const targetPassKey = isValidPassKeyFormat(decodedPassKey)
+        ? decodedPassKey
+        : pendingEntry?.passKey || generatePassKeyCode();
+      const targetDeviceHash =
+        orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
+      const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
+
+      const mintedPass = createSignedStudioPassServer({
+        passKey: targetPassKey,
+        tier,
+        region: 'PH',
+        deviceTokenHash: targetDeviceHash,
+        boundBouquetCode: targetBouquetCode,
+        paymentProvider: 'bayadgate',
+        paymentReference: `bg_${orderId}`,
+      });
+
+      SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+      await saveStudioPassToFirestoreRest(mintedPass);
+
+      if (orderSlot) {
+        const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+        paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+        SERVER_PASS_STORE.set(slotKey, paidSlot);
+        await saveStudioPassToFirestoreRest(paidSlot);
+      }
+
+      if (pendingEntry) {
+        pendingEntry.status = 'paid';
+      }
+
+      await hydratePersistentOwnerVaultServer();
+      recordPaidPassIssuanceServer(mintedPass);
+      await savePersistentOwnerVaultServer();
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end('SUCCESS');
       return true;
     }
 

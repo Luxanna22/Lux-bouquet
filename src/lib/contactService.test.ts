@@ -13,7 +13,7 @@ import { createSignedStudioPass } from './monetization';
 // @ts-expect-error Testing shared backend handler functions
 import { validateContactPayload, validateBouquetEmailPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail, buildBouquetSurpriseEmail, resolveBouquetFromAddress, processBouquetEmailDelivery } from '../../api/_lib/contactHandler.js';
 // @ts-expect-error Testing shared backend payment helpers
-import { createSignedStudioPassServer } from '../../api/_lib/paymentHandler.js';
+import { createSignedStudioPassServer, SERVER_PASS_STORE } from '../../api/_lib/paymentHandler.js';
 
 test('OFFICIAL_STUDIO_EMAIL is set to hello@sendabouquet.online', () => {
   assert.equal(OFFICIAL_STUDIO_EMAIL, 'hello@sendabouquet.online');
@@ -219,6 +219,7 @@ test('resolveBouquetFromAddress and processBouquetEmailDelivery strictly require
       boundBouquetCode: 'abc1234',
       paymentProvider: 'kofi',
     });
+    SERVER_PASS_STORE.set(singlePass.passKey, singlePass);
     const wrongBouquetRes = await processBouquetEmailDelivery({
       recipientEmail: 'sophia@example.com',
       recipientName: 'Sophia',
@@ -249,6 +250,7 @@ test('resolveBouquetFromAddress and processBouquetEmailDelivery strictly require
       deviceTokenHash: devHash,
       paymentProvider: 'kofi',
     });
+    SERVER_PASS_STORE.set(pass7d.passKey, pass7d);
     const pass7dRes = await processBouquetEmailDelivery({
       recipientEmail: 'sophia@example.com',
       recipientName: 'Sophia',

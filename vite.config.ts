@@ -285,6 +285,22 @@ function handleShortenMiddleware(
           return;
         }
 
+        // @ts-expect-error Shared ESM guard in /api/_lib/coutureGuard.js
+        const { verifyShortenCouturePermission } = await import('./api/_lib/coutureGuard.js');
+        const coutureCheck = await verifyShortenCouturePermission(parsed);
+        if (!coutureCheck.ok) {
+          res.statusCode = coutureCheck.statusCode || 403;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(
+            JSON.stringify({
+              error:
+                coutureCheck.error ||
+                'This bouquet requires a verified Bloom Key before saving.',
+            })
+          );
+          return;
+        }
+
         const entry: ShortCodeEntry = {
           code,
           payload,

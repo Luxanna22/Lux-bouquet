@@ -573,22 +573,18 @@ export async function verifyCouturePassForEmailDelivery(rawBody = {}) {
   await hydratePersistentOwnerVaultServer();
 
   const normKey = normalizePassKey(clientPass.passKey);
-  const remoteOrMemPass =
+  const canonicalPass =
     SERVER_PASS_STORE.get(normKey) || (await fetchStudioPassFromFirestoreRest(normKey));
 
-  // If not cached remotely/in-memory yet, require valid server-side HMAC paymentReference signature
-  if (!remoteOrMemPass) {
-    if (!verifyPassIntegritySignature(clientPass) || !verifyServerPaymentReference(clientPass)) {
-      return {
-        ok: false,
-        statusCode: 403,
-        error:
-          'Your Studio Pass could not be verified. Please unlock Couture or re-enter your Pass Key.',
-      };
-    }
+  if (!canonicalPass) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error:
+        'Your Studio Pass could not be verified on the server. Please unlock Couture or re-enter your Pass Key.',
+    };
   }
 
-  const canonicalPass = remoteOrMemPass || clientPass;
   const hadUnboundSingle =
     canonicalPass.tier === 'single' && !canonicalPass.boundBouquetCode && Boolean(bouquetCode);
 
@@ -610,11 +606,9 @@ export async function verifyCouturePassForEmailDelivery(rawBody = {}) {
     };
   }
 
-  if (hadUnboundSingle || remoteOrMemPass) {
-    SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
-    if (hadUnboundSingle) {
-      await saveStudioPassToFirestoreRest(check.updatedPass);
-    }
+  SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
+  if (hadUnboundSingle) {
+    await saveStudioPassToFirestoreRest(check.updatedPass);
   }
 
   return {

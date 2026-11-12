@@ -132,6 +132,7 @@ import { BouquetVaultModal } from './BouquetVaultModal';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
 import { sendBouquetSurpriseEmail } from '../lib/contactService';
 import {
+  clearPendingCheckoutStorage,
   formatPassRemainingTime,
   FREE_CARD_NOTE_MAX_CHARS,
   getActivePremiumAssetConfig,
@@ -145,11 +146,13 @@ import {
   isRibbonPremium,
   isVoiceStylePremium,
   isWrapPremium,
+  loadPendingCheckoutStorage,
   PREMIUM_CARD_NOTE_MAX_CHARS,
   PremiumAssetConfig,
   saveStoredStudioPass,
   StudioPassRecord,
   verifyActiveStudioPassForAction,
+  verifyStudioPassOnServer,
 } from '../lib/monetization';
 import {
   StudioCheckoutModal,
@@ -269,6 +272,12 @@ export default function App() {
     if (isGiftShareHash()) return false;
     if (getShortCodeFromPathname(window.location.pathname)) return false;
     if (window.location.search.includes('studio=1')) return false;
+    if (
+      window.location.search.includes('checkout_success=') ||
+      window.location.search.includes('checkout_cancelled=')
+    ) {
+      return false;
+    }
     if (detectInitialSeoRoute(window.location.pathname) === 'studio') return false;
     return true;
   });
@@ -430,21 +439,65 @@ export default function App() {
     [currentPassCheck.valid, activeStudioPass]
   );
 
-  // Harden against F12 DevTools localStorage tampering: re-verify HMAC integrity on storage/focus events
+  const lastServerVerifiedPassSigRef = useRef<string>('');
+
+  // Harden against F12 DevTools localStorage tampering: re-verify HMAC integrity & canonical server record on load, storage, and focus events
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const enforcePassIntegrity = () => {
-      const verified = getStoredStudioPass();
-      if (!verified && activeStudioPass) {
-        setActiveStudioPass(null);
-      } else if (verified && !currentPassCheck.valid && currentPassCheck.status === 'TAMPERED_SIGNATURE') {
+    let cancelled = false;
+
+    const verifyStoredPassAgainstServer = async (candidate: StudioPassRecord | null) => {
+      if (!candidate) return;
+      const res = await verifyStudioPassOnServer({
+        pass: candidate,
+        incrementUsage: false,
+      });
+      if (cancelled) return;
+      if (!res.valid || !res.updatedPass) {
+        lastServerVerifiedPassSigRef.current = '';
         saveStoredStudioPass(null);
         setActiveStudioPass(null);
+        return;
+      }
+      lastServerVerifiedPassSigRef.current = res.updatedPass.signature;
+      if (
+        res.updatedPass.signature !== candidate.signature ||
+        res.updatedPass.dailyUsageCount !== candidate.dailyUsageCount
+      ) {
+        saveStoredStudioPass(res.updatedPass);
+        setActiveStudioPass(res.updatedPass);
       }
     };
+
+    if (
+      activeStudioPass &&
+      activeStudioPass.signature !== lastServerVerifiedPassSigRef.current
+    ) {
+      verifyStoredPassAgainstServer(activeStudioPass);
+    }
+
+    const enforcePassIntegrity = () => {
+      const verified = getStoredStudioPass();
+      if (!verified) {
+        lastServerVerifiedPassSigRef.current = '';
+        if (activeStudioPass) {
+          setActiveStudioPass(null);
+        }
+        return;
+      }
+      if (!currentPassCheck.valid && currentPassCheck.status === 'TAMPERED_SIGNATURE') {
+        lastServerVerifiedPassSigRef.current = '';
+        saveStoredStudioPass(null);
+        setActiveStudioPass(null);
+        return;
+      }
+      verifyStoredPassAgainstServer(verified);
+    };
+
     window.addEventListener('storage', enforcePassIntegrity);
     window.addEventListener('focus', enforcePassIntegrity);
     return () => {
+      cancelled = true;
       window.removeEventListener('storage', enforcePassIntegrity);
       window.removeEventListener('focus', enforcePassIntegrity);
     };
@@ -1126,6 +1179,64 @@ export default function App() {
         });
     }
 
+    // Auto-verify BayadGate / gateway redirect return (`/?checkout_success=<checkoutId>`)
+    const urlParams = new URLSearchParams(window.location.search);
+    const checkoutSuccessId = urlParams.get('checkout_success');
+    const checkoutCancelled = urlParams.get('checkout_cancelled');
+    if (checkoutSuccessId || checkoutCancelled) {
+      try {
+        urlParams.delete('checkout_success');
+        urlParams.delete('checkout_cancelled');
+        const nextQuery = urlParams.toString();
+        const cleanUrl =
+          window.location.pathname + (nextQuery ? `?${nextQuery}` : '') + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl || '/');
+      } catch {
+        // Ignore history error
+      }
+      setShowLandingPage(false);
+
+      if (checkoutCancelled) {
+        triggerToast('Payment was cancelled. You can choose another wallet anytime.');
+      } else if (checkoutSuccessId) {
+        const pendingRecord = loadPendingCheckoutStorage();
+        if (pendingRecord && pendingRecord.checkoutId === checkoutSuccessId) {
+          const deviceTokenHash = getOrCreateDeviceTokenHash();
+          fetch('/api/payments/verify-and-issue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              checkoutId: pendingRecord.checkoutId,
+              checkoutToken: pendingRecord.checkoutToken,
+              deviceTokenHash,
+            }),
+          })
+            .then(async (res) => {
+              const data = await res.json().catch(() => ({}));
+              if (res.ok && data.ok && data.pass) {
+                clearPendingCheckoutStorage();
+                lastServerVerifiedPassSigRef.current = data.pass.signature;
+                saveStoredStudioPass(data.pass);
+                setActiveStudioPass(data.pass);
+                triggerToast('Payment confirmed — Bloom Pass activated!');
+              } else {
+                setCheckoutTriggerAction(pendingRecord.resumeAction || 'pass_menu');
+                setIsCheckoutModalOpen(true);
+                triggerToast(
+                  data.message ||
+                    'Awaiting wallet confirmation — tap Verify Order inside the pass dialog.'
+                );
+              }
+            })
+            .catch(() => {
+              setCheckoutTriggerAction(pendingRecord.resumeAction || 'pass_menu');
+              setIsCheckoutModalOpen(true);
+              triggerToast('Could not confirm payment yet — please verify in the pass dialog.');
+            });
+        }
+      }
+    }
+
     return () => window.removeEventListener('popstate', handlePopState);
   }, [triggerToast]);
 
@@ -1350,10 +1461,34 @@ export default function App() {
       (!isGiftView || isPreviewMode) &&
       (currentPremiumInspection.isPremiumBouquet || premiumAssetConfig.requirePassForHighResPng)
     ) {
-      if (!isBouquetUnlockedByPass) {
+      if (!isBouquetUnlockedByPass || !unlockedPassForCurrentBouquet) {
         if (isPreviewMode) {
           handleExitGiftViewToEditor();
         }
+        setCheckoutTriggerAction('png');
+        setIsCheckoutModalOpen(true);
+        return;
+      }
+      const serverVerify = await verifyStudioPassOnServer({
+        pass: unlockedPassForCurrentBouquet,
+        bouquetCode: currentBouquetShortCode,
+        incrementUsage: false,
+      });
+      if (!serverVerify.valid) {
+        if (
+          activeStudioPass &&
+          activeStudioPass.passKey === unlockedPassForCurrentBouquet.passKey
+        ) {
+          lastServerVerifiedPassSigRef.current = '';
+          saveStoredStudioPass(null);
+          setActiveStudioPass(null);
+        }
+        if (isPreviewMode) {
+          handleExitGiftViewToEditor();
+        }
+        triggerToast(
+          serverVerify.message || 'Please unlock with a valid Bloom Key to export High-Res PNG.'
+        );
         setCheckoutTriggerAction('png');
         setIsCheckoutModalOpen(true);
         return;
@@ -1412,23 +1547,17 @@ export default function App() {
         return firstPartyUrl;
       }
 
-      const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;
+      const verifiedPass = overridePass !== undefined ? overridePass : null;
       const devHash = getOrCreateDeviceTokenHash();
-      const passVerify = verifyActiveStudioPassForAction({
-        pass: effectivePass,
-        deviceTokenHash: devHash,
-        clientSessionNonce: effectivePass?.activeSessionNonce,
-        bouquetCode: code,
-        incrementUsage: true,
-      });
 
-      if (passVerify.valid && passVerify.updatedPass) {
-        saveStoredStudioPass(passVerify.updatedPass);
-        setActiveStudioPass(passVerify.updatedPass);
+      if (verifiedPass && verifiedPass.tier !== 'single') {
+        lastServerVerifiedPassSigRef.current = verifiedPass.signature;
+        saveStoredStudioPass(verifiedPass);
+        setActiveStudioPass(verifiedPass);
       }
 
       const policy = getRetentionPolicyForPassTier(
-        passVerify.valid && effectivePass ? effectivePass.tier : 'free'
+        verifiedPass ? verifiedPass.tier : 'free'
       );
 
       // Persist directly to Firebase Firestore with 3-tier retention metadata (30d free, 90d paid extended, Eternal keepsake)
@@ -1473,7 +1602,7 @@ export default function App() {
         incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
       }
 
-      // Also register via /api/shorten serverless endpoint
+      // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key)
       fetch('/api/shorten', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1487,12 +1616,15 @@ export default function App() {
           voiceDurationSec: voice?.durationSec ?? null,
           isPremium: policy.isPremiumEternal,
           retentionDays: policy.retentionDays,
+          passKey: verifiedPass?.passKey || null,
+          deviceTokenHash: devHash,
+          activeSessionNonce: verifiedPass?.activeSessionNonce || null,
         })
       }).catch(() => {});
 
       return firstPartyUrl;
     },
-    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, activeStudioPass, pinToShowcaseChecked]
+    [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, pinToShowcaseChecked]
   );
 
   const handleSaveDraftOnDevice = useCallback(() => {
@@ -1629,23 +1761,52 @@ export default function App() {
       incrementUsage: false,
     });
 
-    if (currentPremiumInspection.isPremiumBouquet && !passVerify.valid) {
+    if (currentPremiumInspection.isPremiumBouquet && (!passVerify.valid || !effectivePass)) {
       setIsShareModalOpen(false);
       setCheckoutTriggerAction('share');
       setIsCheckoutModalOpen(true);
       return;
     }
 
-    const hasPaidUnlockForSeal = Boolean(passVerify.valid && effectivePass);
+    let verifiedPaidPass: StudioPassRecord | null = null;
+    if (passVerify.valid && effectivePass) {
+      setIsShorteningUrl(true);
+      const serverVerify = await verifyStudioPassOnServer({
+        pass: effectivePass,
+        bouquetCode: currentBouquetShortCode,
+        incrementUsage: true,
+      });
+      if (!serverVerify.valid || !serverVerify.updatedPass) {
+        setIsShorteningUrl(false);
+        if (activeStudioPass && activeStudioPass.passKey === effectivePass.passKey) {
+          lastServerVerifiedPassSigRef.current = '';
+          saveStoredStudioPass(null);
+          setActiveStudioPass(null);
+        }
+        if (currentPremiumInspection.isPremiumBouquet) {
+          triggerToast(
+            serverVerify.message || 'Your Studio Pass could not be verified on the server.'
+          );
+          setIsShareModalOpen(false);
+          setCheckoutTriggerAction('share');
+          setIsCheckoutModalOpen(true);
+          return;
+        }
+      } else {
+        verifiedPaidPass = serverVerify.updatedPass;
+      }
+    }
+
+    const hasPaidUnlockForSeal = Boolean(verifiedPaidPass);
     const firstPartyUrl = registerShortCodeOnServer(
       asGift,
       true,
-      hasPaidUnlockForSeal ? effectivePass : null
+      verifiedPaidPass
     );
     setShortShareUrl(firstPartyUrl);
     setSealedGiftUrl(firstPartyUrl);
     setSealedBouquetCode(hasPaidUnlockForSeal ? currentBouquetShortCode : null);
-    setSealedPaidPass(hasPaidUnlockForSeal ? effectivePass : null);
+    setSealedPaidPass(verifiedPaidPass);
     setIsShorteningUrl(false);
     setSurpriseEmailSentTo(null);
     setSurpriseEmailError(null);
@@ -1653,12 +1814,13 @@ export default function App() {
     setShareStep('ready');
     setIsShareModalOpen(true);
 
-    if (isFinalDesignChecked || effectivePass?.tier === 'single') {
+    if (isFinalDesignChecked || verifiedPaidPass?.tier === 'single') {
       shouldResetStudioOnShareCloseRef.current = true;
     }
 
     // Single Bouquet unlocks ONLY this sealed gift link + PNG — do not leave a reusable studio pass active
-    if (effectivePass?.tier === 'single') {
+    if (verifiedPaidPass?.tier === 'single') {
+      lastServerVerifiedPassSigRef.current = '';
       saveStoredStudioPass(null);
       setActiveStudioPass(null);
     }
@@ -6738,23 +6900,24 @@ export default function App() {
           setStealthGateSlug(gateSlug);
           setShowLandingPage(false);
         }}
-        onPassActivated={(newPass, resumeAction) => {
+        onPassActivated={async (newPass, resumeAction) => {
           if (newPass.tier === 'single') {
             setIsCheckoutModalOpen(false);
-            handleShareLink(true, newPass);
+            await handleShareLink(true, newPass);
             if (resumeAction === 'png') {
-              performSvgPngDownload();
+              await performSvgPngDownload();
             }
             return;
           }
+          lastServerVerifiedPassSigRef.current = newPass.signature;
           saveStoredStudioPass(newPass);
           setActiveStudioPass(newPass);
           if (resumeAction === 'share') {
             setIsCheckoutModalOpen(false);
-            handleShareLink(true, newPass);
+            await handleShareLink(true, newPass);
           } else if (resumeAction === 'png') {
             setIsCheckoutModalOpen(false);
-            performSvgPngDownload();
+            await performSvgPngDownload();
           } else {
             triggerToast('Bloom Pass Activated!');
           }

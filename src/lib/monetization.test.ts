@@ -635,3 +635,698 @@ test('create-checkout blocks PHP PPP arbitrage when PayMongo is hidden and locks
   }
 });
 
+test('server-side Bloom Key & Couture enforcement rejects client forgeries, omitted nonces, and unpaid Couture /api/shorten payloads', async () => {
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error Testing backend ESM module directly
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  // @ts-expect-error Testing backend ESM Couture guard directly
+  const coutureGuard = await import('../../api/_lib/coutureGuard.js');
+  const { encodeBouquetToCompactPayload, computeShortCode } = await import('./shareAndExport');
+
+  const makeReq = (url: string, body: Record<string, unknown>) => {
+    const req = Object.assign(new EventEmitter(), {
+      method: 'POST',
+      url,
+      headers: { host: 'localhost:3000' },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      req.emit('data', Buffer.from(JSON.stringify(body)));
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    let statusCode = 200;
+    const headers: Record<string, string> = {};
+    let rawBody = '';
+    return {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(val: number) {
+        statusCode = val;
+      },
+      setHeader(k: string, v: string) {
+        headers[k] = v;
+      },
+      end(chunk?: string) {
+        if (chunk) rawBody += chunk;
+      },
+      json() {
+        return JSON.parse(rawBody);
+      },
+    };
+  };
+
+  const prevSecret = process.env.PASS_SIGNING_SECRET;
+  const originalFetch = globalThis.fetch;
+  process.env.PASS_SIGNING_SECRET = 'Mix3dS3cr3tKey18Ch';
+  // Block external Firestore REST network calls inside unit tests
+  globalThis.fetch = (async () => new Response(JSON.stringify({}), { status: 404 })) as typeof fetch;
+
+  try {
+    const devHash = 'device_sec_test_12345678';
+
+    // 1. Client-forged pass (signed with client-visible CLIENT_SIGNATURE_SALT) submitted in redeem-pass or verify-action MUST fail
+    const forgedPass = createSignedStudioPass({
+      passKey: 'BLOOM-9F3K-7Q2M',
+      tier: 'pass_30d',
+      region: 'INTL',
+      deviceTokenHash: devHash,
+      paymentReference: 'fake_checkout_ref_001',
+    });
+
+    const redeemSpoofReq = makeReq('/api/payments/redeem-pass', {
+      passKey: forgedPass.passKey,
+      deviceTokenHash: devHash,
+      existingRecord: forgedPass,
+    });
+    const redeemSpoofRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(redeemSpoofReq, redeemSpoofRes, '/api/payments/redeem-pass');
+    assert.equal(redeemSpoofRes.statusCode, 404);
+
+    // Even if an attacker manages to write a doc directly to Firestore/store without PASS_SIGNING_SECRET HMAC
+    paymentLib.SERVER_PASS_STORE.set(forgedPass.passKey, forgedPass);
+    try {
+      const redeemDocTamperReq = makeReq('/api/payments/redeem-pass', {
+        passKey: forgedPass.passKey,
+        deviceTokenHash: devHash,
+      });
+      const redeemDocTamperRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        redeemDocTamperReq,
+        redeemDocTamperRes,
+        '/api/payments/redeem-pass'
+      );
+      assert.equal(redeemDocTamperRes.statusCode, 403);
+      assert.equal(redeemDocTamperRes.json().status, 'TAMPERED_SIGNATURE');
+
+      const verifyDocTamperReq = makeReq('/api/payments/verify-action', {
+        action: 'verify_pass',
+        passKey: forgedPass.passKey,
+        activeSessionNonce: forgedPass.activeSessionNonce,
+        deviceTokenHash: devHash,
+      });
+      const verifyDocTamperRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        verifyDocTamperReq,
+        verifyDocTamperRes,
+        '/api/payments/verify-action'
+      );
+      assert.equal(verifyDocTamperRes.statusCode, 403);
+      assert.equal(verifyDocTamperRes.json().status, 'TAMPERED_SIGNATURE');
+    } finally {
+      paymentLib.SERVER_PASS_STORE.delete(forgedPass.passKey);
+    }
+
+    // 2. verify-action rejects clientPass fallback when absent from server store & rejects internal slot keys
+    const verifyClientOnlyReq = makeReq('/api/payments/verify-action', {
+      action: 'verify_pass',
+      pass: forgedPass,
+      deviceTokenHash: devHash,
+    });
+    const verifyClientOnlyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      verifyClientOnlyReq,
+      verifyClientOnlyRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(verifyClientOnlyRes.statusCode, 403);
+    assert.equal(verifyClientOnlyRes.json().status, 'NOT_FOUND');
+
+    const slotVerifyReq = makeReq('/api/payments/verify-action', {
+      action: 'verify_pass',
+      passKey: 'BLOOM-KCFG-SHOP',
+      deviceTokenHash: devHash,
+    });
+    const slotVerifyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(slotVerifyReq, slotVerifyRes, '/api/payments/verify-action');
+    assert.equal(slotVerifyRes.statusCode, 403);
+
+    // 3. Genuine server-signed pass rejects OMITTED activeSessionNonce on verify-action
+    const genuine7d = paymentLib.createSignedStudioPassServer({
+      tier: 'pass_7d',
+      region: 'INTL',
+      deviceTokenHash: devHash,
+      paymentProvider: 'kofi',
+    });
+    paymentLib.SERVER_PASS_STORE.set(genuine7d.passKey, genuine7d);
+    try {
+      const missingNonceReq = makeReq('/api/payments/verify-action', {
+        action: 'verify_pass',
+        passKey: genuine7d.passKey,
+        deviceTokenHash: devHash,
+        // activeSessionNonce intentionally omitted!
+      });
+      const missingNonceRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        missingNonceReq,
+        missingNonceRes,
+        '/api/payments/verify-action'
+      );
+      assert.equal(missingNonceRes.statusCode, 403);
+      assert.equal(missingNonceRes.json().status, 'SESSION_SUPERSEDED');
+
+      // Valid nonce passes and returns canonical pass
+      const validVerifyReq = makeReq('/api/payments/verify-action', {
+        action: 'verify_pass',
+        passKey: genuine7d.passKey,
+        activeSessionNonce: genuine7d.activeSessionNonce,
+        deviceTokenHash: devHash,
+        incrementUsage: false,
+      });
+      const validVerifyRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        validVerifyReq,
+        validVerifyRes,
+        '/api/payments/verify-action'
+      );
+      assert.equal(validVerifyRes.statusCode, 200);
+      assert.equal(validVerifyRes.json().ok, true);
+
+      // 4. Couture guard on /api/shorten enforces payment & server-clamps retention
+      const baseSnap = {
+        items: [
+          {
+            id: 'f1',
+            type: 'rose' as const,
+            x: 300,
+            y: 250,
+            scale: 1,
+            rotation: 0,
+            flipX: false,
+            petalColor: '#e11d48',
+            centerColor: '#881337',
+          },
+        ],
+        wrapStyle: 'kraft' as const,
+        wrapColor: '#d4b483',
+        ribbonColor: '#e11d48',
+        ribbonStyle: 'satin' as const,
+        environment: 'studio' as const,
+        bouquetPose: { x: 300, y: 386, scale: 0.86, rotation: 0 },
+        card: {
+          visibleOnStage: true,
+          theme: 'cream' as const,
+          to: 'Maya',
+          from: 'Alex',
+          message: 'Thinking of you.',
+        },
+        voice: {
+          visibleOnStage: false,
+          style: 'mixtape' as const,
+          title: 'Side A',
+          primaryColor: '#F472B6',
+          accentColor: '#FFF1F2',
+          audioDataUrl: null,
+          durationSec: 0,
+        },
+        lock: { mode: 'none' as const },
+      };
+
+      const freePayload = encodeBouquetToCompactPayload(baseSnap, true);
+      const freeCode = computeShortCode(freePayload);
+
+      const freeCheck = await coutureGuard.verifyShortenCouturePermission({
+        code: freeCode,
+        payload: freePayload,
+        isPremium: false,
+        retentionDays: 30,
+      });
+      assert.equal(freeCheck.ok, true);
+      assert.equal(freeCheck.isPremium, false);
+      assert.equal(freeCheck.retentionDays, 30);
+
+      // Free user trying to spoof eternal retention fails with 403
+      const spoofRetentionCheck = await coutureGuard.verifyShortenCouturePermission({
+        code: freeCode,
+        payload: freePayload,
+        isPremium: true,
+        retentionDays: 36500,
+      });
+      assert.equal(spoofRetentionCheck.ok, false);
+      assert.equal(spoofRetentionCheck.statusCode, 403);
+
+      // Couture payloads (bloom, wrap, environment, photo, voice, lock, long note) fail without pass
+      const coutureVariants = [
+        encodeBouquetToCompactPayload(
+          {
+            ...baseSnap,
+            items: [{ ...baseSnap.items[0], type: 'celestialRose' as const }],
+          },
+          true
+        ),
+        encodeBouquetToCompactPayload({ ...baseSnap, wrapStyle: 'vase' as const }, true),
+        encodeBouquetToCompactPayload({ ...baseSnap, environment: 'aurora' as const }, true),
+        encodeBouquetToCompactPayload(
+          {
+            ...baseSnap,
+            items: [
+              {
+                ...baseSnap.items[0],
+                photoStyle: 'polaroid' as const,
+                photoDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+              },
+            ],
+          },
+          true
+        ),
+        encodeBouquetToCompactPayload(
+          {
+            ...baseSnap,
+            voice: {
+              ...baseSnap.voice,
+              visibleOnStage: true,
+              durationSec: 12,
+            },
+          },
+          true
+        ),
+        encodeBouquetToCompactPayload(
+          {
+            ...baseSnap,
+            lock: { mode: 'passcode' as const, questionPrompt: 'Cat?', passcodeAnswer: 'Mochi' },
+          },
+          true
+        ),
+        encodeBouquetToCompactPayload(
+          {
+            ...baseSnap,
+            card: { ...baseSnap.card, message: 'A'.repeat(600) },
+          },
+          true
+        ),
+      ];
+
+      for (const cPayload of coutureVariants) {
+        const resUnpaid = await coutureGuard.verifyShortenCouturePermission({
+          code: computeShortCode(cPayload),
+          payload: cPayload,
+        });
+        assert.equal(resUnpaid.ok, false, `Expected unpaid couture payload to fail: ${cPayload}`);
+        assert.equal(resUnpaid.statusCode, 403);
+
+        // Forged client key also fails
+        const resForged = await coutureGuard.verifyShortenCouturePermission({
+          code: computeShortCode(cPayload),
+          payload: cPayload,
+          passKey: forgedPass.passKey,
+          deviceTokenHash: devHash,
+          activeSessionNonce: forgedPass.activeSessionNonce,
+        });
+        assert.equal(resForged.ok, false);
+        assert.equal(resForged.statusCode, 403);
+      }
+
+      // Valid 7-Day Pass unlocks Couture payload, and server overrides retentionDays=36500 claim down to 90 days!
+      const couturePayload = coutureVariants[0];
+      const allowed7d = await coutureGuard.verifyShortenCouturePermission({
+        code: computeShortCode(couturePayload),
+        payload: couturePayload,
+        isPremium: true,
+        retentionDays: 36500,
+        passKey: genuine7d.passKey,
+        deviceTokenHash: devHash,
+        activeSessionNonce: genuine7d.activeSessionNonce,
+      });
+      assert.equal(allowed7d.ok, true);
+      assert.equal(allowed7d.isPremium, false);
+      assert.equal(allowed7d.retentionDays, 90);
+    } finally {
+      paymentLib.SERVER_PASS_STORE.delete(genuine7d.passKey);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (prevSecret !== undefined) process.env.PASS_SIGNING_SECRET = prevSecret;
+    else delete process.env.PASS_SIGNING_SECRET;
+  }
+});
+
+test('BayadGate PH integration: MD5 signing, form-urlencoded checkout, webhook callback, verify-and-issue, and geo-lock', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  // @ts-expect-error ESM couture guard
+  const coutureGuard = await import('../../api/_lib/coutureGuard.js');
+  const { EventEmitter } = await import('node:events');
+  const cryptoMod = await import('node:crypto');
+
+  const prevSecret = process.env.PASS_SIGNING_SECRET;
+  const prevMerchantId = process.env.BAYADGATE_MERCHANT_ID;
+  const prevBgSecret = process.env.BAYADGATE_SECRET_KEY;
+  const originalFetch = globalThis.fetch;
+
+  process.env.PASS_SIGNING_SECRET = 'SuperSecurePassSecret_BayadGateTest99';
+  process.env.BAYADGATE_MERCHANT_ID = 'MERCH_PH_001';
+  process.env.BAYADGATE_SECRET_KEY = 'bg_secret_key_xyz';
+
+  const makeReq = (
+    method: string,
+    url: string,
+    bodyStr?: string,
+    headers: Record<string, string> = {}
+  ) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: { host: 'www.sendabouquet.online', ...headers },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    let statusCode = 200;
+    const headers: Record<string, string> = {};
+    let rawBody = '';
+    return {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(val: number) {
+        statusCode = val;
+      },
+      setHeader(k: string, v: string) {
+        headers[k.toLowerCase()] = v;
+      },
+      getHeader(k: string) {
+        return headers[k.toLowerCase()];
+      },
+      end(chunk?: string) {
+        if (chunk) rawBody += chunk;
+      },
+      text() {
+        return rawBody;
+      },
+      json() {
+        return JSON.parse(rawBody || '{}');
+      },
+    };
+  };
+
+  try {
+    // 1. Verify MD5 signature spec: ASCII-sorted non-empty params + &key=SECRET
+    const sampleParams = {
+      payment_method: 'GCASH',
+      merchant_id: 'MERCH_PH_001',
+      empty_ignored: '',
+      amount: '99.00',
+      order_id: 'BG123456',
+      redirect_url: 'https://www.sendabouquet.online/?checkout_success=chk_1',
+      sign: 'should_be_ignored',
+    };
+    const expectedSignStr =
+      'amount=99.00&merchant_id=MERCH_PH_001&order_id=BG123456&payment_method=GCASH&redirect_url=https://www.sendabouquet.online/?checkout_success=chk_1&key=bg_secret_key_xyz';
+    const expectedMd5 = cryptoMod.createHash('md5').update(expectedSignStr).digest('hex');
+    assert.equal(
+      paymentLib.computeBayadgateSignature(sampleParams, 'bg_secret_key_xyz'),
+      expectedMd5
+    );
+    assert.equal(
+      paymentLib.verifyBayadgateSignature(
+        { ...sampleParams, sign: expectedMd5.toUpperCase() },
+        'bg_secret_key_xyz'
+      ),
+      true
+    );
+    assert.equal(
+      paymentLib.verifyBayadgateSignature({ ...sampleParams, sign: 'deadbeef' }, 'bg_secret_key_xyz'),
+      false
+    );
+
+    // 2. GET /api/payments/create-checkout capability check (PH eligible vs US blocked)
+    const capPhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, { 'x-vercel-ip-country': 'PH' }),
+      capPhRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capPhRes.statusCode, 200);
+    assert.equal(capPhRes.json().isPhEligible, true);
+    assert.equal(capPhRes.json().phGateway, 'bayadgate');
+    assert.equal(capPhRes.json().defaultRegion, 'PH');
+
+    const capUsRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, { 'x-vercel-ip-country': 'US' }),
+      capUsRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capUsRes.statusCode, 200);
+    assert.equal(capUsRes.json().isPhEligible, false);
+    assert.equal(capUsRes.json().defaultRegion, 'INTL');
+
+    // 3. Anti-arbitrage: US IP requesting PH + bayadgate is forced to INTL + kofi
+    const usSpoofRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'pass_7d',
+          region: 'PH',
+          provider: 'bayadgate',
+          paymentMethod: 'GCASH',
+          deviceTokenHash: 'dev_us_arb_attempt_01',
+        }),
+        { 'x-vercel-ip-country': 'US', 'content-type': 'application/json' }
+      ),
+      usSpoofRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(usSpoofRes.statusCode, 200);
+    assert.equal(usSpoofRes.json().provider, 'kofi');
+    assert.equal(usSpoofRes.json().plan.currency, 'USD');
+
+    // 4. Mock BayadGate upstream checkout.php + query_status.php + Firestore
+    let capturedCheckoutBody = '';
+    let capturedCheckoutContentType = '';
+    let upstreamStatus = '1'; // 1 = pending initially
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/api/checkout.php')) {
+        capturedCheckoutBody = String(init?.body || '');
+        capturedCheckoutContentType = String(
+          (init?.headers as Record<string, string>)?.['Content-Type'] || ''
+        );
+        const form = new URLSearchParams(capturedCheckoutBody);
+        return new Response(
+          JSON.stringify({
+            status: 'SUCCESS',
+            message: 'Checkout URL generated',
+            order_id: form.get('order_id'),
+            amount: form.get('amount'),
+            payment_url: `https://bayadgate.com/pay/${form.get('order_id')}`,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('/api/query_status.php')) {
+        const form = new URLSearchParams(String(init?.body || ''));
+        return new Response(
+          JSON.stringify({
+            status: 'SUCCESS',
+            order_id: form.get('order_id'),
+            payment_status: upstreamStatus,
+            amount: '99.00',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    }) as typeof fetch;
+
+    // 5. PH buyer creates BayadGate Maya checkout for 7-Day Pass (₱99.00)
+    const devPh = 'dev_ph_buyer_maya_8888';
+    const bgCreateRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'pass_7d',
+          region: 'PH',
+          provider: 'bayadgate',
+          paymentMethod: 'MAYA',
+          deviceTokenHash: devPh,
+          origin: 'https://www.sendabouquet.online',
+        }),
+        { 'x-vercel-ip-country': 'PH', 'content-type': 'application/json' }
+      ),
+      bgCreateRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(bgCreateRes.statusCode, 200);
+    const created = bgCreateRes.json();
+    assert.equal(created.ok, true);
+    assert.equal(created.provider, 'bayadgate');
+    assert.equal(created.paymentMethod, 'MAYA');
+    assert.equal(created.plan.currency, 'PHP');
+    assert.equal(created.plan.amountMinor, 9900);
+    assert.match(created.checkoutUrl, /^https:\/\/bayadgate\.com\/pay\/BG/);
+    assert.match(capturedCheckoutContentType, /application\/x-www-form-urlencoded/i);
+
+    const sentForm = new URLSearchParams(capturedCheckoutBody);
+    assert.equal(sentForm.get('merchant_id'), 'MERCH_PH_001');
+    assert.equal(sentForm.get('amount'), '99.00');
+    assert.equal(sentForm.get('payment_method'), 'MAYA');
+    assert.equal(
+      paymentLib.verifyBayadgateSignature(
+        Object.fromEntries(sentForm.entries()),
+        'bg_secret_key_xyz'
+      ),
+      true
+    );
+
+    const slotKey = paymentLib.deriveBayadgateOrderSlotKey(created.orderId);
+    assert.equal(slotKey.startsWith('BLOOM-BG'), true);
+
+    // 6. BLOOM-BG internal order slot cannot be redeemed or used for Couture unlock
+    const redeemSlotRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({ passKey: slotKey, deviceTokenHash: devPh }),
+        { 'content-type': 'application/json' }
+      ),
+      redeemSlotRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(redeemSlotRes.statusCode, 400);
+
+    const shortenSlotCheck = await coutureGuard.verifyShortenCouturePermission({
+      code: 'c_test99',
+      payload: '#c=vase',
+      isPremium: true,
+      passKey: slotKey,
+      deviceTokenHash: devPh,
+      activeSessionNonce: created.orderId,
+    });
+    assert.equal(shortenSlotCheck.ok, false);
+    assert.equal(shortenSlotCheck.statusCode, 403);
+
+    // 7. Before payment completes, verify-and-issue returns 402 PENDING_PAYMENT
+    const verifyPendingRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: created.checkoutId,
+          checkoutToken: created.checkoutToken,
+          deviceTokenHash: devPh,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      verifyPendingRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyPendingRes.statusCode, 402);
+    assert.equal(verifyPendingRes.json().status, 'PENDING_PAYMENT');
+
+    // 8. Webhook with bad signature is rejected with 401
+    const badWebhookParams = {
+      merchant_id: 'MERCH_PH_001',
+      order_id: created.orderId,
+      amount: '99.00',
+      status: '5',
+      sign: '00000000000000000000000000000000',
+    };
+    const badWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/bayadgate', new URLSearchParams(badWebhookParams).toString(), {
+        'content-type': 'application/x-www-form-urlencoded',
+      }),
+      badWhRes,
+      '/api/webhooks/bayadgate'
+    );
+    assert.equal(badWhRes.statusCode, 401);
+
+    // 9. Webhook with underpaid amount ('49.00' for 'pass_7d' ₱99.00) is rejected with 400
+    const underpaidParams: Record<string, string> = {
+      merchant_id: 'MERCH_PH_001',
+      order_id: created.orderId,
+      amount: '49.00',
+      status: '5',
+    };
+    underpaidParams.sign = paymentLib.computeBayadgateSignature(underpaidParams, 'bg_secret_key_xyz');
+    const underpaidWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/bayadgate', new URLSearchParams(underpaidParams).toString(), {
+        'content-type': 'application/x-www-form-urlencoded',
+      }),
+      underpaidWhRes,
+      '/api/webhooks/bayadgate'
+    );
+    assert.equal(underpaidWhRes.statusCode, 400);
+    assert.equal(underpaidWhRes.text(), 'FAIL_AMOUNT_MISMATCH');
+
+    // 10. Valid BayadGate webhook (`status=5`, exact `99.00`) responds raw plaintext `SUCCESS` and issues pass
+    const validWhParams: Record<string, string> = {
+      merchant_id: 'MERCH_PH_001',
+      order_id: created.orderId,
+      amount: '99.00',
+      status: '5',
+    };
+    validWhParams.sign = paymentLib.computeBayadgateSignature(validWhParams, 'bg_secret_key_xyz');
+    const validWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/bayadgate', new URLSearchParams(validWhParams).toString(), {
+        'content-type': 'application/x-www-form-urlencoded',
+      }),
+      validWhRes,
+      '/api/webhooks/bayadgate'
+    );
+    assert.equal(validWhRes.statusCode, 200);
+    assert.equal(validWhRes.text(), 'SUCCESS');
+    assert.match(String(validWhRes.getHeader('content-type') || ''), /text\/plain/i);
+
+    // 11. Now verify-and-issue succeeds and returns verified PASS_SIGNING_SECRET-signed BayadGate pass
+    const verifyPaidRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: created.checkoutId,
+          checkoutToken: created.checkoutToken,
+          deviceTokenHash: devPh,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      verifyPaidRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyPaidRes.statusCode, 200);
+    const issued = verifyPaidRes.json();
+    assert.equal(issued.ok, true);
+    assert.equal(issued.pass.paymentProvider, 'bayadgate');
+    assert.equal(issued.pass.region, 'PH');
+    assert.equal(issued.pass.tier, 'pass_7d');
+    assert.equal(paymentLib.verifyPassIntegritySignature(issued.pass), true);
+    assert.equal(paymentLib.verifyServerPaymentReference(issued.pass), true);
+
+    paymentLib.SERVER_PASS_STORE.delete(slotKey);
+    paymentLib.SERVER_PASS_STORE.delete(issued.pass.passKey);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (prevSecret !== undefined) process.env.PASS_SIGNING_SECRET = prevSecret;
+    else delete process.env.PASS_SIGNING_SECRET;
+    if (prevMerchantId !== undefined) process.env.BAYADGATE_MERCHANT_ID = prevMerchantId;
+    else delete process.env.BAYADGATE_MERCHANT_ID;
+    if (prevBgSecret !== undefined) process.env.BAYADGATE_SECRET_KEY = prevBgSecret;
+    else delete process.env.BAYADGATE_SECRET_KEY;
+  }
+});
+
+
+

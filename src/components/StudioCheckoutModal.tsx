@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Check, Copy, QrCode, X } from 'lucide-react';
 import {
+  BayadgatePaymentMethod,
   BouquetPremiumInspection,
+  clearPendingCheckoutStorage,
+  detectPricingRegion,
   formatPassRemainingTime,
   getOrCreateDeviceTokenHash,
   getPricingCatalog,
@@ -12,11 +15,11 @@ import {
   PremiumAssetConfig,
   PricingRegion,
   PricingTierPlan,
+  savePendingCheckoutStorage,
   StudioPassRecord,
   StudioPassTier,
 } from '../lib/monetization';
 import {
-  fetchStudioPassFromFirestore,
   saveStudioPassToFirestore,
 } from '../lib/firebase';
 
@@ -379,9 +382,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   onStealthGateTriggered,
   onToast,
 }) => {
-  const region: PricingRegion = 'INTL';
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
-  const paymentGateway = 'kofi' as const;
+  const [isPhEligible, setIsPhEligible] = useState(false);
+  const [phGateway, setPhGateway] = useState<'bayadgate' | 'paymongo' | null>(null);
+  const [paymentGateway, setPaymentGateway] = useState<'bayadgate' | 'paymongo' | 'kofi'>('kofi');
+  const [bayadgateMethod, setBayadgateMethod] = useState<BayadgatePaymentMethod>('GCASH');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : 'plans')
   );
@@ -391,7 +396,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     checkoutToken: string;
     passKeyPreview: string;
     plan: PricingTierPlan;
-    provider: 'paymongo' | 'kofi';
+    provider: 'bayadgate' | 'paymongo' | 'kofi';
+    orderId?: string | null;
+    paymentMethod?: BayadgatePaymentMethod | null;
     checkoutUrl: string | null;
     liveGatewayConfigured: boolean;
   } | null>(null);
@@ -413,10 +420,53 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     } else {
       setActiveView('plans');
     }
+
+    let cancelled = false;
+    fetch('/api/payments/create-checkout', { method: 'GET' })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          isPhEligible?: boolean;
+          defaultRegion?: PricingRegion;
+          phGateway?: 'bayadgate' | 'paymongo' | null;
+        } | null;
+      })
+      .then((cfg) => {
+        if (cancelled || !cfg || !cfg.ok) return;
+        const eligible = Boolean(cfg.isPhEligible && cfg.phGateway);
+        setIsPhEligible(eligible);
+        setPhGateway(cfg.phGateway || null);
+        if (eligible && cfg.phGateway) {
+          const browserLocalPh =
+            cfg.defaultRegion === 'PH' ||
+            (typeof navigator !== 'undefined' &&
+              detectPricingRegion(
+                Intl.DateTimeFormat().resolvedOptions().timeZone,
+                navigator.language
+              ) === 'PH');
+          setPaymentGateway(browserLocalPh ? cfg.phGateway : 'kofi');
+        } else {
+          setPaymentGateway('kofi');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsPhEligible(false);
+          setPhGateway(null);
+          setPaymentGateway('kofi');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, activePass, triggerAction]);
 
   if (!isOpen) return null;
 
+  const region: PricingRegion =
+    isPhEligible && paymentGateway !== 'kofi' ? 'PH' : 'INTL';
   const plans = getPricingCatalog(region);
   const currentPlan = plans.find((p) => p.tier === selectedTier) || plans[1];
 
@@ -432,6 +482,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           tier: selectedTier,
           region,
           provider: paymentGateway,
+          paymentMethod: paymentGateway === 'bayadgate' ? bayadgateMethod : undefined,
           deviceTokenHash,
           bouquetCode,
           shopCodes: shopConfig,
@@ -444,14 +495,26 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         return;
       }
 
-      setPendingCheckout({
+      const nextPending = {
         checkoutId: data.checkoutId,
         checkoutToken: data.checkoutToken,
         passKeyPreview: data.passKeyPreview,
         plan: data.plan,
-        provider: data.provider,
+        provider: data.provider as 'bayadgate' | 'paymongo' | 'kofi',
+        orderId: data.orderId || null,
+        paymentMethod: (data.paymentMethod || null) as BayadgatePaymentMethod | null,
         checkoutUrl: data.checkoutUrl || null,
         liveGatewayConfigured: Boolean(data.liveGatewayConfigured),
+      };
+      setPendingCheckout(nextPending);
+      savePendingCheckoutStorage({
+        checkoutId: nextPending.checkoutId,
+        checkoutToken: nextPending.checkoutToken,
+        provider: nextPending.provider,
+        orderId: nextPending.orderId,
+        paymentMethod: nextPending.paymentMethod,
+        resumeAction: triggerAction,
+        createdAtMs: Date.now(),
       });
       setCheckoutStep('qr_confirm');
     } catch {
@@ -490,6 +553,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         return;
       }
 
+      clearPendingCheckoutStorage();
       const issuedPass = data.pass as StudioPassRecord;
       await saveStudioPassToFirestore(issuedPass).catch(() => {});
       onPassActivated(issuedPass, triggerAction);
@@ -548,7 +612,6 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     setIsProcessing(true);
     try {
       const deviceTokenHash = getOrCreateDeviceTokenHash();
-      const remoteRecord = await fetchStudioPassFromFirestore(cleanedKey).catch(() => null);
 
       const res = await fetch('/api/payments/redeem-pass', {
         method: 'POST',
@@ -556,7 +619,6 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         body: JSON.stringify({
           passKey: cleanedKey,
           deviceTokenHash,
-          existingRecord: remoteRecord,
         }),
       });
       const data = await res.json();
@@ -811,18 +873,96 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               })}
             </div>
 
-            {/* Payment Method (USD via Ko-fi / PayPal / Card; PayMongo hidden for now) */}
-            <div
-              data-testid="gateway-kofi"
-              className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
-                isDarkMode
-                  ? 'border-[#E6B89C] bg-[#3B302C]'
-                  : 'border-[#6E4434] bg-[#FAF3EB]'
-              }`}
-            >
-              <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
-              <div className="text-[10.5px] opacity-75">Instant Unlock</div>
-            </div>
+            {/* Payment Method: Server-Gated PH Local E-Wallets (BayadGate) vs USD Ko-fi */}
+            {isPhEligible && paymentGateway === 'bayadgate' ? (
+              <div className="space-y-2">
+                <div
+                  data-testid="gateway-bayadgate"
+                  className={`p-3 rounded-xl border border-dashed space-y-2.5 ${
+                    isDarkMode
+                      ? 'border-[#E6B89C] bg-[#3B302C]'
+                      : 'border-[#6E4434] bg-[#FAF3EB]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold">GCash · Maya · GoTyme</div>
+                    <div className="text-[10.5px] opacity-75">Instant PH Wallet</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        { id: 'GCASH', label: 'GCash' },
+                        { id: 'MAYA', label: 'Maya' },
+                        { id: 'GOTYME', label: 'GoTyme' },
+                      ] as const
+                    ).map((wallet) => {
+                      const active = bayadgateMethod === wallet.id;
+                      return (
+                        <button
+                          key={wallet.id}
+                          type="button"
+                          data-testid={`bayadgate-method-${wallet.id}`}
+                          onClick={() => setBayadgateMethod(wallet.id)}
+                          className={`py-1.5 px-2 rounded-lg text-[11px] font-medium border border-dashed transition cursor-pointer ${
+                            active
+                              ? isDarkMode
+                                ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C]'
+                                : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434]'
+                              : isDarkMode
+                              ? 'bg-[#2B2321]/70 text-[#E6D6C7] border-[#5E4E49] hover:border-[#E6B89C]/60'
+                              : 'bg-[#FFFDF9] text-[#5C4438] border-[#DECBB9] hover:border-[#6E4434]/60'
+                          }`}
+                        >
+                          {wallet.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    data-testid="switch-to-kofi-btn"
+                    onClick={() => {
+                      setPaymentGateway('kofi');
+                      setErrorMessage(null);
+                    }}
+                    className="text-[11px] underline opacity-70 hover:opacity-100 transition cursor-pointer"
+                  >
+                    Prefer PayPal or card? Pay in USD via Ko-fi
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div
+                  data-testid="gateway-kofi"
+                  className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                    isDarkMode
+                      ? 'border-[#E6B89C] bg-[#3B302C]'
+                      : 'border-[#6E4434] bg-[#FAF3EB]'
+                  }`}
+                >
+                  <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
+                  <div className="text-[10.5px] opacity-75">Instant Unlock</div>
+                </div>
+                {isPhEligible && phGateway && (
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      data-testid="switch-to-bayadgate-btn"
+                      onClick={() => {
+                        setPaymentGateway(phGateway);
+                        setErrorMessage(null);
+                      }}
+                      className="text-[11px] underline opacity-75 hover:opacity-100 transition cursor-pointer"
+                    >
+                      In the Philippines? Pay in PHP via GCash / Maya / GoTyme
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Primary Action Button */}
             <button
@@ -849,7 +989,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            STEP 2: CLEAN KO-FI / QR CHECKOUT CONFIRMATION
+            STEP 2: CLEAN BAYADGATE / KO-FI / QR CHECKOUT CONFIRMATION
             =================================================================== */}
         {activeView === 'plans' && checkoutStep === 'qr_confirm' && pendingCheckout && (
           <div className="mt-4 space-y-3.5 animate-in fade-in duration-150">
@@ -875,14 +1015,57 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     {pendingCheckout.plan.name} · {pendingCheckout.plan.displayPrice}
                   </div>
                   <div className="text-[11px] opacity-75">
-                    {pendingCheckout.provider === 'paymongo'
+                    {pendingCheckout.provider === 'bayadgate'
+                      ? `${
+                          pendingCheckout.paymentMethod === 'GOTYME'
+                            ? 'GoTyme'
+                            : pendingCheckout.paymentMethod === 'MAYA'
+                            ? 'Maya'
+                            : 'GCash'
+                        } · BayadGate PH`
+                      : pendingCheckout.provider === 'paymongo'
                       ? 'QR Ph · GCash · Maya'
                       : 'Ko-fi Shop Order'}
                   </div>
                 </div>
               </div>
 
-              {pendingCheckout.provider === 'kofi' ? (
+              {pendingCheckout.provider === 'bayadgate' ? (
+                <div className="space-y-3 text-center pt-1">
+                  {pendingCheckout.checkoutUrl && (
+                    <a
+                      href={pendingCheckout.checkoutUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="open-bayadgate-btn"
+                      className={`w-full py-3 px-5 rounded-full text-xs sm:text-sm font-semibold shadow-sm ring-2 flex items-center justify-center gap-2 transition active:scale-99 cursor-pointer ${
+                        isDarkMode
+                          ? 'bg-[#E6B89C] text-[#231C18] ring-[#E6B89C]/35 hover:bg-[#F0C8B0]'
+                          : 'bg-[#6E4434] text-[#FFFDF9] ring-[#6E4434]/25 hover:bg-[#5B3729]'
+                      }`}
+                    >
+                      <CoutureBloomSeal className="w-4 h-4 shrink-0" />
+                      <span>
+                        Pay {pendingCheckout.plan.displayPrice} via{' '}
+                        {pendingCheckout.paymentMethod === 'GOTYME'
+                          ? 'GoTyme'
+                          : pendingCheckout.paymentMethod === 'MAYA'
+                          ? 'Maya'
+                          : 'GCash'}{' '}
+                        ↗
+                      </span>
+                    </a>
+                  )}
+                  <p className="text-[11px] opacity-75 leading-relaxed">
+                    Complete payment on the secure BayadGate page, then tap Verify Order below.
+                  </p>
+                  {pendingCheckout.orderId && (
+                    <div className="inline-block px-3 py-1 rounded-full border border-dashed border-[#B4846C]/50 font-mono text-[10.5px] opacity-80">
+                      Order {pendingCheckout.orderId}
+                    </div>
+                  )}
+                </div>
+              ) : pendingCheckout.provider === 'kofi' ? (
                 <div className="space-y-3.5 text-left pt-1">
                   {/* Prominent Primary Action: Open Ko-fi Shop */}
                   <div className="space-y-1.5 text-center">
@@ -979,7 +1162,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               >
                 {isProcessing
                   ? 'Verifying...'
-                  : pendingCheckout.provider === 'kofi'
+                  : pendingCheckout.provider === 'kofi' || pendingCheckout.provider === 'bayadgate'
                   ? "I've Paid · Verify Order"
                   : 'Complete & Unlock'}
               </button>
