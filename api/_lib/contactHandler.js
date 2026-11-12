@@ -164,221 +164,101 @@ export function buildEmailBotanicalLogoSvg() {
 }
 
 /**
- * Builds an email-safe CSS/HTML Scalloped Eyelet Lace strip + Botanical Crest & Perforated Postage Stamp
- * so Gmail and webmail clients (which strip <svg>) still render our botanical blossom crest,
- * sage leaves, dashed tendrils, eyelet lace, postage stamp, and ruled stationery lines.
+ * Minimal, luxury Parisian letterpress stationery header lockup for HTML emails.
+ * Works cleanly across Gmail, Apple Mail, and Outlook without CSS bullseye clutter.
  */
-function buildEmailLaceStripHtml() {
-  const eyelets = Array.from({ length: 15 })
-    .map(
-      () =>
-        `<td align="center" style="padding: 0 3px;"><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background-color:#FFFDF9;border:1px dashed #C9B29D;"></span></td>`
-    )
-    .join('');
-
-  return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1E4D5;border-bottom:1px dashed #CFB8A3;">
-      <tr>
-        <td align="center" style="padding: 7px 12px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-            <tr>${eyelets}</tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  `.trim();
-}
-
-function buildEmailBotanicalCrestHtml() {
+function buildEmailBotanicalCrestHtml(subtitleText = '') {
   const logoSvg = buildEmailBotanicalLogoSvg();
   return `
     <div style="text-align:center;margin:0 auto;">
-      <!-- Inline SVG for Apple Mail & modern clients -->
-      <div style="mso-hide:all;">
+      <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
         ${logoSvg}
       </div>
-      <!-- Email-safe CSS Drawn Botanical Blossom Crest for Gmail/Webmail (always visible) -->
-      <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 2px auto 0 auto;">
-        <tr>
-          <!-- Left Arched Dashed Tendril & Blush Bud -->
-          <td valign="middle" align="right" style="padding-right: 4px;">
-            <span style="display:inline-block;width:11px;height:8px;border-radius:999px;background-color:#FCE2EC;border:1.5px solid #C97A90;vertical-align:middle;"></span><span style="display:inline-block;width:18px;border-top:1.5px dashed #C28C7A;vertical-align:middle;margin-left:2px;"></span>
-          </td>
-          <!-- Left Sage Leaf -->
-          <td valign="middle" align="right">
-            <div style="width:28px;height:14px;border-radius:16px 4px 16px 4px;background-color:#DCEFE2;border:1.5px solid #7AA387;"></div>
-          </td>
-          <!-- Center Multi-Layered Blush & Peach Blossom Medallion -->
-          <td valign="middle" align="center" style="padding: 0 3px;">
-            <div style="width:52px;height:52px;border-radius:999px;background-color:#FCE4EC;border:2px dashed #CD7E95;padding:5px;box-sizing:border-box;box-shadow:0 3px 10px rgba(201,122,144,0.16);">
-              <div style="width:38px;height:38px;border-radius:999px;background-color:#FFF0E5;border:1.5px solid #C88A74;padding:6px;box-sizing:border-box;">
-                <div style="width:22px;height:22px;border-radius:999px;background-color:#FCDCE8;border:1.5px solid #C4748B;padding:4px;box-sizing:border-box;">
-                  <div style="width:10px;height:10px;border-radius:999px;background-color:#FEF3C7;border:1.5px solid #D97706;margin:0 auto;"></div>
-                </div>
-              </div>
-            </div>
-          </td>
-          <!-- Right Sage Leaf -->
-          <td valign="middle" align="left">
-            <div style="width:28px;height:14px;border-radius:4px 16px 4px 16px;background-color:#DCEFE2;border:1.5px solid #7AA387;"></div>
-          </td>
-          <!-- Right Arched Dashed Tendril & Blush Bud -->
-          <td valign="middle" align="left" style="padding-left: 4px;">
-            <span style="display:inline-block;width:18px;border-top:1.5px dashed #C28C7A;vertical-align:middle;margin-right:2px;"></span><span style="display:inline-block;width:11px;height:8px;border-radius:999px;background-color:#FCE2EC;border:1.5px solid #C97A90;vertical-align:middle;"></span>
-          </td>
-        </tr>
-      </table>
+      <div style="display:inline-block;width:32px;height:32px;line-height:32px;border-radius:999px;background-color:#FDF4F6;border:1px dashed #D8A7B3;color:#9E4757;font-size:15px;text-align:center;margin-bottom:8px;">
+        &#10047;
+      </div>
+      <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;font-size:20px;font-weight:600;color:#2A201D;letter-spacing:0.01em;line-height:1.2;">
+        Send A Bouquet
+      </div>
+      ${
+        subtitleText
+          ? `<div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;font-style:italic;font-size:13.5px;color:#8C7A70;margin-top:2px;">
+              ${escapeHtml(subtitleText)}
+            </div>`
+          : ''
+      }
+      <div style="width:56px;margin:14px auto 0 auto;border-bottom:1px dashed #DFCEC0;"></div>
     </div>
-  `.trim();
-}
-
-function buildEmailPostageStampHtml() {
-  return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right">
-      <tr>
-        <td valign="middle" style="padding-right: 6px;">
-          <div style="width:36px;border-top:1px dashed #B8A090;margin-bottom:4px;"></div>
-          <div style="width:42px;border-top:1px dashed #B8A090;margin-bottom:4px;"></div>
-          <div style="width:36px;border-top:1px dashed #B8A090;"></div>
-        </td>
-        <td valign="middle">
-          <div style="background-color:#F5E9DC;border:2px dashed #C2AA96;border-radius:6px;padding:4px;">
-            <div style="background-color:#FFFDF9;border:1px solid #DFCFC0;border-radius:3px;width:36px;height:42px;text-align:center;padding-top:7px;box-sizing:border-box;">
-              <div style="width:18px;height:18px;border-radius:999px;background-color:#FCE2EC;border:1.5px solid #C87A90;margin:0 auto;padding:4px;box-sizing:border-box;">
-                <div style="width:6px;height:6px;border-radius:999px;background-color:#F59E0B;margin:0 auto;"></div>
-              </div>
-              <div style="width:18px;border-top:1px solid #C4AE9E;margin:6px auto 0 auto;"></div>
-            </div>
-          </div>
-        </td>
-      </tr>
-    </table>
   `.trim();
 }
 
 function buildEmailWaxSealHtml() {
   return `
-    <div style="display:inline-block;width:38px;height:38px;border-radius:999px;background-color:#F6E0E4;border:1.5px dashed #9E4757;padding:4px;box-sizing:border-box;text-align:center;vertical-align:middle;">
-      <div style="width:26px;height:26px;border-radius:999px;background-color:#9E4757;color:#FFFDF9;font-size:12px;line-height:26px;text-align:center;font-family:Georgia,serif;">
-        &#9829;
-      </div>
-    </div>
+    <span style="display:inline-block;width:22px;height:22px;line-height:22px;border-radius:999px;background-color:#9E4757;color:#FFFDF9;font-size:10px;text-align:center;font-family:Georgia,serif;vertical-align:middle;">
+      &#9829;
+    </span>
   `.trim();
 }
 
 /**
- * Renders message text across at least 4 visible dashed ruled stationery paper lines
- * so even short notes look like authentic lined letter paper.
+ * Formats user message paragraphs naturally inside a soft oatmeal vellum letterpress card
+ * without artificial character-width line breaks that cause single-word orphan wrapping in Gmail.
  */
-function buildRuledPaperLinesHtml(message) {
-  const rawLines = String(message || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((_, idx, arr) => idx < 12 || arr.length <= 12);
+function buildLetterpressNoteBodyHtml(message) {
+  const paragraphs = String(message || '')
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 
-  const lines = [];
-  for (const part of rawLines) {
-    if (!part) {
-      lines.push('');
-      continue;
-    }
-    if (part.length <= 68) {
-      lines.push(part);
-    } else {
-      const words = part.split(/\s+/);
-      let current = '';
-      for (const word of words) {
-        if ((current + ' ' + word).trim().length > 68 && current) {
-          lines.push(current);
-          current = word;
-        } else {
-          current = current ? `${current} ${word}` : word;
-        }
-      }
-      if (current) lines.push(current);
-    }
+  if (paragraphs.length === 0) {
+    return `<p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.75;color:#2A201D;">&nbsp;</p>`;
   }
 
-  while (lines.length < 4) {
-    lines.push('');
-  }
-
-  return lines
-    .map(
-      (lineText) => `
-      <div style="min-height:32px;line-height:32px;border-bottom:1px dashed #DFCEC0;padding:0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#231C18;">
-        ${lineText ? escapeHtml(lineText) : '&nbsp;'}
-      </div>`
-    )
+  return paragraphs
+    .map((para, idx) => {
+      const safeLines = para
+        .split(/\r?\n/)
+        .map((line) => escapeHtml(line.trim()))
+        .join('<br/>');
+      const isLast = idx === paragraphs.length - 1;
+      return `<p style="margin:0 0 ${isLast ? '0' : '12px'} 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.75;color:#2A201D;">${safeLines}</p>`;
+    })
     .join('');
 }
 
 export function buildStudioNotificationEmail({ topicLabel, senderName, replyToEmail, message, createdAt, messageId }) {
   const displaySender = senderName || 'Anonymous Visitor';
   const subject = `[Send A Bouquet · ${topicLabel}] Note from ${displaySender}`;
-  const laceStrip = buildEmailLaceStripHtml();
-  const crestHtml = buildEmailBotanicalCrestHtml();
-  const stampHtml = buildEmailPostageStampHtml();
-  const ruledPaperHtml = buildRuledPaperLinesHtml(message);
+  const crestHtml = buildEmailBotanicalCrestHtml(topicLabel);
+  const noteBodyHtml = buildLetterpressNoteBodyHtml(message);
   const waxSealHtml = buildEmailWaxSealHtml();
 
   const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#EFE5D8;padding:32px 14px;color:#231C18;">
-      <!-- Stacked Deckled Kraft Paper Backing -->
-      <div style="max-width:560px;margin:0 auto;background-color:#E4D4C3;border:1px dashed #C4AC96;border-radius:26px;padding:6px 7px 10px 6px;">
-        <!-- Primary Warm Cotton Parchment Stationery Sheet -->
-        <div style="background-color:#FAF3E9;border:1.5px dashed #CEB7A2;border-radius:22px;overflow:hidden;box-shadow:0 12px 30px rgba(110,68,52,0.08);">
-          ${laceStrip}
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:40px 16px;color:#2A201D;">
+      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;box-shadow:0 12px 32px rgba(42,32,29,0.05);">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:34px 30px 28px 30px;">
+          ${crestHtml}
 
-          <div style="padding:24px 24px 26px 24px;">
-            <!-- Centered Botanical Blossom Crest & Title -->
-            <div style="text-align:center;padding-bottom:16px;border-bottom:1px dashed #E2D1C1;">
-              ${crestHtml}
-              <div style="margin-top:8px;font-size:22px;font-weight:600;color:#231C18;letter-spacing:-0.01em;">
-                Send A Bouquet
-              </div>
-              <div style="margin-top:4px;">
-                <span style="display:inline-block;padding:3px 12px;border-radius:999px;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11px;font-weight:500;">
-                  ${escapeHtml(topicLabel)}
-                </span>
-              </div>
+          <div style="text-align:center;margin:22px 0 18px 0;">
+            <div style="font-size:15px;font-style:italic;color:#7D6B60;">
+              From ${escapeHtml(displaySender)}
             </div>
-
-            <!-- Postcard Salutation Row + Perforated Floral Postage Stamp -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 10px 0;">
-              <tr>
-                <td valign="middle" align="left">
-                  <div style="font-size:26px;font-weight:500;font-style:italic;color:#1F1815;">
-                    Dear Studio,
-                  </div>
-                </td>
-                <td valign="middle" align="right">
-                  ${stampHtml}
-                </td>
-              </tr>
-            </table>
-
-            <!-- Tactile Ruled Paper Sheet -->
-            <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:12px 18px 18px 18px;">
-              ${ruledPaperHtml}
+            <div style="font-size:28px;font-weight:600;color:#2A201D;line-height:1.2;margin-top:4px;">
+              Dear Studio,
             </div>
-
-            <!-- Bottom Postcard Signature & Crimson Wax Seal -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;padding-top:14px;border-top:1px dashed #DECBB9;">
-              <tr>
-                <td valign="middle" align="left" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12.5px;color:#6E5D54;line-height:1.7;">
-                  <div><strong style="color:#231C18;font-family:Georgia,serif;font-style:italic;font-size:14px;">From:</strong> ${escapeHtml(displaySender)}</div>
-                  <div><strong style="color:#231C18;font-family:Georgia,serif;font-style:italic;font-size:14px;">Reply to:</strong> ${replyToEmail ? `<a href="mailto:${escapeHtml(replyToEmail)}" style="color:#6E4434;text-decoration:underline;">${escapeHtml(replyToEmail)}</a>` : 'Not provided'}</div>
-                  <div style="font-size:11px;color:#9A877B;margin-top:3px;">Ref: ${escapeHtml(messageId)} · ${escapeHtml(createdAt)}</div>
-                </td>
-                <td valign="middle" align="right" width="52">
-                  ${waxSealHtml}
-                </td>
-              </tr>
-            </table>
           </div>
 
-          ${laceStrip}
+          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:20px 22px;margin:0 0 22px 0;">
+            ${noteBodyHtml}
+          </div>
+
+          <div style="border-top:1px dashed #EADFD4;padding-top:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#6E5D54;line-height:1.7;">
+            <div><span style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#2A201D;">From —</span> ${escapeHtml(displaySender)}</div>
+            <div><span style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#2A201D;">Reply to —</span> ${replyToEmail ? `<a href="mailto:${escapeHtml(replyToEmail)}" style="color:#6E4434;text-decoration:underline;">${escapeHtml(replyToEmail)}</a>` : 'Not provided'}</div>
+            <div style="font-size:11px;color:#9A877B;margin-top:6px;">
+              ${waxSealHtml} <span style="vertical-align:middle;margin-left:6px;">Ref: ${escapeHtml(messageId)} · ${escapeHtml(createdAt)}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -399,75 +279,42 @@ export function buildStudioNotificationEmail({ topicLabel, senderName, replyToEm
 export function buildVisitorConfirmationEmail({ topicLabel, senderName, message }) {
   const greeting = senderName ? `Dear ${escapeHtml(senderName)},` : 'Dear Friend,';
   const subject = `Your note to Send A Bouquet (${topicLabel})`;
-  const laceStrip = buildEmailLaceStripHtml();
-  const crestHtml = buildEmailBotanicalCrestHtml();
-  const stampHtml = buildEmailPostageStampHtml();
-  const ruledPaperHtml = buildRuledPaperLinesHtml(message);
+  const crestHtml = buildEmailBotanicalCrestHtml('Handcrafted Digital Floral Studio');
+  const noteBodyHtml = buildLetterpressNoteBodyHtml(message);
   const waxSealHtml = buildEmailWaxSealHtml();
 
   const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#EFE5D8;padding:32px 14px;color:#231C18;">
-      <!-- Stacked Deckled Kraft Paper Backing -->
-      <div style="max-width:560px;margin:0 auto;background-color:#E4D4C3;border:1px dashed #C4AC96;border-radius:26px;padding:6px 7px 10px 6px;">
-        <!-- Primary Warm Cotton Parchment Stationery Sheet -->
-        <div style="background-color:#FAF3E9;border:1.5px dashed #CEB7A2;border-radius:22px;overflow:hidden;box-shadow:0 12px 30px rgba(110,68,52,0.08);">
-          ${laceStrip}
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:40px 16px;color:#2A201D;">
+      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;box-shadow:0 12px 32px rgba(42,32,29,0.05);">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:34px 30px 28px 30px;">
+          ${crestHtml}
 
-          <div style="padding:24px 24px 26px 24px;">
-            <!-- Centered Botanical Blossom Crest & Title -->
-            <div style="text-align:center;padding-bottom:16px;border-bottom:1px dashed #E2D1C1;">
-              ${crestHtml}
-              <div style="margin-top:8px;font-size:22px;font-weight:600;color:#231C18;letter-spacing:-0.01em;">
-                Send A Bouquet
-              </div>
-              <div style="font-family:Georgia,serif;font-style:italic;font-size:13px;color:#7D6B60;margin-top:2px;">
-                Handcrafted Digital Floral Studio
-              </div>
+          <div style="text-align:center;margin:22px 0 14px 0;">
+            <div style="font-size:28px;font-weight:600;font-style:italic;color:#2A201D;line-height:1.2;">
+              ${greeting}
             </div>
-
-            <!-- Postcard Salutation Row + Perforated Floral Postage Stamp -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 10px 0;">
-              <tr>
-                <td valign="middle" align="left">
-                  <div style="font-size:26px;font-weight:500;font-style:italic;color:#1F1815;">
-                    ${greeting}
-                  </div>
-                </td>
-                <td valign="middle" align="right">
-                  ${stampHtml}
-                </td>
-              </tr>
-            </table>
-
-            <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;line-height:1.75;color:#5C4438;margin:0 0 16px 0;">
-              Thank you for writing to Send A Bouquet. Your note has been safely received, and I’ll read it soon. Here is a keepsake copy of what you wrote:
-            </p>
-
-            <!-- Tactile Ruled Paper Sheet -->
-            <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:12px 18px 18px 18px;">
-              <div style="font-family:Georgia,serif;font-size:13px;font-style:italic;color:#8C7A70;margin-bottom:4px;">
-                Topic: ${escapeHtml(topicLabel)}
-              </div>
-              ${ruledPaperHtml}
-            </div>
-
-            <!-- Bottom Postcard Signature & Crimson Wax Seal -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;padding-top:14px;border-top:1px dashed #DECBB9;">
-              <tr>
-                <td valign="middle" align="left">
-                  <div style="font-size:16px;font-style:italic;color:#5C4438;line-height:1.5;">
-                    Warmly,<br/>
-                    <strong style="color:#231C18;font-style:normal;">Send A Bouquet</strong> · <a href="mailto:hello@sendabouquet.online" style="color:#6E4434;text-decoration:underline;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;font-style:normal;">hello@sendabouquet.online</a>
-                  </div>
-                </td>
-                <td valign="middle" align="right" width="52">
-                  ${waxSealHtml}
-                </td>
-              </tr>
-            </table>
           </div>
 
-          ${laceStrip}
+          <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;line-height:1.75;color:#6E5D54;text-align:center;margin:0 0 20px 0;">
+            Thank you for writing to Send A Bouquet. Your note has been safely received, and I’ll read it soon. Here is a keepsake copy of what you wrote:
+          </p>
+
+          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:18px 22px;margin:0 0 22px 0;">
+            <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:13.5px;font-style:italic;color:#8C7A70;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed #E6D7C8;">
+              Topic — ${escapeHtml(topicLabel)}
+            </div>
+            ${noteBodyHtml}
+          </div>
+
+          <div style="border-top:1px dashed #EADFD4;padding-top:16px;text-align:center;">
+            <div style="font-size:15.5px;font-style:italic;color:#6E5D54;line-height:1.6;">
+              Warmly,<br/>
+              <strong style="color:#2A201D;font-style:normal;">Send A Bouquet</strong> · <a href="mailto:hello@sendabouquet.online" style="color:#6E4434;text-decoration:underline;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;font-style:normal;">hello@sendabouquet.online</a>
+            </div>
+            <div style="margin-top:10px;">
+              ${waxSealHtml}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -504,90 +351,51 @@ export function buildBouquetSurpriseEmail({
     ? `For ${cleanRecipient} — Someone sent you a Bouquet`
     : 'Someone sent you a Bouquet';
 
-  const laceStrip = buildEmailLaceStripHtml();
-  const crestHtml = buildEmailBotanicalCrestHtml();
-  const stampHtml = buildEmailPostageStampHtml();
+  const crestHtml = buildEmailBotanicalCrestHtml('A Surprise Floral Delivery');
   const waxSealHtml = buildEmailWaxSealHtml();
 
-  const keepsakeItems = ['Handcrafted floral arrangement', 'Personal greeting card'];
-  if (hasPhotoCard) keepsakeItems.push('Framed photo keepsake');
-  if (hasVoiceNote) keepsakeItems.push('Recorded voice keepsake');
-  if (isLocked) keepsakeItems.push('Sealed behind a special lock');
-
-  const surpriseLines = [
-    'Someone special has arranged and sealed a digital bouquet just for you.',
-    'Their name and personal note are tucked inside the flowers—waiting for',
-    'you to untie the ribbon and watch each stem bloom on your screen.',
-    `Included: ${keepsakeItems.join(' · ')}`,
-  ];
-  const ruledPaperHtml = buildRuledPaperLinesHtml(surpriseLines.join('\n'));
+  const keepsakeItems = ['Floral arrangement', 'Personal note'];
+  if (hasPhotoCard) keepsakeItems.push('Photo keepsake');
+  if (hasVoiceNote) keepsakeItems.push('Voice keepsake');
+  if (isLocked) keepsakeItems.push('Secret lock reveal');
 
   const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#EFE5D8;padding:32px 14px;color:#231C18;">
-      <!-- Stacked Deckled Kraft Paper Backing -->
-      <div style="max-width:560px;margin:0 auto;background-color:#E4D4C3;border:1px dashed #C4AC96;border-radius:26px;padding:6px 7px 10px 6px;">
-        <!-- Primary Warm Cotton Parchment Stationery Sheet -->
-        <div style="background-color:#FAF3E9;border:1.5px dashed #CEB7A2;border-radius:22px;overflow:hidden;box-shadow:0 12px 30px rgba(110,68,52,0.08);">
-          ${laceStrip}
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:40px 16px;color:#2A201D;">
+      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;box-shadow:0 12px 32px rgba(42,32,29,0.05);">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:36px 30px 28px 30px;text-align:center;">
+          ${crestHtml}
 
-          <div style="padding:24px 24px 26px 24px;">
-            <!-- Centered Botanical Blossom Crest -->
-            <div style="text-align:center;padding-bottom:16px;border-bottom:1px dashed #E2D1C1;">
-              ${crestHtml}
-              <div style="margin-top:8px;font-size:21px;font-weight:600;color:#231C18;letter-spacing:-0.01em;">
-                Send A Bouquet
-              </div>
-              <div style="font-family:Georgia,serif;font-style:italic;font-size:13px;color:#7D6B60;margin-top:2px;">
-                A Surprise Floral Delivery
-              </div>
-            </div>
-
-            <!-- Recipient Dedication + Perforated Floral Postage Stamp -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 12px 0;">
-              <tr>
-                <td valign="middle" align="left">
-                  <div style="font-size:17px;font-style:italic;color:#6E594E;">
-                    For ${escapeHtml(cleanRecipient || 'You')},
-                  </div>
-                  <div style="font-size:30px;font-weight:600;color:#1F1815;line-height:1.15;margin-top:2px;">
-                    Someone sent you a Bouquet
-                  </div>
-                </td>
-                <td valign="middle" align="right">
-                  ${stampHtml}
-                </td>
-              </tr>
-            </table>
-
-            <!-- Tactile Ruled Paper Sheet -->
-            <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:12px 18px 18px 18px;">
-              ${ruledPaperHtml}
-            </div>
-
-            <!-- Unwrap Bouquet CTA Button -->
-            <div style="text-align:center;margin:22px 0 18px 0;">
-              <a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:13px 30px;border-radius:999px;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;font-weight:600;text-decoration:none;border:1px dashed #E6B89C;box-shadow:0 6px 18px rgba(110,68,52,0.18);">
-                Unwrap Your Bouquet &rarr;
-              </a>
-            </div>
-
-            <!-- Bottom Postcard Signature & Crimson Wax Seal -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;padding-top:14px;border-top:1px dashed #DECBB9;">
-              <tr>
-                <td valign="middle" align="left" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11.5px;color:#7D6B60;line-height:1.6;">
-                  <div>Sealed with a secret note · Open the link above to reveal who sent this bouquet.</div>
-                  <div style="margin-top:3px;word-break:break-all;">
-                    Direct link: <a href="${escapeHtml(giftUrl)}" style="color:#6E4434;text-decoration:underline;">${escapeHtml(giftUrl)}</a>
-                  </div>
-                </td>
-                <td valign="middle" align="right" width="52">
-                  ${waxSealHtml}
-                </td>
-              </tr>
-            </table>
+          <div style="margin-top:24px;font-size:19px;font-style:italic;color:#7D6B60;">
+            For ${escapeHtml(cleanRecipient || 'You')},
+          </div>
+          <div style="font-size:32px;font-weight:600;color:#2A201D;line-height:1.15;letter-spacing:-0.01em;margin:6px 0 20px 0;">
+            Someone sent you a Bouquet
           </div>
 
-          ${laceStrip}
+          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:22px 24px;margin:0 auto 24px auto;text-align:center;">
+            <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.75;color:#5C4B43;">
+              Someone special has arranged and sealed a digital bouquet just for you. Their name and personal note are tucked inside the flowers—waiting for you to untie the ribbon and watch each stem bloom on your screen.
+            </p>
+            <div style="width:64px;margin:14px auto 12px auto;border-bottom:1px dashed #DFCEC0;"></div>
+            <div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#8C7A70;">
+              ${escapeHtml(keepsakeItems.join(' · '))}
+            </div>
+          </div>
+
+          <div style="text-align:center;margin:0 0 24px 0;">
+            <a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 34px;border-radius:999px;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;font-weight:500;letter-spacing:0.01em;text-decoration:none;box-shadow:0 6px 18px rgba(110,68,52,0.16);">
+              Unwrap Your Bouquet &rarr;
+            </a>
+          </div>
+
+          <div style="border-top:1px dashed #EADFD4;padding-top:16px;text-align:center;">
+            <div style="margin-bottom:8px;">
+              ${waxSealHtml}
+            </div>
+            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11.5px;color:#9A877B;line-height:1.6;">
+              Sealed with a secret note · <a href="${escapeHtml(giftUrl)}" style="color:#6E4434;text-decoration:underline;word-break:break-all;">${escapeHtml(giftUrl)}</a>
+            </div>
+          </div>
         </div>
       </div>
     </div>

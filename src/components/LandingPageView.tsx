@@ -60,7 +60,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What comes with a Couture Pass or Single Bouquet unlock?',
-    a: 'Unlocking a Single Bouquet ($0.99), 7-Day Pass ($2.99), or 30-Day Eternal Pass ($5.99) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 1,500-character notes, and eternal links on 30-day passes.',
+    a: 'Unlocking a Single Bouquet ($2.99), 7-Day Pass ($4.99), or 30-Day Eternal Pass ($8.99) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 1,500-character notes, high-resolution PNG downloads, and eternal links on 30-day passes.',
   },
   {
     q: 'Can I add photos and a recorded voice message?',

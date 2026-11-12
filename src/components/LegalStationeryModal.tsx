@@ -20,7 +20,7 @@ const TERMS_SECTIONS = [
   {
     num: '02',
     title: 'Free Studio & Couture Passes',
-    body: 'Anyone can craft and share unlimited classic bouquets for free (including 30-day gift links and local device drafts). Optional Couture Unlocks—Single Bouquet ($2.99), 7-Day Pass ($4.99), and 30-Day Eternal Pass ($8.99)—unlock glimmering couture blooms, luxury wraps and ribbons, photo keepsakes, voice notes, 260-character card notes, high-resolution PNG downloads, and extended 90-day or never-expiring gift links.',
+    body: 'Anyone can craft and share unlimited classic bouquets for free (including 30-day gift links and local device drafts). Optional Couture Unlocks—Single Bouquet ($2.99), 7-Day Pass ($4.99), and 30-Day Eternal Pass ($8.99)—unlock glimmering couture blooms, luxury wraps and ribbons, photo keepsakes, voice notes, 1,500-character card notes, high-resolution PNG downloads, and extended 90-day or never-expiring gift links.',
   },
   {
     num: '03',
