@@ -16,10 +16,12 @@ import {
   fetchGlobalGarlandFeedFromFirestore,
   fetchSharedBouquetFromFirestore,
   getSavedVaultBouquets,
+  SharedBouquetRecord,
 } from '../lib/firebase';
 import { SavedVaultBouquet } from '../types/bouquet';
 import {
   decodeBouquetFromHash,
+  hydrateSnapshotWithFirestoreRecord,
   localShortCodeCache,
 } from '../lib/shareAndExport';
 import {
@@ -27,14 +29,23 @@ import {
   syncDocumentSeoMeta,
 } from '../lib/seoMeta';
 
+const DEFAULT_GARLAND_NAMES = new Set([
+  '',
+  'my dearest',
+  'yours always',
+  'someone special',
+  'yours',
+  'secret admirer',
+]);
+
 /**
  * Shared hook to merge user's locally saved/shared bouquets and the Firestore global Lace Garland feed
- * with the curated community showcase, deduplicating identical recipient/sender entries so duplicate drafts
- * never clutter the garland, hydrating any missing payloads from Firestore for 100% database consistency,
- * and filtering out any >30-day expired bouquets (unless marked `isPremium: true`).
+ * with the curated community showcase, deduplicating by short code (and collapsing older drafts),
+ * hydrating full Firestore `shared_bouquets/{code}` records (including `payload` and `voiceAudioDataUrl`)
+ * for 100% cross-device visual and audio consistency, and filtering out >30-day expired bouquets.
  */
 export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
-  const [hydratedPayloads, setHydratedPayloads] = useState<Record<string, string>>({});
+  const [hydratedRecords, setHydratedRecords] = useState<Record<string, SharedBouquetRecord>>({});
   const [remoteFeedEntries, setRemoteFeedEntries] = useState<SavedVaultBouquet[]>([]);
 
   useEffect(() => {
@@ -61,13 +72,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       if (!v || v.isDraft || v.pinToShowcase === false || !v.code || v.code.startsWith('draft_')) {
         continue;
       }
-      const existingRaw =
-        v.draftPayload ||
-        localShortCodeCache.get(v.code) ||
-        localStorage.getItem(`bq_short_${v.code}`) ||
-        hydratedPayloads[v.code];
-
-      if (!existingRaw) {
+      if (!hydratedRecords[v.code]) {
         fetchSharedBouquetFromFirestore(v.code)
           .then((record) => {
             if (cancelled || !record || !record.payload) return;
@@ -77,8 +82,11 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
             } catch {
               // Ignore localStorage quota errors
             }
-            setHydratedPayloads((prev) =>
-              prev[v.code] === record.payload ? prev : { ...prev, [v.code]: record.payload }
+            setHydratedRecords((prev) =>
+              prev[v.code]?.payload === record.payload &&
+              prev[v.code]?.voiceAudioDataUrl === record.voiceAudioDataUrl
+                ? prev
+                : { ...prev, [v.code]: record }
             );
           })
           .catch(() => {});
@@ -88,7 +96,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
     return () => {
       cancelled = true;
     };
-  }, [vaultCount, remoteFeedEntries, hydratedPayloads]);
+  }, [vaultCount, remoteFeedEntries, hydratedRecords]);
 
   return useMemo(() => {
     const curated = buildCuratedShowcaseBouquets(nowMs);
@@ -96,9 +104,14 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       return filterShowcaseBouquets(curated, { nowMs });
     }
 
-    const combinedVault = [...getSavedVaultBouquets(), ...remoteFeedEntries];
+    // Sort newest first so edited & re-shared bouquets always appear first with their latest state
+    const combinedVault = [...getSavedVaultBouquets(), ...remoteFeedEntries].sort((a, b) => {
+      const tA = Date.parse(a?.createdAt || '') || 0;
+      const tB = Date.parse(b?.createdAt || '') || 0;
+      return tB - tA;
+    });
     const seenCodes = new Set<string>();
-    const seenRecipientSender = new Set<string>();
+    const seenCustomRecipientSender = new Map<string, number>();
     const userEntries: ShowcaseBouquetEntry[] = [];
 
     for (let idx = 0; idx < combinedVault.length; idx++) {
@@ -106,40 +119,64 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       if (!v || v.isDraft || v.pinToShowcase === false || (v.code && v.code.startsWith('draft_'))) {
         continue;
       }
+      if (v.code && seenCodes.has(v.code)) {
+        continue;
+      }
 
       const normTo = (v.to || v.recipientName || '').trim().toLowerCase();
       const normFrom = (v.from || v.senderName || '').trim().toLowerCase();
+      const hasCustomNames = !DEFAULT_GARLAND_NAMES.has(normTo) || !DEFAULT_GARLAND_NAMES.has(normFrom);
       const recipientSenderKey = `${normTo}__${normFrom}`;
+      const vTime = Date.parse(v.createdAt || '') || 0;
 
-      if ((v.code && seenCodes.has(v.code)) || seenRecipientSender.has(recipientSenderKey)) {
-        continue;
+      // Only collapse rapid-fire re-shares for the exact same custom recipient/sender within 30 minutes
+      if (hasCustomNames && seenCustomRecipientSender.has(recipientSenderKey)) {
+        const newestTime = seenCustomRecipientSender.get(recipientSenderKey) || 0;
+        if (Math.abs(newestTime - vTime) < 30 * 60 * 1000) {
+          continue;
+        }
       }
       if (v.code) seenCodes.add(v.code);
-      seenRecipientSender.add(recipientSenderKey);
+      if (hasCustomNames && !seenCustomRecipientSender.has(recipientSenderKey)) {
+        seenCustomRecipientSender.set(recipientSenderKey, vTime);
+      }
 
+      const firestoreRecord = v.code ? hydratedRecords[v.code] : undefined;
       let decodedSnap = null;
       try {
-        const rawPayload =
-          v.draftPayload ||
-          (v.code ? localShortCodeCache.get(v.code) : undefined) ||
-          (v.code ? hydratedPayloads[v.code] : undefined) ||
-          (v.code ? localStorage.getItem(`bq_short_${v.code}`) : null) ||
-          v.shareUrl ||
+        // Prefer the canonical Firestore record payload (which always has all photos & latest edits)
+        // or the local cache / draftPayload
+        const candidatePayloads = [
+          firestoreRecord?.payload,
+          v.code ? localShortCodeCache.get(v.code) : undefined,
+          v.draftPayload,
+          v.code ? localStorage.getItem(`bq_short_${v.code}`) : null,
+          v.shareUrl,
+        ].filter((p): p is string => Boolean(p && p.trim().length > 3));
+
+        // Pick the richest payload (e.g. one with inline photos intact over a slimmed feed index payload)
+        const bestPayload =
+          candidatePayloads.sort((a, b) => b.length - a.length)[0] ||
+          firestoreRecord?.payload ||
           '';
-        if (rawPayload) {
-          decodedSnap = decodeBouquetFromHash(rawPayload);
+
+        if (bestPayload) {
+          decodedSnap = decodeBouquetFromHash(bestPayload);
+        }
+        if (decodedSnap && firestoreRecord) {
+          decodedSnap = hydrateSnapshotWithFirestoreRecord(decodedSnap, firestoreRecord);
         }
       } catch {
         // Ignore decode errors
       }
       userEntries.push(convertVaultBouquetToShowcaseEntry(v, decodedSnap, userEntries.length));
-      if (userEntries.length >= 12) break;
+      if (userEntries.length >= 16) break;
     }
 
     const userCodes = new Set<string>(userEntries.map((u) => u.code));
     const merged = [...userEntries, ...curated.filter((c) => !userCodes.has(c.code))];
     return filterShowcaseBouquets(merged, { nowMs });
-  }, [nowMs, vaultCount, remoteFeedEntries, hydratedPayloads]);
+  }, [nowMs, vaultCount, remoteFeedEntries, hydratedRecords]);
 }
 
 /**

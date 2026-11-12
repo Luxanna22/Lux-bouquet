@@ -44,7 +44,7 @@ import {
 
 interface LandingPageViewProps {
   onStartCrafting: () => void;
-  onPreviewShowcaseBouquet?: (fromCreationsPage?: boolean) => void;
+  onPreviewShowcaseBouquet?: (fromCreationsPage?: boolean, entry?: ShowcaseBouquetEntry) => void;
   initialCreationsPageOpen?: boolean;
   onCloseCreationsPage?: () => void;
   onOpenVault: () => void;
@@ -1002,7 +1002,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const handleUnwrapShowcaseEntry = (entry: ShowcaseBouquetEntry, fromCreationsPage = false) => {
     applyShowcaseEntryToStudio(entry);
     if (onPreviewShowcaseBouquet) {
-      onPreviewShowcaseBouquet(fromCreationsPage);
+      onPreviewShowcaseBouquet(fromCreationsPage, entry);
     }
   };
 

@@ -180,14 +180,14 @@ service cloud.firestore {
       allow get: if isValidShortCode(code);
       allow list: if false;
 
-      // Anyone can register a valid short link payload; updates preserve immutable code/payload/createdAt
+      // Anyone can register a valid short link payload; updates preserve immutable code/createdAt and allow draft/creation updates
       allow create: if isValidShortCode(code) && isValidSharedBouquet(request.resource.data, code);
       allow update: if isValidShortCode(code) &&
         isValidSharedBouquet(request.resource.data, code) &&
         request.resource.data.code == resource.data.code &&
-        request.resource.data.payload == resource.data.payload &&
-        request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if false;
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (code != 'sab_garland_feed_v1' || request.resource.data.payload == resource.data.payload);
+      allow delete: if isValidShortCode(code) && code != 'sab_garland_feed_v1';
     }
 
     match /studio_stats/{statId} {

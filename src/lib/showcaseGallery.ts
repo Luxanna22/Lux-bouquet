@@ -431,18 +431,52 @@ export function convertVaultBouquetToShowcaseEntry(
   const ribbonColor = snapshot?.ribbonColor || '#E11D48';
   const rawMessage = snapshot?.card?.message?.trim();
 
+  const hasVoice = Boolean(
+    vaultItem.hasVoice ||
+      snapshot?.voice?.audioDataUrl ||
+      (snapshot?.voice?.visibleOnStage && (snapshot?.voice?.durationSec || 0) > 0)
+  );
+
+  const defaultPlaceholders = new Set([
+    '',
+    'my dearest',
+    'yours always',
+    'draft bouquet',
+    'yours',
+    'someone special',
+    'secret admirer',
+  ]);
+  const vaultTo = (vaultItem.to || vaultItem.recipientName || '').trim();
+  const vaultFrom = (vaultItem.from || vaultItem.senderName || '').trim();
+  const snapTo = (snapshot?.card?.to || '').trim();
+  const snapFrom = (snapshot?.card?.from || '').trim();
+
+  const resolvedTo =
+    (vaultTo && !defaultPlaceholders.has(vaultTo.toLowerCase()) ? vaultTo : '') ||
+    (snapTo && !defaultPlaceholders.has(snapTo.toLowerCase()) ? snapTo : '') ||
+    snapTo ||
+    vaultTo ||
+    'Someone Special';
+
+  const resolvedFrom =
+    (vaultFrom && !defaultPlaceholders.has(vaultFrom.toLowerCase()) ? vaultFrom : '') ||
+    (snapFrom && !defaultPlaceholders.has(snapFrom.toLowerCase()) ? snapFrom : '') ||
+    snapFrom ||
+    vaultFrom ||
+    'Yours';
+
   return {
     id: `user-shared-${vaultItem.code}`,
     code: vaultItem.code,
-    to: (vaultItem.to || vaultItem.recipientName || snapshot?.card?.to || 'Someone Special').trim(),
-    from: (vaultItem.from || vaultItem.senderName || snapshot?.card?.from || 'Yours').trim(),
+    to: resolvedTo,
+    from: resolvedFrom,
     noteExcerpt: rawMessage
       ? `“${rawMessage.slice(0, 68)}${rawMessage.length > 68 ? '…' : ''}”`
       : '“Wrapped by hand and hung on the lace line just for you.”',
     sharedAt: vaultItem.createdAt || new Date().toISOString(),
     isPremium: Boolean(vaultItem.isPremium),
     retentionDays: vaultItem.retentionDays ?? SHOWCASE_EXPIRY_DAYS,
-    hasVoice: Boolean(vaultItem.hasVoice || snapshot?.voice?.audioDataUrl),
+    hasVoice,
     voiceStyle: snapshot?.voice?.style || 'mixtape',
     voiceLabel: snapshot?.voice?.title || 'Voice Note',
     wrapStyle,
@@ -455,7 +489,24 @@ export function convertVaultBouquetToShowcaseEntry(
     tiltDeg: tilts[idx % tilts.length],
     stringLengthPx: drops[idx % drops.length],
     isUserCreated: true,
-    snapshot: snapshot || undefined,
+    snapshot: snapshot
+      ? {
+          ...snapshot,
+          environment: snapshot.environment || 'studio',
+          card: {
+            ...snapshot.card,
+            to: resolvedTo,
+            from: resolvedFrom,
+            visibleOnStage: snapshot.card?.visibleOnStage ?? true,
+          },
+          voice: snapshot.voice
+            ? {
+                ...snapshot.voice,
+                visibleOnStage: snapshot.voice.visibleOnStage ?? hasVoice,
+              }
+            : undefined,
+        }
+      : undefined,
   };
 }
 
@@ -467,6 +518,7 @@ export function convertVaultBouquetToShowcaseEntry(
  */
 export function buildSnapshotFromShowcaseEntry(entry: ShowcaseBouquetEntry): BouquetSnapshot {
   if (entry.snapshot && Array.isArray(entry.snapshot.items) && entry.snapshot.items.length > 0) {
+    const hasVoice = Boolean(entry.hasVoice || entry.snapshot.voice?.audioDataUrl);
     return {
       ...entry.snapshot,
       environment: entry.snapshot.environment || entry.environment || 'studio',
@@ -476,6 +528,29 @@ export function buildSnapshotFromShowcaseEntry(entry: ShowcaseBouquetEntry): Bou
         from: entry.from || entry.snapshot.card?.from || 'Secret Admirer',
         visibleOnStage: entry.snapshot.card?.visibleOnStage ?? true,
       },
+      voice: entry.snapshot.voice
+        ? {
+            ...entry.snapshot.voice,
+            visibleOnStage: entry.snapshot.voice.visibleOnStage ?? hasVoice,
+          }
+        : entry.hasVoice
+        ? {
+            ...DEFAULT_VOICE_KEEPSAKE,
+            style: entry.voiceStyle || 'mixtape',
+            title: (entry.voiceLabel || 'Voice Keepsake').split('·')[0].trim(),
+            accentColor: entry.ribbonColor || '#FB7185',
+            visibleOnStage: true,
+            durationSec: 18,
+            x: 185,
+            y: 525,
+            scale: 1.0,
+            rotation: 0,
+          }
+        : {
+            ...DEFAULT_VOICE_KEEPSAKE,
+            visibleOnStage: false,
+            durationSec: 0,
+          },
     };
   }
 

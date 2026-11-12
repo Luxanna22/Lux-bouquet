@@ -10,6 +10,7 @@ import { SavedVaultBouquet } from '../types/bouquet';
 import {
   getSavedVaultBouquets,
   removeBouquetFromLocalVault,
+  removeBouquetFromFirestoreAndGarland,
   fetchSharedBouquetFromFirestore,
   SharedBouquetRecord,
 } from '../lib/firebase';
@@ -43,7 +44,6 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
     const results: Record<string, SharedBouquetRecord> = {};
     await Promise.all(
       list.slice(0, 12).map(async (item) => {
-        if (item.isDraft) return;
         try {
           const rec = await fetchSharedBouquetFromFirestore(item.code);
           if (rec) {
@@ -78,6 +78,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
   const handleDelete = (code: string) => {
     const next = removeBouquetFromLocalVault(code);
     setVault(next);
+    removeBouquetFromFirestoreAndGarland(code).catch(() => {});
   };
 
   const formatShortDate = (iso?: string) => {
@@ -279,6 +280,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
 
               const resolvedDraftPayload =
                 entry.draftPayload ||
+                live?.payload ||
                 (typeof window !== 'undefined'
                   ? localStorage.getItem(`bq_short_${entry.code}`) || ''
                   : '');
@@ -370,7 +372,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                     </span>
 
                     <div className="flex items-center gap-1.5">
-                      {onResumeDraft && resolvedDraftPayload && (
+                      {onResumeDraft && (resolvedDraftPayload || entry.code) && (
                         <button
                           type="button"
                           data-testid={`resume-draft-${entry.code}`}

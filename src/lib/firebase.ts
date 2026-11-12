@@ -3,10 +3,15 @@ import {
   getFirestore,
   doc,
   getDoc,
-  setDoc
+  setDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { BouquetSnapshot, SavedVaultBouquet } from '../types/bouquet';
+import {
+  stripInlineAudioFromCompactPayload,
+  stripInlinePhotosFromCompactPayload
+} from './shareAndExport';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -169,7 +174,13 @@ export async function saveSharedBouquetToFirestore(
   retentionMeta?: { isPremium?: boolean; retentionDays?: number }
 ): Promise<boolean> {
   if (!code || !CODE_REGEX.test(code)) return false;
-  if (!payload || payload.length < 3 || payload.length > 900000) return false;
+  if (!payload || payload.length < 3) return false;
+
+  const voice = snapshot?.voice;
+  const cleanPayload = voice?.audioDataUrl
+    ? stripInlineAudioFromCompactPayload(payload)
+    : payload;
+  if (cleanPayload.length > 900000) return false;
 
   const docPath = `shared_bouquets/${code}`;
   const docRef = doc(db, 'shared_bouquets', code);
@@ -180,11 +191,10 @@ export async function saveSharedBouquetToFirestore(
       ? (existingSnap.data() as Partial<SharedBouquetRecord>)
       : null;
 
-    const voice = snapshot?.voice;
     const record = sanitizeRecordForFirestore(
       existingData,
       {
-        payload,
+        payload: cleanPayload,
         voiceAudioDataUrl: voice?.audioDataUrl || undefined,
         voiceStyle: voice?.style,
         voiceTitle: voice?.title,
@@ -343,43 +353,55 @@ let inMemoryVaultCache: SavedVaultBouquet[] | null = null;
 function stripInlineAudioFromPayload(payload?: string): string | undefined {
   if (!payload) return payload;
   const idx = payload.indexOf('&a=');
-  return idx >= 0 ? payload.slice(0, idx) : payload;
+  const base = idx >= 0 ? payload.slice(0, idx) : payload;
+  return stripInlineAudioFromCompactPayload(base);
 }
+
+const DEFAULT_NAMES = new Set([
+  '',
+  'my dearest',
+  'yours always',
+  'someone special',
+  'yours',
+  'secret admirer',
+]);
 
 function deduplicateVaultList(list: SavedVaultBouquet[]): SavedVaultBouquet[] {
   const seenCodes = new Set<string>();
   const result: SavedVaultBouquet[] = [];
 
-  for (const item of list) {
+  // Sort newest first so updated/re-shared creations always take precedence over older drafts
+  const sorted = [...list].sort((a, b) => {
+    const tA = Date.parse(a?.createdAt || '') || 0;
+    const tB = Date.parse(b?.createdAt || '') || 0;
+    return tB - tA;
+  });
+
+  for (const item of sorted) {
     if (!item || typeof item.code !== 'string') continue;
     if (seenCodes.has(item.code)) continue;
 
     const itemTime = Date.parse(item.createdAt || '') || 0;
-    const itemToNorm = (item.to || '').trim().toLowerCase();
-    const itemFromNorm = (item.from || '').trim().toLowerCase();
+    const itemToNorm = (item.to || item.recipientName || '').trim().toLowerCase();
+    const itemFromNorm = (item.from || item.senderName || '').trim().toLowerCase();
+    const hasCustomNames = !DEFAULT_NAMES.has(itemToNorm) || !DEFAULT_NAMES.has(itemFromNorm);
 
-    // Collapse rapid-fire edits or draft-then-shared duplicates for the same recipient & sender
-    const isDuplicateCreation = result.some((existing) => {
-      const existingTime = Date.parse(existing.createdAt || '') || 0;
-      const withinWindow = Math.abs(existingTime - itemTime) < 60 * 60 * 1000;
-      const sameNames =
-        (existing.to || '').trim().toLowerCase() === itemToNorm &&
-        (existing.from || '').trim().toLowerCase() === itemFromNorm;
-      if (!sameNames) return false;
-
-      // If a shared creation already exists for the same (to, from) within 60 mins, collapse older drafts or re-shares
-      if (!existing.isDraft && (item.isDraft || withinWindow)) {
-        return true;
-      }
-      return (
-        withinWindow &&
-        existing.flowerCount === item.flowerCount &&
-        Boolean(existing.hasVoice) === Boolean(item.hasVoice)
-      );
-    });
+    // Only collapse an older draft if a newer shared creation exists for the exact same custom (to, from) within 60 mins
+    const isSupersededDraft =
+      hasCustomNames &&
+      Boolean(item.isDraft) &&
+      result.some((existing) => {
+        if (existing.isDraft) return false;
+        const existingTime = Date.parse(existing.createdAt || '') || 0;
+        const withinWindow = Math.abs(existingTime - itemTime) < 60 * 60 * 1000;
+        const sameNames =
+          (existing.to || existing.recipientName || '').trim().toLowerCase() === itemToNorm &&
+          (existing.from || existing.senderName || '').trim().toLowerCase() === itemFromNorm;
+        return withinWindow && sameNames;
+      });
 
     seenCodes.add(item.code);
-    if (!isDuplicateCreation) {
+    if (!isSupersededDraft) {
       result.push(item);
     }
   }
@@ -392,7 +414,7 @@ function persistVaultListSafely(list: SavedVaultBouquet[]): void {
   try {
     localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(list));
   } catch {
-    // QuotaExceededError fallback: strip heavy inline &a= audio dataURLs from localStorage copy while keeping full visual draftPayload
+    // QuotaExceededError fallback: strip heavy inline audio dataURLs from localStorage copy while keeping full visual draftPayload
     try {
       const slimmed = list.map((item) => ({
         ...item,
@@ -400,11 +422,14 @@ function persistVaultListSafely(list: SavedVaultBouquet[]): void {
       }));
       localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(slimmed));
     } catch {
-      // Final fallback: keep most recent 10 visual payloads
+      // Final fallback: keep most recent 12 visual payloads (with photos stripped on older entries if needed)
       try {
-        const minimal = list.slice(0, 10).map((item, idx) => ({
+        const minimal = list.slice(0, 15).map((item, idx) => ({
           ...item,
-          draftPayload: idx < 5 ? stripInlineAudioFromPayload(item.draftPayload) : undefined,
+          draftPayload:
+            idx < 6
+              ? stripInlineAudioFromPayload(item.draftPayload)
+              : stripInlinePhotosFromCompactPayload(item.draftPayload),
         }));
         localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(minimal));
       } catch {
@@ -506,8 +531,28 @@ export async function publishBouquetToGlobalGarlandFeed(
     const filtered = existing.filter(
       (b) => b.code !== compactEntry.code && (!replaceCode || b.code !== replaceCode)
     );
-    const merged = deduplicateVaultList([compactEntry, ...filtered]).slice(0, 24);
-    const jsonStr = JSON.stringify(merged);
+    let merged = deduplicateVaultList([compactEntry, ...filtered]).slice(0, 24);
+    let jsonStr = JSON.stringify(merged);
+
+    // If multiple photo-heavy bouquets push the feed index over 720KB, strip inline photo base64
+    // from older feed index summaries (full photos & voice remain stored in `shared_bouquets/{code}`)
+    if (jsonStr.length > 720_000) {
+      merged = merged.map((item, idx) => ({
+        ...item,
+        draftPayload:
+          idx < 3
+            ? stripInlineAudioFromPayload(item.draftPayload)
+            : stripInlinePhotosFromCompactPayload(item.draftPayload),
+      }));
+      jsonStr = JSON.stringify(merged);
+    }
+    if (jsonStr.length > 880_000) {
+      merged = merged.map((item) => ({
+        ...item,
+        draftPayload: stripInlinePhotosFromCompactPayload(item.draftPayload),
+      }));
+      jsonStr = JSON.stringify(merged);
+    }
     if (jsonStr.length > 880_000) return false;
 
     await setDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE), {
@@ -519,6 +564,36 @@ export async function publishBouquetToGlobalGarlandFeed(
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Deletes a bouquet from Firestore (`shared_bouquets/{code}`) and removes it from
+ * the global Lace Garland feed (`sab_garland_feed_v1`) when the user deletes it.
+ */
+export async function removeBouquetFromFirestoreAndGarland(code: string): Promise<void> {
+  if (!code || !CODE_REGEX.test(code) || code === GARLAND_FEED_DOC_CODE) return;
+  try {
+    await deleteDoc(doc(db, 'shared_bouquets', code)).catch(() => {});
+  } catch {
+    // Ignore if document doesn't exist
+  }
+  try {
+    const existing = await fetchGlobalGarlandFeedFromFirestore();
+    const filtered = existing.filter((b) => b.code !== code);
+    if (filtered.length !== existing.length) {
+      const jsonStr = JSON.stringify(filtered);
+      if (jsonStr.length <= 880_000) {
+        await setDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE), {
+          code: GARLAND_FEED_DOC_CODE,
+          payload: GARLAND_FEED_IMMUTABLE_PAYLOAD,
+          createdAt: GARLAND_FEED_IMMUTABLE_CREATED_AT,
+          voiceAudioDataUrl: jsonStr,
+        });
+      }
+    }
+  } catch {
+    // Ignore background feed cleanup errors
   }
 }
 

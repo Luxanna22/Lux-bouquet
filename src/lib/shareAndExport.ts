@@ -1133,7 +1133,7 @@ export const musicBox = new RomanticMusicBox();
  * Downscales & compresses an uploaded image file to a compact JPEG data URL
  * so photocards render crisply, save to local drafts, and export cleanly in PNGs.
  */
-export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 440): Promise<string> {
+export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 380): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read image file'));
@@ -1172,7 +1172,7 @@ export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 440): 
           ctx.fillStyle = '#FFFDF9';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressed = canvas.toDataURL('image/jpeg', 0.82);
+          const compressed = canvas.toDataURL('image/jpeg', 0.78);
           resolve(compressed || rawDataUrl);
         } catch {
           resolve(rawDataUrl);
@@ -1184,4 +1184,90 @@ export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 440): 
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * Strips only the inline base64url voice audio (`vAudioB64`, 7th tilde segment of `&v=`)
+ * from a compact `#b3=` bouquet payload while preserving all voice metadata, coordinates,
+ * flowers, photocards, greeting card, lock config, environment, and bouquet pose.
+ */
+export function stripInlineAudioFromCompactPayload(payload?: string): string {
+  if (!payload) return '';
+  return payload.replace(/(&v=)([^&]*)/, (_match, prefix: string, vBody: string) => {
+    const parts = vBody.split('~');
+    if (parts.length >= 7 && parts[6]) {
+      parts[6] = '';
+    }
+    return `${prefix}${parts.join('~')}`;
+  });
+}
+
+/**
+ * Strips inline base64url photo data from photocard stems in a compact `#b3=` payload
+ * while preserving the photocard item, caption, position, scale, rotation, and clip state.
+ * Used only as a size-cap safeguard for the global garland feed index document when needed;
+ * individual `shared_bouquets/{code}` documents always retain 100% of photos and voice audio.
+ */
+export function stripInlinePhotosFromCompactPayload(payload?: string): string {
+  if (!payload) return '';
+  const clean = stripInlineAudioFromCompactPayload(payload);
+  const ampIdx = clean.indexOf('&');
+  const mainPart = ampIdx >= 0 ? clean.slice(0, ampIdx) : clean;
+  const queryRest = ampIdx >= 0 ? clean.slice(ampIdx) : '';
+  const prefixMatch = mainPart.match(/^(#?[gb]=)(.*)$/);
+  if (!prefixMatch) return clean;
+  const [, prefix, dotBody] = prefixMatch;
+  const dotParts = dotBody.split('.');
+  if (dotParts.length <= 2) return clean;
+  const [headerPart, cardPart, ...stemParts] = dotParts;
+  const slimmedStems = stemParts.map((sp) => {
+    const tildeParts = sp.split('~');
+    if (tildeParts.length >= 8 && tildeParts[7]) {
+      tildeParts[7] = '';
+    }
+    return tildeParts.join('~').replace(/~+$/, '');
+  });
+  return `${prefix}${headerPart}.${cardPart}.${slimmedStems.join('.')}${queryRest}`;
+}
+
+/**
+ * Merges a Firestore `SharedBouquetRecord` (which stores `voiceAudioDataUrl`, `voiceStyle`,
+ * `voiceTitle`, and `voiceDurationSec` in dedicated fields) into a decoded `BouquetSnapshot`
+ * so any bouquet hydrated from Firestore or the Lace Garland has 100% identical voice & visual state.
+ */
+export function hydrateSnapshotWithFirestoreRecord(
+  snapshot: BouquetSnapshot,
+  record?: {
+    voiceAudioDataUrl?: string | null;
+    voiceStyle?: string | null;
+    voiceTitle?: string | null;
+    voiceDurationSec?: number | null;
+  } | null
+): BouquetSnapshot {
+  if (!record) return snapshot;
+  const hasVoiceAudio = Boolean(record.voiceAudioDataUrl || snapshot.voice?.audioDataUrl);
+  if (
+    !hasVoiceAudio &&
+    !record.voiceStyle &&
+    !record.voiceTitle &&
+    typeof record.voiceDurationSec !== 'number'
+  ) {
+    return snapshot;
+  }
+  const existingVoice = snapshot.voice || { ...DEFAULT_VOICE_KEEPSAKE };
+  return {
+    ...snapshot,
+    voice: {
+      ...existingVoice,
+      audioDataUrl: record.voiceAudioDataUrl || existingVoice.audioDataUrl || undefined,
+      style: (record.voiceStyle as VoiceKeepsakeStyle) || existingVoice.style || 'mixtape',
+      title: record.voiceTitle || existingVoice.title || 'For You',
+      durationSec:
+        typeof record.voiceDurationSec === 'number' && record.voiceDurationSec > 0
+          ? record.voiceDurationSec
+          : existingVoice.durationSec || (hasVoiceAudio ? 5 : 0),
+      visibleOnStage: existingVoice.visibleOnStage ?? hasVoiceAudio,
+    },
+  };
+}
+
 

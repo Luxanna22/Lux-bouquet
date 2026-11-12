@@ -56,6 +56,14 @@ design-instructions.md
 *instructions*.md
 DRAFT_*
 security_spec.md
+.playwright-cli
+.playwright-cli/
+playwright-report/
+test-results/
+public/assets/aistudio
+public/assets/aistudio/
+public/assets/aistudio/*
+src/assets/images/
 
 # Editor directories and files
 .vscode/*
@@ -67,6 +75,3 @@ security_spec.md
 *.njsproj
 *.sln
 *.sw?
-public\assets\aistudio\*
-public/assets/aistudio/
-

@@ -91,6 +91,7 @@ import {
   encodeBouquetToShareUrl,
   isGiftShareHash,
   decodeBouquetFromHash,
+  hydrateSnapshotWithFirestoreRecord,
   isInAppBrowser,
   exportSvgElementToPng,
   compressUploadedPhotoToDataUrl,
@@ -1128,10 +1129,9 @@ export default function App() {
 
         const shared = decodeBouquetFromHash();
         if (shared && Array.isArray(shared.items) && shared.items.length > 0) {
-          if (!pathCode) {
-            const derivedCode = computeShortCode(encodeBouquetToCompactPayload(shared, true));
-            setActiveShortCode(derivedCode);
-          }
+          const effectiveCode =
+            pathCode || computeShortCode(encodeBouquetToCompactPayload(shared, true));
+          setActiveShortCode(effectiveCode);
           loadSnapshot(shared);
           selectItem(null);
           setIsResolvingShortCode(false);
@@ -1141,20 +1141,22 @@ export default function App() {
           } else {
             triggerToast('Loaded shared bouquet');
           }
-          // If the hash had its audio stripped by an external URL shortener, check Firestore by short code
-          if (shared.voice?.visibleOnStage && !shared.voice.audioDataUrl && pathCode) {
-            fetchSharedBouquetFromFirestore(pathCode)
+          // Always check Firestore by short code if voice audio was stripped or if a newer Firestore record exists
+          if (effectiveCode) {
+            fetchSharedBouquetFromFirestore(effectiveCode)
               .then((docData) => {
-                if (docData?.voiceAudioDataUrl) {
-                  loadSnapshot({
-                    ...shared,
-                    voice: {
-                      ...(shared.voice || DEFAULT_VOICE_KEEPSAKE),
-                      audioDataUrl: docData.voiceAudioDataUrl,
-                      visibleOnStage: true,
-                    },
-                  });
-                }
+                if (!docData) return;
+                const fromFirestoreSnap = docData.payload
+                  ? decodeBouquetFromHash(docData.payload)
+                  : null;
+                const baseSnap =
+                  fromFirestoreSnap &&
+                  Array.isArray(fromFirestoreSnap.items) &&
+                  fromFirestoreSnap.items.length > 0
+                    ? fromFirestoreSnap
+                    : shared;
+                const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, docData);
+                loadSnapshot(hydrated);
               })
               .catch(() => {});
           }
@@ -1171,6 +1173,9 @@ export default function App() {
               let data: {
                 payload?: string;
                 voiceAudioDataUrl?: string | null;
+                voiceStyle?: string | null;
+                voiceTitle?: string | null;
+                voiceDurationSec?: number | null;
               } | null = await fetchSharedBouquetFromFirestore(pathCode);
 
               if (!data || typeof data.payload !== 'string') {
@@ -1189,16 +1194,10 @@ export default function App() {
                 }
                 const resolvedSnap = decodeBouquetFromHash(data.payload);
                 if (resolvedSnap && Array.isArray(resolvedSnap.items) && resolvedSnap.items.length > 0) {
-                  if (data.voiceAudioDataUrl && (!resolvedSnap.voice || !resolvedSnap.voice.audioDataUrl)) {
-                    resolvedSnap.voice = {
-                      ...(resolvedSnap.voice || DEFAULT_VOICE_KEEPSAKE),
-                      audioDataUrl: data.voiceAudioDataUrl,
-                      visibleOnStage: true,
-                    };
-                  }
-                  loadSnapshot(resolvedSnap);
+                  const hydratedSnap = hydrateSnapshotWithFirestoreRecord(resolvedSnap, data);
+                  loadSnapshot(hydratedSnap);
                   selectItem(null);
-                  startGiftBloomAnimation(resolvedSnap.items.length, false);
+                  startGiftBloomAnimation(hydratedSnap.items.length, false);
                 }
               }
             } catch {
@@ -1491,12 +1490,20 @@ export default function App() {
     };
     const hashPayload = encodeBouquetToCompactPayload(snap, false);
     const code = computeShortCode(hashPayload);
+    localShortCodeCache.set(code, hashPayload);
     try {
       localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
       localStorage.setItem(`bq_short_${code}`, hashPayload);
     } catch {
       // Ignore quota errors
     }
+    const policy = getRetentionPolicyForPassTier(activeStudioPass?.tier || 'free');
+    // Persist full draft (flowers, wrapper, ribbon, environment, card, photos, voice audio) to Firestore
+    saveSharedBouquetToFirestore(code, hashPayload, snap, {
+      isPremium: policy.isPremiumEternal,
+      retentionDays: policy.retentionDays,
+    }).catch(() => {});
+
     const updatedVault = saveBouquetToLocalVault(
       {
         code,
@@ -1520,24 +1527,56 @@ export default function App() {
     setSavedDraftPulse(true);
     setTimeout(() => setSavedDraftPulse(false), 1600);
     triggerToast('Draft saved!');
-  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, triggerToast]);
+  }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, activeStudioPass, triggerToast]);
 
   const handleResumeDraftFromDevice = useCallback(
     (draftPayload: string, sourceVaultCode?: string) => {
-      const decoded = decodeBouquetFromHash(draftPayload);
-      if (!decoded) {
-        triggerToast('Could not load draft');
-        return;
-      }
+      const decoded = draftPayload ? decodeBouquetFromHash(draftPayload) : null;
       if (sourceVaultCode) {
         currentSessionVaultCodeRef.current = sourceVaultCode;
       }
-      loadSnapshot(decoded);
-      setIsGiftView(false);
-      setIsPreviewMode(false);
-      setIsGiftEntranceOpen(false);
-      setShowLandingPage(false);
-      triggerToast('Draft loaded!');
+      if (decoded) {
+        loadSnapshot(decoded);
+        setIsGiftView(false);
+        setIsPreviewMode(false);
+        setIsGiftEntranceOpen(false);
+        setShowLandingPage(false);
+        triggerToast('Draft loaded!');
+      }
+      // Also fetch the canonical Firestore record for sourceVaultCode so if localStorage stripped inline audio
+      // or photos, the resumed draft in the Studio restores 100% of its voice audio and assets!
+      if (sourceVaultCode) {
+        fetchSharedBouquetFromFirestore(sourceVaultCode)
+          .then((record) => {
+            if (!record) {
+              if (!decoded) triggerToast('Could not load draft');
+              return;
+            }
+            const fromRecordSnap = record.payload ? decodeBouquetFromHash(record.payload) : null;
+            const baseSnap =
+              decoded && (!fromRecordSnap || (decoded.items?.length || 0) >= (fromRecordSnap.items?.length || 0))
+                ? decoded
+                : fromRecordSnap;
+            if (!baseSnap) {
+              if (!decoded) triggerToast('Could not load draft');
+              return;
+            }
+            const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, record);
+            loadSnapshot(hydrated);
+            if (!decoded) {
+              setIsGiftView(false);
+              setIsPreviewMode(false);
+              setIsGiftEntranceOpen(false);
+              setShowLandingPage(false);
+              triggerToast('Draft loaded!');
+            }
+          })
+          .catch(() => {
+            if (!decoded) triggerToast('Could not load draft');
+          });
+      } else if (!decoded) {
+        triggerToast('Could not load draft');
+      }
     },
     [loadSnapshot, triggerToast]
   );
@@ -1798,8 +1837,36 @@ export default function App() {
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'studio_session' });
           }}
-          onPreviewShowcaseBouquet={(fromCreationsPage) => {
+          onPreviewShowcaseBouquet={(fromCreationsPage, entry) => {
             const currentItems = useBouquetStore.getState().items;
+            if (entry?.code) {
+              setActiveShortCode(entry.code);
+              if (entry.isUserCreated) {
+                fetchSharedBouquetFromFirestore(entry.code)
+                  .then((record) => {
+                    if (!record) return;
+                    const currentSnap = useBouquetStore.getState();
+                    const recordSnap = record.payload ? decodeBouquetFromHash(record.payload) : null;
+                    const baseSnap: BouquetSnapshot =
+                      recordSnap && Array.isArray(recordSnap.items) && recordSnap.items.length > 0
+                        ? recordSnap
+                        : {
+                            items: currentSnap.items,
+                            wrapStyle: currentSnap.wrapStyle,
+                            wrapColor: currentSnap.wrapColor,
+                            ribbonColor: currentSnap.ribbonColor,
+                            ribbonStyle: currentSnap.ribbonStyle,
+                            environment: currentSnap.environment,
+                            bouquetPose: currentSnap.bouquetPose,
+                            card: currentSnap.card,
+                            voice: currentSnap.voice,
+                            lock: currentSnap.lock,
+                          };
+                    loadSnapshot(hydrateSnapshotWithFirestoreRecord(baseSnap, record));
+                  })
+                  .catch(() => {});
+              }
+            }
             setReturnToCreationsPage(Boolean(fromCreationsPage));
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'showcase_view' });
@@ -6424,6 +6491,37 @@ export default function App() {
         isDarkMode={isDarkMode}
         onSaveCurrentDraft={!isGiftView && !isPreviewMode ? handleSaveDraftOnDevice : undefined}
         onResumeDraft={handleResumeDraftFromDevice}
+        onOpenGiftUrl={(giftUrl) => {
+          const codeMatch = giftUrl.replace(/\/+$/, '').split('/').pop() || '';
+          const decoded = decodeBouquetFromHash(giftUrl);
+          if (codeMatch && /^[a-zA-Z0-9_-]{7,24}$/.test(codeMatch)) {
+            setActiveShortCode(codeMatch);
+          }
+          if (decoded && Array.isArray(decoded.items) && decoded.items.length > 0) {
+            loadSnapshot(decoded);
+            selectItem(null);
+            setShowLandingPage(false);
+            startGiftBloomAnimation(decoded.items.length, false);
+          }
+          if (codeMatch && /^[a-zA-Z0-9_-]{7,24}$/.test(codeMatch)) {
+            fetchSharedBouquetFromFirestore(codeMatch)
+              .then((record) => {
+                if (!record) return;
+                const recordSnap = record.payload ? decodeBouquetFromHash(record.payload) : null;
+                const base = recordSnap || decoded;
+                if (base && Array.isArray(base.items) && base.items.length > 0) {
+                  const hydrated = hydrateSnapshotWithFirestoreRecord(base, record);
+                  loadSnapshot(hydrated);
+                  if (!decoded) {
+                    selectItem(null);
+                    setShowLandingPage(false);
+                    startGiftBloomAnimation(hydrated.items.length, false);
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+        }}
         onClose={() => {
           setIsVaultModalOpen(false);
           setVaultCount(getSavedVaultBouquets().length);

@@ -106,13 +106,28 @@ async function fetchFromFirestoreRest(code) {
   }
 }
 
+function stripInlineAudioFromCompactPayload(payload) {
+  if (!payload || typeof payload !== 'string') return '';
+  return payload.replace(/(&v=)([^&]*)/, (_match, prefix, vBody) => {
+    const parts = vBody.split('~');
+    if (parts.length >= 7 && parts[6]) {
+      parts[6] = '';
+    }
+    return `${prefix}${parts.join('~')}`;
+  });
+}
+
 async function saveToFirestoreRest(code, payload, extra = {}) {
   const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
   if (!safeCode || safeCode.length < 7 || safeCode.length > 24 || !payload) return false;
   try {
+    const cleanPayload =
+      extra.voiceAudioDataUrl && typeof extra.voiceAudioDataUrl === 'string'
+        ? stripInlineAudioFromCompactPayload(String(payload))
+        : String(payload);
     const fields = {
       code: { stringValue: safeCode },
-      payload: { stringValue: String(payload).slice(0, 900000) },
+      payload: { stringValue: cleanPayload.slice(0, 900000) },
       createdAt: { stringValue: new Date().toISOString() }
     };
     if (extra.voiceAudioDataUrl && typeof extra.voiceAudioDataUrl === 'string') {

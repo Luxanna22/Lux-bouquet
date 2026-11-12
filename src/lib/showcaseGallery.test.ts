@@ -12,6 +12,14 @@ import {
   isShowcaseBouquetActive,
   isShowcaseBouquetExpired,
 } from './showcaseGallery';
+import {
+  decodeBouquetFromHash,
+  encodeBouquetToCompactPayload,
+  hydrateSnapshotWithFirestoreRecord,
+  stripInlineAudioFromCompactPayload,
+  stripInlinePhotosFromCompactPayload,
+} from './shareAndExport';
+import { BouquetSnapshot } from '../types/bouquet';
 
 const FIXED_NOW = Date.parse('2026-11-09T12:00:00.000Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -208,3 +216,147 @@ test('buildSnapshotFromShowcaseEntry preserves 100% of user BouquetSnapshot or b
   assert.equal(userSnap.card.to, 'Camille');
   assert.equal(userSnap.card.from, 'Lucas');
 });
+
+test('Firestore deduplicated audio + hydration preserves 100% of edited draft assets, background, photos, notes, and voice across devices', () => {
+  const sampleAudio = 'data:audio/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwH/////////';
+  const samplePhoto = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcU';
+
+  const editedCreatorSnapshot: BouquetSnapshot = {
+    items: [
+      {
+        id: 'stem-1',
+        type: 'peony',
+        x: 280,
+        y: 230,
+        scale: 1.25,
+        rotation: -14,
+        flipX: false,
+        petalColor: '#F472B6',
+        centerColor: '#FEF08A',
+        stemLength: 1.1,
+      },
+      {
+        id: 'photo-1',
+        type: 'rose',
+        x: 340,
+        y: 260,
+        scale: 1.05,
+        rotation: 8,
+        flipX: false,
+        petalColor: '#FFFDF9',
+        centerColor: '#E11D48',
+        stemLength: 1,
+        photoStyle: 'stamp',
+        photoDataUrl: samplePhoto,
+        photoCaption: 'Paris 2026',
+        clippedToBouquet: true,
+      },
+    ],
+    wrapStyle: 'cloche',
+    wrapColor: '#EDE0F5',
+    ribbonStyle: 'velvet',
+    ribbonColor: '#9F1239',
+    environment: 'velvetSalon',
+    bouquetPose: { x: 12, y: -8, scale: 1.04, rotation: 3 },
+    card: {
+      to: 'Isabella',
+      from: 'Matteo',
+      message: 'Every petal, photo, background, and voice note saved for you.',
+      theme: 'sealed',
+      customBg: '#FFFDF9',
+      customAccent: '#9F1239',
+      visibleOnStage: true,
+      x: 418,
+      y: 520,
+      scale: 0.78,
+      rotation: -4,
+    },
+    voice: {
+      style: 'vinyl',
+      title: 'Our Song',
+      primaryColor: '#1E1B18',
+      accentColor: '#E11D48',
+      durationSec: 24,
+      audioDataUrl: sampleAudio,
+      visibleOnStage: true,
+      x: 182,
+      y: 518,
+      scale: 0.92,
+      rotation: 5,
+    },
+  };
+
+  // 1. Encode full compact payload
+  const fullPayload = encodeBouquetToCompactPayload(editedCreatorSnapshot, true);
+  assert.ok(fullPayload.includes('&v='));
+  assert.ok(fullPayload.includes('&e='));
+  assert.ok(fullPayload.includes('&bp='));
+
+  // 2. Strip inline audio for Firestore payload field (preventing duplicate audio storage & 1 MiB overflow)
+  const strippedAudioPayload = stripInlineAudioFromCompactPayload(fullPayload);
+  assert.ok(strippedAudioPayload.length < fullPayload.length);
+  assert.ok(strippedAudioPayload.includes('&e='), 'Environment segment must remain intact after stripping inline audio');
+  assert.ok(strippedAudioPayload.includes('&bp='), 'Bouquet pose segment must remain intact after stripping inline audio');
+
+  // 3. Simulate another device fetching from Firestore (`shared_bouquets/{code}`) and hydrating
+  const decodedOnOtherDevice = decodeBouquetFromHash(strippedAudioPayload);
+  assert.ok(decodedOnOtherDevice, 'Stripped payload must decode cleanly');
+
+  const hydratedOnOtherDevice = hydrateSnapshotWithFirestoreRecord(decodedOnOtherDevice, {
+    voiceAudioDataUrl: sampleAudio,
+    voiceStyle: 'vinyl',
+    voiceTitle: 'Our Song',
+    voiceDurationSec: 24,
+  });
+
+  // 4. Verify 100% parity between creator's bouquet and hydrated bouquet on other devices / Garland
+  assert.equal(hydratedOnOtherDevice.environment, 'velvetSalon');
+  assert.equal(hydratedOnOtherDevice.wrapStyle, 'cloche');
+  assert.equal(hydratedOnOtherDevice.ribbonStyle, 'velvet');
+  assert.deepEqual(hydratedOnOtherDevice.bouquetPose, { x: 12, y: -8, scale: 1.04, rotation: 3 });
+  assert.equal(hydratedOnOtherDevice.card.to, 'Isabella');
+  assert.equal(hydratedOnOtherDevice.card.from, 'Matteo');
+  assert.equal(hydratedOnOtherDevice.card.message, 'Every petal, photo, background, and voice note saved for you.');
+  assert.equal(hydratedOnOtherDevice.card.customBg, '#fffdf9');
+  assert.equal(hydratedOnOtherDevice.card.customAccent, '#9f1239');
+  assert.equal(hydratedOnOtherDevice.items.length, 2);
+  assert.equal(hydratedOnOtherDevice.items[1].photoDataUrl, samplePhoto);
+  assert.equal(hydratedOnOtherDevice.items[1].photoCaption, 'Paris 2026');
+  assert.equal(hydratedOnOtherDevice.items[1].clippedToBouquet, true);
+  assert.equal(hydratedOnOtherDevice.voice?.audioDataUrl, sampleAudio);
+  assert.equal(hydratedOnOtherDevice.voice?.style, 'vinyl');
+  assert.equal(hydratedOnOtherDevice.voice?.title, 'Our Song');
+  assert.equal(hydratedOnOtherDevice.voice?.durationSec, 24);
+  assert.equal(hydratedOnOtherDevice.voice?.visibleOnStage, true);
+
+  // 5. Verify Garland Showcase conversion & unwrap snapshot parity
+  const garlandEntry = convertVaultBouquetToShowcaseEntry(
+    {
+      code: 'isabella99',
+      to: 'Isabella',
+      from: 'Matteo',
+      createdAt: new Date(FIXED_NOW).toISOString(),
+      shareUrl: 'https://sendabouquet.online/isabella99',
+      hasVoice: true,
+    },
+    hydratedOnOtherDevice,
+    0
+  );
+  const garlandStageSnapshot = buildSnapshotFromShowcaseEntry(garlandEntry);
+  assert.equal(garlandStageSnapshot.environment, 'velvetSalon');
+  assert.equal(garlandStageSnapshot.items[1].photoDataUrl, samplePhoto);
+  assert.equal(garlandStageSnapshot.voice?.audioDataUrl, sampleAudio);
+  assert.equal(garlandStageSnapshot.voice?.visibleOnStage, true);
+  assert.equal(garlandStageSnapshot.card.to, 'Isabella');
+  assert.equal(garlandStageSnapshot.card.from, 'Matteo');
+
+  // 6. Verify stripInlinePhotosFromCompactPayload preserves photocard item, caption, and clip state when used for feed index summary
+  const slimIndexPayload = stripInlinePhotosFromCompactPayload(fullPayload);
+  const slimDecoded = decodeBouquetFromHash(slimIndexPayload);
+  assert.ok(slimDecoded);
+  assert.equal(slimDecoded.items.length, 2);
+  assert.equal(slimDecoded.items[1].photoStyle, 'stamp');
+  assert.equal(slimDecoded.items[1].photoCaption, 'Paris 2026');
+  assert.equal(slimDecoded.items[1].clippedToBouquet, true);
+});
+
