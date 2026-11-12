@@ -6,10 +6,14 @@ import {
   getContactTopicOption,
   validateContactSubmission,
   validateBouquetEmailDelivery,
+  sendBouquetSurpriseEmail,
   generateClientContactMessageId,
 } from './contactService';
+import { createSignedStudioPass } from './monetization';
 // @ts-expect-error Testing shared backend handler functions
 import { validateContactPayload, validateBouquetEmailPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail, buildBouquetSurpriseEmail, resolveBouquetFromAddress, processBouquetEmailDelivery } from '../../api/_lib/contactHandler.js';
+// @ts-expect-error Testing shared backend payment helpers
+import { createSignedStudioPassServer } from '../../api/_lib/paymentHandler.js';
 
 test('OFFICIAL_STUDIO_EMAIL is set to hello@sendabouquet.online', () => {
   assert.equal(OFFICIAL_STUDIO_EMAIL, 'hello@sendabouquet.online');
@@ -138,7 +142,7 @@ test('Surprise Bouquet Email delivery uses imageless minimal personal format wit
   assert.doesNotMatch(surpriseMail.html, /Julian/);
 });
 
-test('resolveBouquetFromAddress and processBouquetEmailDelivery use deliveries@ default and omit X-Entity-Ref-ID', async () => {
+test('resolveBouquetFromAddress and processBouquetEmailDelivery strictly require Couture or Single-Bouquet unlock', async () => {
   assert.equal(
     resolveBouquetFromAddress({}),
     'Send A Bouquet <deliveries@sendabouquet.online>'
@@ -147,6 +151,16 @@ test('resolveBouquetFromAddress and processBouquetEmailDelivery use deliveries@ 
     resolveBouquetFromAddress({ BOUQUET_FROM_EMAIL: 'Send A Bouquet <custom@sendabouquet.online>' }),
     'Send A Bouquet <custom@sendabouquet.online>'
   );
+
+  // Client guard blocks free user (null pass) before network call
+  const clientFreeResult = await sendBouquetSurpriseEmail({
+    recipientEmail: 'sophia@example.com',
+    recipientName: 'Sophia',
+    giftUrl: 'https://www.sendabouquet.online/abc1234',
+    pass: null,
+  });
+  assert.equal(clientFreeResult.ok, false);
+  assert.match(clientFreeResult.error || '', /Couture|Single-Bouquet|Bloom Pass/i);
 
   const originalFetch = globalThis.fetch;
   const prevKey = process.env.RESEND_API_KEY;
@@ -158,27 +172,96 @@ test('resolveBouquetFromAddress and processBouquetEmailDelivery use deliveries@ 
     delete process.env.BOUQUET_FROM_EMAIL;
 
     globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-      capturedBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
-      return new Response(JSON.stringify({ id: 'email_123' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const targetUrl = String(_url || '');
+      if (targetUrl.startsWith('https://api.resend.com/')) {
+        capturedBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+        return new Response(JSON.stringify({ id: 'email_123' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
     }) as typeof fetch;
 
-    const result = await processBouquetEmailDelivery({
+    // 1. Free user (no pass) MUST be rejected on server with 403 and zero Resend calls
+    const freeServerRes = await processBouquetEmailDelivery({
       recipientEmail: 'sophia@example.com',
       recipientName: 'Sophia',
       giftUrl: 'https://www.sendabouquet.online/abc1234',
-      hasVoiceNote: true,
-      hasPhotoCard: true,
-      isLocked: true,
     });
+    assert.equal(freeServerRes.statusCode, 403);
+    assert.equal(capturedBodies.length, 0);
 
-    assert.equal(result.statusCode, 200);
-    assert.equal(result.body.emailDispatched, true);
+    // 2. Client-forged pass without valid server HMAC paymentReference MUST be rejected with 403
+    const devHash = 'device_hash_1234567890abcdef';
+    const forgedPass = createSignedStudioPass({
+      tier: 'pass_30d',
+      region: 'INTL',
+      deviceTokenHash: devHash,
+      paymentReference: 'forged_fake_ref',
+    });
+    const forgedServerRes = await processBouquetEmailDelivery({
+      recipientEmail: 'sophia@example.com',
+      recipientName: 'Sophia',
+      giftUrl: 'https://www.sendabouquet.online/abc1234',
+      pass: forgedPass,
+      deviceTokenHash: devHash,
+      bouquetCode: 'abc1234',
+    });
+    assert.equal(forgedServerRes.statusCode, 403);
+    assert.equal(capturedBodies.length, 0);
+
+    // 3. Single-Bouquet pass bound to bouquet A ('abc1234') succeeds for 'abc1234', fails for 'xyz9999'
+    const singlePass = createSignedStudioPassServer({
+      tier: 'single',
+      region: 'INTL',
+      deviceTokenHash: devHash,
+      boundBouquetCode: 'abc1234',
+      paymentProvider: 'kofi',
+    });
+    const wrongBouquetRes = await processBouquetEmailDelivery({
+      recipientEmail: 'sophia@example.com',
+      recipientName: 'Sophia',
+      giftUrl: 'https://www.sendabouquet.online/xyz9999',
+      pass: singlePass,
+      deviceTokenHash: devHash,
+      bouquetCode: 'xyz9999',
+    });
+    assert.equal(wrongBouquetRes.statusCode, 403);
+    assert.equal(capturedBodies.length, 0);
+
+    const validSingleRes = await processBouquetEmailDelivery({
+      recipientEmail: 'sophia@example.com',
+      recipientName: 'Sophia',
+      giftUrl: 'https://www.sendabouquet.online/abc1234',
+      pass: singlePass,
+      deviceTokenHash: devHash,
+      bouquetCode: 'abc1234',
+    });
+    assert.equal(validSingleRes.statusCode, 200);
+    assert.equal(validSingleRes.body.emailDispatched, true);
     assert.equal(capturedBodies.length, 1);
-    assert.equal(capturedBodies[0].from, 'Send A Bouquet <deliveries@sendabouquet.online>');
-    assert.equal(capturedBodies[0].headers, undefined);
+
+    // 4. Active 7-Day Pass succeeds with deliveries@ sender and standard headers
+    const pass7d = createSignedStudioPassServer({
+      tier: 'pass_7d',
+      region: 'INTL',
+      deviceTokenHash: devHash,
+      paymentProvider: 'kofi',
+    });
+    const pass7dRes = await processBouquetEmailDelivery({
+      recipientEmail: 'sophia@example.com',
+      recipientName: 'Sophia',
+      giftUrl: 'https://www.sendabouquet.online/xyz9999',
+      pass: pass7d,
+      deviceTokenHash: devHash,
+      bouquetCode: 'xyz9999',
+    });
+    assert.equal(pass7dRes.statusCode, 200);
+    assert.equal(pass7dRes.body.emailDispatched, true);
+    assert.equal(capturedBodies.length, 2);
+    assert.equal(capturedBodies[1].from, 'Send A Bouquet <deliveries@sendabouquet.online>');
+    assert.equal(capturedBodies[1].headers, undefined);
   } finally {
     globalThis.fetch = originalFetch;
     if (prevKey === undefined) delete process.env.RESEND_API_KEY;

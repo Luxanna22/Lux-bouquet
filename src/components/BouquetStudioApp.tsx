@@ -308,6 +308,7 @@ export default function App() {
   const [shareStep, setShareStep] = useState<'dedication' | 'lock' | 'seal' | 'ready'>('dedication');
   const [sealedGiftUrl, setSealedGiftUrl] = useState<string>('');
   const [sealedBouquetCode, setSealedBouquetCode] = useState<string | null>(null);
+  const [sealedPaidPass, setSealedPaidPass] = useState<StudioPassRecord | null>(null);
   const [isFinalDesignChecked, setIsFinalDesignChecked] = useState<boolean>(true);
   const [pinToShowcaseChecked, setPinToShowcaseChecked] = useState<boolean>(true);
   const shouldResetStudioOnShareCloseRef = useRef<boolean>(false);
@@ -411,9 +412,16 @@ export default function App() {
     });
   }, [activeStudioPass, currentBouquetShortCode]);
 
-  const isBouquetUnlockedByPass =
-    currentPassCheck.valid ||
-    Boolean(sealedBouquetCode && sealedBouquetCode === currentBouquetShortCode);
+  const isSealedPaidBouquet = Boolean(
+    sealedPaidPass && sealedBouquetCode && sealedBouquetCode === currentBouquetShortCode
+  );
+  const unlockedPassForCurrentBouquet =
+    currentPassCheck.valid && activeStudioPass
+      ? activeStudioPass
+      : isSealedPaidBouquet
+      ? sealedPaidPass
+      : null;
+  const isBouquetUnlockedByPass = Boolean(unlockedPassForCurrentBouquet);
   const activeRetentionPolicy = useMemo(
     () =>
       getRetentionPolicyForPassTier(
@@ -1596,9 +1604,10 @@ export default function App() {
   useEffect(() => {
     if (!isShareModalOpen) {
       isSealedBouquetPaidRef.current = false;
+      setSealedPaidPass(null);
+      setSealedBouquetCode(null);
       if (shouldResetStudioOnShareCloseRef.current) {
         shouldResetStudioOnShareCloseRef.current = false;
-        setSealedBouquetCode(null);
         setSealedGiftUrl('');
         setShareStep('dedication');
         currentSessionVaultCodeRef.current = null;
@@ -1627,14 +1636,20 @@ export default function App() {
       return;
     }
 
-    const firstPartyUrl = registerShortCodeOnServer(asGift, true, effectivePass);
+    const hasPaidUnlockForSeal = Boolean(passVerify.valid && effectivePass);
+    const firstPartyUrl = registerShortCodeOnServer(
+      asGift,
+      true,
+      hasPaidUnlockForSeal ? effectivePass : null
+    );
     setShortShareUrl(firstPartyUrl);
     setSealedGiftUrl(firstPartyUrl);
-    setSealedBouquetCode(currentBouquetShortCode);
+    setSealedBouquetCode(hasPaidUnlockForSeal ? currentBouquetShortCode : null);
+    setSealedPaidPass(hasPaidUnlockForSeal ? effectivePass : null);
     setIsShorteningUrl(false);
     setSurpriseEmailSentTo(null);
     setSurpriseEmailError(null);
-    isSealedBouquetPaidRef.current = Boolean(passVerify.valid && effectivePass);
+    isSealedBouquetPaidRef.current = hasPaidUnlockForSeal;
     setShareStep('ready');
     setIsShareModalOpen(true);
 
@@ -6399,11 +6414,11 @@ export default function App() {
                       isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
                     }`}
                   >
-                    Sends a stationery letter titled{' '}
+                    Sends a clean personal letter titled{' '}
                     <span className="italic font-medium">
-                      “{card.to ? `For ${card.to} — ` : ''}Someone sent you a Bouquet”
+                      “{card.to ? `For ${card.to} — ` : ''}someone sent you a bouquet”
                     </span>{' '}
-                    — keeping your name a surprise until they unwrap it.
+                    — keeping your name a surprise until they open it.
                   </p>
 
                   {surpriseEmailSentTo ? (
@@ -6430,7 +6445,7 @@ export default function App() {
                         Send another
                       </button>
                     </div>
-                  ) : isBouquetUnlockedByPass || isSealedBouquetPaidRef.current ? (
+                  ) : unlockedPassForCurrentBouquet ? (
                     <div className="space-y-2">
                       <div className="flex items-center gap-1.5">
                         <input
@@ -6462,9 +6477,9 @@ export default function App() {
                               recipientEmail: surpriseRecipientEmail,
                               recipientName: card.to,
                               giftUrl,
-                              hasVoiceNote: Boolean(voice?.visibleOnStage && voice?.audioDataUrl),
-                              hasPhotoCard: items.some((it) => Boolean(it.photoStyle)),
-                              isLocked: Boolean(lock && lock.mode !== 'none'),
+                              pass: unlockedPassForCurrentBouquet,
+                              deviceTokenHash: getOrCreateDeviceTokenHash(),
+                              bouquetCode: currentBouquetShortCode,
                             });
                             setIsSendingSurpriseEmail(false);
                             if (!res.ok) {

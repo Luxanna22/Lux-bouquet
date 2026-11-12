@@ -1,5 +1,6 @@
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { getOrCreateDeviceTokenHash, StudioPassRecord } from './monetization';
 
 export const OFFICIAL_STUDIO_EMAIL = 'hello@sendabouquet.online';
 
@@ -240,6 +241,9 @@ export interface BouquetEmailDeliveryInput {
   hasVoiceNote?: boolean;
   hasPhotoCard?: boolean;
   isLocked?: boolean;
+  pass?: StudioPassRecord | null;
+  deviceTokenHash?: string;
+  bouquetCode?: string | null;
 }
 
 export interface BouquetEmailDeliveryResult {
@@ -252,7 +256,20 @@ export interface BouquetEmailDeliveryResult {
 
 export function validateBouquetEmailDelivery(
   input: BouquetEmailDeliveryInput
-): { ok: true; value: Required<BouquetEmailDeliveryInput> } | { ok: false; error: string } {
+): {
+  ok: true;
+  value: {
+    recipientEmail: string;
+    recipientName: string;
+    giftUrl: string;
+    hasVoiceNote: boolean;
+    hasPhotoCard: boolean;
+    isLocked: boolean;
+    pass: StudioPassRecord | null;
+    deviceTokenHash: string;
+    bouquetCode: string;
+  };
+} | { ok: false; error: string } {
   const recipientEmail =
     typeof input.recipientEmail === 'string' ? input.recipientEmail.trim().slice(0, 120) : '';
   const recipientName =
@@ -282,6 +299,9 @@ export function validateBouquetEmailDelivery(
       hasVoiceNote: Boolean(input.hasVoiceNote),
       hasPhotoCard: Boolean(input.hasPhotoCard),
       isLocked: Boolean(input.isLocked),
+      pass: input.pass || null,
+      deviceTokenHash: input.deviceTokenHash || getOrCreateDeviceTokenHash(),
+      bouquetCode: typeof input.bouquetCode === 'string' ? input.bouquetCode.trim() : '',
     },
   };
 }
@@ -294,6 +314,13 @@ export async function sendBouquetSurpriseEmail(
     return {
       ok: false,
       error: validated.error,
+    };
+  }
+
+  if (!validated.value.pass) {
+    return {
+      ok: false,
+      error: 'Surprise email delivery is a Couture feature. Unlock this bouquet or activate a Bloom Pass first.',
     };
   }
 

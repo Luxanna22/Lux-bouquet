@@ -424,6 +424,25 @@ export function signServerPaymentReference(prefix, passKey, tier, region, create
   return `${cleanPrefix}_${tag}`;
 }
 
+export function verifyServerPaymentReference(record) {
+  if (!record || typeof record.paymentReference !== 'string') return false;
+  const ref = record.paymentReference.trim();
+  const lastUnderscore = ref.lastIndexOf('_');
+  if (lastUnderscore <= 0) return false;
+  const prefix = ref.slice(0, lastUnderscore);
+  const tag = ref.slice(lastUnderscore + 1);
+  if (!/^[a-f0-9]{20}$/i.test(tag)) return false;
+  const expected = signServerPaymentReference(
+    prefix,
+    record.passKey,
+    record.tier,
+    record.region,
+    record.createdAt,
+    record.expiresAt
+  );
+  return timingSafeMatch(expected, ref);
+}
+
 export function createSignedStudioPassServer(params) {
   const now = params.nowMs ?? Date.now();
   const createdAt = params.createdAt || new Date(now).toISOString();
@@ -1941,6 +1960,39 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
   };
 }
 
+export function resolveCheckoutRegionAndProvider({
+  requestedRegion,
+  requestedProvider,
+  paymongoSecret = '',
+  vercelCountry = '',
+} = {}) {
+  const hasPaymongo = Boolean(String(paymongoSecret || '').trim());
+  const normalizedCountry = String(vercelCountry || '').trim().toUpperCase();
+
+  // While PayMongo is dormant/unconfigured, strictly enforce USD ('INTL') + Ko-fi Shop.
+  if (!hasPaymongo) {
+    return { region: 'INTL', provider: 'kofi' };
+  }
+
+  let provider = requestedProvider === 'kofi' ? 'kofi' : 'paymongo';
+  // Ko-fi Shop only operates in USD ('INTL'); never allow PHP pricing on Ko-fi/card checkouts.
+  if (provider === 'kofi') {
+    return { region: 'INTL', provider: 'kofi' };
+  }
+
+  // If edge geo header is present and indicates non-PH, refuse PH pricing and route to INTL Ko-fi.
+  if (normalizedCountry && normalizedCountry !== 'PH') {
+    return { region: 'INTL', provider: 'kofi' };
+  }
+
+  const region = requestedRegion === 'PH' ? 'PH' : 'INTL';
+  if (region !== 'PH') {
+    return { region: 'INTL', provider: 'kofi' };
+  }
+
+  return { region: 'PH', provider: 'paymongo' };
+}
+
 export async function handlePaymentEndpoint(req, res, forcedPathname) {
   applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1994,9 +2046,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       const tier = isValidTier(parsed.tier) ? parsed.tier : 'pass_7d';
-      const region = isValidRegion(parsed.region) ? parsed.region : 'INTL';
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
+      const vercelCountry =
+        typeof req.headers?.['x-vercel-ip-country'] === 'string'
+          ? req.headers['x-vercel-ip-country']
+          : '';
 
       await syncOwnerShopCodesWithFirestore(parsed.shopCodes);
       const shopCodes = getActiveKofiShopCodes(parsed.shopCodes);
@@ -2011,10 +2066,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           tierDirectLinkCode
       );
 
-      let provider = parsed.provider === 'kofi' ? 'kofi' : 'paymongo';
-      if (provider === 'paymongo' && !paymongoSecret && isProductionEnv) {
-        provider = 'kofi';
-      }
+      const { region, provider } = resolveCheckoutRegionAndProvider({
+        requestedRegion: parsed.region,
+        requestedProvider: parsed.provider,
+        paymongoSecret,
+        vercelCountry,
+      });
 
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' && parsed.deviceTokenHash.length >= 8
@@ -2033,7 +2090,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       let paymongoSessionId;
       let liveGatewayConfigured = false;
 
-      if (provider === 'paymongo' && paymongoSecret) {
+      if (provider === 'paymongo' && paymongoSecret && region === 'PH') {
         liveGatewayConfigured = true;
         try {
           const authHeader = `Basic ${Buffer.from(`${paymongoSecret}:`).toString('base64')}`;
@@ -2056,15 +2113,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
                   show_line_items: true,
                   description: `Send A Bouquet — ${plan.name} (${passKey})`,
                   reference_number: passKey,
-                  payment_method_types:
-                    region === 'PH'
-                      ? ['qrph', 'gcash', 'paymaya', 'card']
-                      : ['card', 'gcash', 'paymaya'],
+                  // Lock PH PPP pricing strictly to local Philippine e-wallet / QR Ph rails (never cards)
+                  payment_method_types: ['qrph', 'gcash', 'paymaya'],
                   line_items: [
                     {
                       currency: 'PHP',
-                      amount:
-                        region === 'PH' ? plan.amountMinor : PRICING_CATALOG.PH[tier].amountMinor,
+                      amount: PRICING_CATALOG.PH[tier].amountMinor,
                       name: `Send A Bouquet · ${plan.name}`,
                       quantity: 1,
                     },

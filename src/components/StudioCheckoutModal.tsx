@@ -379,9 +379,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   onStealthGateTriggered,
   onToast,
 }) => {
-  const [region, setRegion] = useState<PricingRegion>('INTL');
+  const region: PricingRegion = 'INTL';
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
-  const [paymentGateway, setPaymentGateway] = useState<'paymongo' | 'kofi'>('kofi');
+  const paymentGateway = 'kofi' as const;
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : 'plans')
   );
@@ -431,7 +431,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         body: JSON.stringify({
           tier: selectedTier,
           region,
-          provider: region === 'PH' ? 'paymongo' : paymentGateway,
+          provider: paymentGateway,
           deviceTokenHash,
           bouquetCode,
           shopCodes: shopConfig,
@@ -646,7 +646,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           </h3>
         </div>
 
-        {/* Clean Top Switcher + Currency Pill — Hidden when user is already on an active pass */}
+        {/* Clean Top Switcher — Hidden when user is already on an active pass */}
         {!hasActiveSubscriptionPass && activeView !== 'pass_card' && (
           <div className="mt-3 flex items-center justify-between gap-2">
             <div
@@ -691,51 +691,15 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 Have a Key?
               </button>
             </div>
-
-            {activeView === 'plans' && checkoutStep === 'select' && (
-              <div
-                className={`inline-flex items-center p-0.5 rounded-full border border-dashed text-[11px] font-medium ${
-                  isDarkMode
-                    ? 'bg-[#2B2321] border-[#544540]'
-                    : 'bg-[#FAF4EE] border-[#DECBB9]'
-                }`}
-              >
-                <button
-                  type="button"
-                  disabled
-                  aria-disabled="true"
-                  title="PHP payments temporarily unavailable"
-                  data-testid="region-switch-ph"
-                  className="px-2.5 py-0.5 rounded-full opacity-35 cursor-not-allowed select-none line-through"
-                >
-                  PHP ₱
-                </button>
-                <button
-                  type="button"
-                  data-testid="region-switch-intl"
-                  onClick={() => {
-                    setRegion('INTL');
-                    setPaymentGateway('kofi');
-                  }}
-                  className={`px-2.5 py-0.5 rounded-full transition cursor-pointer ${
-                    region === 'INTL'
-                      ? isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18]'
-                        : 'bg-[#6E4434] text-[#FFFDF9]'
-                      : 'opacity-65 hover:opacity-100'
-                  }`}
-                >
-                  USD $
-                </button>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Compact Couture Items Pill Strip (Only when triggered by Couture items) */}
+        {/* Compact Couture Items Pill Strip (Only when triggered by Couture items, High-Res PNG, or Surprise Email Delivery) */}
         {activeView === 'plans' &&
           checkoutStep === 'select' &&
-          (premiumInspection.isPremiumBouquet || triggerAction === 'png') && (
+          (premiumInspection.isPremiumBouquet ||
+            triggerAction === 'png' ||
+            triggerAction === 'share') && (
             <div className="mt-3 flex items-center gap-1.5 flex-wrap">
               {triggerAction === 'png' && (
                 <span
@@ -746,6 +710,17 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   }`}
                 >
                   High-Res PNG
+                </span>
+              )}
+              {triggerAction === 'share' && !premiumInspection.isPremiumBouquet && (
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] border border-dashed ${
+                    isDarkMode
+                      ? 'bg-[#2B2321] border-[#5E4E49] text-[#E6D6C7]'
+                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438]'
+                  }`}
+                >
+                  Surprise Email Delivery
                 </span>
               )}
               {premiumInspection.features.slice(0, 4).map((feat) => (
@@ -836,34 +811,18 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               })}
             </div>
 
-            {/* Region-Matched Payment Method (Single Method for PH, Ko-fi for International) */}
-            {region === 'PH' ? (
-              <div
-                data-testid="gateway-paymongo"
-                onClick={() => setPaymentGateway('paymongo')}
-                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between cursor-pointer ${
-                  isDarkMode
-                    ? 'border-[#E6B89C] bg-[#3B302C]'
-                    : 'border-[#6E4434] bg-[#FAF3EB]'
-                }`}
-              >
-                <div className="text-xs font-semibold">QR Ph · GCash · Maya</div>
-                <div className="text-[10.5px] opacity-75">Instant Unlock</div>
-              </div>
-            ) : (
-              <div
-                data-testid="gateway-kofi"
-                onClick={() => setPaymentGateway('kofi')}
-                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between cursor-pointer ${
-                  isDarkMode
-                    ? 'border-[#E6B89C] bg-[#3B302C]'
-                    : 'border-[#6E4434] bg-[#FAF3EB]'
-                }`}
-              >
-                <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
-                <div className="text-[10.5px] opacity-75">Instant Unlock</div>
-              </div>
-            )}
+            {/* Payment Method (USD via Ko-fi / PayPal / Card; PayMongo hidden for now) */}
+            <div
+              data-testid="gateway-kofi"
+              className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                isDarkMode
+                  ? 'border-[#E6B89C] bg-[#3B302C]'
+                  : 'border-[#6E4434] bg-[#FAF3EB]'
+              }`}
+            >
+              <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
+              <div className="text-[10.5px] opacity-75">Instant Unlock</div>
+            </div>
 
             {/* Primary Action Button */}
             <button

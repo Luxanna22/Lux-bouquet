@@ -478,3 +478,160 @@ test('Ko-fi Shop Order verification strictly requires type "Shop Order", matches
     delete process.env.KOFI_SHOP_TEST_30D_CODE;
   }
 });
+
+test('create-checkout blocks PHP PPP arbitrage when PayMongo is hidden and locks PayMongo PH rails to e-wallets without cards', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const { EventEmitter } = await import('node:events');
+
+  // 1. Pure resolution rules
+  assert.deepEqual(
+    paymentLib.resolveCheckoutRegionAndProvider({
+      requestedRegion: 'PH',
+      requestedProvider: 'paymongo',
+      paymongoSecret: '',
+      vercelCountry: 'PH',
+    }),
+    { region: 'INTL', provider: 'kofi' }
+  );
+  assert.deepEqual(
+    paymentLib.resolveCheckoutRegionAndProvider({
+      requestedRegion: 'PH',
+      requestedProvider: 'kofi',
+      paymongoSecret: 'sk_test_live_123',
+      vercelCountry: 'PH',
+    }),
+    { region: 'INTL', provider: 'kofi' }
+  );
+  assert.deepEqual(
+    paymentLib.resolveCheckoutRegionAndProvider({
+      requestedRegion: 'PH',
+      requestedProvider: 'paymongo',
+      paymongoSecret: 'sk_test_live_123',
+      vercelCountry: 'US',
+    }),
+    { region: 'INTL', provider: 'kofi' }
+  );
+  assert.deepEqual(
+    paymentLib.resolveCheckoutRegionAndProvider({
+      requestedRegion: 'PH',
+      requestedProvider: 'paymongo',
+      paymongoSecret: 'sk_test_live_123',
+      vercelCountry: 'PH',
+    }),
+    { region: 'PH', provider: 'paymongo' }
+  );
+
+  const makeReq = (body: Record<string, unknown>, headers: Record<string, string> = {}) => {
+    const req = Object.assign(new EventEmitter(), {
+      method: 'POST',
+      url: '/api/payments/create-checkout',
+      headers: { host: 'localhost:3000', ...headers },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      req.emit('data', Buffer.from(JSON.stringify(body)));
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    let statusCode = 200;
+    const headers: Record<string, string> = {};
+    let rawBody = '';
+    return {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(val: number) {
+        statusCode = val;
+      },
+      setHeader(k: string, v: string) {
+        headers[k] = v;
+      },
+      end(chunk?: string) {
+        if (chunk) rawBody += chunk;
+      },
+      json() {
+        return JSON.parse(rawBody);
+      },
+    };
+  };
+
+  // 2. HTTP create-checkout forces INTL USD ($2.99) + Ko-fi when PAYMONGO_SECRET_KEY is absent,
+  // even if a tampered client sends { region: 'PH', provider: 'paymongo' }
+  const prevPaymongo = process.env.PAYMONGO_SECRET_KEY;
+  delete process.env.PAYMONGO_SECRET_KEY;
+  try {
+    const req = makeReq(
+      {
+        tier: 'single',
+        region: 'PH',
+        provider: 'paymongo',
+        deviceTokenHash: 'dev_spoof_test_1234',
+      },
+      { 'x-vercel-ip-country': 'PH' }
+    );
+    const res = makeRes();
+    await paymentLib.handlePaymentEndpoint(req, res, '/api/payments/create-checkout');
+    assert.equal(res.statusCode, 200);
+    const json = res.json();
+    assert.equal(json.ok, true);
+    assert.equal(json.provider, 'kofi');
+    assert.equal(json.plan.currency, 'USD');
+    assert.equal(json.plan.displayPrice, '$2.99');
+  } finally {
+    if (prevPaymongo !== undefined) process.env.PAYMONGO_SECRET_KEY = prevPaymongo;
+  }
+
+  // 3. When PAYMONGO_SECRET_KEY is present for PH, PayMongo session locks payment_method_types
+  // strictly to ['qrph', 'gcash', 'paymaya'] (never 'card')
+  const originalFetch = globalThis.fetch;
+  const paymongoRequests: Array<Record<string, unknown>> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('api.paymongo.com/v1/checkout_sessions') && init?.body) {
+      paymongoRequests.push(JSON.parse(String(init.body)));
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: 'cs_test_ph_only',
+            attributes: { checkout_url: 'https://checkout.paymongo.com/cs_test_ph_only' },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  }) as typeof fetch;
+
+  process.env.PAYMONGO_SECRET_KEY = 'sk_test_ph_rails';
+  try {
+    const req = makeReq(
+      {
+        tier: 'single',
+        region: 'PH',
+        provider: 'paymongo',
+        deviceTokenHash: 'dev_ph_ewallet_1234',
+      },
+      { 'x-vercel-ip-country': 'PH' }
+    );
+    const res = makeRes();
+    await paymentLib.handlePaymentEndpoint(req, res, '/api/payments/create-checkout');
+    assert.equal(res.statusCode, 200);
+    const json = res.json();
+    assert.equal(json.provider, 'paymongo');
+    assert.equal(json.plan.currency, 'PHP');
+    assert.equal(paymongoRequests.length, 1);
+    const attrs = (paymongoRequests[0].data as { attributes: { payment_method_types: string[] } })
+      .attributes;
+    assert.deepEqual(attrs.payment_method_types, ['qrph', 'gcash', 'paymaya']);
+    assert.equal(attrs.payment_method_types.includes('card'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (prevPaymongo !== undefined) process.env.PAYMONGO_SECRET_KEY = prevPaymongo;
+    else delete process.env.PAYMONGO_SECRET_KEY;
+  }
+});
+

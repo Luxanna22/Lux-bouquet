@@ -1,3 +1,15 @@
+import {
+  SERVER_PASS_STORE,
+  fetchStudioPassFromFirestoreRest,
+  hydratePersistentOwnerVaultServer,
+  isValidPassKeyFormat,
+  normalizePassKey,
+  saveStudioPassToFirestoreRest,
+  verifyActiveStudioPassForActionServer,
+  verifyPassIntegritySignature,
+  verifyServerPaymentReference,
+} from './paymentHandler.js';
+
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
 const FIRESTORE_CONTACT_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/contact_messages`;
@@ -527,12 +539,104 @@ export async function processContactSubmission(rawBody = {}) {
   };
 }
 
+function extractBouquetCodeFromGiftUrl(giftUrl = '') {
+  try {
+    const parsed = new URL(String(giftUrl || ''));
+    const segment = parsed.pathname.replace(/^\/+|\/+$/g, '').split('/')[0] || '';
+    const cleaned = segment.replace(/[^0-9A-Za-z_-]/g, '');
+    if (cleaned.length >= 6 && cleaned.length <= 24) {
+      return cleaned;
+    }
+  } catch {
+    // Ignore malformed URLs
+  }
+  return '';
+}
+
+export async function verifyCouturePassForEmailDelivery(rawBody = {}) {
+  const clientPass = rawBody?.pass && typeof rawBody.pass === 'object' ? rawBody.pass : null;
+  const deviceTokenHash =
+    typeof rawBody?.deviceTokenHash === 'string' ? rawBody.deviceTokenHash.trim() : '';
+  const explicitCode =
+    typeof rawBody?.bouquetCode === 'string' ? rawBody.bouquetCode.trim() : '';
+  const bouquetCode = explicitCode || extractBouquetCodeFromGiftUrl(rawBody?.giftUrl || '');
+
+  if (!clientPass || !isValidPassKeyFormat(clientPass.passKey) || !deviceTokenHash) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error:
+        'Surprise email delivery is for Couture & Single-Bouquet pass holders. Unlock this bouquet or activate a Bloom Pass first.',
+    };
+  }
+
+  await hydratePersistentOwnerVaultServer();
+
+  const normKey = normalizePassKey(clientPass.passKey);
+  const remoteOrMemPass =
+    SERVER_PASS_STORE.get(normKey) || (await fetchStudioPassFromFirestoreRest(normKey));
+
+  // If not cached remotely/in-memory yet, require valid server-side HMAC paymentReference signature
+  if (!remoteOrMemPass) {
+    if (!verifyPassIntegritySignature(clientPass) || !verifyServerPaymentReference(clientPass)) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error:
+          'Your Studio Pass could not be verified. Please unlock Couture or re-enter your Pass Key.',
+      };
+    }
+  }
+
+  const canonicalPass = remoteOrMemPass || clientPass;
+  const hadUnboundSingle =
+    canonicalPass.tier === 'single' && !canonicalPass.boundBouquetCode && Boolean(bouquetCode);
+
+  const check = verifyActiveStudioPassForActionServer({
+    pass: canonicalPass,
+    deviceTokenHash,
+    clientSessionNonce: clientPass.activeSessionNonce,
+    bouquetCode: bouquetCode || null,
+    incrementUsage: false,
+  });
+
+  if (!check.valid || !check.updatedPass) {
+    return {
+      ok: false,
+      statusCode: 403,
+      error:
+        check.message ||
+        'Surprise email delivery requires an active Couture Pass or Single-Bouquet unlock.',
+    };
+  }
+
+  if (hadUnboundSingle || remoteOrMemPass) {
+    SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
+    if (hadUnboundSingle) {
+      await saveStudioPassToFirestoreRest(check.updatedPass);
+    }
+  }
+
+  return {
+    ok: true,
+    pass: check.updatedPass,
+  };
+}
+
 export async function processBouquetEmailDelivery(rawBody = {}) {
   const validated = validateBouquetEmailPayload(rawBody);
   if (!validated.ok) {
     return {
       statusCode: 400,
       body: { ok: false, error: validated.error },
+    };
+  }
+
+  const passVerification = await verifyCouturePassForEmailDelivery(rawBody);
+  if (!passVerification.ok) {
+    return {
+      statusCode: passVerification.statusCode || 403,
+      body: { ok: false, error: passVerification.error },
     };
   }
 
