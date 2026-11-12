@@ -1,25 +1,21 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Sparkles,
-  Copy,
-  Check,
   RefreshCw,
-  Trash2,
   ArrowLeft,
   Flower2,
   Ticket,
   BarChart3,
   Shield,
-  Link2,
   KeyRound,
   Moon,
   Sun,
 } from 'lucide-react';
 import {
   OwnerAnalyticsSummary,
+  PaidPassLedgerItem,
   TesterVoucherLedgerItem,
   createInitialAnalyticsSummary,
-  buildTesterMagicInviteUrl,
 } from '../lib/ownerAnalytics';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
 import {
@@ -29,6 +25,9 @@ import {
 } from '../lib/firebase';
 import { decodeBouquetFromHash } from '../lib/shareAndExport';
 import { BrandLogoMark } from './BrandLogoMark';
+import { OwnerOverviewSection } from './OwnerOverviewSection';
+import { OwnerKeysSection } from './OwnerKeysSection';
+import { OwnerAiAdvisorPanel } from './OwnerAiAdvisorPanel';
 
 interface StealthGateAndOwnerConsoleProps {
   gateSlug: string;
@@ -39,7 +38,7 @@ interface StealthGateAndOwnerConsoleProps {
   onToast: (msg: string) => void;
 }
 
-type ConsoleTab = 'web_funnel' | 'vouchers' | 'botanicals' | 'security_stream';
+type ConsoleTab = 'web_funnel' | 'vouchers' | 'ai_advisor' | 'botanicals' | 'security_stream';
 
 const PRETTY_LABELS: Record<string, string> = {
   rose: 'Red Rose',
@@ -113,6 +112,7 @@ function formatLabel(raw: string): string {
   if (!raw) return 'Other';
   if (PRETTY_LABELS[raw]) return PRETTY_LABELS[raw].trim();
   return raw
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -156,17 +156,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   );
   const [liveFirestoreStats, setLiveFirestoreStats] = useState<StudioGlobalStats | null>(null);
   const [testerVouchers, setTesterVouchers] = useState<TesterVoucherLedgerItem[]>([]);
+  const [paidPasses, setPaidPasses] = useState<PaidPassLedgerItem[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Tester Voucher Generator form state
-  const [voucherLabel, setVoucherLabel] = useState('');
-  const [voucherDurationHours, setVoucherDurationHours] = useState<number>(48);
-  const [voucherDailyCap, setVoucherDailyCap] = useState<number>(10);
-  const [voucherRetentionDays, setVoucherRetentionDays] = useState<30 | 90>(30);
-  const [isMintingVoucher, setIsMintingVoucher] = useState(false);
-  const [newlyMintedVoucher, setNewlyMintedVoucher] = useState<TesterVoucherLedgerItem | null>(
-    null
-  );
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Owner PIN rotation state
@@ -340,6 +331,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         if (res.ok && data.ok) {
           if (data.analytics) setAnalytics(data.analytics);
           if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
+          if (Array.isArray(data.paidPasses)) setPaidPasses(data.paidPasses);
           setIsServerVerified(true);
         } else if (res.status === 401 || data.unauthorized || !data.ok) {
           setIsServerVerified(false);
@@ -369,7 +361,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const animatePeonyBloomAndUnlock = (
     token: string,
     nextAnalytics?: OwnerAnalyticsSummary,
-    nextVouchers?: TesterVoucherLedgerItem[]
+    nextVouchers?: TesterVoucherLedgerItem[],
+    nextPaidPasses?: PaidPassLedgerItem[]
   ) => {
     const start = performance.now();
     const duration = 380;
@@ -384,6 +377,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         window.setTimeout(() => {
           if (nextAnalytics) setAnalytics(nextAnalytics);
           if (Array.isArray(nextVouchers)) setTesterVouchers(nextVouchers);
+          if (Array.isArray(nextPaidPasses)) setPaidPasses(nextPaidPasses);
           setIsServerVerified(true);
           setAdminSessionToken(token);
           try {
@@ -429,75 +423,30 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       setPinInput('');
       setIsVerifyingPin(false);
-      animatePeonyBloomAndUnlock(data.adminSessionToken, data.analytics, data.testerVouchers);
+      animatePeonyBloomAndUnlock(
+        data.adminSessionToken,
+        data.analytics,
+        data.testerVouchers,
+        data.paidPasses
+      );
     } catch {
       setGateError('Could not verify passphrase.');
       setIsVerifyingPin(false);
     }
   };
 
-  const handleMintTesterVoucher = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminSessionToken) return;
-    setIsMintingVoucher(true);
-
-    try {
-      const res = await fetch('/api/payments/verify-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'mint_tester_voucher',
-          adminSessionToken,
-          deviceTokenHash,
-          label: voucherLabel.trim() || 'Tester Invite',
-          durationHours: voucherDurationHours,
-          dailyCap: voucherDailyCap,
-          retentionDays: voucherRetentionDays,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        setNewlyMintedVoucher(data.voucher);
-        if (data.analytics) setAnalytics(data.analytics);
-        if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
-        setVoucherLabel('');
-        onToast(`Created key for ${data.voucher.label}`);
-      } else {
-        onToast(data.message || 'Could not create voucher.');
-      }
-    } catch {
-      onToast('Network error while creating voucher.');
-    } finally {
-      setIsMintingVoucher(false);
-    }
-  };
-
-  const handleRevokeVoucher = async (passKey: string) => {
-    if (!adminSessionToken) return;
-    try {
-      const res = await fetch('/api/payments/verify-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'revoke_tester_voucher',
-          adminSessionToken,
-          deviceTokenHash,
-          passKey,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        if (data.analytics) setAnalytics(data.analytics);
-        if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
-        if (newlyMintedVoucher?.passKey === passKey) {
-          setNewlyMintedVoucher(null);
-        }
-        onToast(`Revoked ${passKey}`);
-      }
-    } catch {
-      onToast('Could not revoke voucher.');
-    }
-  };
+  const handleSyncKeysResponse = useCallback(
+    (data: {
+      analytics?: unknown;
+      testerVouchers?: TesterVoucherLedgerItem[];
+      paidPasses?: PaidPassLedgerItem[];
+    }) => {
+      if (data.analytics) setAnalytics(data.analytics as OwnerAnalyticsSummary);
+      if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
+      if (Array.isArray(data.paidPasses)) setPaidPasses(data.paidPasses);
+    },
+    []
+  );
 
   const handleUpdateOwnerPin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -963,20 +912,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const topWraps = topSortedEntries(realAnalytics.wraps, 5);
   const topRibbons = topSortedEntries(realAnalytics.ribbons, 5);
   const topEnvironments = topSortedEntries(realAnalytics.environments, 5);
-  const topReferrers = topSortedEntries(realAnalytics.referrers, 5);
-  const maxDailyTraffic = Math.max(
-    1,
-    ...realAnalytics.dailySeries.map((d) =>
-      Math.max(d.visits, d.bouquetsSealed, d.recipientUnwraps)
-    )
-  );
-  const estimatedRevenueUsd =
-    realAnalytics.revenueUsdCents / 100 + realAnalytics.revenuePhpCentavos / 100 / 56;
 
   const navItems: Array<{
     id: ConsoleTab;
     testId: string;
     label: string;
+    mobileLabel: string;
     icon: React.ComponentType<{ className?: string }>;
     count?: number;
   }> = [
@@ -984,36 +925,48 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       id: 'web_funnel',
       testId: 'owner-tab-web_funnel',
       label: 'Overview',
+      mobileLabel: 'Overview',
       icon: BarChart3,
     },
     {
       id: 'vouchers',
       testId: 'owner-tab-vouchers',
-      label: 'Tester Keys',
+      label: 'Keys & Passes',
+      mobileLabel: 'Keys',
       icon: Ticket,
-      count: testerVouchers.length || undefined,
+      count: paidPasses.length + testerVouchers.length || undefined,
+    },
+    {
+      id: 'ai_advisor',
+      testId: 'owner-tab-ai_advisor',
+      label: 'AI Advisor',
+      mobileLabel: 'Advisor',
+      icon: Sparkles,
     },
     {
       id: 'botanicals',
       testId: 'owner-tab-botanicals',
       label: 'Botanicals',
+      mobileLabel: 'Flora',
       icon: Flower2,
     },
     {
       id: 'security_stream',
       testId: 'owner-tab-security_stream',
       label: 'Security',
+      mobileLabel: 'Vault',
       icon: Shield,
     },
   ];
 
   const cardSurface = isDarkMode
-    ? 'bg-[#352C29]/90 border-[#5E4E49]'
-    : 'bg-[#FFFDF9]/95 border-[#DECBB9]';
+    ? 'bg-[#352C29] border-[#5E4E49]/80'
+    : 'bg-[#FFFDF9] border-[#DECBB9]';
 
-  const subtleSurface = isDarkMode
-    ? 'bg-[#2B2321]/70 border-[#5E4E49]'
-    : 'bg-[#FAF4EE]/75 border-[#E6D5C5]';
+  const hairlineBorder = isDarkMode ? 'border-[#5E4E49]/70' : 'border-[#DECBB9]/85';
+  const hairlineDivide = isDarkMode ? 'divide-[#5E4E49]/70' : 'divide-[#DECBB9]/85';
+  const gridHairlineBg = isDarkMode ? 'bg-[#5E4E49]/65' : 'bg-[#DECBB9]/85';
+  const cellBgClass = isDarkMode ? 'bg-[#352C29]' : 'bg-[#FFFDF9]';
 
   return (
     <div
@@ -1024,16 +977,16 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
     >
       {/* DESKTOP & TABLET SIDEBAR */}
       <aside
-        className={`hidden md:flex md:w-52 lg:w-56 shrink-0 flex-col justify-between p-5 border-r border-dashed ${
-          isDarkMode ? 'bg-[#352C29]/80 border-[#5E4E49]' : 'bg-[#FFFDF9]/85 border-[#DECBB9]'
+        className={`hidden md:flex md:w-52 lg:w-56 shrink-0 flex-col justify-between p-5 border-r ${
+          isDarkMode ? 'bg-[#352C29]/90 border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
         <div className="space-y-6">
           {/* Brand Lockup */}
           <div className="flex items-center gap-2.5 px-1">
             <div
-              className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
-                isDarkMode ? 'border-[#E6B89C]/45 bg-[#2B2321]' : 'border-[#8C624C]/35 bg-[#FAF4EE]'
+              className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 ${
+                isDarkMode ? 'border-[#E6B89C]/40 bg-[#2B2321]' : 'border-[#8C624C]/30 bg-[#FAF4EE]'
               }`}
             >
               <BrandLogoMark className="w-4 h-4" />
@@ -1054,7 +1007,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             </div>
           </div>
 
-          {/* Side Navigation Pills */}
+          {/* Side Navigation */}
           <nav className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -1065,12 +1018,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                   data-testid={item.testId}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                     active
                       ? isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18] shadow-sm'
-                        : 'bg-[#6E4434] text-[#FFFDF9] shadow-sm'
-                      : 'opacity-70 hover:opacity-100'
+                        ? 'bg-[#E6B89C] text-[#231C18]'
+                        : 'bg-[#6E4434] text-[#FFFDF9]'
+                      : 'opacity-70 hover:opacity-100 hover:bg-current/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -1078,17 +1031,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                     <span>{item.label}</span>
                   </span>
                   {item.count !== undefined && (
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                        active
-                          ? isDarkMode
-                            ? 'bg-[#231C18]/15 text-[#231C18]'
-                            : 'bg-[#FFFDF9]/20 text-[#FFFDF9]'
-                          : isDarkMode
-                          ? 'bg-[#2B2321] text-[#E6B89C]'
-                          : 'bg-[#FAF4EE] text-[#6E4434]'
-                      }`}
-                    >
+                    <span className="text-[11px] font-mono tabular-nums opacity-75">
                       {item.count}
                     </span>
                   )}
@@ -1099,17 +1042,13 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         </div>
 
         {/* Bottom Actions */}
-        <div className="space-y-1.5 pt-4 border-t border-dashed border-[#DECBB9]/60 dark:border-[#5E4E49]/60">
+        <div className={`space-y-1.5 pt-4 border-t ${hairlineBorder}`}>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => adminSessionToken && fetchConsoleData(adminSessionToken)}
               title="Refresh data"
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full border border-dashed text-xs transition-all cursor-pointer ${
-                isDarkMode
-                  ? 'border-[#5E4E49] hover:border-[#E6B89C]/60'
-                  : 'border-[#DECBB9] hover:border-[#6E4434]/60'
-              }`}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs transition-colors cursor-pointer ${hairlineBorder} hover:bg-current/5`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>Sync</span>
@@ -1119,11 +1058,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 type="button"
                 onClick={onToggleDarkMode}
                 title="Toggle theme"
-                className={`p-2 rounded-full border border-dashed transition-all cursor-pointer ${
-                  isDarkMode
-                    ? 'border-[#5E4E49] hover:border-[#E6B89C]/60'
-                    : 'border-[#DECBB9] hover:border-[#6E4434]/60'
-                }`}
+                aria-label="Toggle theme"
+                className={`p-2 rounded-lg border transition-colors cursor-pointer ${hairlineBorder} hover:bg-current/5`}
               >
                 {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
               </button>
@@ -1133,7 +1069,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             data-testid="owner-console-exit-btn"
             type="button"
             onClick={onExitToStudio}
-            className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-medium transition-all cursor-pointer ${
+            className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               isDarkMode
                 ? 'text-[#E6B89C] hover:bg-[#2B2321]'
                 : 'text-[#6E4434] hover:bg-[#FAF4EE]'
@@ -1147,8 +1083,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE TOP BAR */}
       <header
-        className={`md:hidden h-13 px-4 border-b border-dashed flex items-center justify-between shrink-0 ${
-          isDarkMode ? 'bg-[#352C29]/90 border-[#5E4E49]' : 'bg-[#FFFDF9]/90 border-[#DECBB9]'
+        className={`md:hidden h-13 px-4 border-b flex items-center justify-between shrink-0 ${
+          isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
         <div className="flex items-center gap-2">
@@ -1165,9 +1101,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             type="button"
             onClick={() => adminSessionToken && fetchConsoleData(adminSessionToken)}
             aria-label="Sync"
-            className={`p-1.5 rounded-full border border-dashed cursor-pointer ${
-              isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
-            }`}
+            className={`p-1.5 rounded-lg border cursor-pointer ${hairlineBorder}`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -1175,10 +1109,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             <button
               type="button"
               onClick={onToggleDarkMode}
-              aria-label="Theme"
-              className={`p-1.5 rounded-full border border-dashed cursor-pointer ${
-                isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
-              }`}
+              aria-label="Toggle theme"
+              className={`p-1.5 rounded-lg border cursor-pointer ${hairlineBorder}`}
             >
               {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
             </button>
@@ -1186,7 +1118,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           <button
             type="button"
             onClick={onExitToStudio}
-            className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer ${
               isDarkMode ? 'bg-[#E6B89C] text-[#231C18]' : 'bg-[#6E4434] text-[#FFFDF9]'
             }`}
           >
@@ -1197,522 +1129,43 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-20 md:pb-8">
-        <div className="max-w-4xl mx-auto space-y-5">
-          {/* ================================================================
-              TAB 1: OVERVIEW (Real Traffic, Funnel & Activity)
-          ================================================================ */}
+        <div className="max-w-5xl mx-auto space-y-6">
+          {/* TAB 1: REVENUE & FUNNEL OVERVIEW */}
           {activeTab === 'web_funnel' && (
-            <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
-              <div className="flex items-baseline justify-between">
-                <h1
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-2xl sm:text-3xl font-normal"
-                >
-                  Studio Overview
-                </h1>
-                <span
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-sm italic opacity-60"
-                >
-                  Live studio metrics
-                </span>
-              </div>
-
-              {/* 4 Clean Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {[
-                  {
-                    title: 'Visitors',
-                    value: realAnalytics.webVisits.toLocaleString(),
-                    note: `${realAnalytics.uniqueVisitors.toLocaleString()} unique`,
-                  },
-                  {
-                    title: 'Bouquets Sealed',
-                    value: realAnalytics.bouquetsCreated.toLocaleString(),
-                    note: `${realAnalytics.coutureBouquetsCreated.toLocaleString()} with keepsakes`,
-                  },
-                  {
-                    title: 'Recipient Unwraps',
-                    value: realAnalytics.recipientUnwraps.toLocaleString(),
-                    note: `${realAnalytics.reactionsSent.toLocaleString()} replies sent`,
-                  },
-                  {
-                    title: 'Active Passes',
-                    value: (
-                      realAnalytics.passesIssued.single +
-                      realAnalytics.passesIssued.pass_7d +
-                      realAnalytics.passesIssued.pass_30d +
-                      realAnalytics.passesIssued.tester
-                    ).toLocaleString(),
-                    note:
-                      estimatedRevenueUsd > 0
-                        ? `$${estimatedRevenueUsd.toFixed(2)} est.`
-                        : `${testerVouchers.length} tester keys`,
-                  },
-                ].map((metric) => (
-                  <div
-                    key={metric.title}
-                    className={`rounded-2xl border border-dashed p-4 ${cardSurface}`}
-                  >
-                    <div
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="text-base italic opacity-75"
-                    >
-                      {metric.title}
-                    </div>
-                    <div
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="text-3xl sm:text-4xl font-medium mt-1 leading-none"
-                    >
-                      {metric.value}
-                    </div>
-                    <div className="text-[11px] opacity-55 mt-2">{metric.note}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* 14-Day Activity Chart + Audience Split */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className={`lg:col-span-2 rounded-2xl border border-dashed p-5 ${cardSurface}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="text-xl font-medium"
-                    >
-                      14-Day Activity
-                    </h2>
-                    <div className="flex items-center gap-3 text-[11px] opacity-70">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#C88A70]" />
-                        Visits
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#6E4434] dark:bg-[#E6B89C]" />
-                        Sealed
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-[#7A9A82]" />
-                        Unwraps
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="h-36 flex items-end gap-1.5 pt-2">
-                    {realAnalytics.dailySeries.map((day) => {
-                      const visitH = Math.round((day.visits / maxDailyTraffic) * 100);
-                      const createH = Math.round((day.bouquetsSealed / maxDailyTraffic) * 100);
-                      const openH = Math.round((day.recipientUnwraps / maxDailyTraffic) * 100);
-                      const hasAny =
-                        day.visits > 0 || day.bouquetsSealed > 0 || day.recipientUnwraps > 0;
-                      return (
-                        <div
-                          key={day.date}
-                          className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end"
-                          title={`${day.date}: ${day.visits} visits · ${day.bouquetsSealed} sealed · ${day.recipientUnwraps} unwraps`}
-                        >
-                          <div className="w-full flex items-end justify-center gap-[2px] h-28">
-                            {hasAny ? (
-                              <>
-                                <div
-                                  style={{ height: `${Math.max(visitH, day.visits > 0 ? 8 : 2)}%` }}
-                                  className="w-1.5 rounded-t-full bg-[#C88A70]/75 transition-all"
-                                />
-                                <div
-                                  style={{
-                                    height: `${Math.max(createH, day.bouquetsSealed > 0 ? 8 : 2)}%`,
-                                  }}
-                                  className="w-1.5 rounded-t-full bg-[#6E4434] dark:bg-[#E6B89C] transition-all"
-                                />
-                                <div
-                                  style={{
-                                    height: `${Math.max(openH, day.recipientUnwraps > 0 ? 8 : 2)}%`,
-                                  }}
-                                  className="w-1.5 rounded-t-full bg-[#7A9A82] transition-all"
-                                />
-                              </>
-                            ) : (
-                              <div className="w-full h-[2px] rounded-full bg-current opacity-10" />
-                            )}
-                          </div>
-                          <span className="text-[10px] opacity-45 font-mono">
-                            {day.date.slice(8)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Devices & Sources */}
-                <div className={`rounded-2xl border border-dashed p-5 flex flex-col justify-between ${cardSurface}`}>
-                  <div>
-                    <h2
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="text-xl font-medium mb-3"
-                    >
-                      Devices & Sources
-                    </h2>
-                    <div className="grid grid-cols-3 gap-2 text-center mb-4">
-                      {[
-                        { label: 'Mobile', count: realAnalytics.devices.mobile },
-                        { label: 'Desktop', count: realAnalytics.devices.desktop },
-                        { label: 'Tablet', count: realAnalytics.devices.tablet },
-                      ].map((d) => (
-                        <div key={d.label} className={`rounded-xl border border-dashed p-2.5 ${subtleSurface}`}>
-                          <div
-                            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                            className="text-xl font-medium leading-none"
-                          >
-                            {d.count}
-                          </div>
-                          <div className="text-[11px] opacity-60 mt-1">{d.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="text-sm italic opacity-65"
-                    >
-                      Entry Channels
-                    </div>
-                    {topReferrers.length > 0 ? (
-                      topReferrers.map(([ref, count]) => (
-                        <div key={ref} className="flex items-center justify-between text-xs">
-                          <span className="opacity-80 truncate">{formatLabel(ref)}</span>
-                          <span className="font-mono opacity-65">{count}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div
-                        style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                        className="text-sm italic opacity-45"
-                      >
-                        Recorded as visitors arrive
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <OwnerOverviewSection
+              analytics={realAnalytics}
+              paidPasses={paidPasses}
+              testerCount={testerVouchers.length}
+              isDarkMode={isDarkMode}
+              formatLabel={formatLabel}
+            />
           )}
 
-          {/* ================================================================
-              TAB 2: TESTER KEYS (1-Device Locked Expiring Vouchers)
-          ================================================================ */}
+          {/* TAB 2: PAID KEYS & TESTER VOUCHERS */}
           {activeTab === 'vouchers' && (
-            <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
-              <div className="flex items-baseline justify-between">
-                <h1
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-2xl sm:text-3xl font-normal"
-                >
-                  Tester Keys
-                </h1>
-                <span
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-sm italic opacity-60"
-                >
-                  Bound to the first claiming device
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                {/* Create Key Form */}
-                <form
-                  onSubmit={handleMintTesterVoucher}
-                  className={`lg:col-span-5 rounded-2xl border border-dashed p-5 space-y-4 ${cardSurface}`}
-                >
-                  <h2
-                    style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                    className="text-xl font-medium"
-                  >
-                    New Tester Invite
-                  </h2>
-
-                  <div>
-                    <label className="block text-xs opacity-70 mb-1.5">Friend or Tester Name</label>
-                    <input
-                      data-testid="tester-voucher-label-input"
-                      type="text"
-                      value={voucherLabel}
-                      onChange={(e) => setVoucherLabel(e.target.value)}
-                      placeholder="e.g. Sophia"
-                      maxLength={32}
-                      className={`w-full px-3.5 py-2 rounded-xl border border-dashed text-xs focus:outline-none ${
-                        isDarkMode
-                          ? 'bg-[#2B2321]/90 border-[#5E4E49] focus:border-[#E6B89C]'
-                          : 'bg-[#FAF4EE]/80 border-[#DECBB9] focus:border-[#6E4434]'
-                      }`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs opacity-70 mb-1.5">Duration</label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { hours: 2, label: '2h' },
-                        { hours: 24, label: '24h' },
-                        { hours: 48, label: '48h' },
-                        { hours: 168, label: '7d' },
-                      ].map((opt) => (
-                        <button
-                          key={opt.hours}
-                          type="button"
-                          onClick={() => setVoucherDurationHours(opt.hours)}
-                          className={`py-1.5 rounded-xl border border-dashed text-xs font-medium transition-all cursor-pointer ${
-                            voucherDurationHours === opt.hours
-                              ? isDarkMode
-                                ? 'bg-[#E6B89C] text-[#231C18] border-transparent'
-                                : 'bg-[#6E4434] text-[#FFFDF9] border-transparent'
-                              : 'opacity-70 hover:opacity-100 border-current/20'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs opacity-70 mb-1.5">Daily Limit</label>
-                      <div className="grid grid-cols-3 gap-1">
-                        {[5, 10, 20].map((cap) => (
-                          <button
-                            key={cap}
-                            type="button"
-                            onClick={() => setVoucherDailyCap(cap)}
-                            className={`py-1.5 rounded-xl border border-dashed text-xs font-medium transition-all cursor-pointer ${
-                              voucherDailyCap === cap
-                                ? isDarkMode
-                                  ? 'bg-[#E6B89C] text-[#231C18] border-transparent'
-                                  : 'bg-[#6E4434] text-[#FFFDF9] border-transparent'
-                                : 'opacity-70 hover:opacity-100 border-current/20'
-                            }`}
-                          >
-                            {cap}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs opacity-70 mb-1.5">Keepsake Storage</label>
-                      <div className="grid grid-cols-2 gap-1">
-                        {([30, 90] as const).map((days) => (
-                          <button
-                            key={days}
-                            type="button"
-                            onClick={() => setVoucherRetentionDays(days)}
-                            className={`py-1.5 rounded-xl border border-dashed text-xs font-medium transition-all cursor-pointer ${
-                              voucherRetentionDays === days
-                                ? isDarkMode
-                                  ? 'bg-[#E6B89C] text-[#231C18] border-transparent'
-                                  : 'bg-[#6E4434] text-[#FFFDF9] border-transparent'
-                                : 'opacity-70 hover:opacity-100 border-current/20'
-                            }`}
-                          >
-                            {days}d
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    data-testid="mint-tester-voucher-btn"
-                    type="submit"
-                    disabled={isMintingVoucher}
-                    className={`w-full py-2.5 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50 ${
-                      isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8AE]'
-                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#593527]'
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>{isMintingVoucher ? 'Creating...' : 'Create Tester Key'}</span>
-                  </button>
-
-                  {newlyMintedVoucher && (
-                    <div
-                      data-testid="newly-minted-voucher-card"
-                      className={`rounded-xl border border-dashed p-3.5 space-y-2.5 ${subtleSurface}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                          className="text-base font-medium"
-                        >
-                          {newlyMintedVoucher.label}
-                        </span>
-                        <span className="font-mono text-xs opacity-80">
-                          {newlyMintedVoucher.passKey}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          data-testid="copy-magic-link-btn"
-                          type="button"
-                          onClick={() =>
-                            copyText(
-                              buildTesterMagicInviteUrl(newlyMintedVoucher.passKey),
-                              `magic-${newlyMintedVoucher.passKey}`,
-                              'Invite link copied'
-                            )
-                          }
-                          className={`py-2 px-3 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer ${
-                            isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18]'
-                              : 'bg-[#6E4434] text-[#FFFDF9]'
-                          }`}
-                        >
-                          {copiedId === `magic-${newlyMintedVoucher.passKey}` ? (
-                            <Check className="w-3.5 h-3.5" />
-                          ) : (
-                            <Link2 className="w-3.5 h-3.5" />
-                          )}
-                          <span>Copy Link</span>
-                        </button>
-                        <button
-                          data-testid="copy-voucher-key-btn"
-                          type="button"
-                          onClick={() =>
-                            copyText(
-                              newlyMintedVoucher.passKey,
-                              `key-${newlyMintedVoucher.passKey}`,
-                              'Key copied'
-                            )
-                          }
-                          className={`py-2 px-3 rounded-full border border-dashed text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer ${
-                            isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]'
-                          }`}
-                        >
-                          {copiedId === `key-${newlyMintedVoucher.passKey}` ? (
-                            <Check className="w-3.5 h-3.5" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                          <span>Copy Key</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </form>
-
-                {/* Issued Keys List */}
-                <div className={`lg:col-span-7 rounded-2xl border border-dashed p-5 ${cardSurface}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h2
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="text-xl font-medium"
-                    >
-                      Issued Keys
-                    </h2>
-                    <span className="text-xs opacity-55">{testerVouchers.length} total</span>
-                  </div>
-
-                  {testerVouchers.length === 0 ? (
-                    <div
-                      style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                      className="py-12 text-center italic text-base opacity-55"
-                    >
-                      No tester keys issued yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
-                      {testerVouchers.map((v) => {
-                        const isExpired =
-                          v.status === 'expired' ||
-                          new Date(v.expiresAt).getTime() <= Date.now();
-                        const isRevoked = v.status === 'revoked';
-                        const statusLabel = isRevoked
-                          ? 'Revoked'
-                          : isExpired
-                          ? 'Expired'
-                          : v.status === 'claimed'
-                          ? 'Device Bound'
-                          : 'Unclaimed';
-
-                        return (
-                          <div
-                            key={v.passKey}
-                            className={`rounded-xl border border-dashed p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${subtleSurface}`}
-                          >
-                            <div className="space-y-0.5 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span
-                                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                                  className="text-base font-medium"
-                                >
-                                  {v.label}
-                                </span>
-                                <span className="text-[11px] px-2 py-0.5 rounded-full border border-dashed border-current/25 opacity-75">
-                                  {statusLabel}
-                                </span>
-                              </div>
-                              <div className="text-xs opacity-65 flex items-center gap-2 flex-wrap">
-                                <span className="font-mono">{v.passKey}</span>
-                                <span>·</span>
-                                <span>{v.durationHours}h</span>
-                                <span>·</span>
-                                <span>
-                                  {v.bouquetsCreated}/{v.dailyCap} bouquets
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {!isRevoked && !isExpired && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      copyText(
-                                        buildTesterMagicInviteUrl(v.passKey),
-                                        `row-link-${v.passKey}`,
-                                        'Invite link copied'
-                                      )
-                                    }
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 cursor-pointer ${
-                                      isDarkMode
-                                        ? 'bg-[#E6B89C] text-[#231C18]'
-                                        : 'bg-[#6E4434] text-[#FFFDF9]'
-                                    }`}
-                                  >
-                                    {copiedId === `row-link-${v.passKey}` ? (
-                                      <Check className="w-3 h-3" />
-                                    ) : (
-                                      <Link2 className="w-3 h-3" />
-                                    )}
-                                    <span>Link</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRevokeVoucher(v.passKey)}
-                                    title="Revoke key"
-                                    className="p-1.5 rounded-full border border-dashed border-rose-500/35 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <OwnerKeysSection
+              adminSessionToken={adminSessionToken}
+              deviceTokenHash={deviceTokenHash}
+              isDarkMode={isDarkMode}
+              paidPasses={paidPasses}
+              testerVouchers={testerVouchers}
+              copiedId={copiedId}
+              onCopyText={copyText}
+              onSyncResponse={handleSyncKeysResponse}
+              onToast={onToast}
+            />
           )}
 
-          {/* ================================================================
-              TAB 3: BOTANICALS (Real Flower, Wrap, Ribbon & Scene Selections)
-          ================================================================ */}
+          {/* TAB 3: ADMIN-ONLY AI ANALYTICS ADVISOR (kept mounted while verified so chat persists across tab switches) */}
+          <div className={activeTab === 'ai_advisor' ? 'block' : 'hidden'}>
+            <OwnerAiAdvisorPanel
+              adminSessionToken={adminSessionToken}
+              deviceTokenHash={deviceTokenHash}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+
+          {/* TAB 4: BOTANICALS & STYLING */}
           {activeTab === 'botanicals' && (
             <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
               <div className="flex items-baseline justify-between">
@@ -1722,12 +1175,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 >
                   Botanicals & Styling
                 </h1>
-                <span
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-sm italic opacity-60"
-                >
-                  Real selections from sealed bouquets
-                </span>
+                <span className="text-xs opacity-60">Real selections from sealed bouquets</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1739,10 +1187,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 ].map((group) => {
                   const maxVal = Math.max(1, ...(group.items.map(([, c]) => c) || [1]));
                   return (
-                    <div
-                      key={group.title}
-                      className={`rounded-2xl border border-dashed p-5 ${cardSurface}`}
-                    >
+                    <div key={group.title} className={`rounded-xl border p-5 ${cardSurface}`}>
                       <h2
                         style={{ fontFamily: "'Cormorant Garamond', serif" }}
                         className="text-xl font-medium mb-3"
@@ -1765,12 +1210,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                               <div key={id} className="space-y-1">
                                 <div className="flex items-center justify-between text-xs">
                                   <span>{formatLabel(id)}</span>
-                                  <span className="font-mono opacity-60">{count}</span>
+                                  <span className="font-mono tabular-nums opacity-65">{count}</span>
                                 </div>
-                                <div className="h-1.5 rounded-full bg-current/10 overflow-hidden">
+                                <div className="h-1.5 rounded-sm bg-current/10 overflow-hidden">
                                   <div
                                     style={{ width: `${pct}%` }}
-                                    className="h-full rounded-full bg-[#6E4434] dark:bg-[#E6B89C]"
+                                    className="h-full bg-[#6E4434] dark:bg-[#E6B89C]"
                                   />
                                 </div>
                               </div>
@@ -1785,9 +1230,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             </div>
           )}
 
-          {/* ================================================================
-              TAB 4: SECURITY & PASSPHRASE
-          ================================================================ */}
+          {/* TAB 5: SECURITY & PASSPHRASE */}
           {activeTab === 'security_stream' && (
             <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
               <div className="flex items-baseline justify-between">
@@ -1797,17 +1240,11 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 >
                   Security & Passphrase
                 </h1>
-                <span
-                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-sm italic opacity-60"
-                >
-                  Gate protection & live event log
-                </span>
+                <span className="text-xs opacity-60">Gate protection & live event log</span>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                {/* Passphrase & Protection Summary */}
-                <div className={`lg:col-span-5 rounded-2xl border border-dashed p-5 space-y-4 ${cardSurface}`}>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                <div className={`lg:col-span-5 rounded-xl border p-5 space-y-4 ${cardSurface}`}>
                   <h2
                     style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     className="text-xl font-medium"
@@ -1815,49 +1252,52 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                     Gate Passphrase
                   </h2>
 
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className={`rounded-xl border border-dashed p-3 ${subtleSurface}`}>
-                      <div
-                        style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                        className="text-2xl font-medium leading-none"
-                      >
-                        {realAnalytics.blockedShareAttempts}
+                  <div className={`border ${hairlineBorder} rounded-lg overflow-hidden`}>
+                    <div className={`grid grid-cols-2 gap-px ${gridHairlineBg}`}>
+                      <div className={`p-3 ${cellBgClass}`}>
+                        <div
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                          className="text-2xl font-medium leading-none tabular-nums"
+                        >
+                          {realAnalytics.blockedShareAttempts}
+                        </div>
+                        <div className="text-[11px] opacity-60 mt-1">Blocked Forwards</div>
                       </div>
-                      <div className="text-[11px] opacity-60 mt-1">Blocked Forwards</div>
-                    </div>
-                    <div className={`rounded-xl border border-dashed p-3 ${subtleSurface}`}>
-                      <div
-                        style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                        className="text-2xl font-medium leading-none"
-                      >
-                        {realAnalytics.blockedPinAttempts}
+                      <div className={`p-3 ${cellBgClass}`}>
+                        <div
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                          className="text-2xl font-medium leading-none tabular-nums"
+                        >
+                          {realAnalytics.blockedPinAttempts}
+                        </div>
+                        <div className="text-[11px] opacity-60 mt-1">Blocked PIN Tries</div>
                       </div>
-                      <div className="text-[11px] opacity-60 mt-1">Blocked PIN Tries</div>
                     </div>
                   </div>
 
                   <form onSubmit={handleUpdateOwnerPin} className="space-y-2.5 pt-1">
-                    <label className="block text-xs opacity-70">
+                    <label htmlFor="owner-new-pin-input" className="block text-xs opacity-70">
                       Update Passphrase (or set <span className="font-mono">OWNER_ADMIN_PIN</span> in Vercel)
                     </label>
                     <div className="flex items-center gap-2">
                       <input
+                        id="owner-new-pin-input"
                         type="password"
                         value={newOwnerPin}
                         onChange={(e) => setNewOwnerPin(e.target.value)}
                         placeholder="New passphrase..."
                         minLength={4}
                         maxLength={32}
-                        className={`flex-1 px-3.5 py-2 rounded-full border border-dashed text-xs focus:outline-none ${
+                        className={`flex-1 min-w-0 px-3.5 py-2 rounded-lg border text-xs focus:outline-none ${
                           isDarkMode
-                            ? 'bg-[#2B2321]/90 border-[#5E4E49] focus:border-[#E6B89C]'
-                            : 'bg-[#FAF4EE]/80 border-[#DECBB9] focus:border-[#6E4434]'
+                            ? 'bg-[#2B2321] border-[#5E4E49] focus:border-[#E6B89C]'
+                            : 'bg-[#FAF4EE] border-[#DECBB9] focus:border-[#6E4434]'
                         }`}
                       />
                       <button
                         type="submit"
                         disabled={isUpdatingPin || newOwnerPin.trim().length < 4}
-                        className={`px-4 py-2 rounded-full text-xs font-medium cursor-pointer disabled:opacity-45 flex items-center gap-1.5 ${
+                        className={`px-4 py-2 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-45 flex items-center gap-1.5 shrink-0 ${
                           isDarkMode
                             ? 'bg-[#E6B89C] text-[#231C18]'
                             : 'bg-[#6E4434] text-[#FFFDF9]'
@@ -1870,8 +1310,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                   </form>
                 </div>
 
-                {/* Live Activity Log */}
-                <div className={`lg:col-span-7 rounded-2xl border border-dashed p-5 ${cardSurface}`}>
+                <div className={`lg:col-span-7 rounded-xl border p-5 ${cardSurface}`}>
                   <div className="flex items-center justify-between mb-3">
                     <h2
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -1879,7 +1318,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                     >
                       Recent Activity
                     </h2>
-                    <span className="text-xs opacity-55">
+                    <span className="text-xs opacity-60 tabular-nums">
                       {realAnalytics.recentEvents.length} events
                     </span>
                   </div>
@@ -1892,14 +1331,14 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                       No activity recorded in this session yet.
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                    <div className={`divide-y ${hairlineDivide} max-h-[360px] overflow-y-auto`}>
                       {realAnalytics.recentEvents.slice(0, 20).map((ev) => (
                         <div
                           key={ev.id}
-                          className={`rounded-xl border border-dashed p-3 flex items-center justify-between gap-3 text-xs ${subtleSurface}`}
+                          className="py-2.5 flex items-center justify-between gap-3 text-xs"
                         >
                           <span className="truncate opacity-85">{ev.summary}</span>
-                          <span className="text-[11px] font-mono opacity-50 shrink-0">
+                          <span className="text-[11px] font-mono tabular-nums opacity-55 shrink-0">
                             {new Date(ev.ts).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
@@ -1918,8 +1357,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE BOTTOM NAVIGATION DOCK */}
       <nav
-        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t border-dashed grid grid-cols-4 z-20 backdrop-blur-md ${
-          isDarkMode ? 'bg-[#352C29]/95 border-[#5E4E49]' : 'bg-[#FFFDF9]/95 border-[#DECBB9]'
+        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t grid grid-cols-5 z-20 ${
+          isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
         {navItems.map((item) => {
@@ -1939,7 +1378,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               }`}
             >
               <Icon className="w-4 h-4" />
-              <span>{item.label}</span>
+              <span>{item.mobileLabel}</span>
             </button>
           );
         })}

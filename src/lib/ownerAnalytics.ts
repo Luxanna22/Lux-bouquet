@@ -69,6 +69,16 @@ export function buildTesterMagicInviteUrl(passKey: string, originOverride?: stri
   return `${origin.replace(/\/+$/, '')}/?voucher=${encodeURIComponent(normalized)}`;
 }
 
+export function buildPaidPassClaimUrl(passKey: string, originOverride?: string): string {
+  const normalized = normalizePassKey(passKey);
+  const origin =
+    originOverride ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://www.sendabouquet.online');
+  return `${origin.replace(/\/+$/, '')}/?pass=${encodeURIComponent(normalized)}`;
+}
+
 // ============================================================================
 // 2. WEB & STUDIO ANALYTICS DATA STRUCTURES & PURE AGGREGATION
 // ============================================================================
@@ -90,6 +100,11 @@ export interface OwnerDailySeriesPoint {
   bouquetsSealed: number;
   recipientUnwraps: number;
   passUnlocks: number;
+  revenueUsdCents?: number;
+  revenuePhpCentavos?: number;
+  paidSingle?: number;
+  paid7d?: number;
+  paid30d?: number;
 }
 
 export interface OwnerRecentEventItem {
@@ -100,6 +115,35 @@ export interface OwnerRecentEventItem {
   summary: string;
   device: DeviceFormFactor;
   region: PricingRegion;
+}
+
+export type PaidPassChannel =
+  | 'manual_gcash'
+  | 'manual_maya'
+  | 'manual_bank'
+  | 'kofi'
+  | 'bayadgate'
+  | 'paymongo'
+  | 'other';
+
+export interface PaidPassLedgerItem {
+  passKey: string;
+  label: string;
+  tier: StudioPassTier;
+  region: PricingRegion;
+  channel: PaidPassChannel;
+  amountMinor: number;
+  currency: 'PHP' | 'USD';
+  retentionDays: number;
+  isEternalKeepsake: boolean;
+  createdAt: string;
+  expiresAt: string;
+  status: 'unclaimed' | 'claimed' | 'expired' | 'revoked';
+  claimedDeviceHash: string;
+  bouquetsCreated: number;
+  blockedAttempts: number;
+  boundBouquetCode?: string | null;
+  passRecord?: StudioPassRecord;
 }
 
 export interface TesterVoucherLedgerItem {
@@ -188,6 +232,11 @@ export function createInitialAnalyticsSummary(nowMs: number = Date.now()): Owner
     bouquetsSealed: 0,
     recipientUnwraps: 0,
     passUnlocks: 0,
+    revenueUsdCents: 0,
+    revenuePhpCentavos: 0,
+    paidSingle: 0,
+    paid7d: 0,
+    paid30d: 0,
   }));
 
   return {
@@ -357,6 +406,11 @@ export function applyTelemetryEventToSummary(
       bouquetsSealed: 0,
       recipientUnwraps: 0,
       passUnlocks: 0,
+      revenueUsdCents: 0,
+      revenuePhpCentavos: 0,
+      paidSingle: 0,
+      paid7d: 0,
+      paid30d: 0,
     };
     next.dailySeries.push(todayBucket);
     if (next.dailySeries.length > 14) {
@@ -687,3 +741,277 @@ export function trackStudioTelemetry(
     // Non-blocking telemetry
   }
 }
+
+// ============================================================================
+// 4. FINANCIAL, CONVERSION FUNNEL & VIRAL SCALE PROJECTION HELPERS
+// ============================================================================
+
+export interface FunnelStepMetric {
+  id: 'visits' | 'studio' | 'sealed' | 'paywall' | 'checkout' | 'paid';
+  label: string;
+  count: number;
+  pctOfVisits: number;
+  stepConversionPct: number;
+  exceedsBaseline?: boolean;
+}
+
+export interface TierMixMetric {
+  tier: StudioPassTier;
+  label: string;
+  count: number;
+  sharePct: number;
+  priceRangeLabel: string;
+}
+
+export interface FinancialMetricsSummary {
+  grossUsd: number;
+  grossPhp: number;
+  combinedGrossUsd: number;
+  combinedGrossPhp: number;
+  estGatewayFeeUsd: number;
+  estNetUsd: number;
+  estNetPhp: number;
+  totalPaidPasses: number;
+  totalAllPasses: number;
+  arpuUsd: number;
+  arppuUsd: number;
+  overallVisitorToPaidPct: number;
+  paywallToPaidPct: number;
+  checkoutToPaidPct: number;
+  coutureIntentPct: number;
+  viralLoopPct: number;
+  funnelSteps: FunnelStepMetric[];
+  tierMix: TierMixMetric[];
+  phAudienceSharePct: number;
+  intlAudienceSharePct: number;
+}
+
+export function computeFinancialMetrics(
+  analytics: OwnerAnalyticsSummary,
+  phpPerUsd = 56
+): FinancialMetricsSummary {
+  const grossUsd = Number(((analytics.revenueUsdCents || 0) / 100).toFixed(2));
+  const grossPhp = Number(((analytics.revenuePhpCentavos || 0) / 100).toFixed(2));
+  const combinedGrossUsd = Number((grossUsd + grossPhp / phpPerUsd).toFixed(2));
+  const combinedGrossPhp = Number((grossPhp + grossUsd * phpPerUsd).toFixed(2));
+
+  // Conservative blended payment gateway drag estimate: ~5% on INTL Ko-fi/PayPal, ~1.5% blended on PH wallets/manual
+  const estGatewayFeeUsd = Number(
+    (grossUsd * 0.05 + (grossPhp / phpPerUsd) * 0.015).toFixed(2)
+  );
+  const estNetUsd = Math.max(0, Number((combinedGrossUsd - estGatewayFeeUsd).toFixed(2)));
+  const estNetPhp = Math.max(0, Number((estNetUsd * phpPerUsd).toFixed(2)));
+
+  const single = analytics.passesIssued?.single || 0;
+  const pass7d = analytics.passesIssued?.pass_7d || 0;
+  const pass30d = analytics.passesIssued?.pass_30d || 0;
+  const tester = analytics.passesIssued?.tester || 0;
+  const totalPaidPasses = single + pass7d + pass30d;
+  const totalAllPasses = totalPaidPasses + tester;
+
+  const visits = analytics.webVisits || 0;
+  const studio = analytics.studioSessions || 0;
+  const sealed = analytics.bouquetsCreated || 0;
+  const paywall = analytics.paywallOpens || 0;
+  const checkout = analytics.checkoutsStarted || 0;
+  const unwraps = analytics.recipientUnwraps || 0;
+
+  const denomVisitors = Math.max(1, analytics.uniqueVisitors || visits);
+  const arpuUsd = combinedGrossUsd > 0 ? Number((combinedGrossUsd / denomVisitors).toFixed(3)) : 0;
+  const arppuUsd = totalPaidPasses > 0 ? Number((combinedGrossUsd / totalPaidPasses).toFixed(2)) : 0;
+
+  const pct = (num: number, den: number) =>
+    den > 0 ? Number(Math.min(100, (num / den) * 100).toFixed(1)) : 0;
+
+  const funnelSteps: FunnelStepMetric[] = [
+    {
+      id: 'visits',
+      label: 'Web Visits',
+      count: visits,
+      pctOfVisits: visits > 0 ? 100 : 0,
+      stepConversionPct: visits > 0 ? 100 : 0,
+    },
+    {
+      id: 'studio',
+      label: 'Opened Studio',
+      count: studio,
+      pctOfVisits: pct(studio, visits),
+      stepConversionPct: pct(studio, visits),
+      exceedsBaseline: studio > visits && visits > 0,
+    },
+    {
+      id: 'sealed',
+      label: 'Sealed Bouquet',
+      count: sealed,
+      pctOfVisits: pct(sealed, visits),
+      stepConversionPct: pct(sealed, studio),
+      exceedsBaseline: (sealed > studio && studio > 0) || (sealed > visits && visits > 0),
+    },
+    {
+      id: 'paywall',
+      label: 'Viewed Upgrade',
+      count: paywall,
+      pctOfVisits: pct(paywall, visits),
+      stepConversionPct: pct(paywall, sealed),
+    },
+    {
+      id: 'checkout',
+      label: 'Started Checkout',
+      count: checkout,
+      pctOfVisits: pct(checkout, visits),
+      stepConversionPct: pct(checkout, paywall),
+    },
+    {
+      id: 'paid',
+      label: 'Paid Passes',
+      count: totalPaidPasses,
+      pctOfVisits:
+        visits > 0 ? Number(Math.min(100, (totalPaidPasses / visits) * 100).toFixed(2)) : 0,
+      stepConversionPct: pct(totalPaidPasses, Math.max(checkout, paywall)),
+    },
+  ];
+
+  const tierMix: TierMixMetric[] = [
+    {
+      tier: 'single',
+      label: 'Single Bouquet',
+      count: single,
+      sharePct: pct(single, totalPaidPasses),
+      priceRangeLabel: '₱49 / $2.99',
+    },
+    {
+      tier: 'pass_7d',
+      label: '7-Day Pass',
+      count: pass7d,
+      sharePct: pct(pass7d, totalPaidPasses),
+      priceRangeLabel: '₱99 / $4.99',
+    },
+    {
+      tier: 'pass_30d',
+      label: '30-Day Eternal',
+      count: pass30d,
+      sharePct: pct(pass30d, totalPaidPasses),
+      priceRangeLabel: '₱199 / $8.99',
+    },
+  ];
+
+  const phReg = analytics.regions?.PH || 0;
+  const intlReg = analytics.regions?.INTL || 0;
+  const regTotal = phReg + intlReg;
+
+  return {
+    grossUsd,
+    grossPhp,
+    combinedGrossUsd,
+    combinedGrossPhp,
+    estGatewayFeeUsd,
+    estNetUsd,
+    estNetPhp,
+    totalPaidPasses,
+    totalAllPasses,
+    arpuUsd,
+    arppuUsd,
+    overallVisitorToPaidPct:
+      visits > 0 ? Number(((totalPaidPasses / visits) * 100).toFixed(2)) : 0,
+    paywallToPaidPct: pct(totalPaidPasses, paywall),
+    checkoutToPaidPct: pct(totalPaidPasses, checkout),
+    coutureIntentPct: pct(analytics.coutureBouquetsCreated || 0, sealed),
+    viralLoopPct: pct(analytics.recipientToStudioClicks || 0, unwraps),
+    funnelSteps,
+    tierMix,
+    phAudienceSharePct: pct(phReg, regTotal),
+    intlAudienceSharePct: pct(intlReg, regTotal),
+  };
+}
+
+export interface RevenueProjectionInput {
+  dailyVisitors: number;
+  studioStartRatePct: number;
+  paywallReachPct: number;
+  paywallToPaidPct: number;
+  phSharePct: number;
+  singleMixPct: number;
+  pass7dMixPct: number;
+  pass30dMixPct: number;
+  phpPerUsd?: number;
+}
+
+export interface RevenueProjectionOutput {
+  monthlyVisitors: number;
+  monthlyStudioSessions: number;
+  monthlyPaywallOpens: number;
+  monthlyPaidOrders: number;
+  phOrders: number;
+  intlOrders: number;
+  monthlyGrossPhpOnly: number;
+  monthlyGrossUsdOnly: number;
+  monthlyCombinedGrossUsd: number;
+  monthlyCombinedNetUsd: number;
+  monthlyCombinedNetPhp: number;
+  annualNetUsd: number;
+  annualNetPhp: number;
+  blendedOrderUsd: number;
+}
+
+export function computeRevenueProjection(input: RevenueProjectionInput): RevenueProjectionOutput {
+  const phpPerUsd = input.phpPerUsd && input.phpPerUsd > 0 ? input.phpPerUsd : 56;
+  const dailyVisitors = Math.max(0, input.dailyVisitors || 0);
+  const monthlyVisitors = Math.round(dailyVisitors * 30);
+  const studioRate = Math.max(0, Math.min(100, input.studioStartRatePct)) / 100;
+  const paywallRate = Math.max(0, Math.min(100, input.paywallReachPct)) / 100;
+  const paidRate = Math.max(0, Math.min(100, input.paywallToPaidPct)) / 100;
+  const phShare = Math.max(0, Math.min(100, input.phSharePct)) / 100;
+
+  const rawMixSum =
+    Math.max(0, input.singleMixPct) +
+    Math.max(0, input.pass7dMixPct) +
+    Math.max(0, input.pass30dMixPct);
+  const sW = rawMixSum > 0 ? Math.max(0, input.singleMixPct) / rawMixSum : 0.3;
+  const p7W = rawMixSum > 0 ? Math.max(0, input.pass7dMixPct) / rawMixSum : 0.5;
+  const p30W = rawMixSum > 0 ? Math.max(0, input.pass30dMixPct) / rawMixSum : 0.2;
+
+  const monthlyStudioSessions = Math.round(monthlyVisitors * studioRate);
+  const monthlyPaywallOpens = Math.round(monthlyStudioSessions * paywallRate);
+  const monthlyPaidOrders = Math.round(monthlyPaywallOpens * paidRate);
+
+  const phOrders = Math.round(monthlyPaidOrders * phShare);
+  const intlOrders = Math.max(0, monthlyPaidOrders - phOrders);
+
+  const avgPhPhp = sW * 49 + p7W * 99 + p30W * 199;
+  const avgIntlUsd = sW * 2.99 + p7W * 4.99 + p30W * 8.99;
+
+  const monthlyGrossPhpOnly = Number((phOrders * avgPhPhp).toFixed(2));
+  const monthlyGrossUsdOnly = Number((intlOrders * avgIntlUsd).toFixed(2));
+  const monthlyCombinedGrossUsd = Number(
+    (monthlyGrossUsdOnly + monthlyGrossPhpOnly / phpPerUsd).toFixed(2)
+  );
+
+  // Est payment fees (~5% INTL Ko-fi/PayPal, ~2% PH wallets)
+  const monthlyFeesUsd = monthlyGrossUsdOnly * 0.05 + (monthlyGrossPhpOnly / phpPerUsd) * 0.02;
+  const monthlyCombinedNetUsd = Math.max(
+    0,
+    Number((monthlyCombinedGrossUsd - monthlyFeesUsd).toFixed(2))
+  );
+  const monthlyCombinedNetPhp = Number((monthlyCombinedNetUsd * phpPerUsd).toFixed(2));
+
+  return {
+    monthlyVisitors,
+    monthlyStudioSessions,
+    monthlyPaywallOpens,
+    monthlyPaidOrders,
+    phOrders,
+    intlOrders,
+    monthlyGrossPhpOnly,
+    monthlyGrossUsdOnly,
+    monthlyCombinedGrossUsd,
+    monthlyCombinedNetUsd,
+    monthlyCombinedNetPhp,
+    annualNetUsd: Number((monthlyCombinedNetUsd * 12).toFixed(0)),
+    annualNetPhp: Number((monthlyCombinedNetPhp * 12).toFixed(0)),
+    blendedOrderUsd:
+      monthlyPaidOrders > 0
+        ? Number((monthlyCombinedGrossUsd / monthlyPaidOrders).toFixed(2))
+        : Number(((phShare * avgPhPhp) / phpPerUsd + (1 - phShare) * avgIntlUsd).toFixed(2)),
+  };
+}
+

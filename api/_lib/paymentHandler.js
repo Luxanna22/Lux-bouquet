@@ -5,6 +5,7 @@ import {
   extractClientIp,
   sanitizeJsonValue,
 } from './securityGuard.js';
+import { runOwnerAnalyticsAi } from './ownerAiHandler.js';
 
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
@@ -1017,6 +1018,11 @@ function buildRolling14DaysServer(nowMs = Date.now()) {
       bouquetsSealed: 0,
       recipientUnwraps: 0,
       passUnlocks: 0,
+      revenueUsdCents: 0,
+      revenuePhpCentavos: 0,
+      paidSingle: 0,
+      paid7d: 0,
+      paid30d: 0,
     });
   }
   return list;
@@ -1095,6 +1101,7 @@ export const OWNER_ANALYTICS_STATE = {
 };
 
 export const TESTER_VOUCHER_LEDGER = new Map();
+export const PAID_PASS_LEDGER = new Map();
 export const ISSUED_PASS_KEYS = new Set();
 
 export function mergeRemoteOwnerVaultIntoMemory(remote) {
@@ -1184,6 +1191,62 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     }
   }
 
+  if (Array.isArray(remote.paidPasses)) {
+    for (const rp of remote.paidPasses) {
+      if (!rp || typeof rp !== 'object' || !rp.passKey) continue;
+      const normKey = normalizePassKey(rp.passKey);
+      const localP = PAID_PASS_LEDGER.get(normKey);
+      if (!localP) {
+        PAID_PASS_LEDGER.set(normKey, { ...rp, passKey: normKey });
+        if (rp.passRecord && !SERVER_PASS_STORE.has(normKey)) {
+          SERVER_PASS_STORE.set(normKey, rp.passRecord);
+        }
+      } else {
+        const isRevoked =
+          localP.status === 'revoked' ||
+          rp.status === 'revoked' ||
+          REVOKED_VOUCHER_KEYS.has(normKey);
+        const isClaimed = !isRevoked && (localP.status === 'claimed' || rp.status === 'claimed');
+        const mergedPassRecord = localP.passRecord?.primaryDeviceHash
+          ? localP.passRecord
+          : rp.passRecord || localP.passRecord;
+        const mergedItem = {
+          ...rp,
+          ...localP,
+          passKey: normKey,
+          status: isRevoked
+            ? 'revoked'
+            : isClaimed
+            ? 'claimed'
+            : localP.status || rp.status || 'unclaimed',
+          claimedDeviceHash:
+            localP.claimedDeviceHash ||
+            rp.claimedDeviceHash ||
+            mergedPassRecord?.primaryDeviceHash ||
+            '',
+          boundBouquetCode:
+            localP.boundBouquetCode ||
+            rp.boundBouquetCode ||
+            mergedPassRecord?.boundBouquetCode ||
+            null,
+          bouquetsCreated: Math.max(
+            Number(localP.bouquetsCreated || 0),
+            Number(rp.bouquetsCreated || 0)
+          ),
+          blockedAttempts: Math.max(
+            Number(localP.blockedAttempts || 0),
+            Number(rp.blockedAttempts || 0)
+          ),
+          passRecord: mergedPassRecord,
+        };
+        PAID_PASS_LEDGER.set(normKey, mergedItem);
+        if (mergedPassRecord && !SERVER_PASS_STORE.has(normKey)) {
+          SERVER_PASS_STORE.set(normKey, mergedPassRecord);
+        }
+      }
+    }
+  }
+
   const ra = remote.analytics;
   if (ra && typeof ra === 'object') {
     const scalarFields = [
@@ -1264,43 +1327,41 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
       for (const pt of buildRolling14DaysServer()) {
         byDate.set(pt.date, { ...pt });
       }
+      const mergePoint = (cur, pt) => ({
+        date: pt.date,
+        visits: Math.max(cur.visits, Number(pt.visits || 0)),
+        studioSessions: Math.max(cur.studioSessions, Number(pt.studioSessions || 0)),
+        bouquetsSealed: Math.max(cur.bouquetsSealed, Number(pt.bouquetsSealed || 0)),
+        recipientUnwraps: Math.max(cur.recipientUnwraps, Number(pt.recipientUnwraps || 0)),
+        passUnlocks: Math.max(cur.passUnlocks, Number(pt.passUnlocks || 0)),
+        revenueUsdCents: Math.max(cur.revenueUsdCents || 0, Number(pt.revenueUsdCents || 0)),
+        revenuePhpCentavos: Math.max(cur.revenuePhpCentavos || 0, Number(pt.revenuePhpCentavos || 0)),
+        paidSingle: Math.max(cur.paidSingle || 0, Number(pt.paidSingle || 0)),
+        paid7d: Math.max(cur.paid7d || 0, Number(pt.paid7d || 0)),
+        paid30d: Math.max(cur.paid30d || 0, Number(pt.paid30d || 0)),
+      });
+      const blankPoint = (date) => ({
+        date,
+        visits: 0,
+        studioSessions: 0,
+        bouquetsSealed: 0,
+        recipientUnwraps: 0,
+        passUnlocks: 0,
+        revenueUsdCents: 0,
+        revenuePhpCentavos: 0,
+        paidSingle: 0,
+        paid7d: 0,
+        paid30d: 0,
+      });
       for (const pt of OWNER_ANALYTICS_STATE.dailySeries) {
         if (!pt || !pt.date) continue;
-        const cur = byDate.get(pt.date) || {
-          date: pt.date,
-          visits: 0,
-          studioSessions: 0,
-          bouquetsSealed: 0,
-          recipientUnwraps: 0,
-          passUnlocks: 0,
-        };
-        byDate.set(pt.date, {
-          date: pt.date,
-          visits: Math.max(cur.visits, Number(pt.visits || 0)),
-          studioSessions: Math.max(cur.studioSessions, Number(pt.studioSessions || 0)),
-          bouquetsSealed: Math.max(cur.bouquetsSealed, Number(pt.bouquetsSealed || 0)),
-          recipientUnwraps: Math.max(cur.recipientUnwraps, Number(pt.recipientUnwraps || 0)),
-          passUnlocks: Math.max(cur.passUnlocks, Number(pt.passUnlocks || 0)),
-        });
+        const cur = byDate.get(pt.date) || blankPoint(pt.date);
+        byDate.set(pt.date, mergePoint(cur, pt));
       }
       for (const pt of ra.dailySeries) {
         if (!pt || !pt.date) continue;
-        const cur = byDate.get(pt.date) || {
-          date: pt.date,
-          visits: 0,
-          studioSessions: 0,
-          bouquetsSealed: 0,
-          recipientUnwraps: 0,
-          passUnlocks: 0,
-        };
-        byDate.set(pt.date, {
-          date: pt.date,
-          visits: Math.max(cur.visits, Number(pt.visits || 0)),
-          studioSessions: Math.max(cur.studioSessions, Number(pt.studioSessions || 0)),
-          bouquetsSealed: Math.max(cur.bouquetsSealed, Number(pt.bouquetsSealed || 0)),
-          recipientUnwraps: Math.max(cur.recipientUnwraps, Number(pt.recipientUnwraps || 0)),
-          passUnlocks: Math.max(cur.passUnlocks, Number(pt.passUnlocks || 0)),
-        });
+        const cur = byDate.get(pt.date) || blankPoint(pt.date);
+        byDate.set(pt.date, mergePoint(cur, pt));
       }
       OWNER_ANALYTICS_STATE.dailySeries = Array.from(byDate.values())
         .sort((a, b) => a.date.localeCompare(b.date))
@@ -1360,6 +1421,7 @@ export async function savePersistentOwnerVaultServer() {
       issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
       pinAttemptTracker: pinEntries.slice(0, 200),
       testerVouchers: Array.from(TESTER_VOUCHER_LEDGER.values()).slice(0, 250),
+      paidPasses: Array.from(PAID_PASS_LEDGER.values()).slice(0, 350),
       analytics: OWNER_ANALYTICS_STATE,
     };
 
@@ -1391,7 +1453,27 @@ export async function savePersistentOwnerVaultServer() {
   }
 }
 
-export function recordPaidPassIssuanceServer(pass) {
+function resolvePaidPassCatalogMeta(tier, region) {
+  const cleanRegion = region === 'PH' ? 'PH' : 'INTL';
+  const cleanTier = isValidTier(tier) ? tier : 'pass_7d';
+  const entry = PRICING_CATALOG[cleanRegion]?.[cleanTier];
+  if (entry) {
+    return {
+      region: cleanRegion,
+      tier: cleanTier,
+      currency: entry.currency,
+      amountMinor: entry.amountMinor,
+    };
+  }
+  return {
+    region: cleanRegion,
+    tier: cleanTier,
+    currency: cleanRegion === 'PH' ? 'PHP' : 'USD',
+    amountMinor: cleanRegion === 'PH' ? 9900 : 499,
+  };
+}
+
+export function recordPaidPassIssuanceServer(pass, options = {}) {
   if (!pass || !pass.passKey || isTesterVoucherPassServer(pass)) return false;
   const normKey = normalizePassKey(pass.passKey);
   if (
@@ -1404,31 +1486,72 @@ export function recordPaidPassIssuanceServer(pass) {
   if (ISSUED_PASS_KEYS.has(normKey)) return false;
 
   ISSUED_PASS_KEYS.add(normKey);
-  const tier = pass.tier;
-  const region = pass.region === 'PH' ? 'PH' : 'INTL';
+  const { tier, region, currency, amountMinor } = resolvePaidPassCatalogMeta(pass.tier, pass.region);
+  const bucket = getTodayDailyBucketServer();
 
   if (tier === 'single') {
     OWNER_ANALYTICS_STATE.passesIssued.single += 1;
-    if (region === 'PH') OWNER_ANALYTICS_STATE.revenuePhpCentavos += 4900;
-    else OWNER_ANALYTICS_STATE.revenueUsdCents += 299;
+    bucket.paidSingle = (bucket.paidSingle || 0) + 1;
   } else if (tier === 'pass_7d') {
     OWNER_ANALYTICS_STATE.passesIssued.pass_7d += 1;
-    if (region === 'PH') OWNER_ANALYTICS_STATE.revenuePhpCentavos += 9900;
-    else OWNER_ANALYTICS_STATE.revenueUsdCents += 499;
+    bucket.paid7d = (bucket.paid7d || 0) + 1;
   } else if (tier === 'pass_30d') {
     OWNER_ANALYTICS_STATE.passesIssued.pass_30d += 1;
-    if (region === 'PH') OWNER_ANALYTICS_STATE.revenuePhpCentavos += 19900;
-    else OWNER_ANALYTICS_STATE.revenueUsdCents += 899;
+    bucket.paid30d = (bucket.paid30d || 0) + 1;
   }
 
-  getTodayDailyBucketServer().passUnlocks += 1;
-  pushAnalyticsEventServer(
-    'monetization',
-    'pass_issued',
-    `Issued ${tier} Studio Pass (${normKey})`,
-    'mobile',
-    region
-  );
+  if (region === 'PH') {
+    OWNER_ANALYTICS_STATE.revenuePhpCentavos += amountMinor;
+    bucket.revenuePhpCentavos = (bucket.revenuePhpCentavos || 0) + amountMinor;
+  } else {
+    OWNER_ANALYTICS_STATE.revenueUsdCents += amountMinor;
+    bucket.revenueUsdCents = (bucket.revenueUsdCents || 0) + amountMinor;
+  }
+
+  bucket.passUnlocks += 1;
+
+  if (!PAID_PASS_LEDGER.has(normKey)) {
+    const channel =
+      typeof options.channel === 'string' && options.channel
+        ? options.channel
+        : pass.paymentProvider === 'bayadgate'
+        ? 'bayadgate'
+        : pass.paymentProvider === 'paymongo'
+        ? 'paymongo'
+        : pass.paymentProvider === 'kofi'
+        ? 'kofi'
+        : 'manual_gcash';
+    const label =
+      String(options.label || '')
+        .replace(/[|:]/g, ' ')
+        .trim()
+        .slice(0, 32) ||
+      (pass.paymentProvider === 'owner_manual' ? 'Direct Buyer' : `${pass.paymentProvider || 'checkout'} Buyer`);
+    PAID_PASS_LEDGER.set(normKey, {
+      passKey: normKey,
+      label,
+      tier,
+      region,
+      channel,
+      amountMinor,
+      currency,
+      retentionDays: pass.retentionDays || (tier === 'pass_30d' ? 36500 : 90),
+      isEternalKeepsake: Boolean(pass.isEternalKeepsake),
+      createdAt: pass.createdAt,
+      expiresAt: pass.expiresAt,
+      status: pass.primaryDeviceHash ? 'claimed' : 'unclaimed',
+      claimedDeviceHash: pass.primaryDeviceHash || '',
+      bouquetsCreated: pass.dailyUsageCount || 0,
+      blockedAttempts: 0,
+      boundBouquetCode: pass.boundBouquetCode || null,
+      passRecord: pass,
+    });
+  }
+
+  const eventSummary =
+    options.summary ||
+    `Issued ${tier} Studio Pass (${region} ${currency === 'PHP' ? `₱${(amountMinor / 100).toFixed(0)}` : `$${(amountMinor / 100).toFixed(2)}`})`;
+  pushAnalyticsEventServer('monetization', 'pass_issued', eventSummary, 'mobile', region);
   return true;
 }
 
@@ -1562,6 +1685,11 @@ function getTodayDailyBucketServer() {
       bouquetsSealed: 0,
       recipientUnwraps: 0,
       passUnlocks: 0,
+      revenueUsdCents: 0,
+      revenuePhpCentavos: 0,
+      paidSingle: 0,
+      paid7d: 0,
+      paid30d: 0,
     };
     OWNER_ANALYTICS_STATE.dailySeries.push(bucket);
     if (OWNER_ANALYTICS_STATE.dailySeries.length > 14) {
@@ -1751,6 +1879,121 @@ function serializeTesterVoucherList(nowMs = Date.now()) {
     });
   }
   return result.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+function serializePaidPassList(nowMs = Date.now()) {
+  const result = [];
+  for (const [, item] of PAID_PASS_LEDGER.entries()) {
+    const passRecord = SERVER_PASS_STORE.get(item.passKey) || item.passRecord;
+    const isRevoked =
+      REVOKED_VOUCHER_KEYS.has(item.passKey) ||
+      item.status === 'revoked' ||
+      passRecord?.secondaryDeviceHash === REVOKED_PASS_SENTINEL;
+    const isExpired = !isRevoked && Date.parse(item.expiresAt) <= nowMs;
+    const claimedHash = passRecord?.primaryDeviceHash || item.claimedDeviceHash || '';
+    const status = isRevoked
+      ? 'revoked'
+      : isExpired
+      ? 'expired'
+      : claimedHash
+      ? 'claimed'
+      : 'unclaimed';
+
+    result.push({
+      ...item,
+      status,
+      claimedDeviceHash: claimedHash,
+      boundBouquetCode: passRecord?.boundBouquetCode ?? item.boundBouquetCode ?? null,
+      bouquetsCreated: Math.max(item.bouquetsCreated || 0, passRecord?.dailyUsageCount || 0),
+    });
+  }
+  return result.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+const ALLOWED_MANUAL_CHANNELS = new Set([
+  'manual_gcash',
+  'manual_maya',
+  'manual_bank',
+  'kofi',
+  'bayadgate',
+  'paymongo',
+  'other',
+]);
+
+export function mintPaidPassServer({
+  tier = 'pass_7d',
+  region = 'PH',
+  label = 'Direct Buyer',
+  channel = 'manual_gcash',
+  nowMs = Date.now(),
+} = {}) {
+  const cleanTier = isValidTier(tier) ? tier : 'pass_7d';
+  const cleanRegion = isValidRegion(region) ? region : 'PH';
+  const cleanLabel =
+    String(label || 'Direct Buyer')
+      .replace(/[|:]/g, ' ')
+      .trim()
+      .slice(0, 32) || 'Direct Buyer';
+  const cleanChannel = ALLOWED_MANUAL_CHANNELS.has(channel) ? channel : 'manual_gcash';
+  const { currency, amountMinor } = resolvePaidPassCatalogMeta(cleanTier, cleanRegion);
+
+  const signedPass = createSignedStudioPassServer({
+    tier: cleanTier,
+    region: cleanRegion,
+    deviceTokenHash: '',
+    boundBouquetCode: null,
+    paymentProvider: 'owner_manual',
+    paymentReference: cleanChannel.replace(/[^a-z0-9_]/gi, '').slice(0, 16) || 'manual',
+    nowMs,
+  });
+
+  SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
+  const priceText =
+    currency === 'PHP'
+      ? `₱${(amountMinor / 100).toFixed(0)}`
+      : `$${(amountMinor / 100).toFixed(2)}`;
+
+  recordPaidPassIssuanceServer(signedPass, {
+    label: cleanLabel,
+    channel: cleanChannel,
+    summary: `Minted Paid ${cleanTier} Key (${cleanRegion} ${priceText}) for "${cleanLabel}" via ${cleanChannel}`,
+  });
+
+  const ledgerEntry = PAID_PASS_LEDGER.get(signedPass.passKey);
+  return {
+    pass: signedPass,
+    paidPass: ledgerEntry,
+  };
+}
+
+export function revokePaidPassServer(passKey) {
+  const targetKey = normalizePassKey(passKey || '');
+  if (!isValidPassKeyFormat(targetKey)) {
+    return { ok: false, message: 'Invalid pass key.' };
+  }
+  REVOKED_VOUCHER_KEYS.add(targetKey);
+  const existingPass = SERVER_PASS_STORE.get(targetKey);
+  if (existingPass) {
+    const revokedPass = {
+      ...existingPass,
+      secondaryDeviceHash: REVOKED_PASS_SENTINEL,
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    };
+    SERVER_PASS_STORE.set(targetKey, revokedPass);
+  }
+  if (PAID_PASS_LEDGER.has(targetKey)) {
+    const item = PAID_PASS_LEDGER.get(targetKey);
+    item.status = 'revoked';
+    PAID_PASS_LEDGER.set(targetKey, item);
+  }
+  pushAnalyticsEventServer(
+    'security',
+    'paid_key_revoked',
+    `Owner revoked Paid Key ${targetKey}`,
+    'desktop',
+    'INTL'
+  );
+  return { ok: true, targetKey };
 }
 
 export async function saveStudioPassToFirestoreRest(pass) {
@@ -2944,6 +3187,43 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           );
         }
         await savePersistentOwnerVaultServer();
+      } else {
+        const existingPaid = PAID_PASS_LEDGER.get(passKey);
+        const { currency, amountMinor } = resolvePaidPassCatalogMeta(
+          result.updatedPass.tier,
+          result.updatedPass.region
+        );
+        PAID_PASS_LEDGER.set(passKey, {
+          passKey,
+          label: existingPaid?.label || `${result.updatedPass.paymentProvider || 'Studio'} Buyer`,
+          tier: result.updatedPass.tier,
+          region: result.updatedPass.region === 'PH' ? 'PH' : 'INTL',
+          channel:
+            existingPaid?.channel ||
+            (result.updatedPass.paymentProvider === 'kofi'
+              ? 'kofi'
+              : result.updatedPass.paymentProvider === 'bayadgate'
+              ? 'bayadgate'
+              : result.updatedPass.paymentProvider === 'paymongo'
+              ? 'paymongo'
+              : 'manual_gcash'),
+          amountMinor: existingPaid?.amountMinor ?? amountMinor,
+          currency: existingPaid?.currency || currency,
+          retentionDays: result.updatedPass.retentionDays || 90,
+          isEternalKeepsake: Boolean(result.updatedPass.isEternalKeepsake),
+          createdAt: result.updatedPass.createdAt,
+          expiresAt: result.updatedPass.expiresAt,
+          status: 'claimed',
+          claimedDeviceHash: result.updatedPass.primaryDeviceHash,
+          bouquetsCreated: Math.max(
+            existingPaid?.bouquetsCreated || 0,
+            result.updatedPass.dailyUsageCount || 0
+          ),
+          blockedAttempts: existingPaid?.blockedAttempts || 0,
+          boundBouquetCode: result.updatedPass.boundBouquetCode || null,
+          passRecord: result.updatedPass,
+        });
+        await savePersistentOwnerVaultServer();
       }
 
       sendJson(res, 200, {
@@ -3036,6 +3316,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           adminSessionToken,
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
         });
         return true;
       }
@@ -3058,7 +3339,112 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ok: true,
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
         });
+        return true;
+      }
+
+      // 4D-2. Mint a Paid Studio Pass Key (`single`, `pass_7d`, or `pass_30d`) for direct/manual buyers
+      if (actionType === 'mint_paid_pass') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+
+        const minted = mintPaidPassServer({
+          tier: parsed.tier,
+          region: parsed.region,
+          label: parsed.label,
+          channel: parsed.channel,
+        });
+
+        await saveStudioPassToFirestoreRest(minted.pass);
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          paidPass: minted.paidPass,
+          pass: minted.pass,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4D-3. Revoke a Paid Pass Key Immediately
+      if (actionType === 'revoke_paid_pass') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        const revResult = revokePaidPassServer(parsed.passKey);
+        if (!revResult.ok) {
+          sendJson(res, 400, { ok: false, message: revResult.message });
+          return true;
+        }
+        const existingPass =
+          SERVER_PASS_STORE.get(revResult.targetKey) ||
+          (await fetchStudioPassFromFirestoreRest(revResult.targetKey));
+        if (existingPass) {
+          const revokedPass = {
+            ...existingPass,
+            secondaryDeviceHash: REVOKED_PASS_SENTINEL,
+            expiresAt: new Date(Date.now() - 1000).toISOString(),
+          };
+          SERVER_PASS_STORE.set(revResult.targetKey, revokedPass);
+          await saveStudioPassToFirestoreRest(revokedPass);
+        }
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4D-4. Admin-Only Gemini Analytics Advisor (Sanitized Metrics Only + Quota Protection)
+      if (actionType === 'owner_analytics_ai') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await syncRealAnalyticsSnapshotServer();
+        const aiResult = await runOwnerAnalyticsAi({
+          analytics: OWNER_ANALYTICS_STATE,
+          mode: parsed.mode === 'overview' ? 'overview' : 'question',
+          question: typeof parsed.question === 'string' ? parsed.question : '',
+          history: Array.isArray(parsed.history) ? parsed.history : [],
+          adminKey: deviceTokenHash || 'owner',
+        });
+
+        sendJson(res, aiResult.statusCode || (aiResult.ok ? 200 : 500), aiResult);
         return true;
       }
 
@@ -3300,6 +3686,15 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
         entry.passRecord = check.updatedPass;
         TESTER_VOUCHER_LEDGER.set(normKey, entry);
+        await savePersistentOwnerVaultServer();
+      } else if (PAID_PASS_LEDGER.has(normKey)) {
+        const entry = PAID_PASS_LEDGER.get(normKey);
+        if (incrementUsage) {
+          entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
+        }
+        entry.boundBouquetCode = check.updatedPass.boundBouquetCode || entry.boundBouquetCode || null;
+        entry.passRecord = check.updatedPass;
+        PAID_PASS_LEDGER.set(normKey, entry);
         await savePersistentOwnerVaultServer();
       }
 

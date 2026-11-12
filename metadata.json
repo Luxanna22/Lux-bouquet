@@ -3,5 +3,8 @@
   "description": "Craft a custom digital flower bouquet with a handwritten greeting card, romantic voice keepsakes (mixtape, vinyl, plushie, music box), and shareable gift unwrapping.",
   "requestFramePermissions": [
     "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }
