@@ -56,7 +56,7 @@ export type FlowerType =
   | 'imperialFritillaria'
   | 'julietAustinRose'
   | 'lunariaHonesty'
-  // 10 'Others' Category Designs (Butterflies, Hearts, Sparkles, Romantics & Fun)
+  // 18 'Others' Category Designs (Butterflies, Hearts, Sparkles, Pets, Celestial & Romantic Gifts)
   | 'monarchButterfly'
   | 'crystalButterfly'
   | 'velvetHeartPick'
@@ -67,6 +67,14 @@ export type FlowerType =
   | 'waxSealCrest'
   | 'fairyLightGarland'
   | 'ribbonBowPick'
+  | 'sittingDog'
+  | 'lovelyCats'
+  | 'moon'
+  | 'sun'
+  | 'star'
+  | 'clouds'
+  | 'chocolates'
+  | 'ringInABox'
   // 12 'Seasonal' Category Designs (Christmas & Winter Holiday Wonderland)
   | 'poinsettia'
   | 'hollyBerries'
@@ -1386,6 +1394,86 @@ export const FLOWER_CATALOG: FlowerCatalogMeta[] = [
     defaultPetalColor: '#f9a8d4',
     defaultCenterColor: '#e11d48',
     defaultScale: 0.96,
+    isOther: true
+  },
+  {
+    type: 'sittingDog',
+    name: 'Sitting Puppy Companion',
+    shortName: 'Sitting Dog',
+    subtitle: 'Loyal sitting pup with satin bow collar',
+    defaultPetalColor: '#d97706',
+    defaultCenterColor: '#e11d48',
+    defaultScale: 1.0,
+    isOther: true
+  },
+  {
+    type: 'lovelyCats',
+    name: 'Lovely Cuddling Cats',
+    shortName: 'Lovely Cats',
+    subtitle: 'Twin kittens with intertwined heart tails',
+    defaultPetalColor: '#f97316',
+    defaultCenterColor: '#fff7ed',
+    defaultScale: 1.02,
+    isOther: true
+  },
+  {
+    type: 'moon',
+    name: 'Dreaming Crescent Moon',
+    shortName: 'Moon',
+    subtitle: 'Gilded crescent moon & starry filigree',
+    defaultPetalColor: '#fde047',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 1.0,
+    isOther: true
+  },
+  {
+    type: 'sun',
+    name: 'Radiant Golden Sun',
+    shortName: 'Sun',
+    subtitle: 'Warm sunburst medallion & rays',
+    defaultPetalColor: '#facc15',
+    defaultCenterColor: '#ea580c',
+    defaultScale: 1.02,
+    isOther: true
+  },
+  {
+    type: 'star',
+    name: 'Celestial Wishing Star',
+    shortName: 'Star',
+    subtitle: 'Faceted 5-point star & stardust trail',
+    defaultPetalColor: '#fde047',
+    defaultCenterColor: '#f59e0b',
+    defaultScale: 0.98,
+    isOther: true
+  },
+  {
+    type: 'clouds',
+    name: 'Dreamy Silver-Lined Clouds',
+    shortName: 'Clouds',
+    subtitle: 'Soft billowy clouds & pastel lining',
+    defaultPetalColor: '#f0f9ff',
+    defaultCenterColor: '#93c5fd',
+    defaultScale: 1.04,
+    isOther: true
+  },
+  {
+    type: 'chocolates',
+    name: 'Heart Box of Chocolates',
+    shortName: 'Chocolates',
+    subtitle: 'Artisan bonbons & truffles in velvet box',
+    defaultPetalColor: '#e11d48',
+    defaultCenterColor: '#78350f',
+    defaultScale: 1.02,
+    isOther: true
+  },
+  {
+    type: 'ringInABox',
+    name: 'Diamond Ring in Velvet Box',
+    shortName: 'Ring in a Box',
+    subtitle: 'Sparkling solitaire ring in hinged box',
+    defaultPetalColor: '#be123c',
+    defaultCenterColor: '#fbbf24',
+    defaultScale: 1.02,
     isOther: true
   },
   // ==========================================================================

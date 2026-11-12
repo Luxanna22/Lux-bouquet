@@ -106,7 +106,16 @@ const SHARE_FLOWER_TYPES: FlowerType[] = [
   'glassOrnament',
   'gingerbreadHeart',
   'sleighBellsPick',
-  'cinnamonStarAnise'
+  'cinnamonStarAnise',
+  // 8 Additional 'Others' Category Designs (Appended to preserve existing compact index stability)
+  'sittingDog',
+  'lovelyCats',
+  'moon',
+  'sun',
+  'star',
+  'clouds',
+  'chocolates',
+  'ringInABox'
 ];
 
 const SHARE_WRAP_STYLES: typeWrapStyle[] = [
@@ -1206,17 +1215,225 @@ export class RomanticMusicBox {
 export const musicBox = new RomanticMusicBox();
 
 /**
- * Downscales & compresses an uploaded image file to a compact JPEG data URL
- * so photocards render crisply, save to local drafts, and export cleanly in PNGs.
+ * Strict File Upload Security Constants & Binary Magic-Byte Signature Validators
+ * Prevents uploading oversized files, non-images, SVG/HTML script payloads, or
+ * arbitrary files disguised with an image extension ("pretending to be img").
  */
-export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 380): Promise<string> {
+export const MAX_UPLOAD_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB strict ceiling
+export const MIN_UPLOAD_IMAGE_BYTES = 32; // Reject empty/bogus files
+export const MAX_UPLOAD_IMAGE_DIMENSION_PX = 10000; // Decompression-bomb guard
+
+export const ALLOWED_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+] as const;
+
+export const ALLOWED_IMAGE_EXTENSIONS = [
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
+] as const;
+
+export type AllowedRasterImageMime = (typeof ALLOWED_IMAGE_MIME_TYPES)[number];
+
+/**
+ * Inspects the raw binary header bytes (magic numbers) of an uploaded file
+ * to verify it is genuinely a raster image (JPEG, PNG, GIF, or WebP) and
+ * does not contain disguised HTML/SVG/script/executable headers.
+ */
+export function detectImageMagicBytes(
+  bytes?: Uint8Array | null
+): AllowedRasterImageMime | null {
+  if (!bytes || bytes.length < 12) return null;
+
+  // Scan the leading bytes for disguised text/script/HTML/SVG/PHP payloads
+  const sampleLen = Math.min(bytes.length, 512);
+  let asciiSample = '';
+  for (let i = 0; i < sampleLen; i++) {
+    const c = bytes[i];
+    if (c >= 32 && c <= 126) {
+      asciiSample += String.fromCharCode(c).toLowerCase();
+    }
+  }
+  if (
+    asciiSample.includes('<script') ||
+    asciiSample.includes('<svg') ||
+    asciiSample.includes('<!doctype') ||
+    asciiSample.includes('<html') ||
+    asciiSample.includes('<?php') ||
+    asciiSample.includes('javascript:')
+  ) {
+    return null;
+  }
+
+  // 1. JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  // 2. PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  // 3. GIF87a / GIF89a: 47 49 46 38 (37|39) 61
+  if (
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  ) {
+    return 'image/gif';
+  }
+
+  // 4. WebP: "RIFF" (52 49 46 46) .... "WEBP" (57 45 42 50)
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+
+  return null;
+}
+
+/**
+ * Validates an uploaded file's size, extension, declared MIME type, and
+ * binary magic-byte header signature before allowing it into the Studio.
+ */
+export async function validateUploadedImageFile(
+  file: { name?: string; type?: string; size?: number; slice?: (start?: number, end?: number) => Blob } | null | undefined,
+  headerBytes?: Uint8Array | null
+): Promise<{ valid: boolean; error?: string; detectedMime?: AllowedRasterImageMime }> {
+  if (!file || typeof file.size !== 'number') {
+    return { valid: false, error: 'No image file selected.' };
+  }
+
+  if (file.size < MIN_UPLOAD_IMAGE_BYTES) {
+    return { valid: false, error: 'Selected file is empty or too small to be a valid image.' };
+  }
+
+  if (file.size > MAX_UPLOAD_IMAGE_BYTES) {
+    return {
+      valid: false,
+      error: 'Image is too large (maximum file size is 5 MB).',
+    };
+  }
+
+  const rawName = String(file.name || '').trim().toLowerCase();
+  const hasAllowedExt = rawName
+    ? ALLOWED_IMAGE_EXTENSIONS.some((ext) => rawName.endsWith(ext))
+    : true;
+  if (!hasAllowedExt) {
+    return {
+      valid: false,
+      error: 'Unsupported file format. Only JPG, PNG, WebP, or GIF photos are allowed.',
+    };
+  }
+
+  const rawMime = String(file.type || '').trim().toLowerCase();
+  // Explicitly reject SVG or non-raster MIME types even if someone tries to upload them
+  if (
+    rawMime &&
+    !(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(rawMime) &&
+    rawMime !== 'image/jpg' &&
+    rawMime !== 'image/pjpeg'
+  ) {
+    return {
+      valid: false,
+      error: 'Unsupported file type. Only genuine JPG, PNG, WebP, or GIF images are allowed.',
+    };
+  }
+
+  let effectiveHeader = headerBytes;
+  if (!effectiveHeader && typeof file.slice === 'function') {
+    try {
+      effectiveHeader = await readFileHeaderBytes(file as File, 512);
+    } catch {
+      return {
+        valid: false,
+        error: 'Could not inspect image header for security verification.',
+      };
+    }
+  }
+
+  if (effectiveHeader) {
+    const detectedMime = detectImageMagicBytes(effectiveHeader);
+    if (!detectedMime) {
+      return {
+        valid: false,
+        error: 'Security check failed: file is not a genuine JPG, PNG, WebP, or GIF image.',
+      };
+    }
+    return { valid: true, detectedMime };
+  }
+
+  return { valid: true };
+}
+
+async function readFileHeaderBytes(file: File, byteCount = 512): Promise<Uint8Array> {
+  const slice = file.slice(0, byteCount);
+  if (typeof slice.arrayBuffer === 'function') {
+    const buf = await slice.arrayBuffer();
+    return new Uint8Array(buf);
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read image file'));
+    reader.onerror = () => reject(new Error('Could not inspect file header.'));
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(new Uint8Array(reader.result));
+      } else {
+        reject(new Error('Could not inspect file header.'));
+      }
+    };
+    reader.readAsArrayBuffer(slice);
+  });
+}
+
+/**
+ * Validates, decodes, downscales & re-encodes an uploaded raster image file to a clean
+ * JPEG data URL (stripping EXIF/metadata payloads and rejecting disguised non-image files).
+ */
+export async function compressUploadedPhotoToDataUrl(
+  file: File,
+  maxDimension = 380
+): Promise<string> {
+  // Step 1: Validate metadata, size, extension, MIME, and binary magic bytes
+  const securityCheck = await validateUploadedImageFile(file);
+  if (!securityCheck.valid) {
+    throw new Error(securityCheck.error || 'Security check failed: invalid image file.');
+  }
+
+  // Step 2: Read, decode in browser Image element, verify pixel dimensions, and re-encode via Canvas
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image file.'));
     reader.onload = () => {
       const rawDataUrl = typeof reader.result === 'string' ? reader.result : '';
-      if (!rawDataUrl) {
-        reject(new Error('Empty image data'));
+      if (!rawDataUrl || !rawDataUrl.startsWith('data:image/')) {
+        reject(new Error('Invalid image data.'));
         return;
       }
       if (typeof document === 'undefined') {
@@ -1226,8 +1443,19 @@ export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 380): 
       const img = new Image();
       img.onload = () => {
         try {
-          let width = img.naturalWidth || img.width || 320;
-          let height = img.naturalHeight || img.height || 320;
+          const naturalW = img.naturalWidth || img.width || 0;
+          const naturalH = img.naturalHeight || img.height || 0;
+          if (
+            naturalW <= 0 ||
+            naturalH <= 0 ||
+            naturalW > MAX_UPLOAD_IMAGE_DIMENSION_PX ||
+            naturalH > MAX_UPLOAD_IMAGE_DIMENSION_PX
+          ) {
+            reject(new Error('Image dimensions are invalid or exceed safety limits.'));
+            return;
+          }
+          let width = naturalW;
+          let height = naturalH;
           if (width > maxDimension || height > maxDimension) {
             if (width >= height) {
               height = Math.round((height * maxDimension) / width);
@@ -1242,19 +1470,25 @@ export function compressUploadedPhotoToDataUrl(file: File, maxDimension = 380): 
           canvas.height = Math.max(1, height);
           const ctx = canvas.getContext('2d');
           if (!ctx) {
-            resolve(rawDataUrl);
+            reject(new Error('Unable to process image safely on this device.'));
             return;
           }
           ctx.fillStyle = '#FFFDF9';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           const compressed = canvas.toDataURL('image/jpeg', 0.78);
-          resolve(compressed || rawDataUrl);
+          if (!compressed || !compressed.startsWith('data:image/jpeg')) {
+            reject(new Error('Could not encode image safely.'));
+            return;
+          }
+          resolve(compressed);
         } catch {
-          resolve(rawDataUrl);
+          reject(new Error('Could not process uploaded image.'));
         }
       };
-      img.onerror = () => resolve(rawDataUrl);
+      // CRITICAL: Never resolve rawDataUrl when decoding fails — reject disguised/corrupted files!
+      img.onerror = () =>
+        reject(new Error('File is not a valid readable image and was blocked for security.'));
       img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);

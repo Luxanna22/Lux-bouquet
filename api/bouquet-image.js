@@ -1,8 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {
+  applySecurityHeaders,
+  checkRateLimit,
+  extractClientIp,
+} from './_lib/securityGuard.js';
 
 const memoryStore = new Map();
+const MAX_PNG_BUFFER_BYTES = 5 * 1024 * 1024; // 5 MB max PNG binary size
 
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'amiable-alloy-sw1sf';
 const FIRESTORE_DATABASE_ID =
@@ -84,21 +90,37 @@ async function loadBuffer(id) {
   return null;
 }
 
+function isPngMagicBuffer(buf) {
+  if (!buf || buf.length < 16 || buf.length > MAX_PNG_BUFFER_BYTES) return false;
+  return (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  );
+}
+
 function extractBase64Png(rawInput) {
   if (!rawInput || typeof rawInput !== 'string') return null;
   const trimmed = rawInput.trim();
   const base64Part = trimmed.includes('base64,')
     ? trimmed.slice(trimmed.indexOf('base64,') + 7)
     : trimmed;
-  if (!base64Part) return null;
+  if (!base64Part || base64Part.length > 7_200_000) return null;
   try {
-    return Buffer.from(base64Part, 'base64');
+    const buf = Buffer.from(base64Part, 'base64');
+    return isPngMagicBuffer(buf) ? buf : null;
   } catch {
     return null;
   }
 }
 
 export default async function handler(req, res) {
+  applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -106,6 +128,21 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.statusCode = 200;
     res.end();
+    return;
+  }
+
+  const clientIp = extractClientIp(req);
+  const rateCheck = checkRateLimit({
+    ip: clientIp,
+    bucket: req.method === 'POST' ? 'api_bouquet_image_write' : 'api_bouquet_image_read',
+    maxRequests: req.method === 'POST' ? 20 : 90,
+    windowMs: 60_000,
+  });
+  res.setHeader('X-RateLimit-Remaining', String(rateCheck.remaining));
+  if (!rateCheck.allowed) {
+    res.statusCode = 429;
+    res.setHeader('Retry-After', String(rateCheck.retryAfterSec));
+    res.end('Too many image requests. Please wait a moment and try again.');
     return;
   }
 
@@ -168,13 +205,27 @@ export default async function handler(req, res) {
         );
         return;
       } else {
+        let totalBytes = 0;
+        let tooLarge = false;
         await new Promise((resolve, reject) => {
           req.on('data', (chunk) => {
+            if (tooLarge) return;
+            totalBytes += chunk.length;
+            if (totalBytes > 7_500_000) {
+              tooLarge = true;
+              resolve();
+              return;
+            }
             rawBody += chunk.toString();
           });
           req.on('end', resolve);
           req.on('error', reject);
         });
+        if (tooLarge) {
+          res.statusCode = 413;
+          res.end('Image payload exceeds the 5 MB limit');
+          return;
+        }
       }
 
       let imageStr = '';

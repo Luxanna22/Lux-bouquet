@@ -1292,3 +1292,472 @@ export const CinnamonStarAniseSVG: React.FC<FlowerSVGProps> = ({ petalColor, cen
     </g>
   </g>
 );
+
+// ============================================================================
+// PART D: 8 NEW 'OTHERS' PETS, CELESTIAL & ROMANTIC GIFT KEEPSAKES
+// ============================================================================
+
+/** 74. Sitting Dog (Loyal puppy companion with satin bow collar) */
+export const SittingDogSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g transform="translate(0, -6)">
+    {/* Wagging Curved Tail */}
+    <path
+      d="M20,18 C36,14 42,-2 33,-10 C28,-14 24,-4 25,8"
+      fill="none"
+      stroke={petalColor}
+      strokeWidth="6.5"
+      strokeLinecap="round"
+    />
+    {/* Seated Body & Hind Legs */}
+    <ellipse cx="-16" cy="22" rx="11" ry="13" fill={petalColor} stroke="#78350f" strokeWidth="1.2" opacity="0.92" />
+    <ellipse cx="16" cy="22" rx="11" ry="13" fill={petalColor} stroke="#78350f" strokeWidth="1.2" opacity="0.92" />
+    <path
+      d="M-19,28 C-21,6 -15,-8 0,-8 C15,-8 21,6 19,28 C14,34 -14,34 -19,28 Z"
+      fill={petalColor}
+      stroke="#78350f"
+      strokeWidth="1.3"
+    />
+    {/* Soft Cream Chest Patch */}
+    <ellipse cx="0" cy="12" rx="10.5" ry="13" fill="#fffbeb" opacity="0.92" />
+    {/* Front Paws */}
+    <ellipse cx="-8" cy="30" rx="6.5" ry="4.5" fill="#fffbeb" stroke="#78350f" strokeWidth="1.1" />
+    <ellipse cx="8" cy="30" rx="6.5" ry="4.5" fill="#fffbeb" stroke="#78350f" strokeWidth="1.1" />
+    <ellipse cx="-18" cy="31" rx="6" ry="4" fill={petalColor} stroke="#78350f" strokeWidth="1.1" />
+    <ellipse cx="18" cy="31" rx="6" ry="4" fill={petalColor} stroke="#78350f" strokeWidth="1.1" />
+    {/* Satin Collar & Bow + Golden Heart Tag */}
+    <path
+      d="M-14,-4 Q0,2 14,-4"
+      fill="none"
+      stroke={centerColor}
+      strokeWidth="4.5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M0,-2 C-10,-8 -12,2 -2,0 Z M0,-2 C10,-8 12,2 2,0 Z"
+      fill={centerColor}
+      stroke="#ffffff"
+      strokeWidth="0.9"
+    />
+    <circle cx="0" cy="3.5" r="3.2" fill="#fbbf24" stroke="#ffffff" strokeWidth="0.8" />
+    {/* Floppy Puppy Ears */}
+    <path
+      d="M-15,-34 C-29,-32 -33,-12 -23,-6 C-17,-3 -14,-14 -14,-26 Z"
+      fill={petalColor}
+      stroke="#78350f"
+      strokeWidth="1.3"
+    />
+    <path
+      d="M15,-34 C29,-32 33,-12 23,-6 C17,-3 14,-14 14,-26 Z"
+      fill={petalColor}
+      stroke="#78350f"
+      strokeWidth="1.3"
+    />
+    {/* Rounded Puppy Head */}
+    <circle cx="0" cy="-21" r="18.5" fill={petalColor} stroke="#78350f" strokeWidth="1.3" />
+    {/* Cream Muzzle & Forehead Blaze */}
+    <ellipse cx="0" cy="-15" rx="10.5" ry="8" fill="#fffbeb" />
+    <path d="M0,-35 C-3,-28 -2,-22 0,-18 C2,-22 3,-28 0,-35 Z" fill="#fffbeb" opacity="0.85" />
+    {/* Expressive Eyes & Brow Dots */}
+    <circle cx="-6.8" cy="-23" r="2.8" fill="#1c1917" />
+    <circle cx="-7.6" cy="-24" r="1" fill="#ffffff" />
+    <circle cx="6.8" cy="-23" r="2.8" fill="#1c1917" />
+    <circle cx="6.0" cy="-24" r="1" fill="#ffffff" />
+    <ellipse cx="-11" cy="-18" rx="3" ry="1.6" fill="#fda4af" opacity="0.65" />
+    <ellipse cx="11" cy="-18" rx="3" ry="1.6" fill="#fda4af" opacity="0.65" />
+    {/* Cute Nose, Smile & Pink Tongue */}
+    <ellipse cx="0" cy="-17.5" rx="4" ry="2.8" fill="#292524" />
+    <path d="M-4,-13 Q0,-10 0,-14.5 Q0,-10 4,-13" fill="none" stroke="#451a03" strokeWidth="1.2" strokeLinecap="round" />
+    <path d="M-2.2,-11.5 Q0,-6.5 2.2,-11.5 Z" fill="#fb7185" />
+  </g>
+);
+
+/** 75. Lovely Cats (Twin cuddling kittens with intertwined heart tails) */
+export const LovelyCatsSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g transform="translate(0, -6)">
+    {/* Intertwined Tails Forming a Heart Shape Behind/Beside Them */}
+    <path
+      d="M-22,24 C-42,8 -38,-18 -20,-12"
+      fill="none"
+      stroke={petalColor}
+      strokeWidth="4.8"
+      strokeLinecap="round"
+    />
+    <path
+      d="M22,24 C42,8 38,-18 20,-12"
+      fill="none"
+      stroke={centerColor}
+      strokeWidth="4.8"
+      strokeLinecap="round"
+    />
+    {/* Left Kitten (Petal Color Coat) */}
+    <g transform="translate(-12, 2)">
+      <path
+        d="M-13,26 C-15,6 -10,-6 0,-6 C10,-6 14,6 12,26 Z"
+        fill={petalColor}
+        stroke="#7c2d12"
+        strokeWidth="1.2"
+      />
+      <ellipse cx="0" cy="12" rx="7" ry="10" fill="#fffdf9" opacity="0.78" />
+      {/* Pointed Cat Ears */}
+      <polygon points="-12,-22 -14,-37 -3,-27" fill={petalColor} stroke="#7c2d12" strokeWidth="1.2" strokeLinejoin="round" />
+      <polygon points="-10,-24 -12,-33 -5,-27" fill="#fda4af" opacity="0.8" />
+      <polygon points="10,-22 13,-37 2,-27" fill={petalColor} stroke="#7c2d12" strokeWidth="1.2" strokeLinejoin="round" />
+      <polygon points="8,-24 11,-33 4,-27" fill="#fda4af" opacity="0.8" />
+      {/* Head tilted lovingly right */}
+      <circle cx="0" cy="-17" r="13.5" fill={petalColor} stroke="#7c2d12" strokeWidth="1.2" />
+      {/* Happy Closed Arc Eyes & Whiskers */}
+      <path d="M-7,-18 Q-4.5,-21 -2,-18 M3,-18 Q5.5,-21 8,-18" fill="none" stroke="#292524" strokeWidth="1.3" strokeLinecap="round" />
+      <polygon points="-1.8,-14 1.8,-14 0,-11.8" fill="#fb7185" />
+      <path d="M-3,-10.5 Q0,-8.5 0,-12 Q0,-8.5 3,-10.5" fill="none" stroke="#451a03" strokeWidth="1" strokeLinecap="round" />
+      <path d="M-9,-14 L-17,-15 M-9,-12 L-17,-11" stroke="#7c2d12" strokeWidth="0.8" strokeLinecap="round" opacity="0.7" />
+      {/* Neck Collar */}
+      <path d="M-9,-5 Q0,-1 9,-5" fill="none" stroke="#e11d48" strokeWidth="2.6" strokeLinecap="round" />
+      <circle cx="0" cy="-2" r="2.2" fill="#fbbf24" />
+    </g>
+    {/* Right Kitten (Center Color Coat) Nuzzling Left Kitten */}
+    <g transform="translate(12, 4)">
+      <path
+        d="M-12,24 C-14,6 -9,-6 0,-6 C10,-6 14,6 13,24 Z"
+        fill={centerColor}
+        stroke="#78716c"
+        strokeWidth="1.2"
+      />
+      {/* Pointed Cat Ears */}
+      <polygon points="-10,-21 -12,-35 -2,-26" fill={centerColor} stroke="#78716c" strokeWidth="1.2" strokeLinejoin="round" />
+      <polygon points="-8,-23 -10,-31 -4,-26" fill="#fda4af" opacity="0.8" />
+      <polygon points="11,-21 14,-35 3,-26" fill={centerColor} stroke="#78716c" strokeWidth="1.2" strokeLinejoin="round" />
+      <polygon points="9,-23 12,-31 5,-26" fill="#fda4af" opacity="0.8" />
+      <circle cx="0" cy="-16" r="13" fill={centerColor} stroke="#78716c" strokeWidth="1.2" />
+      <path d="M-7,-17 Q-4.5,-20 -2,-17 M2.5,-17 Q5,-20 7.5,-17" fill="none" stroke="#292524" strokeWidth="1.3" strokeLinecap="round" />
+      <polygon points="-1.8,-13 1.8,-13 0,-10.8" fill="#fb7185" />
+      <path d="M-3,-9.5 Q0,-7.5 0,-11 Q0,-7.5 3,-9.5" fill="none" stroke="#57534e" strokeWidth="1" strokeLinecap="round" />
+      <path d="M9,-13 L17,-14 M9,-11 L17,-10" stroke="#78716c" strokeWidth="0.8" strokeLinecap="round" opacity="0.7" />
+      <path d="M-8.5,-4.5 Q0,-1 8.5,-4.5" fill="none" stroke="#f472b6" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="0" cy="-1.8" r="2.1" fill="#fbbf24" />
+    </g>
+    {/* Floating Love Heart Above the Cuddling Pair */}
+    <path
+      d="M0,-35 C-4,-41 -12,-38 -12,-31 C-12,-25 0,-19 0,-15 C0,-19 12,-25 12,-31 C12,-38 4,-41 0,-35 Z"
+      fill="#f43f5e"
+      stroke="#ffffff"
+      strokeWidth="1.2"
+    />
+  </g>
+);
+
+/** 76. Crescent Moon (Gilded crescent moon with starry filigree) */
+export const CrescentMoonSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g transform="translate(0, -8)">
+    {/* Soft Outer Celestial Halo */}
+    <circle cx="-2" cy="-8" r="40" fill={petalColor} opacity="0.16" />
+    {/* Sculpted Crescent Moon Body */}
+    <path
+      d="M14,-44 C-16,-44 -38,-20 -38,8 C-38,36 -14,52 16,44 C-4,40 -16,24 -16,4 C-16,-16 -2,-34 14,-44 Z"
+      fill={petalColor}
+      stroke={centerColor}
+      strokeWidth="2"
+      strokeLinejoin="round"
+    />
+    {/* Inner Dashed Gold Filigree Contour */}
+    <path
+      d="M6,-36 C-16,-32 -30,-14 -30,8 C-30,28 -14,42 6,40"
+      fill="none"
+      stroke={centerColor}
+      strokeWidth="1.2"
+      strokeDasharray="3 2.5"
+      opacity="0.8"
+    />
+    {/* Serene Sleeping Moon Profile Accent & Rosy Cheek */}
+    <path d="M-22,-2 Q-17,2 -12,-2" fill="none" stroke="#92400e" strokeWidth="1.4" strokeLinecap="round" />
+    <ellipse cx="-20" cy="5" rx="3.8" ry="2.2" fill="#fda4af" opacity="0.65" />
+    {/* Hanging Star Charm Dangling from Upper Horn */}
+    <line x1="12" y1="-42" x2="12" y2="-18" stroke={centerColor} strokeWidth="1.2" strokeDasharray="2 2" />
+    <path
+      d="M12,-27 L14.5,-20.5 L21,-18 L14.5,-15.5 L12,-9 L9.5,-15.5 L3,-18 L9.5,-20.5 Z"
+      fill={centerColor}
+      stroke="#ffffff"
+      strokeWidth="0.9"
+    />
+    {/* Companion Twinkling Stars */}
+    <path
+      d="M24,6 L25.5,11 L30.5,12.5 L25.5,14 L24,19 L22.5,14 L17.5,12.5 L22.5,11 Z"
+      fill={petalColor}
+      stroke={centerColor}
+      strokeWidth="0.9"
+    />
+    <circle cx="2" cy="-2" r="2.2" fill="#ffffff" />
+    <circle cx="26" cy="-12" r="2" fill={centerColor} />
+  </g>
+);
+
+/** 77. Radiant Sun (Ornate golden sunburst medallion with alternating rays) */
+export const RadiantSunSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    <g transform="translate(0, -8)">
+      {/* Warm Solar Corona Glow */}
+      <circle cx="0" cy="0" r="44" fill={petalColor} opacity="0.18" />
+      {/* 8 Flame/Wavy Secondary Rays (Rotated 22.5 deg) */}
+      {Array.from({ length: 8 }, (_, i) => i * 45 + 22.5).map((deg) => (
+        <path
+          key={`sun-wavy-${deg}`}
+          d="M-4,-20 Q-6,-32 0,-42 Q6,-32 4,-20 Z"
+          fill={centerColor}
+          opacity="0.88"
+          transform={`rotate(${deg})`}
+        />
+      ))}
+      {/* 8 Primary Faceted Sunbeams */}
+      {Array.from({ length: 8 }, (_, i) => i * 45).map((deg) => (
+        <g key={`sun-ray-${deg}`} transform={`rotate(${deg})`}>
+          <polygon
+            points="0,-46 -6,-21 6,-21"
+            fill={petalColor}
+            stroke={centerColor}
+            strokeWidth="1.1"
+            strokeLinejoin="round"
+          />
+          <line x1="0" y1="-22" x2="0" y2="-42" stroke="#ffffff" strokeWidth="0.9" opacity="0.7" />
+        </g>
+      ))}
+      {/* Central Sun Disc */}
+      <circle cx="0" cy="0" r="22" fill={petalColor} stroke={centerColor} strokeWidth="2.2" />
+      <circle
+        cx="0"
+        cy="0"
+        r="17.5"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="1.2"
+        strokeDasharray="3 2.5"
+        opacity="0.85"
+      />
+      {/* Serene Warm Face Details */}
+      <path d="M-9,-3 Q-6,-7 -3,-3 M3,-3 Q6,-7 9,-3" fill="none" stroke="#9a3412" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M-5,4 Q0,8.5 5,4" fill="none" stroke="#9a3412" strokeWidth="1.5" strokeLinecap="round" />
+      <ellipse cx="-10" cy="2" rx="3.2" ry="1.8" fill={centerColor} opacity="0.45" />
+      <ellipse cx="10" cy="2" rx="3.2" ry="1.8" fill={centerColor} opacity="0.45" />
+    </g>
+  </g>
+);
+
+/** 78. Celestial Wishing Star (Faceted 5-point star with shooting stardust trail) */
+export const CelestialStarSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    <g transform="translate(0, -10)">
+      {/* Sweeping Stardust Trail Arcs */}
+      <path
+        d="M-38,26 C-24,34 8,32 28,14"
+        fill="none"
+        stroke={centerColor}
+        strokeWidth="2.2"
+        strokeDasharray="4 3"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+      <path
+        d="M-32,34 C-14,40 16,36 36,20"
+        fill="none"
+        stroke={petalColor}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.75"
+      />
+      {/* Main 5-Point Dimensional Star */}
+      <polygon
+        points="0,-40 10.5,-13 39,-11 16.5,7 24,35 0,19 -24,35 -16.5,7 -39,-11 -10.5,-13"
+        fill={petalColor}
+        stroke={centerColor}
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      {/* Inner Faceted Bevel Highlights */}
+      <polygon
+        points="0,-32 7,-10 29,-9 12,5 17,26 0,14 -17,26 -12,5 -29,-9 -7,-10"
+        fill="#ffffff"
+        opacity="0.35"
+      />
+      <line x1="0" y1="-38" x2="0" y2="18" stroke={centerColor} strokeWidth="1" opacity="0.55" />
+      <line x1="-36" y1="-10" x2="15" y2="6" stroke={centerColor} strokeWidth="1" opacity="0.55" />
+      <line x1="36" y1="-10" x2="-15" y2="6" stroke={centerColor} strokeWidth="1" opacity="0.55" />
+      {/* Center Gem Medallion */}
+      <circle cx="0" cy="0" r="6.5" fill="#ffffff" stroke={centerColor} strokeWidth="1.5" />
+      {/* Companion Sparkles */}
+      <circle cx="-28" cy="20" r="3" fill={petalColor} stroke="#ffffff" strokeWidth="0.8" />
+      <circle cx="28" cy="-24" r="2.6" fill={centerColor} />
+    </g>
+  </g>
+);
+
+/** 79. Dreamy Clouds (Soft billowy cumulus clouds with silver/pastel lining & sparkles) */
+export const DreamyCloudsSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    <g transform="translate(0, -8)">
+      {/* Back Companion Cloud Puff (Center Color Tint) */}
+      <path
+        d="M-30,10 C-42,10 -46,-2 -36,-8 C-36,-20 -20,-26 -10,-18 C-2,-28 16,-26 22,-14 C34,-16 44,-6 40,6 C40,12 30,14 18,14 Z"
+        fill={centerColor}
+        opacity="0.65"
+        transform="translate(8, -10)"
+      />
+      {/* Main Front Billowy Cloud */}
+      <path
+        d="M-32,18 C-44,18 -50,8 -44,-2 C-42,-12 -30,-16 -22,-12 C-18,-26 -2,-32 10,-22 C18,-30 34,-26 36,-12 C46,-10 50,2 44,12 C40,18 32,18 24,18 Z"
+        fill={petalColor}
+        stroke={centerColor}
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      {/* Inner Soft Highlight Puff Curves */}
+      <path
+        d="M-28,6 C-26,-4 -16,-8 -8,-2 M-6,-10 C2,-20 16,-18 20,-6 M16,2 C24,-4 34,0 34,8"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="2"
+        strokeLinecap="round"
+        opacity="0.9"
+      />
+      {/* Delicate Hanging Star & Dewdrop Below Cloud */}
+      <line x1="-14" y1="18" x2="-14" y2="30" stroke={centerColor} strokeWidth="1.2" strokeDasharray="2 2" />
+      <circle cx="-14" cy="33" r="3" fill={centerColor} />
+      <line x1="12" y1="18" x2="12" y2="28" stroke="#fbbf24" strokeWidth="1.2" strokeDasharray="2 2" />
+      <polygon points="12,26 14,31 19,33 14,35 12,40 10,35 5,33 10,31" fill="#fde047" stroke="#f59e0b" strokeWidth="0.7" />
+    </g>
+  </g>
+);
+
+/** 80. Box of Chocolates (Heart-shaped velvet bonbon box with assorted truffles & bow) */
+export const ChocolateBoxSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    <g transform="translate(0, -8)">
+      {/* Outer Velvet Heart Box Rim */}
+      <path
+        d="M0,-24 C-14,-44 -46,-34 -46,-6 C-46,20 -14,34 0,48 C14,34 46,20 46,-6 C46,-34 14,-44 0,-24 Z"
+        fill={petalColor}
+        stroke="#fbbf24"
+        strokeWidth="2.2"
+        strokeLinejoin="round"
+      />
+      {/* Gold Foil Inner Box Tray */}
+      <path
+        d="M0,-18 C-12,-35 -38,-27 -38,-5 C-38,16 -11,28 0,40 C11,28 38,16 38,-5 C38,-27 12,-35 0,-18 Z"
+        fill="#fef3c7"
+        stroke="#d97706"
+        strokeWidth="1.3"
+      />
+      {/* 5 Artisan Chocolate Truffles in Paper Cups */}
+      {/* Top-Left Swirl Bonbon */}
+      <g transform="translate(-17, -9)">
+        <circle cx="0" cy="0" r="9.5" fill="#fffdf9" stroke="#d97706" strokeWidth="0.9" strokeDasharray="2 1.5" />
+        <circle cx="0" cy="0" r="7.5" fill={centerColor} />
+        <path d="M-4,-2 Q0,-5 4,-2 M-4,2 Q0,5 4,2" fill="none" stroke="#fde68a" strokeWidth="1.1" strokeLinecap="round" />
+      </g>
+      {/* Top-Right White Chocolate Heart Truffle */}
+      <g transform="translate(17, -9)">
+        <circle cx="0" cy="0" r="9.5" fill="#fffdf9" stroke="#d97706" strokeWidth="0.9" strokeDasharray="2 1.5" />
+        <circle cx="0" cy="0" r="7.5" fill="#fffbeb" stroke={centerColor} strokeWidth="1" />
+        <path d="M0,-3 C-2,-6 -6,-4 -6,-1 C-6,2 0,5 0,6 C0,5 6,2 6,-1 C6,-4 2,-6 0,-3 Z" fill={petalColor} />
+      </g>
+      {/* Center Square Praline */}
+      <g transform="translate(0, 4)">
+        <circle cx="0" cy="0" r="10" fill="#fffdf9" stroke="#d97706" strokeWidth="0.9" strokeDasharray="2 1.5" />
+        <rect x="-6.5" y="-6.5" width="13" height="13" rx="3" fill={centerColor} stroke="#a16207" strokeWidth="0.9" />
+        <line x1="-5" y1="-5" x2="5" y2="5" stroke="#fda4af" strokeWidth="1.2" strokeLinecap="round" />
+        <line x1="-5" y1="5" x2="5" y2="-5" stroke="#fda4af" strokeWidth="1.2" strokeLinecap="round" />
+      </g>
+      {/* Lower-Left Milk Chocolate Dome */}
+      <g transform="translate(-14, 14)">
+        <circle cx="0" cy="0" r="8.2" fill="#fffdf9" stroke="#d97706" strokeWidth="0.8" strokeDasharray="2 1.5" />
+        <circle cx="0" cy="0" r="6.4" fill="#92400e" />
+        <circle cx="0" cy="0" r="2" fill="#fbbf24" />
+      </g>
+      {/* Lower-Right Dark Truffle */}
+      <g transform="translate(14, 14)">
+        <circle cx="0" cy="0" r="8.2" fill="#fffdf9" stroke="#d97706" strokeWidth="0.8" strokeDasharray="2 1.5" />
+        <circle cx="0" cy="0" r="6.4" fill={centerColor} />
+        <path d="M-3,0 L3,0 M0,-3 L0,3" stroke="#ffffff" strokeWidth="1.1" strokeLinecap="round" />
+      </g>
+      {/* Decorative Satin Bow on Top Cleft */}
+      <path
+        d="M0,-23 C-12,-34 -16,-18 -2,-20 Z M0,-23 C12,-34 16,-18 2,-20 Z"
+        fill="#fbbf24"
+        stroke="#ffffff"
+        strokeWidth="0.9"
+      />
+      <circle cx="0" cy="-21.5" r="2.8" fill="#f59e0b" stroke="#ffffff" strokeWidth="0.8" />
+    </g>
+  </g>
+);
+
+/** 81. Ring in a Box (Open velvet jewelry box with sparkling diamond solitaire ring) */
+export const RingInBoxSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g>
+    <g transform="translate(0, -6)">
+      {/* Upper Hinged Open Velvet Lid */}
+      <path
+        d="M-30,-8 L-26,-34 C-24,-42 24,-42 26,-34 L30,-8 Z"
+        fill={petalColor}
+        stroke={centerColor}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      {/* Cream Satin Lid Interior Lining */}
+      <path
+        d="M-24,-10 L-21,-30 C-19,-36 19,-36 21,-30 L24,-10 Z"
+        fill="#fffdf9"
+        stroke="#fde68a"
+        strokeWidth="1"
+      />
+      {/* Velvet Cushion Slot Base */}
+      <ellipse cx="0" cy="-6" rx="31" ry="9" fill="#fffbeb" stroke={centerColor} strokeWidth="1.4" />
+      <path d="M-20,-6 Q0,-2 20,-6" fill="none" stroke="#d6d3d1" strokeWidth="2.2" strokeLinecap="round" />
+
+      {/* Golden Ring Band Rising from Velvet Slot */}
+      <path
+        d="M-13,-5 A13,13 0 1,1 13,-5"
+        fill="none"
+        stroke={centerColor}
+        strokeWidth="4.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M-13,-5 A13,13 0 1,1 13,-5"
+        fill="none"
+        stroke="#fef08a"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      {/* Prong Setting & Brilliant Cut Diamond Solitaire */}
+      <polygon
+        points="-5,-17 5,-17 9,-24 5,-29 -5,-29 -9,-24"
+        fill="#e0f2fe"
+        stroke="#38bdf8"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <polygon points="-5,-29 5,-29 0,-17" fill="#ffffff" opacity="0.92" />
+      <line x1="-9" y1="-24" x2="9" y2="-24" stroke="#7dd3fc" strokeWidth="0.9" />
+      {/* Diamond Sparkle Rays */}
+      <path
+        d="M0,-43 L1.5,-37 L7,-35.5 L1.5,-34 L0,-28 L-1.5,-34 L-7,-35.5 L-1.5,-37 Z"
+        fill="#ffffff"
+        stroke={centerColor}
+        strokeWidth="0.7"
+      />
+      <circle cx="-14" cy="-26" r="1.8" fill="#ffffff" />
+      <circle cx="14" cy="-26" r="1.8" fill="#ffffff" />
+
+      {/* Lower Velvet Ring Box Base */}
+      <path
+        d="M-32,-6 L32,-6 L27,26 C26,32 -26,32 -27,26 Z"
+        fill={petalColor}
+        stroke={centerColor}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      {/* Gold Clasp & Trim on Front of Box */}
+      <path d="M-30,2 Q0,8 30,2" fill="none" stroke={centerColor} strokeWidth="1.4" opacity="0.85" />
+      <rect x="-6" y="1" width="12" height="6" rx="3" fill={centerColor} stroke="#ffffff" strokeWidth="0.8" />
+    </g>
+  </g>
+);
+

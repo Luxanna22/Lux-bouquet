@@ -1,6 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {
+  applySecurityHeaders,
+  checkRateLimit,
+  extractClientIp,
+  isSuspiciousBotRequest,
+  readSafeJsonBody,
+} from './_lib/securityGuard.js';
 
 const shortCodeMemory = new Map();
 
@@ -202,6 +209,7 @@ async function saveToFirestoreRest(code, payload, extra = {}) {
 }
 
 export default async function handler(req, res) {
+  applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -209,6 +217,26 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.statusCode = 200;
     res.end();
+    return;
+  }
+
+  const clientIp = extractClientIp(req);
+  const rateCheck = checkRateLimit({
+    ip: clientIp,
+    bucket: req.method === 'POST' ? 'api_shorten_write' : 'api_shorten_read',
+    maxRequests: req.method === 'POST' ? 25 : 90,
+    windowMs: 60_000,
+  });
+  res.setHeader('X-RateLimit-Remaining', String(rateCheck.remaining));
+  if (!rateCheck.allowed) {
+    res.statusCode = 429;
+    res.setHeader('Retry-After', String(rateCheck.retryAfterSec));
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(
+      JSON.stringify({
+        error: 'Too many requests. Please wait a moment and try again.',
+      })
+    );
     return;
   }
 
@@ -270,20 +298,23 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     try {
-      let bodyObj = {};
-      if (req.body && typeof req.body === 'object') {
-        bodyObj = req.body;
-      } else {
-        let raw = '';
-        await new Promise((resolve, reject) => {
-          req.on('data', (chunk) => {
-            raw += chunk.toString();
-          });
-          req.on('end', resolve);
-          req.on('error', reject);
-        });
-        bodyObj = JSON.parse(raw || '{}');
+      const parsedBody = await readSafeJsonBody(req, 1200 * 1024);
+      if (!parsedBody.ok) {
+        res.statusCode = parsedBody.status;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ error: parsedBody.error }));
+        return;
       }
+
+      const botCheck = isSuspiciousBotRequest(req, parsedBody.body);
+      if (botCheck.suspicious) {
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ error: 'Suspicious automated request blocked.' }));
+        return;
+      }
+
+      const bodyObj = parsedBody.body || {};
 
       const code = String(bodyObj.code || '').replace(/[^0-9A-Za-z_-]/g, '');
       const payload = String(bodyObj.payload || '').trim();

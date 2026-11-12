@@ -1,4 +1,10 @@
 import crypto from 'node:crypto';
+import {
+  applySecurityHeaders,
+  checkRateLimit,
+  extractClientIp,
+  sanitizeJsonValue,
+} from './securityGuard.js';
 
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
@@ -1751,19 +1757,19 @@ async function readRequestBody(req) {
       const params = new URLSearchParams(trimmed);
       const dataStr = params.get('data') || '{}';
       try {
-        return { raw: trimmed, parsed: JSON.parse(dataStr) };
+        return { raw: trimmed, parsed: sanitizeJsonValue(JSON.parse(dataStr)) };
       } catch {
         return { raw: trimmed, parsed: {} };
       }
     }
     try {
-      return { raw: trimmed, parsed: JSON.parse(trimmed) };
+      return { raw: trimmed, parsed: sanitizeJsonValue(JSON.parse(trimmed)) };
     } catch {
       const params = new URLSearchParams(trimmed);
       const dataStr = params.get('data');
       if (dataStr) {
         try {
-          return { raw: trimmed, parsed: JSON.parse(dataStr) };
+          return { raw: trimmed, parsed: sanitizeJsonValue(JSON.parse(dataStr)) };
         } catch {
           return { raw: trimmed, parsed: {} };
         }
@@ -1936,6 +1942,7 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
 }
 
 export async function handlePaymentEndpoint(req, res, forcedPathname) {
+  applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -1951,6 +1958,27 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
   if (!pathname.startsWith('/api/payments/') && !pathname.startsWith('/api/webhooks/')) {
     return false;
+  }
+
+  const clientIp = extractClientIp(req);
+  const rateCheck = checkRateLimit({
+    ip: clientIp,
+    bucket: `payment:${pathname}`,
+    maxRequests: 40,
+    windowMs: 60_000,
+  });
+  if (typeof res.setHeader === 'function') {
+    res.setHeader('X-RateLimit-Remaining', String(rateCheck.remaining));
+  }
+  if (!rateCheck.allowed) {
+    if (typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rateCheck.retryAfterSec));
+    }
+    sendJson(res, 429, {
+      ok: false,
+      message: 'Too many payment or pass verification attempts. Please wait a minute and try again.',
+    });
+    return true;
   }
 
   try {

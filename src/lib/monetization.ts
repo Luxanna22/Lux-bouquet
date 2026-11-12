@@ -210,6 +210,14 @@ const FLOWER_LABELS: Record<string, string> = {
   frostedPinecone: 'Pinecone',
   glassOrnament: 'Glass Bauble',
   cinnamonStarAnise: 'Spice & Anise',
+  sittingDog: 'Sitting Dog',
+  lovelyCats: 'Lovely Cats',
+  moon: 'Crescent Moon',
+  sun: 'Radiant Sun',
+  star: 'Wishing Star',
+  clouds: 'Dreamy Clouds',
+  chocolates: 'Chocolates',
+  ringInABox: 'Ring in a Box',
 };
 
 const WRAP_LABELS: Record<string, string> = {

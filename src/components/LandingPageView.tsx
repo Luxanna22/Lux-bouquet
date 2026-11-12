@@ -805,40 +805,61 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   // Direct DOM refs for Depth-of-Field Foreground Camera-Lens Petals (2.15x & 2.65x fast scroll parallax)
   const fgPetalLeftRef = useRef<HTMLDivElement | null>(null);
   const fgPetalRightRef = useRef<HTMLDivElement | null>(null);
+  const cachedVhRef = useRef<number>(typeof window !== 'undefined' ? window.innerHeight : 900);
+  const fgPetalsHiddenRef = useRef<boolean>(false);
+  const bloomHiddenRef = useRef<boolean>(false);
 
-  // Pure GPU-driven scroll bloom & foreground depth-of-field petal updater (0 React re-renders during scroll)
-  const applyHeroBloomProgress = (scrollTop: number) => {
+  // Pure GPU-driven scroll bloom & foreground depth-of-field petal updater (0 React re-renders, 0 layout reads during scroll)
+  const applyHeroBloomProgress = (scrollTop: number, forceSync = false) => {
     const nextScrolled = scrollTop > 44;
     if (isNavScrolledRef.current !== nextScrolled) {
       isNavScrolledRef.current = nextScrolled;
       setIsNavScrolled(nextScrolled);
     }
-    const vh = scrollWrapperRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 900);
+    const vh = cachedVhRef.current;
 
-    // 1. Update Foreground Depth-of-Field Camera-Lens Petals across the entire scroll height
-    if (fgPetalLeftRef.current) {
-      const p0 = computeForegroundPetalTransform(scrollTop, 0, vh, isDarkModeRef.current);
-      fgPetalLeftRef.current.style.opacity = String(p0.opacity);
-      fgPetalLeftRef.current.style.transform = `translate3d(${p0.translateX}px, ${p0.translateY}px, 0) rotate(${p0.rotateDeg}deg) scale(${p0.scale})`;
-    }
-    if (fgPetalRightRef.current) {
-      const p1 = computeForegroundPetalTransform(scrollTop, 1, vh, isDarkModeRef.current);
-      fgPetalRightRef.current.style.opacity = String(p1.opacity);
-      fgPetalRightRef.current.style.transform = `translate3d(${p1.translateX}px, ${p1.translateY}px, 0) rotate(${p1.rotateDeg}deg) scale(${p1.scale})`;
+    // 1. Update Foreground Depth-of-Field Camera-Lens Petals (early-exit once scrolled past fade zone)
+    const p0 = computeForegroundPetalTransform(scrollTop, 0, vh, isDarkModeRef.current);
+    const p1 = computeForegroundPetalTransform(scrollTop, 1, vh, isDarkModeRef.current);
+    const petalsInvisible = p0.opacity <= 0.005 && p1.opacity <= 0.005;
+
+    if (petalsInvisible) {
+      if (!fgPetalsHiddenRef.current || forceSync) {
+        fgPetalsHiddenRef.current = true;
+        if (fgPetalLeftRef.current) {
+          fgPetalLeftRef.current.style.opacity = '0';
+          fgPetalLeftRef.current.style.visibility = 'hidden';
+        }
+        if (fgPetalRightRef.current) {
+          fgPetalRightRef.current.style.opacity = '0';
+          fgPetalRightRef.current.style.visibility = 'hidden';
+        }
+      }
+    } else {
+      if (fgPetalsHiddenRef.current || forceSync) {
+        fgPetalsHiddenRef.current = false;
+        if (fgPetalLeftRef.current) fgPetalLeftRef.current.style.visibility = 'visible';
+        if (fgPetalRightRef.current) fgPetalRightRef.current.style.visibility = 'visible';
+      }
+      if (fgPetalLeftRef.current) {
+        fgPetalLeftRef.current.style.opacity = String(p0.opacity);
+        fgPetalLeftRef.current.style.transform = `translate3d(${p0.translateX}px, ${p0.translateY}px, 0) rotate(${p0.rotateDeg}deg) scale(${p0.scale})`;
+      }
+      if (fgPetalRightRef.current) {
+        fgPetalRightRef.current.style.opacity = String(p1.opacity);
+        fgPetalRightRef.current.style.transform = `translate3d(${p1.translateX}px, ${p1.translateY}px, 0) rotate(${p1.rotateDeg}deg) scale(${p1.scale})`;
+      }
     }
 
-    // 2. Update Hero Background Watercolor Bloom
+    // 2. Update Hero Background Watercolor Bloom (early-exit once scrolled past 420px)
     const rootEl = bloomRootRef.current;
     if (!rootEl) return;
 
-    // Blooms from scrollTop 0 -> 420px across the Hero
     const maxScroll = 420;
     const rawP = Math.min(1, Math.max(0, scrollTop / maxScroll));
-    // Smooth cubic ease-out for organic petal unfurling
     const bloomEase = 1 - Math.pow(1 - rawP, 2.2);
 
     const baseOpacity = isDarkModeRef.current ? 0.76 : 0.94;
-    // Holds gentle presence behind the title from 0..28% scroll, then dissolves smoothly by 100%
     const fadeFactor =
       rawP <= 0.28
         ? 1
@@ -846,12 +867,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     const finalOpacity = baseOpacity * fadeFactor;
 
     if (finalOpacity <= 0.008) {
-      rootEl.style.opacity = '0';
-      rootEl.style.visibility = 'hidden';
+      if (!bloomHiddenRef.current || forceSync) {
+        bloomHiddenRef.current = true;
+        rootEl.style.opacity = '0';
+        rootEl.style.visibility = 'hidden';
+      }
       return;
     }
 
-    rootEl.style.visibility = 'visible';
+    if (bloomHiddenRef.current || forceSync) {
+      bloomHiddenRef.current = false;
+      rootEl.style.visibility = 'visible';
+    }
     rootEl.style.opacity = finalOpacity.toFixed(3);
 
     // Overall flower starts as a generous, lush couture blossom (1.02) and expands to full wide bloom (1.48) on scroll
@@ -862,41 +889,29 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     if (bloomOuterRingRef.current) {
       const outerScale = 0.94 + bloomEase * 0.34;
       const outerRot = bloomEase * 24;
-      bloomOuterRingRef.current.setAttribute(
-        'transform',
-        `translate(260, 170) rotate(${outerRot.toFixed(2)}) scale(${outerScale.toFixed(3)})`
-      );
+      bloomOuterRingRef.current.style.transform = `translate3d(260px, 170px, 0) rotate(${outerRot.toFixed(2)}deg) scale(${outerScale.toFixed(3)})`;
     }
     if (bloomMidRingRef.current) {
       const midScale = 0.86 + bloomEase * 0.38;
       const midRot = -bloomEase * 18;
-      bloomMidRingRef.current.setAttribute(
-        'transform',
-        `translate(260, 170) rotate(${midRot.toFixed(2)}) scale(${midScale.toFixed(3)})`
-      );
+      bloomMidRingRef.current.style.transform = `translate3d(260px, 170px, 0) rotate(${midRot.toFixed(2)}deg) scale(${midScale.toFixed(3)})`;
     }
     if (bloomInnerCorollaRef.current) {
       const innerScale = 0.82 + bloomEase * 0.42;
       const innerRot = bloomEase * 32;
-      bloomInnerCorollaRef.current.setAttribute(
-        'transform',
-        `translate(260, 170) rotate(${innerRot.toFixed(2)}) scale(${innerScale.toFixed(3)})`
-      );
+      bloomInnerCorollaRef.current.style.transform = `translate3d(260px, 170px, 0) rotate(${innerRot.toFixed(2)}deg) scale(${innerScale.toFixed(3)})`;
     }
     if (bloomBotanicalLeavesRef.current) {
       const spreadX = 0.96 + bloomEase * 0.36;
       const spreadY = 0.96 + bloomEase * 0.22;
-      bloomBotanicalLeavesRef.current.setAttribute(
-        'transform',
-        `translate(260, 170) scale(${spreadX.toFixed(3)}, ${spreadY.toFixed(3)})`
-      );
+      bloomBotanicalLeavesRef.current.style.transform = `translate3d(260px, 170px, 0) scale(${spreadX.toFixed(3)}, ${spreadY.toFixed(3)})`;
     }
   };
 
   // Re-sync bloom opacity when theme switches
   useEffect(() => {
     const wrapper = scrollWrapperRef.current;
-    applyHeroBloomProgress(wrapper ? wrapper.scrollTop : 0);
+    applyHeroBloomProgress(wrapper ? wrapper.scrollTop : 0, true);
   }, [isDarkMode]);
 
   // Initialize Lenis smooth water-like scrolling on the LandingPageView scroll container
@@ -905,7 +920,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     const content = scrollContentRef.current;
     if (!wrapper || !content) return;
 
-    applyHeroBloomProgress(wrapper.scrollTop);
+    const updateCachedVh = () => {
+      cachedVhRef.current = wrapper.clientHeight || window.innerHeight || 900;
+    };
+    updateCachedVh();
+    window.addEventListener('resize', updateCachedVh, { passive: true });
+
+    applyHeroBloomProgress(wrapper.scrollTop, true);
 
     const lenis = new Lenis({
       wrapper,
@@ -922,11 +943,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       applyHeroBloomProgress(e.scroll);
     });
 
-    const handleNativeScroll = () => {
-      applyHeroBloomProgress(wrapper.scrollTop);
-    };
-    wrapper.addEventListener('scroll', handleNativeScroll, { passive: true });
-
     let rafId = 0;
     const raf = (time: number) => {
       lenis.raf(time);
@@ -935,7 +951,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     rafId = requestAnimationFrame(raf);
 
     return () => {
-      wrapper.removeEventListener('scroll', handleNativeScroll);
+      window.removeEventListener('resize', updateCachedVh);
       cancelAnimationFrame(rafId);
       lenis.destroy();
       lenisRef.current = null;
@@ -1383,46 +1399,55 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           style={{
             opacity: isDarkMode ? 0.42 : 0.62,
             transform: 'translate3d(0px, 0px, 0) rotate(-10deg) scale(1.08)',
-            filter: 'blur(13px)',
             willChange: 'transform, opacity',
+            contain: 'layout style',
           }}
         >
-          <svg
-            viewBox="0 0 220 150"
-            className="w-full h-full overflow-visible animate-fluid-badge-left"
+          <div
+            className="w-full h-full"
+            style={{
+              filter: 'blur(12px)',
+              transform: 'translateZ(0)',
+              backfaceVisibility: 'hidden',
+            }}
           >
-            <defs>
-              <linearGradient id="dof-lens-petal-blush" x1="12%" y1="82%" x2="88%" y2="14%">
-                <stop
-                  offset="0%"
-                  stopColor={isDarkMode ? '#D97B98' : '#F49AB9'}
-                  stopOpacity={isDarkMode ? '0.68' : '0.82'}
-                />
-                <stop
-                  offset="55%"
-                  stopColor={isDarkMode ? '#F2ACC2' : '#FBD0DF'}
-                  stopOpacity={isDarkMode ? '0.54' : '0.72'}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={isDarkMode ? '#FCE0E9' : '#FFF4F8'}
-                  stopOpacity="0.28"
-                />
-              </linearGradient>
-            </defs>
-            <path
-              d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-              fill="url(#dof-lens-petal-blush)"
-            />
-            <path
-              d="M 28,122 Q 112,92 184,26"
-              fill="none"
-              stroke={isDarkMode ? '#FAD2DF' : '#FFF7FA'}
-              strokeWidth="2.4"
-              strokeOpacity="0.55"
-              strokeLinecap="round"
-            />
-          </svg>
+            <svg
+              viewBox="0 0 220 150"
+              className="w-full h-full overflow-visible"
+            >
+              <defs>
+                <linearGradient id="dof-lens-petal-blush" x1="12%" y1="82%" x2="88%" y2="14%">
+                  <stop
+                    offset="0%"
+                    stopColor={isDarkMode ? '#D97B98' : '#F49AB9'}
+                    stopOpacity={isDarkMode ? '0.68' : '0.82'}
+                  />
+                  <stop
+                    offset="55%"
+                    stopColor={isDarkMode ? '#F2ACC2' : '#FBD0DF'}
+                    stopOpacity={isDarkMode ? '0.54' : '0.72'}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor={isDarkMode ? '#FCE0E9' : '#FFF4F8'}
+                    stopOpacity="0.28"
+                  />
+                </linearGradient>
+              </defs>
+              <path
+                d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+                fill="url(#dof-lens-petal-blush)"
+              />
+              <path
+                d="M 28,122 Q 112,92 184,26"
+                fill="none"
+                stroke={isDarkMode ? '#FAD2DF' : '#FFF7FA'}
+                strokeWidth="2.4"
+                strokeOpacity="0.55"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
         </div>
 
         {/* Foreground Lens Petal 02 — Large Upper-Right Screen Edge (Below Navbar) */}
@@ -1433,46 +1458,59 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           style={{
             opacity: isDarkMode ? 0.38 : 0.56,
             transform: 'translate3d(0px, 0px, 0) rotate(-6deg) scale(1.12)',
-            filter: 'blur(15px)',
             willChange: 'transform, opacity',
+            contain: 'layout style',
           }}
         >
-          <svg
-            viewBox="0 0 220 150"
-            className="w-full h-full overflow-visible animate-fluid-badge-right"
+          <div
+            className="w-full h-full"
+            style={{
+              filter: 'blur(13px)',
+              transform: 'translateZ(0)',
+              backfaceVisibility: 'hidden',
+            }}
           >
-            <defs>
-              <linearGradient id="dof-lens-petal-peach" x1="15%" y1="80%" x2="88%" y2="16%">
-                <stop
-                  offset="0%"
-                  stopColor={isDarkMode ? '#DF8E7A' : '#F5A99C'}
-                  stopOpacity={isDarkMode ? '0.64' : '0.78'}
-                />
-                <stop
-                  offset="58%"
-                  stopColor={isDarkMode ? '#F4BBA8' : '#FCD5CC'}
-                  stopOpacity={isDarkMode ? '0.50' : '0.68'}
-                />
-                <stop
-                  offset="100%"
-                  stopColor={isDarkMode ? '#FDE6DE' : '#FFF6F2'}
-                  stopOpacity="0.24"
-                />
-              </linearGradient>
-            </defs>
-            <path
-              d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-              fill="url(#dof-lens-petal-peach)"
-            />
-            <path
-              d="M 28,122 Q 112,92 184,26"
-              fill="none"
-              stroke={isDarkMode ? '#FDE2D6' : '#FFFDF9'}
-              strokeWidth="2.4"
-              strokeOpacity="0.5"
-              strokeLinecap="round"
-            />
-          </svg>
+            <svg
+              viewBox="0 0 220 150"
+              className="w-full h-full overflow-visible"
+            >
+              <defs>
+                <linearGradient id="dof-lens-petal-peach" x1="15%" y1="80%" x2="88%" y2="16%">
+                  <stop
+                    offset="0%"
+                    stopColor={isDarkMode ? '#DF8E7A' : '#F5A99C'}
+                    stopOpacity={isDarkMode ? '0.64' : '0.78'}
+                  />
+                  <stop
+                    offset="58%"
+                    stopColor={isDarkMode ? '#F4BBA8' : '#FCD5CC'}
+                    stopOpacity={isDarkMode ? '0.50' : '0.68'}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor={isDarkMode ? '#FDE6DE' : '#FFF6F2'}
+                    stopOpacity="0.24"
+                  />
+                </linearGradient>
+              </defs>
+              <path
+                d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+                fill="url(#wc-petal-peach)"
+              />
+              <path
+                d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
+                fill="url(#dof-lens-petal-peach)"
+              />
+              <path
+                d="M 28,122 Q 112,92 184,26"
+                fill="none"
+                stroke={isDarkMode ? '#FDE2D6' : '#FFFDF9'}
+                strokeWidth="2.4"
+                strokeOpacity="0.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -1502,6 +1540,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               opacity: isDarkMode ? 0.72 : 0.88,
               transform: 'translate3d(-50%, -63%, 0) scale(1.02)',
               willChange: 'transform, opacity',
+              contain: 'layout style paint',
+              backfaceVisibility: 'hidden',
             }}
           >
             <svg
@@ -1539,7 +1579,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </defs>
 
               {/* 1. Botanical Leaf Sprigs & Delicate Colored Lineart Tendrils (Spreads outward on scroll) */}
-              <g ref={bloomBotanicalLeavesRef} transform="translate(260, 170) scale(0.96, 0.96)">
+              <g
+                ref={bloomBotanicalLeavesRef}
+                style={{
+                  transform: 'translate3d(260px, 170px, 0) scale(0.96, 0.96)',
+                  willChange: 'transform',
+                }}
+              >
                 {/* Left Watercolor Leaf & Lineart Veins */}
                 <path
                   d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
@@ -1608,7 +1654,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </g>
 
               {/* 2. Outer Ring of 8 Watercolor + Colored Lineart Peony Petals */}
-              <g ref={bloomOuterRingRef} transform="translate(260, 170) rotate(0) scale(0.94)">
+              <g
+                ref={bloomOuterRingRef}
+                style={{
+                  transform: 'translate3d(260px, 170px, 0) rotate(0deg) scale(0.94)',
+                  willChange: 'transform',
+                }}
+              >
                 {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
                   <g key={`outer-petal-${angle}`} transform={`rotate(${angle})`}>
                     <path
@@ -1631,7 +1683,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </g>
 
               {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals (Counter-rotates & unfolds on scroll) */}
-              <g ref={bloomMidRingRef} transform="translate(260, 170) rotate(0) scale(0.86)">
+              <g
+                ref={bloomMidRingRef}
+                style={{
+                  transform: 'translate3d(260px, 170px, 0) rotate(0deg) scale(0.86)',
+                  willChange: 'transform',
+                }}
+              >
                 {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
                   <g key={`mid-petal-${angle}`} transform={`rotate(${angle})`}>
                     <path
@@ -1654,7 +1712,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </g>
 
               {/* 4. Inner Corolla & Golden Botanical Stamens */}
-              <g ref={bloomInnerCorollaRef} transform="translate(260, 170) rotate(0) scale(0.82)">
+              <g
+                ref={bloomInnerCorollaRef}
+                style={{
+                  transform: 'translate3d(260px, 170px, 0) rotate(0deg) scale(0.82)',
+                  willChange: 'transform',
+                }}
+              >
                 {[0, 60, 120, 180, 240, 300].map((angle) => (
                   <path
                     key={`inner-petal-${angle}`}

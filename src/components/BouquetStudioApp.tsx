@@ -626,8 +626,12 @@ export default function App() {
           setActiveColorTarget('petal');
           triggerToast(nextStyle === 'raw' ? 'Photo added!' : 'Photocard added!');
         }
-      } catch {
-        triggerToast('Could not load photo');
+      } catch (err) {
+        const msg =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Invalid file: only JPG, PNG, WebP, or GIF images up to 5 MB are allowed.';
+        triggerToast(msg);
       } finally {
         pendingPhotoTargetItemIdRef.current = null;
         e.target.value = '';
@@ -1734,11 +1738,11 @@ export default function App() {
         ...(viewportHeight ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px` } : {})
       }}
     >
-      {/* Hidden Device Photo Upload Input for Photocard Keepsakes */}
+      {/* Hidden Device Photo Upload Input for Photocard Keepsakes (Strict Raster Image Allowlist) */}
       <input
         ref={photoUploadInputRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
         onChange={handlePhotoFileChange}
         className="hidden"
         aria-label="Upload photo for photocard keepsake"

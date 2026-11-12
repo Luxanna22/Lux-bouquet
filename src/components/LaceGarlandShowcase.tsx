@@ -220,17 +220,17 @@ export const LaceHangerClipSVG: React.FC<{
   const brassBody = isDarkMode ? '#D4A373' : '#C89666';
   const brassHighlight = isDarkMode ? '#FDE68A' : '#FEF3C7';
 
-  const dropCordPx = stringLengthPx + 14;
+  const dropCordPx = Math.max(8, Math.round(stringLengthPx * 0.45));
 
   return (
     <div
-      className="w-full flex flex-col items-center select-none pointer-events-none -mb-3 z-10"
+      className="w-full flex flex-col items-center select-none pointer-events-none -mb-3.5 z-10"
       aria-hidden="true"
     >
       <svg
         width="56"
-        height={dropCordPx + 26}
-        viewBox={`0 -4 56 ${dropCordPx + 26}`}
+        height={dropCordPx + 22}
+        viewBox={`0 -4 56 ${dropCordPx + 22}`}
         className="overflow-visible"
       >
         {/* Vertical Braided Lace Thread Dropping Down from the Overhead Catenary Lace Line */}
@@ -325,21 +325,21 @@ const HangingCreationCard: React.FC<{
         onClick={() => onUnwrap(entry)}
         aria-label={`Open bouquet for ${entry.to} from ${entry.from} (view-only)`}
         style={disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }}
-        className={`w-full aspect-[12/15.2] sm:aspect-[12/15] rounded-[20px] sm:rounded-[24px] border border-dashed p-1.5 sm:p-2 relative flex flex-col items-stretch justify-between overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-0 group-hover:-translate-y-1.5 cursor-pointer focus:outline-none ${
+        className={`w-full aspect-[12/15.8] sm:aspect-[12/15.6] rounded-[20px] sm:rounded-[24px] border border-dashed p-1.5 sm:p-2 relative flex flex-col items-stretch justify-between overflow-hidden transition-transform duration-300 ease-out group-hover:rotate-0 group-hover:-translate-y-1 cursor-pointer focus:outline-none ${
           isDarkMode
-            ? 'bg-[#28211F] border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_14px_32px_rgba(15,11,9,0.34)]'
-            : 'bg-[#F7F1E8] border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_12px_28px_rgba(122,75,58,0.07)] group-hover:shadow-[0_18px_38px_rgba(122,75,58,0.12)]'
+            ? 'bg-[#28211F] border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_10px_24px_rgba(15,11,9,0.28)]'
+            : 'bg-[#F7F1E8] border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_10px_22px_rgba(122,75,58,0.06)]'
         }`}
       >
-        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Edge-to-Edge Framed Creation Window) */}
+        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Uncropped Full Creation Window — 100% Edge-to-Edge Fill) */}
         <div
-          className={`w-full flex-1 min-h-0 rounded-[14px] sm:rounded-[18px] overflow-hidden relative border ${
+          className={`w-full flex-1 min-h-0 rounded-[14px] sm:rounded-[18px] overflow-hidden relative border p-0 ${
             isDarkMode
               ? 'border-[#4A3C37]/85 bg-[#221B19]'
               : 'border-[#E5D5C5]/80 bg-[#FDF9F5]'
           }`}
         >
-          <div className="w-full h-full group-hover:scale-105 transition-transform duration-500">
+          <div className="w-full h-full">
             <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
           </div>
         </div>
@@ -392,15 +392,15 @@ export const SweepingCatenaryLaceLineSVG: React.FC<{
   isDarkMode: boolean;
   edgeY?: number;
   midY?: number;
-}> = React.memo(({ isDarkMode, edgeY = 14, midY = 86 }) => {
+}> = React.memo(({ isDarkMode, edgeY = 6, midY = 36 }) => {
   const controlY = 2 * midY - edgeY;
-  const viewHeight = midY + 26;
+  const viewHeight = midY + 20;
 
   return (
     <svg
       viewBox={`0 0 1440 ${viewHeight}`}
       preserveAspectRatio="none"
-      className="w-full h-[64px] sm:h-[92px] lg:h-[108px] overflow-visible pointer-events-none select-none"
+      className="w-full h-[44px] sm:h-[60px] lg:h-[68px] overflow-visible pointer-events-none select-none"
       aria-hidden="true"
     >
       {/* Soft Drop Shadow Under the Draped Lace Line */}
@@ -500,14 +500,15 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
     [previewEntries.length, visibleSlots]
   );
 
-  const edgeY = visibleSlots === 2 ? 10 : 14;
-  const midY = visibleSlots === 2 ? 42 : visibleSlots === 3 ? 68 : 82;
+  const edgeY = visibleSlots === 2 ? 5 : 6;
+  const midY = visibleSlots === 2 ? 20 : visibleSlots === 3 ? 30 : 36;
 
   const updateGarlandDOM = useCallback(() => {
     const count = previewEntries.length;
     const rawTotal = scrollDrivenOffsetRef.current + manualOffsetRef.current;
     // Wrap smoothly within [0, maxOffset] so both scroll and manual step/swipe cycle all creations right-to-left
     const combinedOffset = Math.max(0, Math.min(maxOffset, rawTotal));
+    const trackWidth = sectionRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 0);
 
     for (let i = 0; i < count; i++) {
       const el = itemRefs.current[i];
@@ -522,46 +523,95 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
         edgeY,
         midY
       );
-      el.style.left = `${state.xPercent}%`;
-      el.style.transform = `translate3d(-50%, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+      if (!state.isVisible) {
+        if (el.dataset.hidden !== '1') {
+          el.dataset.hidden = '1';
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+          el.style.visibility = 'hidden';
+        }
+        continue;
+      }
+      el.dataset.hidden = '0';
+      el.style.visibility = 'visible';
+      el.style.pointerEvents = 'auto';
+      if (trackWidth > 0) {
+        if (el.style.left !== '0px') el.style.left = '0px';
+        const xPx = (state.xPercent / 100) * trackWidth;
+        el.style.transform = `translate3d(calc(${xPx.toFixed(1)}px - 50%), ${state.yCurvePx.toFixed(1)}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+      } else {
+        el.style.left = `${state.xPercent}%`;
+        el.style.transform = `translate3d(-50%, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+      }
       el.style.opacity = String(state.opacity);
-      el.style.pointerEvents = state.isVisible ? 'auto' : 'none';
-      el.style.visibility = state.isVisible ? 'visible' : 'hidden';
     }
   }, [previewEntries, visibleSlots, maxOffset, edgeY, midY]);
 
   useEffect(() => {
     const wrapper = scrollContainerRef.current;
+    let rafId = 0;
+    let cachedSectionTop = 0;
+    let cachedSectionHeight = 420;
+    let cachedVh = typeof window !== 'undefined' ? window.innerHeight || 800 : 800;
+
+    const measureSectionMetrics = () => {
+      const sectionEl = sectionRef.current;
+      if (sectionEl) {
+        cachedSectionTop = sectionEl.offsetTop;
+        cachedSectionHeight = sectionEl.offsetHeight || 420;
+      }
+      if (typeof window !== 'undefined') {
+        cachedVh = window.innerHeight || 800;
+      }
+    };
 
     const applyGarlandScroll = () => {
+      rafId = 0;
       // On 2-slot mobile, keep scrollDrivenOffset at 0 so 2 full portrait cards always frame cleanly side-by-side without edge clipping
       if (visibleSlots === 2) {
         scrollDrivenOffsetRef.current = 0;
         updateGarlandDOM();
         return;
       }
-      const sectionEl = sectionRef.current;
-      if (sectionEl && typeof window !== 'undefined') {
-        const rect = sectionEl.getBoundingClientRect();
-        const vh = window.innerHeight || 800;
+      if (wrapper && sectionRef.current) {
+        if (cachedSectionTop === 0) measureSectionMetrics();
+        const scrollTop = wrapper.scrollTop;
+        const rectTop = cachedSectionTop - scrollTop;
+        const rectBottom = rectTop + cachedSectionHeight;
+        // Skip DOM updates when the section is completely outside the viewport
+        if (rectBottom < -120 || rectTop > cachedVh + 120) {
+          return;
+        }
         // Progress from 0 when section enters bottom of viewport to 1 as it scrolls past upper viewport
         const progress = Math.max(
           0,
-          Math.min(1, (vh * 0.85 - rect.top) / (vh * 0.95 + rect.height * 0.5))
+          Math.min(1, (cachedVh * 0.85 - rectTop) / (cachedVh * 0.95 + cachedSectionHeight * 0.5))
         );
         scrollDrivenOffsetRef.current = progress * Math.min(maxOffset, 2.4);
       }
       updateGarlandDOM();
     };
 
+    const scheduleGarlandScroll = () => {
+      if (rafId !== 0) return;
+      rafId = requestAnimationFrame(applyGarlandScroll);
+    };
+
+    const onResize = () => {
+      measureSectionMetrics();
+      scheduleGarlandScroll();
+    };
+
+    measureSectionMetrics();
     applyGarlandScroll();
 
     if (!wrapper) return;
-    wrapper.addEventListener('scroll', applyGarlandScroll, { passive: true });
-    window.addEventListener('resize', applyGarlandScroll, { passive: true });
+    wrapper.addEventListener('scroll', scheduleGarlandScroll, { passive: true });
+    window.addEventListener('resize', onResize, { passive: true });
     return () => {
-      wrapper.removeEventListener('scroll', applyGarlandScroll);
-      window.removeEventListener('resize', applyGarlandScroll);
+      if (rafId !== 0) cancelAnimationFrame(rafId);
+      wrapper.removeEventListener('scroll', scheduleGarlandScroll);
+      window.removeEventListener('resize', onResize);
     };
   }, [scrollContainerRef, maxOffset, visibleSlots, updateGarlandDOM]);
 
@@ -577,7 +627,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
       id="showcase"
       ref={sectionRef}
       data-testid="hero-lace-garland-section"
-      className="scroll-mt-24 relative w-full pt-3 sm:pt-6 pb-8 sm:pb-14 overflow-hidden select-none"
+      className="scroll-mt-24 relative w-full pt-5 sm:pt-8 pb-8 sm:pb-14 overflow-hidden select-none"
     >
       <div className="fluid-scroll-item text-center mb-1.5 sm:mb-3 px-4">
         <h2
@@ -654,15 +704,17 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                   itemRefs.current[idx] = el;
                 }}
                 data-testid={`hero-garland-card-${entry.code}`}
+                data-hidden={initial.isVisible ? '0' : '1'}
                 style={{
                   left: `${initial.xPercent}%`,
                   transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
                   opacity: initial.opacity,
                   pointerEvents: initial.isVisible ? 'auto' : 'none',
                   visibility: initial.isVisible ? 'visible' : 'hidden',
-                  willChange: 'transform, left, opacity',
+                  willChange: 'transform, opacity',
+                  contain: 'layout style paint',
                 }}
-                className="absolute top-0 w-[166px] min-[380px]:w-[176px] sm:w-[208px] lg:w-[228px] transition-[left,transform,opacity] duration-150 ease-out"
+                className="absolute top-0 w-[166px] min-[380px]:w-[176px] sm:w-[208px] lg:w-[228px]"
               >
                 <HangingCreationCard
                   entry={entry}
@@ -816,8 +868,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const scrollPerItemPx = 300;
   const totalScrollRangePx = Math.max(320, Math.round(maxCarouselOffset * scrollPerItemPx));
 
-  const edgeY = visibleSlots === 2 ? 8 : 10;
-  const midY = visibleSlots === 2 ? 36 : visibleSlots === 3 ? 52 : 60;
+  const edgeY = visibleSlots === 2 ? 4 : 5;
+  const midY = visibleSlots === 2 ? 16 : visibleSlots === 3 ? 24 : 28;
 
   const applySingleLaceTransforms = useCallback(
     (scrollTopPx: number) => {
@@ -834,6 +886,10 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
       );
       setActiveCarouselStep((prev) => (prev === nextStep ? prev : nextStep));
 
+      const trackWidth =
+        pageScrollWrapperRef.current?.clientWidth ||
+        (typeof window !== 'undefined' ? window.innerWidth : 0);
+
       for (let i = 0; i < filteredEntries.length; i++) {
         const el = itemRefs.current[i];
         if (!el) continue;
@@ -847,11 +903,27 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
           edgeY,
           midY
         );
-        el.style.left = `${state.xPercent}%`;
-        el.style.transform = `translate3d(-50%, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+        if (!state.isVisible) {
+          if (el.dataset.hidden !== '1') {
+            el.dataset.hidden = '1';
+            el.style.opacity = '0';
+            el.style.pointerEvents = 'none';
+            el.style.visibility = 'hidden';
+          }
+          continue;
+        }
+        el.dataset.hidden = '0';
+        el.style.visibility = 'visible';
+        el.style.pointerEvents = 'auto';
+        if (trackWidth > 0) {
+          if (el.style.left !== '0px') el.style.left = '0px';
+          const xPx = (state.xPercent / 100) * trackWidth;
+          el.style.transform = `translate3d(calc(${xPx.toFixed(1)}px - 50%), ${state.yCurvePx.toFixed(1)}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+        } else {
+          el.style.left = `${state.xPercent}%`;
+          el.style.transform = `translate3d(-50%, ${state.yCurvePx}px, 0) rotate(${state.rotateDeg}deg) scale(${state.scale})`;
+        }
         el.style.opacity = String(state.opacity);
-        el.style.pointerEvents = state.isVisible ? 'auto' : 'none';
-        el.style.visibility = state.isVisible ? 'visible' : 'hidden';
       }
     },
     [filteredEntries, maxCarouselOffset, totalScrollRangePx, visibleSlots, edgeY, midY]
@@ -869,8 +941,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.085,
-      duration: 1.15,
+      lerp: 0.095,
+      duration: 1.05,
       smoothWheel: true,
       wheelMultiplier: 0.95,
       touchMultiplier: 1.4,
@@ -881,11 +953,6 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
       applySingleLaceTransforms(e.scroll);
     });
 
-    const handleNativeScroll = () => {
-      applySingleLaceTransforms(wrapper.scrollTop);
-    };
-    wrapper.addEventListener('scroll', handleNativeScroll, { passive: true });
-
     let rafId = 0;
     const raf = (time: number) => {
       lenis.raf(time);
@@ -894,7 +961,6 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     rafId = requestAnimationFrame(raf);
 
     return () => {
-      wrapper.removeEventListener('scroll', handleNativeScroll);
       cancelAnimationFrame(rafId);
       lenis.destroy();
       lenisRef.current = null;
@@ -1145,9 +1211,9 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             </div>
           </div>
 
-          {/* 2. MIDDLE: ONE SINGLE SWEEPING CATENARY LACE LINE & RIGHT-TO-LEFT LENIS CAROUSEL */}
+          {/* 2. MIDDLE: ONE SINGLE SWEEPING CATENARY LACE LINE & RIGHT-TO-LEFT LENIS CAROUSEL (Positioned higher up right under the search bar) */}
           <div
-            className="relative flex-1 min-h-0 w-full flex flex-col justify-center overflow-x-hidden overflow-y-visible"
+            className="relative flex-1 min-h-0 w-full flex flex-col justify-start pt-1.5 sm:pt-3 overflow-x-hidden overflow-y-visible"
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, input, label')) return;
               dragStartXRef.current = e.clientX;
@@ -1164,6 +1230,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                 lenisRef.current.scrollTo(nextTop, { immediate: false });
               } else {
                 pageScrollWrapperRef.current.scrollTop = nextTop;
+                applySingleLaceTransforms(nextTop);
               }
             }}
             onPointerUp={() => {
@@ -1176,7 +1243,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             {filteredEntries.length === 0 ? (
               <div
                 data-testid="showcase-empty-state"
-                className={`max-w-sm mx-auto rounded-[24px] border border-dashed py-9 px-6 text-center ${
+                className={`max-w-sm mx-auto mt-8 rounded-[24px] border border-dashed py-9 px-6 text-center ${
                   isDarkMode
                     ? 'bg-[#352C29]/80 border-[#574843]'
                     : 'bg-[#FFFDF9]/90 border-[#DECBB9]'
@@ -1205,7 +1272,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             ) : (
               <div
                 data-testid="single-lace-carousel-track"
-                className="relative w-full h-[clamp(278px,46.5vh,392px)]"
+                className="relative w-full h-[clamp(290px,52vh,418px)]"
               >
                 {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
                 <div className="absolute top-0 inset-x-0 z-0">
@@ -1235,15 +1302,17 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                           itemRefs.current[idx] = el;
                         }}
                         data-testid={`showcase-card-${entry.code}`}
+                        data-hidden={initial.isVisible ? '0' : '1'}
                         style={{
                           left: `${initial.xPercent}%`,
                           transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
                           opacity: initial.opacity,
                           pointerEvents: initial.isVisible ? 'auto' : 'none',
                           visibility: initial.isVisible ? 'visible' : 'hidden',
-                          willChange: 'transform, left, opacity',
+                          willChange: 'transform, opacity',
+                          contain: 'layout style paint',
                         }}
-                        className="absolute top-0 w-[158px] min-[380px]:w-[168px] sm:w-[clamp(162px,22vh,204px)] lg:w-[clamp(172px,23.5vh,218px)]"
+                        className="absolute top-0 w-[158px] min-[380px]:w-[168px] sm:w-[clamp(168px,23vh,212px)] lg:w-[clamp(178px,24.5vh,226px)]"
                       >
                         <HangingCreationCard
                           entry={entry}

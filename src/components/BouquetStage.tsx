@@ -54,7 +54,11 @@ const WRAPPER_RIBBON_GEOMETRY: Record<
 };
 
 function getStageItemDisplayTransform(item: BouquetItem, wrap: typeWrapStyle) {
-  if (wrap !== 'cloche' || (item.photoStyle && !item.clippedToBouquet)) {
+  if (
+    wrap !== 'cloche' ||
+    getEffectiveItemPlane(item) === 'front' ||
+    (item.photoStyle && !item.clippedToBouquet)
+  ) {
     return {
       x: item.x,
       y: item.y,
@@ -1722,6 +1726,7 @@ export const BouquetEnvironmentSVG: React.FC<{
 
   return (
     <g clipPath={`url(#${idPrefix}stageArchClip)`} className="pointer-events-none select-none">
+      <g transform="translate(300, 340) scale(1.105, 1.02) translate(-300, -340)">
       {/* 1. PAPER TEXTURE (Handmade deckle-edge cotton rag stationery grain & botanical watermark) */}
       {environment === 'paper' && (
         <g opacity={isDarkMode ? 0.32 : 0.85}>
@@ -1926,7 +1931,6 @@ export const BouquetEnvironmentSVG: React.FC<{
             y="6"
             width="588"
             height="668"
-            rx="38"
             fill={`url(#${idPrefix}envStarlitSky)`}
           />
           <circle cx="300" cy="180" r="260" fill={`url(#${idPrefix}envStarlitMoonGlow)`} />
@@ -1984,7 +1988,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
             </radialGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envAuroraBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envAuroraBg)`} />
           <circle cx="300" cy="290" r="260" fill={`url(#${idPrefix}envAuroraHalo)`} />
           {/* Flowing Iridescent Aurora Ribbons */}
           <path
@@ -2041,7 +2045,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor="#17070D" />
             </radialGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envVelvetBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envVelvetBg)`} />
           {/* Subtle Warm Spotlight Behind Bouquet */}
           <circle cx="300" cy="330" r="215" fill="#F59E0B" opacity="0.09" />
           {/* Double Gilded Filigree Frame & Corner Baroque Scrollwork */}
@@ -2095,7 +2099,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor={isDarkMode ? '#1B2830' : '#E0F2FE'} />
             </linearGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envOpalBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envOpalBg)`} />
           {/* Diagonal Luminous Sunbeam Rays */}
           <g opacity={isDarkMode ? '0.14' : '0.35'}>
             <polygon points="14,14 210,14 586,440 586,610" fill="#FEF08A" />
@@ -2143,7 +2147,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor={isDarkMode ? '#24171D' : '#FFE4E6'} />
             </linearGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envBlushSilkBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envBlushSilkBg)`} />
           {/* Flowing Charmeuse Silk Folds */}
           <path
             d="M14,160 C180,90 290,260 586,130 L586,320 C340,420 190,240 14,350 Z"
@@ -2178,7 +2182,6 @@ export const BouquetEnvironmentSVG: React.FC<{
             y="6"
             width="588"
             height="668"
-            rx="38"
             fill={isDarkMode ? '#1A2821' : '#EBF7F0'}
           />
           {/* Victorian Wrought-Iron Glasshouse Arch & Mullions */}
@@ -2217,7 +2220,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor={isDarkMode ? '#172032' : '#E0F2FE'} />
             </linearGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envNordicBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envNordicBg)`} />
           {/* Frosted Arch Frame */}
           <path
             d="M44,646 L44,258 A256,220 0 0,1 556,258 L556,646 Z"
@@ -2256,7 +2259,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor={isDarkMode ? '#1A1510' : '#FDE68A'} />
             </radialGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envVersaillesBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envVersaillesBg)`} />
           {/* Gilded Rococo Mirror Arch & Double Molding */}
           <path
             d="M42,642 L42,248 A258,214 0 0,1 558,248 L558,642 Z"
@@ -2304,7 +2307,7 @@ export const BouquetEnvironmentSVG: React.FC<{
               <stop offset="100%" stopColor="#091C14" />
             </linearGradient>
           </defs>
-          <rect x="6" y="6" width="588" height="668" rx="38" fill={`url(#${idPrefix}envNoelBg)`} />
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envNoelBg)`} />
           {/* Soft Frosted Snowbank Drifts at Bottom */}
           <path
             d="M6,612 Q150,586 300,606 Q450,624 594,592 L594,640 Q594,674 560,674 L40,674 Q6,674 6,640 Z"
@@ -2373,6 +2376,7 @@ export const BouquetEnvironmentSVG: React.FC<{
           </g>
         </g>
       )}
+      </g>
     </g>
   );
 };
@@ -2896,14 +2900,23 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     }
   }, [selectedId]);
 
-  // Convert client pointer coordinates to SVG viewBox (600x680) coordinates
+  // Convert client pointer coordinates to SVG viewBox (-24..624 x 0..680, 648x680) coordinates
   const clientToSvgCoords = useCallback(
     (clientX: number, clientY: number) => {
       const svg = svgRef.current;
       if (!svg) return { x: 300, y: 340 };
       const rect = svg.getBoundingClientRect();
-      const x = ((clientX - rect.left) / rect.width) * 600;
-      const y = ((clientY - rect.top) / rect.height) * 680;
+      const vbX = -24;
+      const vbY = 0;
+      const vbW = 648;
+      const vbH = 680;
+      const scale = Math.min(rect.width / vbW, rect.height / vbH) || 1;
+      const renderedW = vbW * scale;
+      const renderedH = vbH * scale;
+      const offsetX = rect.left + (rect.width - renderedW) / 2;
+      const offsetY = rect.top + (rect.height - renderedH) / 2;
+      const x = vbX + ((clientX - offsetX) / Math.max(1, renderedW)) * vbW;
+      const y = vbY + ((clientY - offsetY) / Math.max(1, renderedH)) * vbH;
       return { x, y };
     },
     [svgRef]
@@ -3127,22 +3140,34 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
       if (interaction.mode === 'move') {
         const localPt = svgToBouquetLocalCoords(pt.x, pt.y);
-        const dx = localPt.x - interaction.startPointerX;
-        const dy = localPt.y - interaction.startPointerY;
-        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        const rawDx = localPt.x - interaction.startPointerX;
+        const rawDy = localPt.y - interaction.startPointerY;
+        if (Math.abs(rawDx) > 0.5 || Math.abs(rawDy) > 0.5) {
           if (!hasCommittedDragHistoryRef.current) {
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
           const movingItem = items.find((it) => it.id === interaction.itemId);
-          const isUnclippedPhoto = Boolean(movingItem?.photoStyle && !movingItem?.clippedToBouquet);
+          const meta = movingItem ? FLOWER_CATALOG.find((m) => m.type === movingItem.type) : undefined;
+          const isFrontOrOther = Boolean(
+            (movingItem && getEffectiveItemPlane(movingItem) === 'front') ||
+              meta?.isOther ||
+              movingItem?.photoStyle
+          );
+          const isClocheGathered =
+            wrapStyle === 'cloche' &&
+            movingItem &&
+            getEffectiveItemPlane(movingItem) !== 'front' &&
+            !(movingItem.photoStyle && !movingItem.clippedToBouquet);
+          const dx = isClocheGathered ? rawDx / 0.64 : rawDx;
+          const dy = isClocheGathered ? rawDy / 0.7 : rawDy;
           const nx = Math.max(
-            isUnclippedPhoto ? 25 : 45,
-            Math.min(isUnclippedPhoto ? 575 : 555, Math.round(interaction.startItemX + dx))
+            isFrontOrOther ? -4 : 12,
+            Math.min(isFrontOrOther ? 604 : 588, Math.round(interaction.startItemX + dx))
           );
           const ny = Math.max(
-            isUnclippedPhoto ? 25 : 60,
-            Math.min(isUnclippedPhoto ? 655 : 580, Math.round(interaction.startItemY + dy))
+            isFrontOrOther ? 20 : 38,
+            Math.min(isFrontOrOther ? 660 : 624, Math.round(interaction.startItemY + dy))
           );
           updateItem(interaction.itemId, { x: nx, y: ny }, false);
         }
@@ -3207,8 +3232,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(25, Math.min(575, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(25, Math.min(655, Math.round(interaction.startItemY + dy)));
+          const nx = Math.max(0, Math.min(600, Math.round(interaction.startItemX + dx)));
+          const ny = Math.max(20, Math.min(660, Math.round(interaction.startItemY + dy)));
           updateCard({ x: nx, y: ny });
         }
       } else if (interaction.mode === 'move-voice') {
@@ -3222,8 +3247,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(25, Math.min(575, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(25, Math.min(655, Math.round(interaction.startItemY + dy)));
+          const nx = Math.max(0, Math.min(600, Math.round(interaction.startItemX + dx)));
+          const ny = Math.max(20, Math.min(660, Math.round(interaction.startItemY + dy)));
           updateVoice({ x: nx, y: ny });
         }
       } else if (interaction.mode === 'resize-card') {
@@ -3348,6 +3373,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       updateBouquetPose,
       updateCard,
       updateVoice,
+      wrapStyle,
     ]
   );
 
@@ -3396,21 +3422,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       : 618;
 
   const bouquetTransform = `translate(${pose.x}, ${pose.y}) rotate(${pose.rotation}) scale(${pose.scale}) translate(-300, -380)`;
+  const softShadowFilter = isCardThumbnail ? undefined : `url(#${idPrefix}softShadow)`;
 
   return (
     <div
-      className={`relative w-full h-full flex items-center justify-center ${
-        isCardThumbnail ? 'p-0' : 'p-0 sm:p-1'
-      } select-none overflow-hidden`}
+      className="relative w-full h-full flex items-center justify-center p-0 select-none overflow-hidden"
     >
       <svg
         ref={svgRef as React.RefObject<SVGSVGElement>}
-        viewBox={isCardThumbnail ? '12 12 576 656' : '0 0 600 680'}
-        preserveAspectRatio={isCardThumbnail ? 'xMidYMid slice' : undefined}
+        viewBox="-24 0 648 680"
+        preserveAspectRatio={isCardThumbnail ? 'xMidYMid slice' : 'xMidYMid meet'}
         className={
           isCardThumbnail
-            ? 'w-full h-full pointer-events-none select-none'
-            : 'w-full h-full max-w-[820px] max-h-[930px] aspect-[600/680] drop-shadow-sm touch-none'
+            ? 'w-full h-full block pointer-events-none select-none'
+            : 'w-full h-full max-w-[920px] max-h-[960px] aspect-[648/680] drop-shadow-sm touch-none'
         }
         role="img"
         aria-label="Interactive Flower Bouquet Canvas"
@@ -3426,16 +3451,16 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       >
         <defs>
           {/* Stage Backdrop Gradient (Light Mode) */}
-          <radialGradient id={`${idPrefix}stageBgGrad`} cx="50%" cy="42%" r="60%">
+          <radialGradient id={`${idPrefix}stageBgGrad`} cx="50%" cy="42%" r="62%">
             <stop offset="0%" stopColor="#FFFFFF" />
-            <stop offset="55%" stopColor="#FAFAF8" />
-            <stop offset="100%" stopColor="#F5F3EF" stopOpacity="0.45" />
+            <stop offset="58%" stopColor="#FAFAF8" />
+            <stop offset="100%" stopColor="#F5F1EB" stopOpacity={isCardThumbnail ? '1' : '0.82'} />
           </radialGradient>
           {/* Stage Backdrop Gradient (Soft Cashmere-Cocoa Dark Mode) */}
-          <radialGradient id={`${idPrefix}stageBgGradDark`} cx="50%" cy="42%" r="60%">
+          <radialGradient id={`${idPrefix}stageBgGradDark`} cx="50%" cy="42%" r="62%">
             <stop offset="0%" stopColor="#3E3330" />
-            <stop offset="55%" stopColor="#342B28" />
-            <stop offset="100%" stopColor="#2B2321" stopOpacity="0.88" />
+            <stop offset="58%" stopColor="#342B28" />
+            <stop offset="100%" stopColor="#2B2321" stopOpacity={isCardThumbnail ? '1' : '0.94'} />
           </radialGradient>
           {/* Glass Cloche Front Sheen Gradient */}
           <linearGradient id={`${idPrefix}clocheFrontGlassGrad`} x1="0" y1="0" x2="1" y2="0.2">
@@ -3455,14 +3480,16 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             <stop offset="100%" stopColor="#b08968" />
           </linearGradient>
 
-          {/* Soft Drop Shadow for Flowers & Card */}
-          <filter id={`${idPrefix}softShadow`} x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1C1917" floodOpacity="0.06" />
-          </filter>
+          {/* Soft Drop Shadow for Flowers & Card (Skipped on miniature card thumbnails for 60fps scroll performance) */}
+          {!isCardThumbnail && (
+            <filter id={`${idPrefix}softShadow`} x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1C1917" floodOpacity="0.06" />
+            </filter>
+          )}
 
           {/* Wrapper Boundary Clips (Separate permanent IDs prevent Chromium SVG dirty-rect glitches on wrapper switch) */}
           <clipPath id={`${idPrefix}bouquetWrapperBoundsClip`}>
-            <rect x="0" y="0" width="600" height={wrapperBottomClipY} />
+            <rect x="-40" y="0" width="680" height={wrapperBottomClipY} />
           </clipPath>
           <clipPath id={`${idPrefix}bouquetClocheBoundsClip`}>
             <path d="M132,560 L132,276 A168,168 0 0,1 468,276 L468,560 Z" />
@@ -3470,7 +3497,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
           {/* Stage Arch Clip for Environment Backdrops */}
           <clipPath id={`${idPrefix}stageArchClip`}>
-            <rect x="6" y="6" width="588" height="668" rx="38" />
+            <rect
+              x="-24"
+              y="0"
+              width="648"
+              height="680"
+              rx={isCardThumbnail ? '0' : '34'}
+            />
           </clipPath>
 
           {/* Per-Flower Adjustable Stem Length ClipPaths */}
@@ -3488,25 +3521,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           })}
         </defs>
 
-        {/* 1. Arch Backdrop (Upsized within 600x680 ratio; cross-fades smoothly between Light & Soft Dark Mode + Environment Vibe) */}
+        {/* 1. Arch Backdrop (Upsized within 648x680 ratio; fills 100% edge-to-edge on card thumbnails) */}
         <rect
-          x="6"
-          y="6"
-          width="588"
-          height="668"
-          rx="38"
+          x="-24"
+          y="0"
+          width="648"
+          height="680"
+          rx={isCardThumbnail ? '0' : '34'}
           fill={`url(#${idPrefix}stageBgGrad)`}
         />
         <rect
-          x="6"
-          y="6"
-          width="588"
-          height="668"
-          rx="38"
+          x="-24"
+          y="0"
+          width="648"
+          height="680"
+          rx={isCardThumbnail ? '0' : '34'}
           fill={`url(#${idPrefix}stageBgGradDark)`}
           style={{
             opacity: isDarkMode ? 1 : 0,
-            transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+            transition: isCardThumbnail ? undefined : 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         />
         {/* Minimalist Environment Texture / Vibe Layer */}
@@ -3515,34 +3548,28 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           isDarkMode={isDarkMode}
           idPrefix={idPrefix}
         />
-        <g
-          transform={
-            isCardThumbnail
-              ? 'translate(300, 368) scale(1.18) translate(-300, -368)'
-              : undefined
-          }
-        >
+        <g>
         {(environment || 'studio') === 'studio' && (
           <>
             <circle
               cx="300"
               cy="285"
-              r="230"
+              r="248"
               fill="#ffffff"
               style={{
                 opacity: isDarkMode ? 0.05 : 0.65,
-                transition: 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+                transition: isCardThumbnail ? undefined : 'opacity 520ms cubic-bezier(0.22, 1, 0.36, 1)',
               }}
             />
             <circle
               cx="300"
               cy="285"
-              r="230"
+              r="248"
               fill="none"
               stroke={isDarkMode ? '#4E423E' : '#E8DDD3'}
               strokeWidth="1.5"
               strokeDasharray="6 6"
-              style={{ transition: 'stroke 520ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+              style={{ transition: isCardThumbnail ? undefined : 'stroke 520ms cubic-bezier(0.22, 1, 0.36, 1)' }}
             />
           </>
         )}
@@ -3570,13 +3597,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     ? 'cursor-pointer'
                     : 'cursor-grab active:cursor-grabbing'
                 }
-                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : `url(#${idPrefix}softShadow)` }}
+                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
               >
                 <g
                   clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
                   className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
                 >
-                  <circle cx="0" cy="-10" r="48" fill="transparent" />
+                  <circle cx="0" cy="-6" r="54" fill="transparent" />
                   {item.photoStyle ? (
                     <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
                   ) : (
@@ -3587,6 +3614,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       hideStem={Boolean(meta?.isOther)}
                     />
                   )}
+                  <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
                 </g>
               </g>
             );
@@ -3596,7 +3624,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable & Draggable to move/resize bouquet) */}
         {wrapStyle !== 'plain' && (
           <g
-            filter={`url(#${idPrefix}softShadow)`}
+            filter={softShadowFilter}
             role={isPreviewMode ? undefined : 'button'}
             aria-label={isPreviewMode ? undefined : 'Select or drag bouquet wrapper'}
             onPointerDown={
@@ -4019,14 +4047,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     ? 'cursor-pointer'
                     : 'cursor-grab active:cursor-grabbing'
                 }
-                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : `url(#${idPrefix}softShadow)` }}
+                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
               >
                 <g
                   clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
                   className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
                 >
                   {/* Invisible generous hit target for easy touch tapping */}
-                  <circle cx="0" cy="-10" r="48" fill="transparent" />
+                  <circle cx="0" cy="-6" r="54" fill="transparent" />
                   {item.photoStyle ? (
                     <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
                   ) : (
@@ -4037,6 +4065,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       hideStem={Boolean(meta?.isOther)}
                     />
                   )}
+                  <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
                 </g>
               </g>
             );
@@ -4044,7 +4073,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         </g>
 
         {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems — Clickable & Draggable to move/resize bouquet) */}
-        <g filter={`url(#${idPrefix}softShadow)`}>
+        <g filter={softShadowFilter}>
           <g
             role={isPreviewMode ? undefined : 'button'}
             aria-label={isPreviewMode ? undefined : 'Select or drag bouquet wrapper'}
@@ -4655,10 +4684,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     ? 'cursor-pointer'
                     : 'cursor-grab active:cursor-grabbing'
                 }
-                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : `url(#${idPrefix}softShadow)` }}
+                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
               >
                 <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
-                  <circle cx="0" cy="-10" r="48" fill="transparent" />
+                  <circle cx="0" cy="-6" r="56" fill="transparent" />
                   {item.photoStyle ? (
                     <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
                   ) : (
@@ -4669,6 +4698,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       hideStem={true}
                     />
                   )}
+                  <rect x="-62" y="-64" width="124" height="124" rx="24" fill="transparent" />
                 </g>
               </g>
             );
@@ -4842,7 +4872,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               style={{
                 filter: isCardSelected
                   ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
-                  : `url(#${idPrefix}softShadow)`,
+                  : softShadowFilter,
                 outline: 'none',
                 WebkitTapHighlightColor: 'transparent',
               }}
@@ -5016,7 +5046,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               style={{
                 filter: isVoiceSelected
                   ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
-                  : `url(#${idPrefix}softShadow)`,
+                  : softShadowFilter,
                 outline: 'none',
                 WebkitTapHighlightColor: 'transparent',
               }}
@@ -5418,6 +5448,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           <g
             transform={`translate(${selectedDisplay.x}, ${selectedDisplay.y})`}
           >
+            {/* Direct Drag-Capture Surface Inside Selection Ring (Allows dragging selected item even when overlapped by front wrapper/ribbon/card) */}
+            <circle
+              cx="0"
+              cy="0"
+              r={Math.max(38, 48 * selectedDisplay.scale)}
+              fill="transparent"
+              onPointerDown={(e) => handleItemPointerDown(e, selectedItem)}
+              className={
+                selectedItem.locked
+                  ? 'cursor-pointer'
+                  : 'cursor-grab active:cursor-grabbing'
+              }
+            />
+
             {/* Outer Selection Ring */}
             <circle
               cx="0"

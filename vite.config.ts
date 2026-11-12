@@ -12,9 +12,20 @@ function extractPngBuffer(rawInput: string): Buffer | null {
   const base64Part = trimmed.includes('base64,')
     ? trimmed.slice(trimmed.indexOf('base64,') + 7)
     : trimmed;
-  if (!base64Part) return null;
+  if (!base64Part || base64Part.length > 7_200_000) return null;
   try {
-    return Buffer.from(base64Part, 'base64');
+    const buf = Buffer.from(base64Part, 'base64');
+    if (
+      buf.length < 16 ||
+      buf.length > 5 * 1024 * 1024 ||
+      buf[0] !== 0x89 ||
+      buf[1] !== 0x50 ||
+      buf[2] !== 0x4e ||
+      buf[3] !== 0x47
+    ) {
+      return null;
+    }
+    return buf;
   } catch {
     return null;
   }
@@ -348,14 +359,52 @@ function handleContactMiddleware(
   }
 
   let rawBody = '';
+  let byteCount = 0;
+  let tooLarge = false;
   req.on('data', (chunk: Buffer) => {
+    if (tooLarge) return;
+    byteCount += chunk.length;
+    if (byteCount > 32 * 1024) {
+      tooLarge = true;
+      return;
+    }
     rawBody += chunk.toString();
   });
   req.on('end', async () => {
+    if (tooLarge) {
+      res.statusCode = 413;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ ok: false, error: 'Request payload exceeds maximum allowed size.' }));
+      return;
+    }
     try {
       // @ts-expect-error Shared ESM handler in /api/_lib/contactHandler.js
       const { processContactSubmission, processBouquetEmailDelivery } = await import('./api/_lib/contactHandler.js');
-      const parsed = JSON.parse(rawBody || '{}');
+      // @ts-expect-error Shared ESM security guard in /api/_lib/securityGuard.js
+      const { applySecurityHeaders, checkRateLimit, extractClientIp, isSuspiciousBotRequest, sanitizeJsonValue } = await import('./api/_lib/securityGuard.js');
+      applySecurityHeaders(res);
+      const clientIp = extractClientIp(req);
+      const rateCheck = checkRateLimit({
+        ip: clientIp,
+        bucket: isBouquetEmailRoute ? 'api_send_bouquet_email' : 'api_contact',
+        maxRequests: isBouquetEmailRoute ? 8 : 6,
+        windowMs: 60_000,
+      });
+      if (!rateCheck.allowed) {
+        res.statusCode = 429;
+        res.setHeader('Retry-After', String(rateCheck.retryAfterSec));
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: false, error: 'Too many requests in a short time. Please wait a minute and try again.' }));
+        return;
+      }
+      const parsed = sanitizeJsonValue(JSON.parse(rawBody || '{}'));
+      const botCheck = isSuspiciousBotRequest(req, parsed);
+      if (botCheck.suspicious) {
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ok: false, error: 'Automated or suspicious request blocked by studio security.' }));
+        return;
+      }
       const result = isBouquetEmailRoute
         ? await processBouquetEmailDelivery(parsed)
         : await processContactSubmission(parsed);

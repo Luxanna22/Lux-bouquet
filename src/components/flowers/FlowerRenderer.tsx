@@ -26,6 +26,14 @@ import {
   WaxSealCrestSVG,
   FairyLightGarlandSVG,
   RibbonBowPickSVG,
+  SittingDogSVG,
+  LovelyCatsSVG,
+  CrescentMoonSVG,
+  RadiantSunSVG,
+  CelestialStarSVG,
+  DreamyCloudsSVG,
+  ChocolateBoxSVG,
+  RingInBoxSVG,
   PoinsettiaSVG,
   HollyBerriesSVG,
   MistletoeBoughSVG,
@@ -1811,6 +1819,22 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <FairyLightGarlandSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'ribbonBowPick':
       return <RibbonBowPickSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'sittingDog':
+      return <SittingDogSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'lovelyCats':
+      return <LovelyCatsSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'moon':
+      return <CrescentMoonSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'sun':
+      return <RadiantSunSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'star':
+      return <CelestialStarSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'clouds':
+      return <DreamyCloudsSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'chocolates':
+      return <ChocolateBoxSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'ringInABox':
+      return <RingInBoxSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'poinsettia':
       return <PoinsettiaSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'hollyBerries':
