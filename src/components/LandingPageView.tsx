@@ -1008,7 +1008,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
   const handleCopyStudioEmail = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(OFFICIAL_STUDIO_EMAIL).catch(() => {});
+      navigator.clipboard.writeText(OFFICIAL_STUDIO_EMAIL).catch(() => { });
     }
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2400);
@@ -1052,9 +1052,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   return (
     <div
       ref={scrollWrapperRef}
-      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-hidden transition-[background-color,color] duration-300 ease-out selection:bg-[#7A4B3A]/15 ${
-        isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'
-      }`}
+      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-hidden transition-[background-color,color] duration-300 ease-out selection:bg-[#7A4B3A]/15 ${isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'
+        }`}
       style={{
         fontFamily: "'Inter', system-ui, sans-serif",
         fontVariantNumeric: 'lining-nums',
@@ -1129,28 +1128,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
       {/* STICKY TOP NAVBAR — Integrated Page Header in Hero, Smoothly Transitions to Floating Pill on Scroll */}
       <div
-        className={`sticky z-40 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          isNavScrolled
-            ? 'top-2.5 sm:top-3.5 px-2.5 sm:px-5 md:px-6 pt-1 sm:pt-1.5'
-            : 'top-0 px-0 pt-0'
-        }`}
+        className={`sticky z-40 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
+          ? 'top-2.5 sm:top-3.5 px-2.5 sm:px-5 md:px-6 pt-1 sm:pt-1.5'
+          : 'top-0 px-0 pt-0'
+          }`}
       >
         <header
           data-testid="landing-navbar"
           data-nav-mode={isNavScrolled ? 'pill' : 'integrated'}
-          className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            isNavScrolled
-              ? `max-w-5xl h-12 sm:h-13 md:h-14 px-3 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
-                }`
-              : `max-w-6xl h-14 sm:h-15 md:h-16 px-4 sm:px-8 rounded-none border-b border-dashed shadow-none backdrop-blur-xs ${
-                  isDarkMode
-                    ? 'bg-[#2B2321]/80 border-[#4D3F3B]/65 text-[#FBF6F1]'
-                    : 'bg-[#FDF9F5]/80 border-[#E6D6C6]/75 text-[#231C18]'
-                }`
-          }`}
+          className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
+            ? `max-w-5xl h-12 sm:h-13 md:h-14 px-3 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${isDarkMode
+              ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
+              : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
+            }`
+            : `max-w-6xl h-14 sm:h-15 md:h-16 px-4 sm:px-8 rounded-none border-b border-dashed shadow-none backdrop-blur-xs ${isDarkMode
+              ? 'bg-[#2B2321]/80 border-[#4D3F3B]/65 text-[#FBF6F1]'
+              : 'bg-[#FDF9F5]/80 border-[#E6D6C6]/75 text-[#231C18]'
+            }`
+            }`}
         >
           {/* Zone 1: Brand Wordmark & Official Logo */}
           <button
@@ -1185,18 +1180,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => scrollToSection(item.id)}
-                className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${
-                  isDarkMode
-                    ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
-                    : 'text-[#5A463B] hover:text-[#7A4B3A]'
-                }`}
+                className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${isDarkMode
+                  ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
+                  : 'text-[#5A463B] hover:text-[#7A4B3A]'
+                  }`}
               >
                 <span>{item.label}</span>
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none absolute left-1/2 -bottom-0.5 h-[1.5px] w-0 -translate-x-1/2 rounded-full transition-all duration-300 group-hover:w-4/5 ${
-                    isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#7A4B3A]'
-                  }`}
+                  className={`pointer-events-none absolute left-1/2 -bottom-0.5 h-[1.5px] w-0 -translate-x-1/2 rounded-full transition-all duration-300 group-hover:w-4/5 ${isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#7A4B3A]'
+                    }`}
                 />
               </button>
             ))}
@@ -1209,11 +1202,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               onClick={onToggleDarkMode}
               aria-label="Toggle theme"
               title="Toggle theme"
-              className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${
-                isDarkMode
-                  ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
-                  : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
-              }`}
+              className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${isDarkMode
+                ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
+                : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
+                }`}
             >
               <span key={isDarkMode ? 'sun' : 'moon'} className="block animate-theme-icon">
                 {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
@@ -1225,22 +1217,19 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               onClick={onOpenVault}
               aria-label="Saved Bouquets"
               title="Saved Bouquets"
-              className={`h-9 ${
-                vaultCount > 0 ? 'px-3' : 'w-9 justify-center'
-              } rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
-                isDarkMode
+              className={`h-9 ${vaultCount > 0 ? 'px-3' : 'w-9 justify-center'
+                } rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${isDarkMode
                   ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                   : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-              }`}
+                }`}
             >
               <Bookmark className="w-4 h-4 text-[#B4846C] shrink-0" />
               {vaultCount > 0 && (
                 <span
-                  className={`px-1 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${
-                    isDarkMode
-                      ? 'text-[#F0C8B0]'
-                      : 'text-[#7A4B3A]'
-                  }`}
+                  className={`px-1 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${isDarkMode
+                    ? 'text-[#F0C8B0]'
+                    : 'text-[#7A4B3A]'
+                    }`}
                 >
                   {vaultCount}
                 </span>
@@ -1255,15 +1244,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               title={isMobileNavOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={isMobileNavOpen}
               data-testid="mobile-nav-trigger"
-              className={`md:hidden w-9 h-9 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
-                isMobileNavOpen
-                  ? isDarkMode
-                    ? 'bg-[#9A6550] border-[#B47E68] text-white'
-                    : 'bg-[#7A4B3A] border-[#7A4B3A] text-white'
-                  : isDarkMode
-                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-              }`}
+              className={`md:hidden w-9 h-9 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${isMobileNavOpen
+                ? isDarkMode
+                  ? 'bg-[#9A6550] border-[#B47E68] text-white'
+                  : 'bg-[#7A4B3A] border-[#7A4B3A] text-white'
+                : isDarkMode
+                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                }`}
             >
               <svg
                 viewBox="0 0 18 18"
@@ -1293,11 +1281,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <nav
             aria-label="Mobile navigation"
             data-testid="mobile-nav-dropdown"
-            className={`md:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] backdrop-blur-xl transition-all duration-300 animate-hero-entrance ${
-              isDarkMode
-                ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
-                : 'bg-[#FFFDF9]/98 border-[#D8C4B4] text-[#231C18]'
-            }`}
+            className={`md:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] backdrop-blur-xl transition-all duration-300 animate-hero-entrance ${isDarkMode
+              ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
+              : 'bg-[#FFFDF9]/98 border-[#D8C4B4] text-[#231C18]'
+              }`}
           >
             <div className="flex flex-col divide-y divide-dashed divide-[#DECBB9]/60 dark:divide-[#574843]/70">
               {[
@@ -1310,15 +1297,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => scrollToSection(item.id)}
-                  className={`w-full py-2.5 px-2.5 flex items-center justify-between gap-3 text-left rounded-xl transition-colors cursor-pointer ${
-                    isDarkMode ? 'hover:bg-[#433834]/80' : 'hover:bg-[#FAF3EB]'
-                  }`}
+                  className={`w-full py-2.5 px-2.5 flex items-center justify-between gap-3 text-left rounded-xl transition-colors cursor-pointer ${isDarkMode ? 'hover:bg-[#433834]/80' : 'hover:bg-[#FAF3EB]'
+                    }`}
                 >
                   <div className="flex items-baseline gap-2.5 min-w-0">
                     <span
-                      className={`text-xs italic shrink-0 ${
-                        isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
-                      }`}
+                      className={`text-xs italic shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
+                        }`}
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       {item.num}
@@ -1331,9 +1316,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         {item.title}
                       </div>
                       <div
-                        className={`text-[11px] truncate ${
-                          isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B61]'
-                        }`}
+                        className={`text-[11px] truncate ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B61]'
+                          }`}
                       >
                         {item.sub}
                       </div>
@@ -1341,9 +1325,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   </div>
                   <span
                     aria-hidden="true"
-                    className={`text-xs shrink-0 ${
-                      isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
-                    }`}
+                    className={`text-xs shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
+                      }`}
                   >
                     →
                   </span>
@@ -1358,11 +1341,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   setIsMobileNavOpen(false);
                   onOpenVault();
                 }}
-                className={`flex-1 py-2.5 px-3 rounded-full border border-dashed text-xs font-medium inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                  isDarkMode
-                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1]'
-                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438]'
-                }`}
+                className={`flex-1 py-2.5 px-3 rounded-full border border-dashed text-xs font-medium inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${isDarkMode
+                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1]'
+                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438]'
+                  }`}
               >
                 <span>Saved Bouquets</span>
                 {vaultCount > 0 && (
@@ -1375,11 +1357,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   setIsMobileNavOpen(false);
                   onStartCrafting();
                 }}
-                className={`flex-1 py-2.5 px-3 rounded-full text-white text-xs font-medium transition cursor-pointer ${
-                  isDarkMode
-                    ? 'bg-[#9A6550] hover:bg-[#875642]'
-                    : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                }`}
+                className={`flex-1 py-2.5 px-3 rounded-full text-white text-xs font-medium transition cursor-pointer ${isDarkMode
+                  ? 'bg-[#9A6550] hover:bg-[#875642]'
+                  : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                  }`}
               >
                 Craft a Bouquet
               </button>
@@ -1737,16 +1718,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               <span
-                className={`block whitespace-nowrap text-[48px] min-[390px]:text-[52px] sm:text-[62px] md:text-[70px] lg:text-[76px] font-medium tracking-[-0.02em] leading-[0.96] transition-colors ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                }`}
+                className={`block whitespace-nowrap text-[48px] min-[390px]:text-[52px] sm:text-[62px] md:text-[70px] lg:text-[76px] font-medium tracking-[-0.02em] leading-[0.96] transition-colors ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                  }`}
               >
                 Send Love in{' '}
               </span>
               <span
-                className={`block whitespace-nowrap mt-0.5 sm:mt-1 text-[56px] min-[390px]:text-[60px] sm:text-[74px] md:text-[86px] lg:text-[94px] italic font-normal tracking-[-0.015em] leading-[0.92] transition-colors ${
-                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
-                }`}
+                className={`block whitespace-nowrap mt-0.5 sm:mt-1 text-[56px] min-[390px]:text-[60px] sm:text-[74px] md:text-[86px] lg:text-[94px] italic font-normal tracking-[-0.015em] leading-[0.92] transition-colors ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
+                  }`}
               >
                 Every Bloom.
               </span>
@@ -1758,32 +1737,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               className="mt-5 sm:mt-6 flex items-center justify-center gap-2.5 opacity-65"
             >
               <span
-                className={`h-px w-8 sm:w-12 border-t border-dashed ${
-                  isDarkMode ? 'border-[#8A7267]' : 'border-[#C8B09B]'
-                }`}
+                className={`h-px w-8 sm:w-12 border-t border-dashed ${isDarkMode ? 'border-[#8A7267]' : 'border-[#C8B09B]'
+                  }`}
               />
               <span
-                className={`w-1.5 h-1.5 rotate-45 border ${
-                  isDarkMode
-                    ? 'border-[#E6B89C] bg-[#352C29]'
-                    : 'border-[#9E4757] bg-[#FFFDF9]'
-                }`}
+                className={`w-1.5 h-1.5 rotate-45 border ${isDarkMode
+                  ? 'border-[#E6B89C] bg-[#352C29]'
+                  : 'border-[#9E4757] bg-[#FFFDF9]'
+                  }`}
               />
               <span
-                className={`h-px w-8 sm:w-12 border-t border-dashed ${
-                  isDarkMode ? 'border-[#8A7267]' : 'border-[#C8B09B]'
-                }`}
+                className={`h-px w-8 sm:w-12 border-t border-dashed ${isDarkMode ? 'border-[#8A7267]' : 'border-[#C8B09B]'
+                  }`}
               />
             </div>
 
             {/* 2. Supporting Editorial Subtitle — Crisp Contrast & Scannable Measure */}
             <p
-              className={`mt-4 sm:mt-5 text-[19px] sm:text-[21.5px] md:text-[23px] max-w-[330px] sm:max-w-[470px] md:max-w-[530px] mx-auto leading-[1.42] font-normal px-2 transition-colors ${
-                isDarkMode ? 'text-[#EAE0DA]' : 'text-[#3E3029]'
-              }`}
+              className={`mt-4 sm:mt-5 text-[19px] sm:text-[21.5px] md:text-[23px] max-w-[330px] sm:max-w-[470px] md:max-w-[530px] mx-auto leading-[1.42] font-normal px-2 transition-colors ${isDarkMode ? 'text-[#EAE0DA]' : 'text-[#3E3029]'
+                }`}
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
-              Pick your flowers, <span className="italic font-medium">wrap with love</span>, and attach a little voice note or letter.
+              From handpicked blooms to heartfelt words, make every bouquet a little more personal.
             </p>
 
             {/* 3. Action Hierarchy — Unmistakable Primary Studio Button + Lighter Secondary Pill */}
@@ -1791,11 +1766,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <button
                 type="button"
                 onClick={onStartCrafting}
-                className={`group px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-[#FFFDF9] text-[13px] sm:text-[14px] font-medium inline-flex items-center gap-2 ring-1 ring-inset ring-[#FFFDF9]/25 shadow-[0_12px_28px_rgba(110,68,52,0.24)] hover:shadow-[0_16px_34px_rgba(110,68,52,0.32)] transition-all duration-300 hover:-translate-y-0.5 active:scale-95 cursor-pointer whitespace-nowrap ${
-                  isDarkMode
-                    ? 'bg-[#9A6550] hover:bg-[#875642]'
-                    : 'bg-[#6E4434] hover:bg-[#5B3729]'
-                }`}
+                className={`group px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-[#FFFDF9] text-[13px] sm:text-[14px] font-medium inline-flex items-center gap-2 ring-1 ring-inset ring-[#FFFDF9]/25 shadow-[0_12px_28px_rgba(110,68,52,0.24)] hover:shadow-[0_16px_34px_rgba(110,68,52,0.32)] transition-all duration-300 hover:-translate-y-0.5 active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+                  ? 'bg-[#9A6550] hover:bg-[#875642]'
+                  : 'bg-[#6E4434] hover:bg-[#5B3729]'
+                  }`}
               >
                 <span>Craft a Bouquet</span>
                 <span
@@ -1809,11 +1783,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <button
                 type="button"
                 onClick={() => scrollToSection('how-it-works')}
-                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium backdrop-blur-xs transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/80 border-[#66554F] text-[#DFCFC6] hover:text-[#FBF6F1] hover:bg-[#423734]'
-                    : 'bg-[#FFFDF9]/85 border-[#D8C4B4] text-[#5C483E] hover:text-[#231C18] hover:bg-[#FAF4EE]'
-                }`}
+                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium backdrop-blur-xs transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+                  ? 'bg-[#352C29]/80 border-[#66554F] text-[#DFCFC6] hover:text-[#FBF6F1] hover:bg-[#423734]'
+                  : 'bg-[#FFFDF9]/85 border-[#D8C4B4] text-[#5C483E] hover:text-[#231C18] hover:bg-[#FAF4EE]'
+                  }`}
               >
                 See How It Works
               </button>
@@ -1830,9 +1803,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         >
           <div className="fluid-scroll-item text-center mb-6 sm:mb-8">
             <h2
-              className={`text-3xl sm:text-4xl font-semibold ${
-                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-              }`}
+              className={`text-3xl sm:text-4xl font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                }`}
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               How It Works
@@ -1843,25 +1815,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* STEP 01: Pick & Wrap */}
             <div
               data-testid="how-it-works-card-1"
-              className={`fluid-scroll-item fluid-delay-1 rounded-[22px] sm:rounded-[24px] border border-dashed overflow-hidden flex flex-col transition-colors duration-300 select-none ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#574843] shadow-[0_12px_30px_rgba(20,15,13,0.22)]'
-                  : 'bg-[#FFFDF9] border-[#DECBB9] shadow-[0_12px_30px_rgba(122,75,58,0.05)]'
-              }`}
+              className={`fluid-scroll-item fluid-delay-1 rounded-[22px] sm:rounded-[24px] border border-dashed overflow-hidden flex flex-col transition-colors duration-300 select-none ${isDarkMode
+                ? 'bg-[#352C29] border-[#574843] shadow-[0_12px_30px_rgba(20,15,13,0.22)]'
+                : 'bg-[#FFFDF9] border-[#DECBB9] shadow-[0_12px_30px_rgba(122,75,58,0.05)]'
+                }`}
             >
               <div
-                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b border-dashed ${
-                  isDarkMode
-                    ? 'bg-[#241D1B] border-[#4E403B]'
-                    : 'bg-[#EDE2D4] border-[#DECBB9]'
-                }`}
+                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b border-dashed ${isDarkMode
+                  ? 'bg-[#241D1B] border-[#4E403B]'
+                  : 'bg-[#EDE2D4] border-[#DECBB9]'
+                  }`}
               >
                 <span
-                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#5E4E49] text-[#E6B89C]'
-                      : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#7A5C4B]'
-                  }`}
+                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border border-dashed ${isDarkMode
+                    ? 'bg-[#352C29] border-[#5E4E49] text-[#E6B89C]'
+                    : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#7A5C4B]'
+                    }`}
                 >
                   01
                 </span>
@@ -1872,17 +1841,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
               <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
                 <h3
-                  className={`text-xl sm:text-2xl font-semibold ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                  }`}
+                  className={`text-xl sm:text-2xl font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                    }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
                   Pick &amp; Wrap
                 </h3>
                 <p
-                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                  }`}
+                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                    }`}
                 >
                   Arrange 31 blooms into couture wraps, velvet hatboxes &amp; lace bows.
                 </p>
@@ -1892,25 +1859,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* STEP 02: Voice & Note */}
             <div
               data-testid="how-it-works-card-2"
-              className={`fluid-scroll-item fluid-delay-2 rounded-[22px] sm:rounded-[24px] border border-dashed overflow-hidden flex flex-col transition-colors duration-300 select-none ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#574843] shadow-[0_12px_30px_rgba(20,15,13,0.22)]'
-                  : 'bg-[#FFFDF9] border-[#DECBB9] shadow-[0_12px_30px_rgba(122,75,58,0.05)]'
-              }`}
+              className={`fluid-scroll-item fluid-delay-2 rounded-[22px] sm:rounded-[24px] border border-dashed overflow-hidden flex flex-col transition-colors duration-300 select-none ${isDarkMode
+                ? 'bg-[#352C29] border-[#574843] shadow-[0_12px_30px_rgba(20,15,13,0.22)]'
+                : 'bg-[#FFFDF9] border-[#DECBB9] shadow-[0_12px_30px_rgba(122,75,58,0.05)]'
+                }`}
             >
               <div
-                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b border-dashed ${
-                  isDarkMode
-                    ? 'bg-[#241D1B] border-[#4E403B]'
-                    : 'bg-[#EDE2D4] border-[#DECBB9]'
-                }`}
+                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b border-dashed ${isDarkMode
+                  ? 'bg-[#241D1B] border-[#4E403B]'
+                  : 'bg-[#EDE2D4] border-[#DECBB9]'
+                  }`}
               >
                 <span
-                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#5E4E49] text-[#E6B89C]'
-                      : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#7A5C4B]'
-                  }`}
+                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border border-dashed ${isDarkMode
+                    ? 'bg-[#352C29] border-[#5E4E49] text-[#E6B89C]'
+                    : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#7A5C4B]'
+                    }`}
                 >
                   02
                 </span>
@@ -1921,17 +1885,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
               <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
                 <h3
-                  className={`text-xl sm:text-2xl font-semibold ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                  }`}
+                  className={`text-xl sm:text-2xl font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                    }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
                   Voice &amp; Note
                 </h3>
                 <p
-                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                  }`}
+                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                    }`}
                 >
                   Tuck in a handwritten letter and record a voice keepsake.
                 </p>
@@ -1941,25 +1903,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* STEP 03: Send or Time-Lock */}
             <div
               data-testid="how-it-works-card-3"
-              className={`fluid-scroll-item fluid-delay-3 rounded-[22px] sm:rounded-[24px] border border-dashed overflow-hidden flex flex-col transition-colors duration-300 select-none ${
-                isDarkMode
-                  ? 'bg-[#352C29] border-[#574843] shadow-[0_12px_30px_rgba(20,15,13,0.22)]'
-                  : 'bg-[#FFFDF9] border-[#DECBB9] shadow-[0_12px_30px_rgba(122,75,58,0.05)]'
-              }`}
+              className={`fluid-scroll-item fluid-delay-3 rounded-[22px] sm:rounded-[24px] border border-dashed overflow-hidden flex flex-col transition-colors duration-300 select-none ${isDarkMode
+                ? 'bg-[#352C29] border-[#574843] shadow-[0_12px_30px_rgba(20,15,13,0.22)]'
+                : 'bg-[#FFFDF9] border-[#DECBB9] shadow-[0_12px_30px_rgba(122,75,58,0.05)]'
+                }`}
             >
               <div
-                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b border-dashed ${
-                  isDarkMode
-                    ? 'bg-[#241D1B] border-[#4E403B]'
-                    : 'bg-[#EDE2D4] border-[#DECBB9]'
-                }`}
+                className={`h-38 sm:h-44 w-full relative flex items-center justify-center overflow-hidden border-b border-dashed ${isDarkMode
+                  ? 'bg-[#241D1B] border-[#4E403B]'
+                  : 'bg-[#EDE2D4] border-[#DECBB9]'
+                  }`}
               >
                 <span
-                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#5E4E49] text-[#E6B89C]'
-                      : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#7A5C4B]'
-                  }`}
+                  className={`absolute top-2.5 left-3 sm:top-3 sm:left-3.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wider border border-dashed ${isDarkMode
+                    ? 'bg-[#352C29] border-[#5E4E49] text-[#E6B89C]'
+                    : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#7A5C4B]'
+                    }`}
                 >
                   03
                 </span>
@@ -1970,17 +1929,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
               <div className="px-4 py-4 sm:px-5 sm:py-5 text-center flex-1 flex flex-col justify-center">
                 <h3
-                  className={`text-xl sm:text-2xl font-semibold ${
-                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                  }`}
+                  className={`text-xl sm:text-2xl font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                    }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
                   Send or Time-Lock
                 </h3>
                 <p
-                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${
-                    isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                  }`}
+                  className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                    }`}
                 >
                   Share an instant gift link, date countdown or secret key lock.
                 </p>
@@ -2009,9 +1966,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         >
           <div className="fluid-scroll-item text-center mb-6 sm:mb-8">
             <h2
-              className={`text-3xl sm:text-4xl font-semibold ${
-                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-              }`}
+              className={`text-3xl sm:text-4xl font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                }`}
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               Frequently Asked Questions
@@ -2024,11 +1980,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               return (
                 <div
                   key={idx}
-                  className={`rounded-2xl border transition-all duration-300 ${
-                    isDarkMode
-                      ? 'bg-[#352C29] border-[#4D403C]'
-                      : 'bg-white border-[#F0E7DE] shadow-[0_4px_16px_rgba(35,28,24,0.03)]'
-                  }`}
+                  className={`rounded-2xl border transition-all duration-300 ${isDarkMode
+                    ? 'bg-[#352C29] border-[#4D403C]'
+                    : 'bg-white border-[#F0E7DE] shadow-[0_4px_16px_rgba(35,28,24,0.03)]'
+                    }`}
                 >
                   <button
                     type="button"
@@ -2036,29 +1991,25 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     className="w-full px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between gap-3 sm:gap-4 text-left cursor-pointer"
                   >
                     <span
-                      className={`text-[13px] sm:text-sm font-semibold ${
-                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                      }`}
+                      className={`text-[13px] sm:text-sm font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                        }`}
                     >
                       {item.q}
                     </span>
                     <ChevronDown
-                      className={`w-4 h-4 shrink-0 transition-transform duration-300 ${
-                        isDarkMode ? 'text-[#DEB399]' : 'text-[#7A4B3A]'
-                      } ${isOpen ? 'rotate-180' : ''}`}
+                      className={`w-4 h-4 shrink-0 transition-transform duration-300 ${isDarkMode ? 'text-[#DEB399]' : 'text-[#7A4B3A]'
+                        } ${isOpen ? 'rotate-180' : ''}`}
                     />
                   </button>
                   <div
-                    className={`grid transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                      isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-                    }`}
+                    className={`grid transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                      }`}
                   >
                     <div className="overflow-hidden">
                       <div className="px-4 sm:px-6 pb-3.5 sm:pb-4 -mt-0.5">
                         <p
-                          className={`text-xs sm:text-[13px] leading-relaxed ${
-                            isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                          }`}
+                          className={`text-xs sm:text-[13px] leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                            }`}
                         >
                           {item.a}
                         </p>
@@ -2074,27 +2025,24 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {/* 5. UNIFIED WARM BEIGE / SOFT COCOA "MAKE SOMEONE SMILE TODAY" BOTTOM CTA CONTAINER */}
         <section className="max-w-4xl mx-auto px-4 sm:px-6 pt-2 sm:pt-4 pb-12 sm:pb-14">
           <div
-            className={`fluid-scroll-item rounded-[24px] sm:rounded-[28px] border border-dashed py-9 sm:py-14 px-5 sm:px-6 text-center transition-colors ${
-              isDarkMode
-                ? 'bg-[#382F2C] border-[#5E4E49]'
-                : 'bg-[#F3ECE3] border-[#DAC7B6]'
-            }`}
+            className={`fluid-scroll-item rounded-[24px] sm:rounded-[28px] border border-dashed py-9 sm:py-14 px-5 sm:px-6 text-center transition-colors ${isDarkMode
+              ? 'bg-[#382F2C] border-[#5E4E49]'
+              : 'bg-[#F3ECE3] border-[#DAC7B6]'
+              }`}
           >
             {/* Custom SVG Trio (Cherry Blossom + Voice Plushie Bear + Tulip) */}
             <div className="flex items-center justify-center gap-2.5 sm:gap-3 mb-3.5 sm:mb-4 select-none">
               <div
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border flex items-center justify-center overflow-hidden shadow-2xs -rotate-6 ${
-                  isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-white/95 border-[#E8DDD3]'
-                }`}
+                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border flex items-center justify-center overflow-hidden shadow-2xs -rotate-6 ${isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-white/95 border-[#E8DDD3]'
+                  }`}
               >
                 <svg viewBox="-58 -58 116 116" className="w-7 h-7 sm:w-8 sm:h-8">
                   <FlowerRenderer type="cherryBlossom" petalColor="#F472B6" centerColor="#FEF08A" hideStem />
                 </svg>
               </div>
               <div
-                className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full border flex items-center justify-center overflow-hidden shadow-xs -mt-2 [&>svg]:w-8 [&>svg]:h-8 sm:[&>svg]:w-9 sm:[&>svg]:h-9 ${
-                  isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-white/95 border-[#E8DDD3]'
-                }`}
+                className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full border flex items-center justify-center overflow-hidden shadow-xs -mt-2 [&>svg]:w-8 [&>svg]:h-8 sm:[&>svg]:w-9 sm:[&>svg]:h-9 ${isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-white/95 border-[#E8DDD3]'
+                  }`}
               >
                 <MiniVoiceKeepsakeSVG
                   styleType="plushie"
@@ -2103,9 +2051,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 />
               </div>
               <div
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border flex items-center justify-center overflow-hidden shadow-2xs rotate-6 ${
-                  isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-white/95 border-[#E8DDD3]'
-                }`}
+                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border flex items-center justify-center overflow-hidden shadow-2xs rotate-6 ${isDarkMode ? 'bg-[#463A36] border-[#5E4F49]' : 'bg-white/95 border-[#E8DDD3]'
+                  }`}
               >
                 <svg viewBox="-58 -58 116 116" className="w-7 h-7 sm:w-8 sm:h-8">
                   <FlowerRenderer type="tulip" petalColor="#FB7185" centerColor="#FEF08A" hideStem />
@@ -2114,18 +2061,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </div>
 
             <h2
-              className={`text-3xl sm:text-4xl font-semibold tracking-tight ${
-                isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-              }`}
+              className={`text-3xl sm:text-4xl font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                }`}
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               Make someone smile today
             </h2>
 
             <p
-              className={`mt-2 text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${
-                isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-              }`}
+              className={`mt-2 text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                }`}
             >
               A thoughtful flower gesture that stays fresh forever in their pocket.
             </p>
@@ -2133,11 +2078,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <button
               type="button"
               onClick={onStartCrafting}
-              className={`mt-5 sm:mt-6 w-full sm:w-auto px-8 py-3.5 rounded-full text-white text-xs sm:text-sm font-medium shadow-sm hover:shadow-md transition-all duration-300 active:scale-95 cursor-pointer ${
-                isDarkMode
-                  ? 'bg-[#9A6550] hover:bg-[#875642]'
-                  : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-              }`}
+              className={`mt-5 sm:mt-6 w-full sm:w-auto px-8 py-3.5 rounded-full text-white text-xs sm:text-sm font-medium shadow-sm hover:shadow-md transition-all duration-300 active:scale-95 cursor-pointer ${isDarkMode
+                ? 'bg-[#9A6550] hover:bg-[#875642]'
+                : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                }`}
             >
               Start Crafting Your Bouquet
             </button>
@@ -2154,18 +2098,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* BLOCK 1 (Desktop Top-Left, Mobile/Tablet 1st): Concise Get in Touch + Direct Email */}
             <div className="fluid-scroll-item lg:col-span-5 lg:col-start-1 lg:row-start-1 text-center lg:text-left flex flex-col items-center lg:items-start">
               <h2
-                className={`text-3xl sm:text-4xl font-semibold tracking-tight ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                }`}
+                className={`text-3xl sm:text-4xl font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                  }`}
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               >
                 Get in Touch
               </h2>
 
               <p
-                className={`mt-1.5 text-xs sm:text-[13.5px] max-w-xs leading-relaxed ${
-                  isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                }`}
+                className={`mt-1.5 text-xs sm:text-[13.5px] max-w-xs leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                  }`}
               >
                 Feedback, custom flower wishes, or studio help.
               </p>
@@ -2174,11 +2116,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 <a
                   href={`mailto:${OFFICIAL_STUDIO_EMAIL}`}
                   data-testid="official-studio-email-link"
-                  className={`text-sm sm:text-[15px] font-medium underline decoration-dashed underline-offset-4 transition-colors ${
-                    isDarkMode
-                      ? 'text-[#FBF6F1] decoration-[#75625A] hover:text-[#E6B89C]'
-                      : 'text-[#231C18] decoration-[#C8B5A6] hover:text-[#7A4B3A]'
-                  }`}
+                  className={`text-sm sm:text-[15px] font-medium underline decoration-dashed underline-offset-4 transition-colors ${isDarkMode
+                    ? 'text-[#FBF6F1] decoration-[#75625A] hover:text-[#E6B89C]'
+                    : 'text-[#231C18] decoration-[#C8B5A6] hover:text-[#7A4B3A]'
+                    }`}
                 >
                   {OFFICIAL_STUDIO_EMAIL}
                 </a>
@@ -2186,15 +2127,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   type="button"
                   onClick={handleCopyStudioEmail}
                   aria-label={`Copy ${OFFICIAL_STUDIO_EMAIL}`}
-                  className={`px-2.5 py-0.5 rounded-full border border-dashed text-[10px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                    copiedEmail
-                      ? isDarkMode
-                        ? 'bg-[#463833] border-[#E6B89C] text-[#E6B89C]'
-                        : 'bg-[#F3E7DC] border-[#7A4B3A] text-[#7A4B3A]'
-                      : isDarkMode
+                  className={`px-2.5 py-0.5 rounded-full border border-dashed text-[10px] font-medium transition-colors cursor-pointer whitespace-nowrap ${copiedEmail
+                    ? isDarkMode
+                      ? 'bg-[#463833] border-[#E6B89C] text-[#E6B89C]'
+                      : 'bg-[#F3E7DC] border-[#7A4B3A] text-[#7A4B3A]'
+                    : isDarkMode
                       ? 'bg-[#352C29] border-[#5E4E49] text-[#D8C7BE] hover:text-[#FBF6F1]'
                       : 'bg-[#FAF5EF] border-[#D8C4B4] text-[#6E5D54] hover:text-[#231C18]'
-                  }`}
+                    }`}
                 >
                   {copiedEmail ? 'Copied!' : 'Copy'}
                 </button>
@@ -2206,9 +2146,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               {/* 1. Stacked Back Stationery Sheet & Deckled Paper Shadow */}
               <div
                 aria-hidden="true"
-                className={`pointer-events-none absolute inset-0 rounded-[20px] sm:rounded-[24px] border border-dashed -rotate-[1.1deg] sm:-rotate-[1.6deg] translate-y-1 sm:translate-y-1.5 scale-[0.99] transition-colors ${
-                  isDarkMode ? 'border-[#544540] bg-[#261F1D]/85' : 'border-[#DECBB9] bg-[#EFE4D6]/85'
-                }`}
+                className={`pointer-events-none absolute inset-0 rounded-[20px] sm:rounded-[24px] border border-dashed -rotate-[1.1deg] sm:-rotate-[1.6deg] translate-y-1 sm:translate-y-1.5 scale-[0.99] transition-colors ${isDarkMode ? 'border-[#544540] bg-[#261F1D]/85' : 'border-[#DECBB9] bg-[#EFE4D6]/85'
+                  }`}
               />
 
               {/* 2. Washi-Taped Pressed Botanical Flower Sprig at Top Center-Left of the Paper */}
@@ -2284,19 +2223,17 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
               {/* 3. Primary Stationery Note Paper Card (Single Dashed Border + Ruled Lines) */}
               <div
-                className={`relative z-10 rounded-[20px] sm:rounded-[24px] border border-dashed p-5 sm:p-7 md:p-8 shadow-[0_14px_38px_rgba(122,75,58,0.06)] text-left transition-colors ${
-                  isDarkMode
-                    ? 'bg-[#352C29] border-[#5E4E49]'
-                    : 'bg-[#FFFDF9] border-[#D8C3B0]'
-                }`}
+                className={`relative z-10 rounded-[20px] sm:rounded-[24px] border border-dashed p-5 sm:p-7 md:p-8 shadow-[0_14px_38px_rgba(122,75,58,0.06)] text-left transition-colors ${isDarkMode
+                  ? 'bg-[#352C29] border-[#5E4E49]'
+                  : 'bg-[#FFFDF9] border-[#D8C3B0]'
+                  }`}
               >
                 {/* Top Row of Letter Paper: "Dear Studio," Salutation + Drawn Botanical Brand Crest on the Right */}
                 <div className="relative flex items-start justify-between gap-3 mb-2 sm:mb-3 pt-1">
                   <div className="pt-2 sm:pt-3">
                     <span
-                      className={`block text-2xl sm:text-[28px] italic font-normal tracking-tight select-none ${
-                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                      }`}
+                      className={`block text-2xl sm:text-[28px] italic font-normal tracking-tight select-none ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                        }`}
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       Dear Studio,
@@ -2354,18 +2291,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </div>
 
                     <div
-                      className={`text-2xl sm:text-3xl font-semibold ${
-                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                      }`}
+                      className={`text-2xl sm:text-3xl font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                        }`}
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       Your Note Is on Its Way
                     </div>
 
                     <p
-                      className={`text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${
-                        isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
-                      }`}
+                      className={`text-xs sm:text-sm max-w-md mx-auto leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
+                        }`}
                     >
                       Thank you for writing{contactName ? `, ${contactName}` : ''}. Your note has been safely received, and I’ll read it soon.
                     </p>
@@ -2373,11 +2308,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     {sentConfirmationEmail && (
                       <p
                         data-testid="contact-confirmation-email-notice"
-                        className={`text-[11.5px] max-w-sm mx-auto px-3 py-1.5 rounded-xl border border-dashed ${
-                          isDarkMode
-                            ? 'bg-[#2B2321]/70 border-[#544540] text-[#E6B89C]'
-                            : 'bg-[#FAF5EF] border-[#DFCFC0] text-[#7A4B3A]'
-                        }`}
+                        className={`text-[11.5px] max-w-sm mx-auto px-3 py-1.5 rounded-xl border border-dashed ${isDarkMode
+                          ? 'bg-[#2B2321]/70 border-[#544540] text-[#E6B89C]'
+                          : 'bg-[#FAF5EF] border-[#DFCFC0] text-[#7A4B3A]'
+                          }`}
                       >
                         A confirmation copy was also sent to <span className="font-medium">{sentConfirmationEmail}</span> from <span className="font-medium">{OFFICIAL_STUDIO_EMAIL}</span>.
                       </p>
@@ -2392,11 +2326,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           setContactError(null);
                           setSentConfirmationEmail(null);
                         }}
-                        className={`inline-block px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                          isDarkMode
-                            ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                            : 'bg-[#FAF4EE] border-[#D5C2B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                        }`}
+                        className={`inline-block px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${isDarkMode
+                          ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                          : 'bg-[#FAF4EE] border-[#D5C2B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                          }`}
                       >
                         Write another note
                       </button>
@@ -2421,15 +2354,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                               setContactTopic(topicItem.id);
                               if (contactError) setContactError(null);
                             }}
-                            className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium transition-all cursor-pointer ${
-                              isSelected
-                                ? isDarkMode
-                                  ? 'bg-[#9A6550] border-[#E6B89C] text-[#FFFDF9] shadow-2xs'
-                                  : 'bg-[#7A4B3A] border-[#7A4B3A] text-[#FFFDF9] shadow-2xs'
-                                : isDarkMode
+                            className={`px-3 py-1 rounded-full border border-dashed text-[11px] font-medium transition-all cursor-pointer ${isSelected
+                              ? isDarkMode
+                                ? 'bg-[#9A6550] border-[#E6B89C] text-[#FFFDF9] shadow-2xs'
+                                : 'bg-[#7A4B3A] border-[#7A4B3A] text-[#FFFDF9] shadow-2xs'
+                              : isDarkMode
                                 ? 'bg-[#2B2321]/70 border-[#5E4E49] text-[#D8C7BE] hover:text-[#FBF6F1] hover:border-[#8C766C]'
                                 : 'bg-[#FAF5EF]/90 border-[#D8C4B4] text-[#6E5D54] hover:text-[#231C18] hover:border-[#B89F8D]'
-                            }`}
+                              }`}
                           >
                             {topicItem.label}
                           </button>
@@ -2447,9 +2379,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         {[0, 1, 2, 3].map((lineIdx) => (
                           <div
                             key={lineIdx}
-                            className={`w-full border-b border-dashed ${
-                              isDarkMode ? 'border-[#544641]' : 'border-[#E2D3C4]'
-                            }`}
+                            className={`w-full border-b border-dashed ${isDarkMode ? 'border-[#544641]' : 'border-[#E2D3C4]'
+                              }`}
                           />
                         ))}
                       </div>
@@ -2464,11 +2395,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                           if (contactError) setContactError(null);
                         }}
                         placeholder={getContactTopicOption(contactTopic).placeholder}
-                        className={`relative z-10 w-full px-1 py-0 bg-transparent border-0 text-[13.5px] sm:text-sm leading-[34px] resize-none focus:outline-none transition-colors disabled:opacity-60 ${
-                          isDarkMode
-                            ? 'text-[#FBF6F1] placeholder:text-[#9E8C83]'
-                            : 'text-[#231C18] placeholder:text-[#9A897E]'
-                        }`}
+                        className={`relative z-10 w-full px-1 py-0 bg-transparent border-0 text-[13.5px] sm:text-sm leading-[34px] resize-none focus:outline-none transition-colors disabled:opacity-60 ${isDarkMode
+                          ? 'text-[#FBF6F1] placeholder:text-[#9E8C83]'
+                          : 'text-[#231C18] placeholder:text-[#9A897E]'
+                          }`}
                         style={{ minHeight: '136px' }}
                       />
                     </div>
@@ -2478,11 +2408,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       <div
                         role="alert"
                         data-testid="contact-error-banner"
-                        className={`px-3.5 py-2.5 rounded-xl border border-dashed text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-                          isDarkMode
-                            ? 'bg-[#462E32]/70 border-[#A66570] text-[#F9D5DC]'
-                            : 'bg-[#FDF2F4] border-[#D99AA5] text-[#7D2E3D]'
-                        }`}
+                        className={`px-3.5 py-2.5 rounded-xl border border-dashed text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${isDarkMode
+                          ? 'bg-[#462E32]/70 border-[#A66570] text-[#F9D5DC]'
+                          : 'bg-[#FDF2F4] border-[#D99AA5] text-[#7D2E3D]'
+                          }`}
                       >
                         <span>{contactError}</span>
                         <div className="flex items-center gap-2 shrink-0">
@@ -2503,9 +2432,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="block">
                           <span
-                            className={`block text-sm italic ${
-                              isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                            }`}
+                            className={`block text-sm italic ${isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                              }`}
                             style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                           >
                             From
@@ -2517,19 +2445,17 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                             value={contactName}
                             onChange={(e) => setContactName(e.target.value)}
                             placeholder="Your name"
-                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors disabled:opacity-60 ${
-                              isDarkMode
-                                ? 'border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
-                                : 'border-[#D5C2B2] text-[#231C18] placeholder:text-[#A39186] focus:border-[#7A4B3A]'
-                            }`}
+                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors disabled:opacity-60 ${isDarkMode
+                              ? 'border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
+                              : 'border-[#D5C2B2] text-[#231C18] placeholder:text-[#A39186] focus:border-[#7A4B3A]'
+                              }`}
                           />
                         </label>
 
                         <label className="block">
                           <span
-                            className={`block text-sm italic ${
-                              isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                            }`}
+                            className={`block text-sm italic ${isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                              }`}
                             style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                           >
                             Reply to
@@ -2548,11 +2474,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                                 ? 'Your email (needed to reply)'
                                 : 'Your email (optional)'
                             }
-                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors disabled:opacity-60 ${
-                              isDarkMode
-                                ? 'border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
-                                : 'border-[#D5C2B2] text-[#231C18] placeholder:text-[#A39186] focus:border-[#7A4B3A]'
-                            }`}
+                            className={`w-full h-8 px-0.5 bg-transparent border-0 border-b border-dashed text-xs sm:text-[13px] focus:outline-none transition-colors disabled:opacity-60 ${isDarkMode
+                              ? 'border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
+                              : 'border-[#D5C2B2] text-[#231C18] placeholder:text-[#A39186] focus:border-[#7A4B3A]'
+                              }`}
                           />
                         </label>
                       </div>
@@ -2562,9 +2487,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         <svg
                           aria-hidden="true"
                           viewBox="0 0 32 32"
-                          className={`w-7 h-7 select-none shrink-0 transition-transform duration-300 ${
-                            isContactSending ? 'animate-pulse scale-110' : 'opacity-90'
-                          }`}
+                          className={`w-7 h-7 select-none shrink-0 transition-transform duration-300 ${isContactSending ? 'animate-pulse scale-110' : 'opacity-90'
+                            }`}
                         >
                           <circle
                             cx="16"
@@ -2593,11 +2517,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         <button
                           type="submit"
                           disabled={isContactSending}
-                          className={`px-6 sm:px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap disabled:opacity-65 ${
-                            isDarkMode
-                              ? 'bg-[#9A6550] hover:bg-[#875642]'
-                              : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                          }`}
+                          className={`px-6 sm:px-7 py-2.5 rounded-full text-white text-xs font-medium shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap disabled:opacity-65 ${isDarkMode
+                            ? 'bg-[#9A6550] hover:bg-[#875642]'
+                            : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                            }`}
                         >
                           {isContactSending ? 'Sealing & Sending...' : 'Seal & Send Note'}
                         </button>
@@ -2611,23 +2534,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* BLOCK 3 (Desktop Bottom-Left Under Email, Mobile/Tablet 3rd Under Form): Help Maintain the Page + Socials */}
             <div className="fluid-scroll-item lg:col-span-5 lg:col-start-1 lg:row-start-2 text-center lg:text-left flex flex-col items-center lg:items-start pt-1 lg:pt-0">
               <div
-                className={`w-full max-w-[240px] mb-5 lg:my-6 border-t border-dashed ${
-                  isDarkMode ? 'border-[#4E413D]' : 'border-[#E2D3C4]'
-                }`}
+                className={`w-full max-w-[240px] mb-5 lg:my-6 border-t border-dashed ${isDarkMode ? 'border-[#4E413D]' : 'border-[#E2D3C4]'
+                  }`}
               />
 
               <h3
-                className={`text-2xl sm:text-[26px] font-semibold tracking-tight ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                }`}
+                className={`text-2xl sm:text-[26px] font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
+                  }`}
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               >
                 Help Maintain the Page
               </h3>
               <p
-                className={`mt-1 text-xs leading-relaxed max-w-sm ${
-                  isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                }`}
+                className={`mt-1 text-xs leading-relaxed max-w-sm ${isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                  }`}
               >
                 Help keep this floral studio blooming and free for everyone.
               </p>
@@ -2638,11 +2558,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   data-testid="kofi-support-link"
-                  className={`px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
-                    isDarkMode
-                      ? 'bg-[#E6B89C] border-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                      : 'bg-[#6E4434] border-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                  }`}
+                  className={`px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+                    ? 'bg-[#E6B89C] border-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                    : 'bg-[#6E4434] border-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                    }`}
                 >
                   ko-fi.com/luxinnamon ↗
                 </a>
@@ -2651,28 +2570,25 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   type="button"
                   onClick={() => setIsMaintainNoteOpen((prev) => !prev)}
                   aria-expanded={isMaintainNoteOpen}
-                  className={`px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
-                    isDarkMode
-                      ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                      : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                  }`}
+                  className={`px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium transition-all active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                    }`}
                 >
                   {isMaintainNoteOpen ? 'Hide Note' : 'About Support'}
                 </button>
 
                 {/* Socials Inline */}
                 <div
-                  className={`flex flex-wrap items-center justify-center lg:justify-start gap-x-2 text-xs font-medium ${
-                    isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
-                  }`}
+                  className={`flex flex-wrap items-center justify-center lg:justify-start gap-x-2 text-xs font-medium ${isDarkMode ? 'text-[#C9B6AC]' : 'text-[#7D6B61]'
+                    }`}
                 >
                   <a
                     href="https://instagram.com"
                     target="_blank"
                     rel="noreferrer"
-                    className={`transition-colors hover:underline underline-offset-4 ${
-                      isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
-                    }`}
+                    className={`transition-colors hover:underline underline-offset-4 ${isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                      }`}
                   >
                     Instagram
                   </a>
@@ -2681,9 +2597,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     href="https://x.com"
                     target="_blank"
                     rel="noreferrer"
-                    className={`transition-colors hover:underline underline-offset-4 ${
-                      isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
-                    }`}
+                    className={`transition-colors hover:underline underline-offset-4 ${isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                      }`}
                   >
                     X
                   </a>
@@ -2692,9 +2607,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     href="https://github.com/Luxanna22"
                     target="_blank"
                     rel="noreferrer"
-                    className={`transition-colors hover:underline underline-offset-4 ${
-                      isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
-                    }`}
+                    className={`transition-colors hover:underline underline-offset-4 ${isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
+                      }`}
                   >
                     GitHub
                   </a>
@@ -2703,9 +2617,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
               {isMaintainNoteOpen && (
                 <p
-                  className={`mt-2.5 text-[11.5px] leading-relaxed max-w-xs ${
-                    isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
-                  }`}
+                  className={`mt-2.5 text-[11.5px] leading-relaxed max-w-xs ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
+                    }`}
                 >
                   Every tip or pass on{' '}
                   <a
@@ -2725,11 +2638,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
         {/* 7. MINIMAL EDITORIAL FOOTER (With Legal: Terms & Privacy) */}
         <footer
-          className={`border-t mt-2 transition-colors ${
-            isDarkMode
-              ? 'bg-[#261F1D] border-[#423734] text-[#D8C7BE]'
-              : 'bg-[#F7EFE6]/70 border-[#EAE0D5] text-[#6E5D54]'
-          }`}
+          className={`border-t mt-2 transition-colors ${isDarkMode
+            ? 'bg-[#261F1D] border-[#423734] text-[#D8C7BE]'
+            : 'bg-[#F7EFE6]/70 border-[#EAE0D5] text-[#6E5D54]'
+            }`}
         >
           <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-10 pb-8">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-8 border-b border-dashed border-[#DFCFC2]/50 dark:border-[#4D403C]">
@@ -2738,9 +2650,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 <div className="flex items-center gap-2.5">
                   <BrandLogoMark isDarkMode={isDarkMode} className="w-7 h-7 shrink-0" />
                   <div
-                    className={`text-2xl font-semibold tracking-tight ${
-                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                    }`}
+                    className={`text-2xl font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                      }`}
                     style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                   >
                     Send A Bouquet
@@ -2755,9 +2666,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <div className="md:col-span-7 grid grid-cols-3 gap-6 text-left">
                 <div className="space-y-2.5">
                   <div
-                    className={`text-xs font-semibold ${
-                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                    }`}
+                    className={`text-xs font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                      }`}
                   >
                     Studio
                   </div>
@@ -2794,9 +2704,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                 <div className="space-y-2.5">
                   <div
-                    className={`text-xs font-semibold ${
-                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                    }`}
+                    className={`text-xs font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                      }`}
                   >
                     Explore
                   </div>
@@ -2833,9 +2742,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
                 <div className="space-y-2.5">
                   <div
-                    className={`text-xs font-semibold ${
-                      isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                    }`}
+                    className={`text-xs font-semibold ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                      }`}
                   >
                     Legal
                   </div>

@@ -222,6 +222,19 @@ export function computeShortCode(payload: string): string {
   return toB62(h1, 5) + toB62(h2, 5) + toB62(h3, 5);
 }
 
+const RESERVED_ROUTE_SLUGS = new Set([
+  'studio',
+  'garland',
+  'creations',
+  'showcase',
+  'faq',
+  'contact',
+  'how-it-works',
+  'sitemap',
+  'robots',
+  'manifest',
+]);
+
 export function getShortCodeFromPathname(pathnameOverride?: string): string | null {
   const raw =
     pathnameOverride !== undefined
@@ -232,7 +245,9 @@ export function getShortCodeFromPathname(pathnameOverride?: string): string | nu
   if (!raw) return null;
   const cleaned = raw.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].trim();
   const match = cleaned.match(/^\/([0-9A-Za-z]{7,20})$/);
-  return match ? match[1] : null;
+  if (!match) return null;
+  if (RESERVED_ROUTE_SLUGS.has(match[1].toLowerCase())) return null;
+  return match[1];
 }
 
 export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift = true): string {

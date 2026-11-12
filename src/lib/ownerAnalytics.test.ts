@@ -19,6 +19,8 @@ import {
 } from './monetization';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
 import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER } from '../../api/_lib/paymentHandler.js';
+import { detectInitialSeoRoute, extractGarlandQueryParam } from './seoMeta';
+import { getShortCodeFromPathname } from './shareAndExport';
 
 describe('Stealth Bouquet Gate & Encrypted Per-Visit URL Routing', () => {
   it('generates and verifies per-visit HMAC-signed stealth gate slugs bound to deviceTokenHash', () => {
@@ -265,5 +267,19 @@ describe('First-Party Web & Studio Telemetry Aggregation', () => {
     assert.equal(recordedDuplicate, false);
     assert.ok(OWNER_ANALYTICS_STATE.passesIssued.pass_7d >= 1);
     assert.ok(OWNER_ANALYTICS_STATE.revenuePhpCentavos >= 9900);
+  });
+
+  it('resolves indexable SEO routes (/studio, /garland) without colliding with shared bouquet short codes', () => {
+    assert.equal(detectInitialSeoRoute('/'), 'landing');
+    assert.equal(detectInitialSeoRoute('/studio'), 'studio');
+    assert.equal(detectInitialSeoRoute('/garland'), 'garland');
+    assert.equal(detectInitialSeoRoute('/creations'), 'garland');
+    assert.equal(extractGarlandQueryParam('?q=Sophia'), 'Sophia');
+
+    // Reserved SEO routes must never be mistaken for 7-20 char bouquet short codes
+    assert.equal(getShortCodeFromPathname('/garland'), null);
+    assert.equal(getShortCodeFromPathname('/creations'), null);
+    assert.equal(getShortCodeFromPathname('/showcase'), null);
+    assert.equal(getShortCodeFromPathname('/Vu18KSuusq9133s'), 'Vu18KSuusq9133s');
   });
 });

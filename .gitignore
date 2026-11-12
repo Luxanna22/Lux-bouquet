@@ -67,3 +67,6 @@ security_spec.md
 *.njsproj
 *.sln
 *.sw?
+public\assets\aistudio\*
+public/assets/aistudio/
+

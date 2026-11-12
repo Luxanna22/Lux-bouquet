@@ -1,0 +1,15 @@
+# Send A Bouquet
+
+> Send A Bouquet (https://www.sendabouquet.online/) is an interactive digital flower bouquet studio where anyone can craft, wrap, and send a custom virtual flower bouquet with a handwritten letter, photo frames, and a recorded voice keepsake—sealed into a shareable gift link or botanical QR code.
+
+## Core Capabilities
+- **36 Botanical Stems**: Arrange focal blooms (roses, peonies, tulips, lilies, sunflowers, ranunculus, orchids, dahlias, camellias, calla lilies, poppies, lotus, cherry blossoms) and delicate fillers (baby's breath, eucalyptus, lavender, sweet pea, Queen Anne's lace, pampas, astilbe).
+- **Couture Wrapping & Ribbons**: 12 bespoke wrappers (kraft parchment, butterfly silk tissue, velvet hatbox, glass bell cloche, Korean cloud mesh, vintage newspaper, lace wrap, ceramic vase, wicker basket) and 12 ribbon styles (satin bow, eyelet lace, corset lacing, wax cord, Akoya pearl strand, gold chain).
+- **Handwritten Greeting Card & Voice Keepsakes**: Attach a sealed letterpress greeting card in handwritten script and record a live voice message inside a Mixtape, Vinyl Record, Plushie, Music Box, or Heart Locket.
+- **Photo Frames & Unlock Rituals**: Tuck personal photos into Polaroid, Postage Stamp, Cameo, 35mm Film, or Herbarium frames, and optionally lock the bouquet reveal behind a Time-Capsule Date Countdown or Secret Question.
+- **No Account Required**: Free to craft and share online with instant gift links, botanical QR codes, and a public community showcase ("On the Lace Garland").
+
+## Key URLs
+- Home & Overview: https://www.sendabouquet.online/
+- Botanical Crafting Studio: https://www.sendabouquet.online/studio
+- On the Lace Garland (Community Showcase): https://www.sendabouquet.online/garland

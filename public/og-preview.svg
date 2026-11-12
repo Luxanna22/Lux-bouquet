@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="48%" r="52%">
+      <stop offset="0%" stop-color="#FCE7F3" stop-opacity="0.7" />
+      <stop offset="55%" stop-color="#FAF4EE" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="outerPetal" cx="50%" cy="80%" r="75%">
+      <stop offset="0%" stop-color="#F9A8D4" stop-opacity="0.8" />
+      <stop offset="65%" stop-color="#FBCFE8" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="#FFF1F2" stop-opacity="0.35" />
+    </radialGradient>
+    <radialGradient id="innerPetal" cx="50%" cy="80%" r="75%">
+      <stop offset="0%" stop-color="#F472B6" stop-opacity="0.7" />
+      <stop offset="60%" stop-color="#FBCFE8" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0.4" />
+    </radialGradient>
+    <radialGradient id="coreGold" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FEFCE8" />
+      <stop offset="55%" stop-color="#FDE047" />
+      <stop offset="100%" stop-color="#D97706" />
+    </radialGradient>
+  </defs>
+
+  <!-- Warm Cotton Parchment Surface -->
+  <rect width="1200" height="630" fill="#FFFDF9" />
+  <rect width="1200" height="630" fill="url(#bgGlow)" />
+
+  <!-- Outer & Inner Bespoke Dashed Stationery Frame -->
+  <rect x="32" y="32" width="1136" height="566" rx="28" fill="none" stroke="#DECBB9" stroke-width="2" stroke-dasharray="8 6" />
+  <rect x="46" y="46" width="1108" height="538" rx="22" fill="none" stroke="#E8D8C8" stroke-width="1" />
+
+  <!-- Central Blooming Botanical Illustration -->
+  <g transform="translate(600, 295) scale(1.45)">
+    <!-- Sage Calyx Leaves -->
+    <g transform="rotate(-76)">
+      <path d="M 0 0 C -34 -32, -30 -96, 0 -132 C 30 -96, 34 -32, 0 0 Z" fill="#D1FAE5" fill-opacity="0.55" stroke="#6EE7B7" stroke-width="1.2" />
+    </g>
+    <g transform="rotate(76)">
+      <path d="M 0 0 C -34 -32, -30 -96, 0 -132 C 30 -96, 34 -32, 0 0 Z" fill="#D1FAE5" fill-opacity="0.55" stroke="#6EE7B7" stroke-width="1.2" />
+    </g>
+
+    <!-- 8 Outer Couture Petals -->
+    <g>
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(0)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(45)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(90)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(135)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(180)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(225)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(270)" />
+      <path d="M 0 0 C -38 -28, -42 -96, 0 -128 C 42 -96, 38 -28, 0 0 Z" fill="url(#outerPetal)" stroke="#D48C9E" stroke-width="1.1" transform="rotate(315)" />
+    </g>
+
+    <!-- 8 Inner Cupped Petals -->
+    <g>
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(22.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(67.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(112.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(157.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(202.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(247.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(292.5)" />
+      <path d="M 0 0 C -28 -22, -30 -72, 0 -96 C 30 -72, 28 -22, 0 0 Z" fill="url(#innerPetal)" stroke="#C97A63" stroke-width="1" transform="rotate(337.5)" />
+    </g>
+
+    <circle cx="0" cy="0" r="14" fill="url(#coreGold)" stroke="#B45309" stroke-width="1" />
+  </g>
+
+  <!-- Editorial Brand Typography -->
+  <text x="600" y="106" text-anchor="middle" font-family="Georgia, 'Cormorant Garamond', serif" font-size="24" font-weight="500" fill="#6E5D54" letter-spacing="1.5">
+    Send A Bouquet
+  </text>
+
+  <text x="600" y="302" text-anchor="middle" font-family="Georgia, 'Cormorant Garamond', serif" font-size="78" font-weight="500" fill="#231C18">
+    Send Love in <tspan font-style="italic" fill="#8C4A32">Every Bloom.</tspan>
+  </text>
+
+  <text x="600" y="366" text-anchor="middle" font-family="Georgia, 'Cormorant Garamond', serif" font-size="27" fill="#5C4D44">
+    Pick your flowers, <tspan font-style="italic" fill="#8C4A32">wrap with love</tspan>, and attach a little voice note or letter.
+  </text>
+
+  <!-- CTA Pill Preview -->
+  <rect x="460" y="424" width="280" height="58" rx="29" fill="#6E4434" />
+  <text x="600" y="460" text-anchor="middle" font-family="system-ui, -apple-system, 'Inter', sans-serif" font-size="18" font-weight="500" fill="#FFFDF9" letter-spacing="0.4">
+    sendabouquet.online
+  </text>
+</svg>

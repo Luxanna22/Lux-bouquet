@@ -161,6 +161,10 @@ import {
   initVercelWebAnalytics,
   trackStudioTelemetry,
 } from '../lib/ownerAnalytics';
+import {
+  detectInitialSeoRoute,
+  syncDocumentSeoMeta,
+} from '../lib/seoMeta';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -256,6 +260,7 @@ export default function App() {
     if (isGiftShareHash()) return false;
     if (getShortCodeFromPathname(window.location.pathname)) return false;
     if (window.location.search.includes('studio=1')) return false;
+    if (detectInitialSeoRoute(window.location.pathname) === 'studio') return false;
     return true;
   });
   const [studioEntranceKey, setStudioEntranceKey] = useState<number>(0);
@@ -331,7 +336,25 @@ export default function App() {
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
   const currentSessionVaultCodeRef = useRef<string | null>(null);
-  const [returnToCreationsPage, setReturnToCreationsPage] = useState(false);
+  const [returnToCreationsPage, setReturnToCreationsPage] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return detectInitialSeoRoute(window.location.pathname) === 'garland';
+  });
+
+  // Synchronize document title, meta description, canonical URL, and robots directive for search engines
+  useEffect(() => {
+    if (stealthGateSlug) {
+      syncDocumentSeoMeta({ mode: 'admin' });
+    } else if (isGiftView && !isPreviewMode) {
+      syncDocumentSeoMeta({ mode: 'gift', recipientName: card?.to });
+    } else if (!showLandingPage) {
+      syncDocumentSeoMeta({ mode: 'studio' });
+    } else if (returnToCreationsPage) {
+      syncDocumentSeoMeta({ mode: 'garland' });
+    } else {
+      syncDocumentSeoMeta({ mode: 'landing' });
+    }
+  }, [stealthGateSlug, isGiftView, isPreviewMode, showLandingPage, returnToCreationsPage, card?.to]);
   const [activeStudioPass, setActiveStudioPass] = useState<StudioPassRecord | null>(() =>
     getStoredStudioPass()
   );

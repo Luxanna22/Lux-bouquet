@@ -1,0 +1,10 @@
+# Send A Bouquet — https://www.sendabouquet.online/
+User-agent: *
+Allow: /
+Allow: /studio
+Allow: /garland
+Allow: /creations
+Disallow: /api/
+Disallow: /gk-
+
+Sitemap: https://www.sendabouquet.online/sitemap.xml

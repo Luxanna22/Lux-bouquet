@@ -22,6 +22,10 @@ import {
   decodeBouquetFromHash,
   localShortCodeCache,
 } from '../lib/shareAndExport';
+import {
+  extractGarlandQueryParam,
+  syncDocumentSeoMeta,
+} from '../lib/seoMeta';
 
 /**
  * Shared hook to merge user's locally saved/shared bouquets and the Firestore global Lace Garland feed
@@ -711,8 +715,15 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   onStartCrafting,
   onUnwrapShowcaseBouquet,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => extractGarlandQueryParam());
   const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    syncDocumentSeoMeta({ mode: 'garland' });
+    return () => {
+      syncDocumentSeoMeta({ mode: 'landing' });
+    };
+  }, []);
   const [nowMs] = useState<number>(() => Date.now());
   const [visibleSlots, setVisibleSlots] = useState<number>(() => {
     if (typeof window === 'undefined') return 4;
