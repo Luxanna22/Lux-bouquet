@@ -9,7 +9,7 @@ import {
   generateClientContactMessageId,
 } from './contactService';
 // @ts-expect-error Testing shared backend handler functions
-import { validateContactPayload, validateBouquetEmailPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail, buildBouquetSurpriseEmail } from '../../api/_lib/contactHandler.js';
+import { validateContactPayload, validateBouquetEmailPayload, buildStudioNotificationEmail, buildVisitorConfirmationEmail, buildBouquetSurpriseEmail, resolveBouquetFromAddress, processBouquetEmailDelivery } from '../../api/_lib/contactHandler.js';
 
 test('OFFICIAL_STUDIO_EMAIL is set to hello@sendabouquet.online', () => {
   assert.equal(OFFICIAL_STUDIO_EMAIL, 'hello@sendabouquet.online');
@@ -100,7 +100,7 @@ test('backend email builders include sender details, reply-to, ruled paper lines
   assert.match(visitorEmail.html, /border-bottom:1px dashed #DFCEC0/);
 });
 
-test('Surprise Bouquet Email delivery keeps sender unnamed and formats "Someone sent you a Bouquet"', () => {
+test('Surprise Bouquet Email delivery uses imageless minimal personal format without keepsake spoilers', () => {
   const invalidCheck = validateBouquetEmailDelivery({
     recipientEmail: 'invalid-email',
     giftUrl: 'https://www.sendabouquet.online/abc1234',
@@ -124,12 +124,70 @@ test('Surprise Bouquet Email delivery keeps sender unnamed and formats "Someone 
     hasPhotoCard: true,
     isLocked: true,
   });
-  assert.equal(surpriseMail.subject, 'For Sophia — Someone sent you a Bouquet');
-  assert.match(surpriseMail.html, /Someone sent you a Bouquet/);
-  assert.match(surpriseMail.html, /For Sophia,/);
+  assert.equal(surpriseMail.subject, 'For Sophia — someone sent you a bouquet');
+  assert.match(surpriseMail.html, /<p[^>]*>For Sophia,<\/p>/);
   assert.match(surpriseMail.html, /https:\/\/www\.sendabouquet\.online\/abc1234/);
+  assert.match(surpriseMail.text, /^For Sophia,\n\n[^\n]+\n\nhttps:\/\/www\.sendabouquet\.online\/abc1234$/);
+
+  // Zero promotional/spoiler patterns
+  assert.doesNotMatch(surpriseMail.html, /<img\b/i);
+  assert.doesNotMatch(surpriseMail.html, /display\s*:\s*none/i);
+  assert.doesNotMatch(surpriseMail.html, /Open Your Bouquet/i);
+  assert.doesNotMatch(surpriseMail.html, /Voice keepsake|Photo keepsake|Secret lock reveal|Floral arrangement/i);
+  assert.doesNotMatch(surpriseMail.text, /Voice keepsake|Photo keepsake|Secret lock reveal|Floral arrangement/i);
   assert.doesNotMatch(surpriseMail.html, /Julian/);
 });
+
+test('resolveBouquetFromAddress and processBouquetEmailDelivery use deliveries@ default and omit X-Entity-Ref-ID', async () => {
+  assert.equal(
+    resolveBouquetFromAddress({}),
+    'Send A Bouquet <deliveries@sendabouquet.online>'
+  );
+  assert.equal(
+    resolveBouquetFromAddress({ BOUQUET_FROM_EMAIL: 'Send A Bouquet <custom@sendabouquet.online>' }),
+    'Send A Bouquet <custom@sendabouquet.online>'
+  );
+
+  const originalFetch = globalThis.fetch;
+  const prevKey = process.env.RESEND_API_KEY;
+  const prevBouquetFrom = process.env.BOUQUET_FROM_EMAIL;
+  const capturedBodies: Array<Record<string, unknown>> = [];
+
+  try {
+    process.env.RESEND_API_KEY = 're_test_123';
+    delete process.env.BOUQUET_FROM_EMAIL;
+
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+      return new Response(JSON.stringify({ id: 'email_123' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const result = await processBouquetEmailDelivery({
+      recipientEmail: 'sophia@example.com',
+      recipientName: 'Sophia',
+      giftUrl: 'https://www.sendabouquet.online/abc1234',
+      hasVoiceNote: true,
+      hasPhotoCard: true,
+      isLocked: true,
+    });
+
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.body.emailDispatched, true);
+    assert.equal(capturedBodies.length, 1);
+    assert.equal(capturedBodies[0].from, 'Send A Bouquet <deliveries@sendabouquet.online>');
+    assert.equal(capturedBodies[0].headers, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (prevKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = prevKey;
+    if (prevBouquetFrom === undefined) delete process.env.BOUQUET_FROM_EMAIL;
+    else process.env.BOUQUET_FROM_EMAIL = prevBouquetFrom;
+  }
+});
+
 
 
 

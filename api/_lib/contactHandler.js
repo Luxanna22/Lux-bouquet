@@ -341,84 +341,44 @@ export function buildVisitorConfirmationEmail({ topicLabel, senderName, message 
 }
 
 /**
+ * Resolves the sender identity for surprise bouquet deliveries.
+ * Configurable via BOUQUET_FROM_EMAIL; defaults to a dedicated local-part on the verified domain
+ * without fake persona names.
+ */
+export function resolveBouquetFromAddress(env = process.env) {
+  return (
+    String(env?.BOUQUET_FROM_EMAIL || '').trim() ||
+    'Send A Bouquet <deliveries@sendabouquet.online>'
+  );
+}
+
+/**
  * Builds the Surprise Bouquet Delivery Email for a loved one.
- * Keeps the sender UNNAMED so the identity remains a surprise until they unwrap the bouquet!
- * Structured as a clean 1-to-1 personal notification (with personal preheader, zero dingbats,
- * and zero marketing slogans) to maximize Primary inbox placement in Gmail.
+ * Keeps the sender UNNAMED and omits keepsake details so everything remains a surprise inside the web app.
+ * Uses an ultra-clean, imageless, left-aligned plain-text feel with strictly greeting + one short sentence + inline URL
+ * for highest Primary inbox placement in Gmail.
  */
 export function buildBouquetSurpriseEmail({
   recipientName = '',
   giftUrl,
-  hasVoiceNote = false,
-  hasPhotoCard = false,
-  isLocked = false,
 }) {
   const cleanRecipient = String(recipientName || '').trim();
+  const displayRecipient = cleanRecipient || 'You';
   const subject = cleanRecipient
-    ? `For ${cleanRecipient} — Someone sent you a Bouquet`
-    : 'Someone sent you a Bouquet';
+    ? `For ${cleanRecipient} — someone sent you a bouquet`
+    : 'Someone sent you a bouquet';
 
-  const assetOrigin = resolveEmailAssetOrigin(giftUrl);
-  const preheaderHtml = buildEmailPreheaderHtml(
-    `For ${cleanRecipient || 'You'}, a personal note and flower arrangement were sealed for you.`
-  );
-  const crestHtml = buildEmailBotanicalCrestHtml('', assetOrigin);
+  const introSentence =
+    'Someone arranged a digital bouquet and tucked a personal note inside for you to open whenever you are ready.';
 
-  const keepsakeItems = ['Floral arrangement', 'Personal note'];
-  if (hasPhotoCard) keepsakeItems.push('Photo keepsake');
-  if (hasVoiceNote) keepsakeItems.push('Voice keepsake');
-  if (isLocked) keepsakeItems.push('Secret lock reveal');
-
-  const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:36px 16px;color:#2A201D;">
-      ${preheaderHtml}
-      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;">
-        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:32px 28px 26px 28px;text-align:center;">
-          ${crestHtml}
-
-          <div style="margin-top:22px;font-size:19px;font-style:italic;color:#7D6B60;">
-            For ${escapeHtml(cleanRecipient || 'You')},
-          </div>
-          <div style="font-size:31px;font-weight:600;color:#2A201D;line-height:1.15;letter-spacing:-0.01em;margin:6px 0 18px 0;">
-            Someone sent you a Bouquet
-          </div>
-
-          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:20px 22px;margin:0 auto 22px auto;text-align:center;">
-            <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.75;color:#5C4B43;">
-              A digital bouquet and personal note have been arranged and sealed for you—waiting for you to untie the ribbon and watch each stem bloom on your screen.
-            </p>
-            <div style="width:56px;margin:14px auto 10px auto;border-bottom:1px dashed #DFCEC0;"></div>
-            <div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#8C7A70;">
-              ${escapeHtml(keepsakeItems.join(' · '))}
-            </div>
-          </div>
-
-          <div style="text-align:center;margin:0 0 22px 0;">
-            <a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:13px 32px;border-radius:999px;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;font-weight:500;letter-spacing:0.01em;text-decoration:none;">
-              Open Your Bouquet
-            </a>
-          </div>
-
-          <div style="border-top:1px dashed #EADFD4;padding-top:14px;text-align:center;">
-            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11.5px;color:#9A877B;line-height:1.6;">
-              Direct link: <a href="${escapeHtml(giftUrl)}" style="color:#6E4434;text-decoration:underline;word-break:break-all;">${escapeHtml(giftUrl)}</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `.trim();
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222222;max-width:560px;margin:0;padding:0;text-align:left;"><p style="margin:0 0 14px 0;">For ${escapeHtml(displayRecipient)},</p><p style="margin:0 0 14px 0;">${introSentence}</p><p style="margin:0;"><a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="color:#6E4434;text-decoration:underline;word-break:break-all;">${escapeHtml(giftUrl)}</a></p></div>`;
 
   const text = [
-    `For ${cleanRecipient || 'You'},`,
-    'Someone sent you a Bouquet.',
+    `For ${displayRecipient},`,
     '',
-    'A digital bouquet and personal note have been arranged and sealed for you—waiting for you to untie the ribbon and watch each stem bloom on your screen.',
-    `Included: ${keepsakeItems.join(' · ')}`,
+    introSentence,
     '',
-    `Open your bouquet: ${giftUrl}`,
-    '',
-    '— Send A Bouquet',
+    giftUrl,
   ].join('\n');
 
   return { subject, html, text };
@@ -428,21 +388,13 @@ async function sendResendEmail(apiKey, payload) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
-    const uniqueRefId = `sab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const enrichedPayload = {
-      ...payload,
-      headers: {
-        'X-Entity-Ref-ID': uniqueRefId,
-        ...(payload.headers || {}),
-      },
-    };
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(enrichedPayload),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -588,22 +540,14 @@ export async function processBouquetEmailDelivery(rawBody = {}) {
     recipientEmail,
     recipientName,
     giftUrl,
-    hasVoiceNote,
-    hasPhotoCard,
-    isLocked,
   } = validated.value;
 
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
-  const fromAddress =
-    (process.env.CONTACT_FROM_EMAIL || '').trim() ||
-    'Send A Bouquet <hello@sendabouquet.online>';
+  const fromAddress = resolveBouquetFromAddress();
 
   const mail = buildBouquetSurpriseEmail({
     recipientName,
     giftUrl,
-    hasVoiceNote,
-    hasPhotoCard,
-    isLocked,
   });
 
   let emailDispatched = false;
