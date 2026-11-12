@@ -52,6 +52,7 @@ import {
   Home,
   BookOpen,
   Bookmark,
+  Save,
   ImagePlus,
 } from 'lucide-react';
 import {
@@ -2018,11 +2019,11 @@ export default function App() {
                       : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
                   }`}
                 >
-                  <Check
-                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                      savedDraftPulse ? 'text-emerald-500' : 'text-[#B4846C]'
-                    }`}
-                  />
+                  {savedDraftPulse ? (
+                    <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B4846C]" />
+                  )}
                 </button>
                 <span
                   aria-hidden="true"
@@ -2187,7 +2188,7 @@ export default function App() {
                     ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
                     : 'Premium Studio Pass & Pass Key'
                 }
-                className={`h-7.5 sm:h-8 px-2.25 sm:px-2.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
+                className={`h-7.5 sm:h-8 w-7.5 sm:w-auto sm:px-2.5 justify-center rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
                   isBouquetUnlockedByPass
                     ? isDarkMode
                       ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
@@ -2198,7 +2199,7 @@ export default function App() {
                 }`}
               >
                 <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                <span>Premium</span>
+                <span className="hidden sm:inline">Premium</span>
               </button>
 
               <button
@@ -3176,6 +3177,144 @@ export default function App() {
                 : ''
             }`}
           >
+            {/* Mobile-Only (< sm) Floating Top Selected-Item Bar (Positioned right under top navbar; never moves or resizes the main canvas) */}
+            {!isPreviewMode && !isGiftView && selectedItem && !selectedItem.hidden && (
+              <div
+                role="toolbar"
+                aria-label="Mobile selected item quick controls"
+                className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.25rem)] max-w-[356px] flex sm:hidden items-center justify-between gap-2 px-3 py-1 rounded-full border border-dashed shadow-[0_8px_24px_rgba(35,28,24,0.10)] backdrop-blur-md pointer-events-auto ${
+                  isDarkMode
+                    ? 'bg-[#2B2321]/92 border-[#5E4E49] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#2A201D]'
+                }`}
+              >
+                <span className="text-[11.5px] font-medium truncate text-[#6E5D54] dark:text-[#D8C7BE] pl-0.5">
+                  {selectedItem.photoStyle
+                    ? selectedItem.photoStyle === 'raw'
+                      ? 'Photo'
+                      : PHOTO_FRAME_CATALOG.find((p) => p.id === selectedItem.photoStyle)?.shortLabel || 'Photocard'
+                    : selectedMeta?.shortName || 'Stem'}
+                </span>
+
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                    }
+                    onClick={() => moveItemLayer(selectedItem.id, 'back')}
+                    title="Send Behind / Inside Bouquet"
+                    aria-label="Send to Most Back"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                    }
+                    onClick={() => moveItemLayer(selectedItem.id, 'down')}
+                    title="Send Back 1 Layer"
+                    aria-label="Send Back 1 Layer"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex >= items.length - 1 &&
+                        getEffectiveItemPlane(selectedItem) === 'front')
+                    }
+                    onClick={() => moveItemLayer(selectedItem.id, 'up')}
+                    title="Bring Forward 1 Layer"
+                    aria-label="Bring Forward 1 Layer"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      Boolean(selectedItem.locked) ||
+                      (selectedItemIndex >= items.length - 1 &&
+                        getEffectiveItemPlane(selectedItem) === 'front')
+                    }
+                    onClick={() => moveItemLayer(selectedItem.id, 'front')}
+                    title="Bring to Overlay / Front of Bouquet"
+                    aria-label="Bring to Most Front"
+                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  >
+                    <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
+                  </button>
+
+                  {selectedItem.photoStyle && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className={`w-[1px] h-3.5 mx-0.5 ${
+                          isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        disabled={Boolean(selectedItem.locked)}
+                        onClick={() => {
+                          const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
+                          updateItem(
+                            selectedItem.id,
+                            {
+                              clippedToBouquet: nextClipped,
+                              layerPlane: nextClipped ? 'inside' : 'front',
+                            },
+                            true
+                          );
+                        }}
+                        title={
+                          getEffectiveItemPlane(selectedItem) === 'inside'
+                            ? 'Tucked inside bouquet wrapper (Tap to float free)'
+                            : 'Floating photo (Tap to tuck inside bouquet wrapper)'
+                        }
+                        aria-label={
+                          getEffectiveItemPlane(selectedItem) === 'inside'
+                            ? 'Unclip photo from bouquet'
+                            : 'Clip photo to bouquet'
+                        }
+                        aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
+                        className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${
+                          getEffectiveItemPlane(selectedItem) === 'inside'
+                            ? 'bg-[#B4846C] text-white'
+                            : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
+                        }`}
+                      >
+                        <BouquetClipToggleIcon
+                          clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span>{getEffectiveItemPlane(selectedItem) === 'inside' ? 'Tucked' : 'Tuck'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
+                        }
+                        title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                        aria-label="Upload photo into photocard"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             <BouquetStage
               svgRef={svgRef}
               isPreviewMode={isPreviewMode || isGiftView}
@@ -3995,144 +4134,6 @@ export default function App() {
                 : 'bg-white border-stone-200/80 text-[#1C1917]'
             }`}
           >
-            {/* Mobile-Only (< sm) Contextual Layering & Photo Quick-Bar (keeps canvas 100% unobstructed on phones) */}
-            {selectedItem && !selectedItem.hidden && (
-              <div
-                role="toolbar"
-                aria-label="Mobile selected item quick controls"
-                className={`flex sm:hidden items-center justify-between gap-2 mb-2 px-2.5 py-1 rounded-full border border-dashed ${
-                  isDarkMode
-                    ? 'bg-[#2B2321]/90 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FAF4EE]/90 border-[#DECBB9] text-[#2A201D]'
-                }`}
-              >
-                <span className="text-[11px] font-medium truncate text-[#6E5D54] dark:text-[#D8C7BE] pl-0.5">
-                  {selectedItem.photoStyle
-                    ? selectedItem.photoStyle === 'raw'
-                      ? 'Photo'
-                      : PHOTO_FRAME_CATALOG.find((p) => p.id === selectedItem.photoStyle)?.shortLabel || 'Photocard'
-                    : selectedMeta?.shortName || 'Stem'}
-                </span>
-
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'back')}
-                    title="Send Behind / Inside Bouquet"
-                    aria-label="Send to Most Back"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'down')}
-                    title="Send Back 1 Layer"
-                    aria-label="Send Back 1 Layer"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex >= items.length - 1 &&
-                        getEffectiveItemPlane(selectedItem) === 'front')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'up')}
-                    title="Bring Forward 1 Layer"
-                    aria-label="Bring Forward 1 Layer"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex >= items.length - 1 &&
-                        getEffectiveItemPlane(selectedItem) === 'front')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'front')}
-                    title="Bring to Overlay / Front of Bouquet"
-                    aria-label="Bring to Most Front"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-
-                  {selectedItem.photoStyle && (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className={`w-[1px] h-3.5 mx-0.5 ${
-                          isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        disabled={Boolean(selectedItem.locked)}
-                        onClick={() => {
-                          const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
-                          updateItem(
-                            selectedItem.id,
-                            {
-                              clippedToBouquet: nextClipped,
-                              layerPlane: nextClipped ? 'inside' : 'front',
-                            },
-                            true
-                          );
-                        }}
-                        title={
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'Tucked inside bouquet wrapper (Tap to float free)'
-                            : 'Floating photo (Tap to tuck inside bouquet wrapper)'
-                        }
-                        aria-label={
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'Unclip photo from bouquet'
-                            : 'Clip photo to bouquet'
-                        }
-                        aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
-                        className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'bg-[#B4846C] text-white'
-                            : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
-                        }`}
-                      >
-                        <BouquetClipToggleIcon
-                          clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
-                          className="w-3.5 h-3.5"
-                        />
-                        <span>{getEffectiveItemPlane(selectedItem) === 'inside' ? 'Tucked' : 'Tuck'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
-                        }
-                        title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
-                        aria-label="Upload photo into photocard"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
-                      >
-                        <ImagePlus className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Row 1: Category Pill Tabs + Reset & Collapse/Expand Tray Buttons (Works on Phone & Desktop) */}
             <div
               className={`flex items-center justify-between gap-2 ${
@@ -6774,7 +6775,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#1C1917]/92 text-white dark:bg-stone-100 dark:text-[#1C1917] px-4 py-2 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm flex items-center gap-1.5 animate-[fadeIn_200ms_ease-out]"
+          className="fixed top-25 sm:top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-[#1C1917]/92 text-white dark:bg-stone-100 dark:text-[#1C1917] px-3.5 py-1.5 rounded-full text-xs font-medium shadow-lg backdrop-blur-sm flex items-center gap-1.5 animate-[fadeIn_200ms_ease-out]"
         >
           <Check className="w-3.5 h-3.5 text-[#E6B89C] dark:text-[#6E4434] shrink-0" />
           <span>{toast}</span>

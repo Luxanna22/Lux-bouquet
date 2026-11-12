@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
-import { ArrowLeft, ChevronLeft, ChevronRight, Moon, Search, Sun, X } from 'lucide-react';
+import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Moon, Search, Sun, X } from 'lucide-react';
 import { BouquetStage } from './BouquetStage';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
@@ -392,15 +392,16 @@ export const SweepingCatenaryLaceLineSVG: React.FC<{
   isDarkMode: boolean;
   edgeY?: number;
   midY?: number;
-}> = React.memo(({ isDarkMode, edgeY = 6, midY = 36 }) => {
+}> = React.memo(({ isDarkMode, edgeY = 10, midY = 64 }) => {
   const controlY = 2 * midY - edgeY;
-  const viewHeight = midY + 20;
+  const viewHeight = midY + 24;
 
   return (
     <svg
       viewBox={`0 0 1440 ${viewHeight}`}
       preserveAspectRatio="none"
-      className="w-full h-[44px] sm:h-[60px] lg:h-[68px] overflow-visible pointer-events-none select-none"
+      style={{ height: `${viewHeight}px` }}
+      className="w-full overflow-visible pointer-events-none select-none"
       aria-hidden="true"
     >
       {/* Soft Drop Shadow Under the Draped Lace Line */}
@@ -500,8 +501,8 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
     [previewEntries.length, visibleSlots]
   );
 
-  const edgeY = visibleSlots === 2 ? 5 : 6;
-  const midY = visibleSlots === 2 ? 20 : visibleSlots === 3 ? 30 : 36;
+  const edgeY = 6;
+  const midY = visibleSlots === 2 ? 32 : visibleSlots === 3 ? 60 : 82;
 
   const updateGarlandDOM = useCallback(() => {
     const count = previewEntries.length;
@@ -642,7 +643,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
 
       {/* UNIFIED SINGLE-LACE RIGHT-TO-LEFT CAROUSEL PREVIEW ACROSS MOBILE, TABLET & DESKTOP */}
       <div
-        className="relative w-full h-[314px] sm:h-[372px] lg:h-[408px] touch-pan-y"
+        className="relative w-full h-[328px] sm:h-[404px] lg:h-[456px] touch-pan-y"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return;
           dragStartXRef.current = e.clientX;
@@ -868,8 +869,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const scrollPerItemPx = 300;
   const totalScrollRangePx = Math.max(320, Math.round(maxCarouselOffset * scrollPerItemPx));
 
-  const edgeY = visibleSlots === 2 ? 4 : 5;
-  const midY = visibleSlots === 2 ? 16 : visibleSlots === 3 ? 24 : 28;
+  const edgeY = 6;
+  const midY = visibleSlots === 2 ? 26 : visibleSlots === 3 ? 48 : 66;
 
   const applySingleLaceTransforms = useCallback(
     (scrollTopPx: number) => {
@@ -1048,42 +1049,42 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
         {/* SINGLE-SCREEN LOCKED STAGE (100dvh, 1 Sweeping Catenary Lace Line Only) */}
         <div
           data-testid="single-screen-lace-stage"
-          className="sticky top-0 h-dvh w-full overflow-hidden flex flex-col justify-between select-none"
+          className="sticky top-0 h-dvh w-full overflow-hidden flex flex-col justify-start select-none"
         >
-          {/* 1. TOP BAR (INTEGRATED PAGE HEADER) + COMPACT HEADER & UNIFIED "FOR / FROM" SEARCH */}
+          {/* 1. FLOATING PILL NAVBAR (Consistent with Landing & Studio Header) + COMPACT EDITORIAL TITLE & SEARCH */}
           <div className="w-full shrink-0 z-30">
-            <header
-              className={`w-full border-b border-dashed transition-colors ${
-                isDarkMode
-                  ? 'bg-[#2B2321]/95 border-[#4D3F3B] text-[#FBF6F1]'
-                  : 'bg-[#FDF9F5]/95 border-[#E5D5C5] text-[#231C18]'
-              }`}
-            >
-              <div className="max-w-6xl mx-auto h-13 sm:h-14 px-3.5 sm:px-8 flex items-center justify-between gap-2 sm:gap-3">
+            <header className="w-full max-w-5xl mx-auto px-2.5 sm:px-6 pt-2 sm:pt-3">
+              <div
+                className={`h-11.5 sm:h-12 px-2.5 sm:px-4 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-2 transition-colors ${
+                  isDarkMode
+                    ? 'bg-[#352C29]/95 border-[#574843] text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#231C18]'
+                }`}
+              >
                 {/* Left: Back to Home + Brand */}
-                <div className="flex items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onBackToHome)}
                     data-testid="creations-back-home-btn"
-                    className={`h-9 px-3.5 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                    className={`h-8 sm:h-8.5 px-3 sm:px-3.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 ${
                       isDarkMode
                         ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                         : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                     }`}
                   >
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft className="w-3.5 h-3.5" />
                     <span>Back</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onBackToHome)}
-                    className="hidden sm:flex items-center gap-2 cursor-pointer"
+                    className="hidden sm:flex items-center gap-2 cursor-pointer hover:opacity-85 transition"
                   >
-                    <BrandLogoMark className="w-6.5 h-6.5" isDarkMode={isDarkMode} />
+                    <BrandLogoMark className="w-6 h-6" isDarkMode={isDarkMode} />
                     <span
-                      className="text-xl font-semibold tracking-tight whitespace-nowrap"
+                      className="text-lg sm:text-xl font-semibold tracking-tight whitespace-nowrap"
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       Send A Bouquet
@@ -1091,41 +1092,42 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   </button>
                 </div>
 
-                {/* Right: Theme Toggle, Saved Bouquets & Craft CTA */}
-                <div className="flex items-center gap-1.5 sm:gap-2.5">
+                {/* Right: Theme Toggle, Compact Saved Bouquets Pill & Craft CTA (Never wraps on mobile) */}
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={onToggleDarkMode}
                     aria-label="Toggle theme"
-                    className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                    className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center transition-colors active:scale-95 cursor-pointer shrink-0 ${
                       isDarkMode
                         ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
                         : 'bg-[#FAF4EE]/85 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
                     }`}
                   >
                     {isDarkMode ? (
-                      <Sun className="w-4 h-4 text-amber-300" />
+                      <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" />
                     ) : (
-                      <Moon className="w-4 h-4" />
+                      <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     )}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onOpenVault)}
-                    className={`inline-flex h-9 px-3 sm:px-3.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition cursor-pointer ${
+                    aria-label="Saved Bouquets"
+                    title="Saved Bouquets"
+                    className={`inline-flex h-8 sm:h-8.5 px-2.5 sm:px-3.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ${
                       isDarkMode
                         ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
                         : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
                     }`}
                   >
-                    <span>Saved Bouquets</span>
+                    <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                    <span className="hidden md:inline">Saved Bouquets</span>
                     {vaultCount > 0 && (
                       <span
-                        className={`px-1.5 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${
-                          isDarkMode
-                            ? 'bg-[#E6B89C]/20 text-[#F0C8B0]'
-                            : 'bg-[#7A4B3A]/15 text-[#7A4B3A]'
+                        className={`text-[11px] font-semibold tabular-nums ${
+                          isDarkMode ? 'text-[#F0C8B0]' : 'text-[#7A4B3A]'
                         }`}
                       >
                         {vaultCount}
@@ -1136,7 +1138,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   <button
                     type="button"
                     onClick={() => triggerSmoothClose(onStartCrafting)}
-                    className={`h-9 px-4 sm:px-5 rounded-full text-white text-xs sm:text-[13px] font-medium inline-flex items-center justify-center transition active:scale-95 cursor-pointer whitespace-nowrap ${
+                    className={`h-8 sm:h-8.5 px-3.5 sm:px-4 rounded-full text-white text-xs font-medium inline-flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ${
                       isDarkMode
                         ? 'bg-[#9A6550] hover:bg-[#875642]'
                         : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
@@ -1149,9 +1151,9 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             </header>
 
             {/* Compact Editorial Title + Unified "For / From" Search Input */}
-            <div className="max-w-xl mx-auto px-3 pt-2.5 sm:pt-3.5 text-center">
+            <div className="max-w-xl mx-auto px-3 pt-2 sm:pt-3 text-center">
               <h1
-                className={`text-[26px] sm:text-3xl lg:text-4xl font-semibold tracking-tight leading-none ${
+                className={`text-[24px] sm:text-3xl lg:text-[34px] font-semibold tracking-tight leading-none ${
                   isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                 }`}
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -1160,19 +1162,19 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
               </h1>
 
               <label
-                className={`mt-2 sm:mt-2.5 max-w-md mx-auto rounded-full border border-dashed px-4 py-2 flex items-center gap-2.5 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
+                className={`mt-1.5 sm:mt-2 max-w-md mx-auto rounded-full border border-dashed px-3.5 sm:px-4 py-1.5 sm:py-2 flex items-center gap-2 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
                   isDarkMode
                     ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
                     : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
                 }`}
               >
                 <Search
-                  className={`w-4 h-4 shrink-0 ${
+                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
                     isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
                   }`}
                 />
                 <span
-                  className={`text-[15px] sm:text-base italic font-medium shrink-0 select-none ${
+                  className={`text-[14px] sm:text-[15px] italic font-medium shrink-0 select-none ${
                     isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
@@ -1211,9 +1213,9 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             </div>
           </div>
 
-          {/* 2. MIDDLE: ONE SINGLE SWEEPING CATENARY LACE LINE & RIGHT-TO-LEFT LENIS CAROUSEL (Positioned higher up right under the search bar) */}
+          {/* 2. MIDDLE: ONE SINGLE SWEEPING CATENARY LACE LINE, RIGHT-TO-LEFT LENIS CAROUSEL & INTEGRATED STEP CONTROLS */}
           <div
-            className="relative flex-1 min-h-0 w-full flex flex-col justify-start pt-1.5 sm:pt-3 overflow-x-hidden overflow-y-visible"
+            className="relative flex-1 min-h-0 w-full flex flex-col items-center justify-start pt-1 sm:pt-2 overflow-x-hidden overflow-y-visible"
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, input, label')) return;
               dragStartXRef.current = e.clientX;
@@ -1270,111 +1272,109 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                 </button>
               </div>
             ) : (
-              <div
-                data-testid="single-lace-carousel-track"
-                className="relative w-full h-[clamp(290px,52vh,418px)]"
-              >
-                {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
-                <div className="absolute top-0 inset-x-0 z-0">
-                  <SweepingCatenaryLaceLineSVG
-                    isDarkMode={isDarkMode}
-                    edgeY={edgeY}
-                    midY={midY}
-                  />
-                </div>
-
-                {/* Hanging Creations Gliding From Right to Left Along the Single Catenary Curve */}
-                <div className="absolute inset-0 z-10">
-                  {filteredEntries.map((entry, idx) => {
-                    const initial = computeSingleLaceCarouselItemTransform(
-                      idx,
-                      filteredEntries.length,
-                      0,
-                      visibleSlots,
-                      entry.tiltDeg,
-                      edgeY,
-                      midY
-                    );
-                    return (
-                      <div
-                        key={entry.id}
-                        ref={(el) => {
-                          itemRefs.current[idx] = el;
-                        }}
-                        data-testid={`showcase-card-${entry.code}`}
-                        data-hidden={initial.isVisible ? '0' : '1'}
-                        style={{
-                          left: `${initial.xPercent}%`,
-                          transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
-                          opacity: initial.opacity,
-                          pointerEvents: initial.isVisible ? 'auto' : 'none',
-                          visibility: initial.isVisible ? 'visible' : 'hidden',
-                          willChange: 'transform, opacity',
-                          contain: 'layout style paint',
-                        }}
-                        className="absolute top-0 w-[158px] min-[380px]:w-[168px] sm:w-[clamp(168px,23vh,212px)] lg:w-[clamp(178px,24.5vh,226px)]"
-                      >
-                        <HangingCreationCard
-                          entry={entry}
-                          isDarkMode={isDarkMode}
-                          disableStaticTilt
-                          onUnwrap={(selected) =>
-                            triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
-                          }
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 3. MINIMAL BOTTOM CAROUSEL STEP CONTROLS */}
-          <div className="w-full shrink-0 pb-2.5 sm:pb-4 pt-1 px-4 z-30 flex flex-col items-center">
-            {filteredEntries.length > 0 && (
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => scrollByStep(-1)}
-                  aria-label="Glide carousel right (previous creation)"
-                  data-testid="lace-carousel-prev"
-                  className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
-                      : 'bg-[#FFFDF9]/90 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
-                  }`}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
+              <>
                 <div
-                  className={`px-3.5 py-1 rounded-full border border-dashed text-xs tabular-nums ${
-                    isDarkMode
-                      ? 'bg-[#352C29]/85 border-[#574843] text-[#E5D6CE]'
-                      : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#5C4438]'
-                  }`}
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  data-testid="single-lace-carousel-track"
+                  className="relative w-full h-[272px] min-[380px]:h-[286px] sm:h-[364px] lg:h-[420px] shrink-0"
                 >
-                  <span className="font-semibold">
-                    {Math.min(filteredEntries.length, activeCarouselStep + 1)} / {filteredEntries.length}
-                  </span>
+                  {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
+                  <div className="absolute top-0 inset-x-0 z-0">
+                    <SweepingCatenaryLaceLineSVG
+                      isDarkMode={isDarkMode}
+                      edgeY={edgeY}
+                      midY={midY}
+                    />
+                  </div>
+
+                  {/* Hanging Creations Gliding From Right to Left Along the Single Catenary Curve */}
+                  <div className="absolute inset-0 z-10">
+                    {filteredEntries.map((entry, idx) => {
+                      const initial = computeSingleLaceCarouselItemTransform(
+                        idx,
+                        filteredEntries.length,
+                        0,
+                        visibleSlots,
+                        entry.tiltDeg,
+                        edgeY,
+                        midY
+                      );
+                      return (
+                        <div
+                          key={entry.id}
+                          ref={(el) => {
+                            itemRefs.current[idx] = el;
+                          }}
+                          data-testid={`showcase-card-${entry.code}`}
+                          data-hidden={initial.isVisible ? '0' : '1'}
+                          style={{
+                            left: `${initial.xPercent}%`,
+                            transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
+                            opacity: initial.opacity,
+                            pointerEvents: initial.isVisible ? 'auto' : 'none',
+                            visibility: initial.isVisible ? 'visible' : 'hidden',
+                            willChange: 'transform, opacity',
+                            contain: 'layout style paint',
+                          }}
+                          className="absolute top-0 w-[160px] min-[380px]:w-[170px] sm:w-[clamp(172px,23.5vh,214px)] lg:w-[clamp(182px,25vh,228px)]"
+                        >
+                          <HangingCreationCard
+                            entry={entry}
+                            isDarkMode={isDarkMode}
+                            disableStaticTilt
+                            onUnwrap={(selected) =>
+                              triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => scrollByStep(1)}
-                  aria-label="Glide carousel left (next creation)"
-                  data-testid="lace-carousel-next"
-                  className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
-                      : 'bg-[#FFFDF9]/90 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
-                  }`}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
+                {/* 3. CAROUSEL STEP CONTROLS — Positioned Directly Under the Hanging Cards (Never Stranded at Bottom Edge) */}
+                <div className="w-full shrink-0 mt-2.5 sm:mt-4 pb-2 px-4 z-30 flex items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => scrollByStep(-1)}
+                    aria-label="Glide carousel right (previous creation)"
+                    data-testid="lace-carousel-prev"
+                    className={`w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer shadow-2xs ${
+                      isDarkMode
+                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
+                        : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+                    }`}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div
+                    className={`px-4 py-1.5 rounded-full border border-dashed text-xs sm:text-[13px] tabular-nums shadow-2xs ${
+                      isDarkMode
+                        ? 'bg-[#352C29]/90 border-[#574843] text-[#E5D6CE]'
+                        : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#5C4438]'
+                    }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    <span className="font-semibold">
+                      {Math.min(filteredEntries.length, activeCarouselStep + 1)} / {filteredEntries.length}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => scrollByStep(1)}
+                    aria-label="Glide carousel left (next creation)"
+                    data-testid="lace-carousel-next"
+                    className={`w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer shadow-2xs ${
+                      isDarkMode
+                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
+                        : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+                    }`}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
