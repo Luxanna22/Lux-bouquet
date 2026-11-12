@@ -8,3 +8,4 @@ Disallow: /api/
 Disallow: /gk-
 
 Sitemap: https://www.sendabouquet.online/sitemap.xml
+

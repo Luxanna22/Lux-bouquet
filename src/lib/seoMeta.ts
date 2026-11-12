@@ -105,3 +105,4 @@ export function syncDocumentSeoMeta(options: {
   setMetaAttr('meta[name="twitter:description"]', 'content', description);
   setMetaAttr('meta[name="twitter:url"]', 'content', canonicalUrl);
 }
+
