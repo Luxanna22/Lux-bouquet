@@ -185,9 +185,11 @@ export function computeSingleLaceCarouselItemTransform(
   const yCurvePx = evaluateCatenaryCurveY(u, edgeY, midY);
 
   // Gentle pendulum breeze sway + subtle catenary tangent follow as the bouquet glides right-to-left
-  const breezeSway = Math.sin(scrollOffset * 2.35 + index * 1.45) * 1.85;
-  const ropeArcTilt = Math.max(-2.5, Math.min(2.5, (0.5 - u) * 3.2));
-  const rotateDeg = Number((baseTiltDeg * 0.65 + breezeSway + ropeArcTilt).toFixed(2));
+  const breezeSway = safeSlots === 2 ? 0 : Math.sin(scrollOffset * 2.35 + index * 1.45) * 1.45;
+  const ropeArcTilt = Math.max(-2.5, Math.min(2.5, (0.5 - u) * (safeSlots === 2 ? 2.4 : 3.2)));
+  const rotateDeg = Number(
+    ((safeSlots === 2 ? 0 : baseTiltDeg * 0.45) + breezeSway + ropeArcTilt).toFixed(2)
+  );
 
   // Slight perspective emphasis near the center dip of the catenary curve
   const distFromCenter = Math.abs(u - 0.5);

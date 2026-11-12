@@ -85,7 +85,7 @@ test('backend email builders include sender details, reply-to, ruled paper lines
   assert.match(studioEmail.subject, /Flower Wish/);
   assert.match(studioEmail.subject, /Mina/);
   assert.match(studioEmail.html, /mina@example\.com/);
-  assert.match(studioEmail.html, /<svg[\s\S]*?<\/svg>/);
+  assert.match(studioEmail.html, /hero-bloom-crest\.png/);
   assert.match(studioEmail.html, /border-bottom:1px dashed #DFCEC0/);
 
   const visitorEmail = buildVisitorConfirmationEmail({
@@ -96,7 +96,7 @@ test('backend email builders include sender details, reply-to, ruled paper lines
   assert.match(visitorEmail.subject, /Send A Bouquet/);
   assert.match(visitorEmail.html, /hello@sendabouquet\.online/);
   assert.match(visitorEmail.html, /white gardenia/);
-  assert.match(visitorEmail.html, /<svg[\s\S]*?<\/svg>/);
+  assert.match(visitorEmail.html, /hero-bloom-crest\.png/);
   assert.match(visitorEmail.html, /border-bottom:1px dashed #DFCEC0/);
 });
 

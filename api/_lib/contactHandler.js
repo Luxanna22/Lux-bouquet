@@ -163,20 +163,30 @@ export function buildEmailBotanicalLogoSvg() {
   </svg>`;
 }
 
+function resolveEmailAssetOrigin(candidateUrl = '') {
+  try {
+    if (candidateUrl && /^https?:\/\//i.test(candidateUrl)) {
+      const parsed = new URL(candidateUrl);
+      if (parsed.origin && !parsed.hostname.includes('localhost')) {
+        return parsed.origin;
+      }
+    }
+  } catch {
+    // Fall back to canonical production origin
+  }
+  return 'https://www.sendabouquet.online';
+}
+
 /**
  * Minimal, luxury Parisian letterpress stationery header lockup for HTML emails.
- * Works cleanly across Gmail, Apple Mail, and Outlook without CSS bullseye clutter.
+ * Renders the exact 100% Hero blooming flower with leaves, veins, buds, and dashed tendrils
+ * via `/assets/hero-bloom-crest.png` with zero hidden SVG bloat or dingbat symbols.
  */
-function buildEmailBotanicalCrestHtml(subtitleText = '') {
-  const logoSvg = buildEmailBotanicalLogoSvg();
+function buildEmailBotanicalCrestHtml(subtitleText = '', assetOrigin = 'https://www.sendabouquet.online') {
+  const crestUrl = `${assetOrigin.replace(/\/$/, '')}/assets/hero-bloom-crest.png`;
   return `
     <div style="text-align:center;margin:0 auto;">
-      <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
-        ${logoSvg}
-      </div>
-      <div style="display:inline-block;width:32px;height:32px;line-height:32px;border-radius:999px;background-color:#FDF4F6;border:1px dashed #D8A7B3;color:#9E4757;font-size:15px;text-align:center;margin-bottom:8px;">
-        &#10047;
-      </div>
+      <img src="${escapeHtml(crestUrl)}" width="148" height="87" alt="" style="display:block;margin:0 auto 4px auto;width:148px;height:87px;border:0;outline:none;text-decoration:none;" />
       <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;font-size:20px;font-weight:600;color:#2A201D;letter-spacing:0.01em;line-height:1.2;">
         Send A Bouquet
       </div>
@@ -187,17 +197,13 @@ function buildEmailBotanicalCrestHtml(subtitleText = '') {
             </div>`
           : ''
       }
-      <div style="width:56px;margin:14px auto 0 auto;border-bottom:1px dashed #DFCEC0;"></div>
+      <div style="width:56px;margin:12px auto 0 auto;border-bottom:1px dashed #DFCEC0;"></div>
     </div>
   `.trim();
 }
 
-function buildEmailWaxSealHtml() {
-  return `
-    <span style="display:inline-block;width:22px;height:22px;line-height:22px;border-radius:999px;background-color:#9E4757;color:#FFFDF9;font-size:10px;text-align:center;font-family:Georgia,serif;vertical-align:middle;">
-      &#9829;
-    </span>
-  `.trim();
+function buildEmailPreheaderHtml(previewText) {
+  return `<div style="display:none;font-size:1px;color:#FAF6F0;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(previewText)}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;</div>`;
 }
 
 /**
@@ -229,17 +235,18 @@ function buildLetterpressNoteBodyHtml(message) {
 export function buildStudioNotificationEmail({ topicLabel, senderName, replyToEmail, message, createdAt, messageId }) {
   const displaySender = senderName || 'Anonymous Visitor';
   const subject = `[Send A Bouquet · ${topicLabel}] Note from ${displaySender}`;
+  const preheaderHtml = buildEmailPreheaderHtml(`Note from ${displaySender} (${topicLabel}): ${String(message || '').slice(0, 90)}`);
   const crestHtml = buildEmailBotanicalCrestHtml(topicLabel);
   const noteBodyHtml = buildLetterpressNoteBodyHtml(message);
-  const waxSealHtml = buildEmailWaxSealHtml();
 
   const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:40px 16px;color:#2A201D;">
-      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;box-shadow:0 12px 32px rgba(42,32,29,0.05);">
-        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:34px 30px 28px 30px;">
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:36px 16px;color:#2A201D;">
+      ${preheaderHtml}
+      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:32px 28px 26px 28px;">
           ${crestHtml}
 
-          <div style="text-align:center;margin:22px 0 18px 0;">
+          <div style="text-align:center;margin:20px 0 16px 0;">
             <div style="font-size:15px;font-style:italic;color:#7D6B60;">
               From ${escapeHtml(displaySender)}
             </div>
@@ -248,15 +255,15 @@ export function buildStudioNotificationEmail({ topicLabel, senderName, replyToEm
             </div>
           </div>
 
-          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:20px 22px;margin:0 0 22px 0;">
+          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:20px 22px;margin:0 0 20px 0;">
             ${noteBodyHtml}
           </div>
 
-          <div style="border-top:1px dashed #EADFD4;padding-top:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#6E5D54;line-height:1.7;">
+          <div style="border-top:1px dashed #EADFD4;padding-top:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#6E5D54;line-height:1.7;">
             <div><span style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#2A201D;">From —</span> ${escapeHtml(displaySender)}</div>
             <div><span style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#2A201D;">Reply to —</span> ${replyToEmail ? `<a href="mailto:${escapeHtml(replyToEmail)}" style="color:#6E4434;text-decoration:underline;">${escapeHtml(replyToEmail)}</a>` : 'Not provided'}</div>
-            <div style="font-size:11px;color:#9A877B;margin-top:6px;">
-              ${waxSealHtml} <span style="vertical-align:middle;margin-left:6px;">Ref: ${escapeHtml(messageId)} · ${escapeHtml(createdAt)}</span>
+            <div style="font-size:11px;color:#9A877B;margin-top:4px;">
+              Ref: ${escapeHtml(messageId)} · ${escapeHtml(createdAt)}
             </div>
           </div>
         </div>
@@ -279,40 +286,38 @@ export function buildStudioNotificationEmail({ topicLabel, senderName, replyToEm
 export function buildVisitorConfirmationEmail({ topicLabel, senderName, message }) {
   const greeting = senderName ? `Dear ${escapeHtml(senderName)},` : 'Dear Friend,';
   const subject = `Your note to Send A Bouquet (${topicLabel})`;
-  const crestHtml = buildEmailBotanicalCrestHtml('Handcrafted Digital Floral Studio');
+  const preheaderHtml = buildEmailPreheaderHtml(`${senderName ? `Dear ${senderName}, thank` : 'Thank'} you for writing to Send A Bouquet. Your note has been received.`);
+  const crestHtml = buildEmailBotanicalCrestHtml('');
   const noteBodyHtml = buildLetterpressNoteBodyHtml(message);
-  const waxSealHtml = buildEmailWaxSealHtml();
 
   const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:40px 16px;color:#2A201D;">
-      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;box-shadow:0 12px 32px rgba(42,32,29,0.05);">
-        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:34px 30px 28px 30px;">
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:36px 16px;color:#2A201D;">
+      ${preheaderHtml}
+      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:32px 28px 26px 28px;">
           ${crestHtml}
 
-          <div style="text-align:center;margin:22px 0 14px 0;">
+          <div style="text-align:center;margin:20px 0 12px 0;">
             <div style="font-size:28px;font-weight:600;font-style:italic;color:#2A201D;line-height:1.2;">
               ${greeting}
             </div>
           </div>
 
-          <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;line-height:1.75;color:#6E5D54;text-align:center;margin:0 0 20px 0;">
+          <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;line-height:1.75;color:#6E5D54;text-align:center;margin:0 0 18px 0;">
             Thank you for writing to Send A Bouquet. Your note has been safely received, and I’ll read it soon. Here is a keepsake copy of what you wrote:
           </p>
 
-          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:18px 22px;margin:0 0 22px 0;">
+          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:18px 22px;margin:0 0 20px 0;">
             <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:13.5px;font-style:italic;color:#8C7A70;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed #E6D7C8;">
               Topic — ${escapeHtml(topicLabel)}
             </div>
             ${noteBodyHtml}
           </div>
 
-          <div style="border-top:1px dashed #EADFD4;padding-top:16px;text-align:center;">
+          <div style="border-top:1px dashed #EADFD4;padding-top:14px;text-align:center;">
             <div style="font-size:15.5px;font-style:italic;color:#6E5D54;line-height:1.6;">
               Warmly,<br/>
               <strong style="color:#2A201D;font-style:normal;">Send A Bouquet</strong> · <a href="mailto:hello@sendabouquet.online" style="color:#6E4434;text-decoration:underline;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;font-style:normal;">hello@sendabouquet.online</a>
-            </div>
-            <div style="margin-top:10px;">
-              ${waxSealHtml}
             </div>
           </div>
         </div>
@@ -338,6 +343,8 @@ export function buildVisitorConfirmationEmail({ topicLabel, senderName, message 
 /**
  * Builds the Surprise Bouquet Delivery Email for a loved one.
  * Keeps the sender UNNAMED so the identity remains a surprise until they unwrap the bouquet!
+ * Structured as a clean 1-to-1 personal notification (with personal preheader, zero dingbats,
+ * and zero marketing slogans) to maximize Primary inbox placement in Gmail.
  */
 export function buildBouquetSurpriseEmail({
   recipientName = '',
@@ -351,8 +358,11 @@ export function buildBouquetSurpriseEmail({
     ? `For ${cleanRecipient} — Someone sent you a Bouquet`
     : 'Someone sent you a Bouquet';
 
-  const crestHtml = buildEmailBotanicalCrestHtml('A Surprise Floral Delivery');
-  const waxSealHtml = buildEmailWaxSealHtml();
+  const assetOrigin = resolveEmailAssetOrigin(giftUrl);
+  const preheaderHtml = buildEmailPreheaderHtml(
+    `For ${cleanRecipient || 'You'}, a personal note and flower arrangement were sealed for you.`
+  );
+  const crestHtml = buildEmailBotanicalCrestHtml('', assetOrigin);
 
   const keepsakeItems = ['Floral arrangement', 'Personal note'];
   if (hasPhotoCard) keepsakeItems.push('Photo keepsake');
@@ -360,40 +370,38 @@ export function buildBouquetSurpriseEmail({
   if (isLocked) keepsakeItems.push('Secret lock reveal');
 
   const html = `
-    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:40px 16px;color:#2A201D;">
-      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;box-shadow:0 12px 32px rgba(42,32,29,0.05);">
-        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:36px 30px 28px 30px;text-align:center;">
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:36px 16px;color:#2A201D;">
+      ${preheaderHtml}
+      <div style="max-width:480px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:32px 28px 26px 28px;text-align:center;">
           ${crestHtml}
 
-          <div style="margin-top:24px;font-size:19px;font-style:italic;color:#7D6B60;">
+          <div style="margin-top:22px;font-size:19px;font-style:italic;color:#7D6B60;">
             For ${escapeHtml(cleanRecipient || 'You')},
           </div>
-          <div style="font-size:32px;font-weight:600;color:#2A201D;line-height:1.15;letter-spacing:-0.01em;margin:6px 0 20px 0;">
+          <div style="font-size:31px;font-weight:600;color:#2A201D;line-height:1.15;letter-spacing:-0.01em;margin:6px 0 18px 0;">
             Someone sent you a Bouquet
           </div>
 
-          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:22px 24px;margin:0 auto 24px auto;text-align:center;">
+          <div style="background-color:#FAF4EE;border:1px dashed #DECBB9;border-radius:14px;padding:20px 22px;margin:0 auto 22px auto;text-align:center;">
             <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.75;color:#5C4B43;">
-              Someone special has arranged and sealed a digital bouquet just for you. Their name and personal note are tucked inside the flowers—waiting for you to untie the ribbon and watch each stem bloom on your screen.
+              A digital bouquet and personal note have been arranged and sealed for you—waiting for you to untie the ribbon and watch each stem bloom on your screen.
             </p>
-            <div style="width:64px;margin:14px auto 12px auto;border-bottom:1px dashed #DFCEC0;"></div>
+            <div style="width:56px;margin:14px auto 10px auto;border-bottom:1px dashed #DFCEC0;"></div>
             <div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:14px;color:#8C7A70;">
               ${escapeHtml(keepsakeItems.join(' · '))}
             </div>
           </div>
 
-          <div style="text-align:center;margin:0 0 24px 0;">
-            <a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 34px;border-radius:999px;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;font-weight:500;letter-spacing:0.01em;text-decoration:none;box-shadow:0 6px 18px rgba(110,68,52,0.16);">
-              Unwrap Your Bouquet &rarr;
+          <div style="text-align:center;margin:0 0 22px 0;">
+            <a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:13px 32px;border-radius:999px;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;font-weight:500;letter-spacing:0.01em;text-decoration:none;">
+              Open Your Bouquet
             </a>
           </div>
 
-          <div style="border-top:1px dashed #EADFD4;padding-top:16px;text-align:center;">
-            <div style="margin-bottom:8px;">
-              ${waxSealHtml}
-            </div>
+          <div style="border-top:1px dashed #EADFD4;padding-top:14px;text-align:center;">
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:11.5px;color:#9A877B;line-height:1.6;">
-              Sealed with a secret note · <a href="${escapeHtml(giftUrl)}" style="color:#6E4434;text-decoration:underline;word-break:break-all;">${escapeHtml(giftUrl)}</a>
+              Direct link: <a href="${escapeHtml(giftUrl)}" style="color:#6E4434;text-decoration:underline;word-break:break-all;">${escapeHtml(giftUrl)}</a>
             </div>
           </div>
         </div>
@@ -403,14 +411,14 @@ export function buildBouquetSurpriseEmail({
 
   const text = [
     `For ${cleanRecipient || 'You'},`,
-    'Someone sent you a Bouquet!',
+    'Someone sent you a Bouquet.',
     '',
-    'Someone special has arranged and sealed a handcrafted digital bouquet just for you.',
-    'Their name and personal note are tucked inside the arrangement, waiting for you to unwrap the ribbon and watch each flower bloom.',
+    'A digital bouquet and personal note have been arranged and sealed for you—waiting for you to untie the ribbon and watch each stem bloom on your screen.',
+    `Included: ${keepsakeItems.join(' · ')}`,
     '',
-    `Unwrap your bouquet here: ${giftUrl}`,
+    `Open your bouquet: ${giftUrl}`,
     '',
-    '— Send A Bouquet (hello@sendabouquet.online)',
+    '— Send A Bouquet',
   ].join('\n');
 
   return { subject, html, text };
@@ -420,13 +428,21 @@ async function sendResendEmail(apiKey, payload) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);
+    const uniqueRefId = `sab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const enrichedPayload = {
+      ...payload,
+      headers: {
+        'X-Entity-Ref-ID': uniqueRefId,
+        ...(payload.headers || {}),
+      },
+    };
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(enrichedPayload),
       signal: controller.signal,
     });
     clearTimeout(timer);
