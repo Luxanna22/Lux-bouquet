@@ -725,20 +725,48 @@ export default function App() {
 
   // Autoplay soft music-box melody on load & unlock AudioContext on first user interaction if browser suspended it
   useEffect(() => {
+    const unsubscribeMusic = musicBox.subscribe((playing) => {
+      setIsMusicPlaying(playing);
+    });
     musicBox.start();
-    setIsMusicPlaying(true);
+    setIsMusicPlaying(musicBox.getIsPlaying());
 
     const unlockAudio = () => {
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState !== 'visible')) {
+        return;
+      }
       musicBox.resumeIfBlocked();
     };
+
+    const pauseAudioInBackground = () => {
+      if (voiceAudioRef.current && !voiceAudioRef.current.paused) {
+        voiceAudioRef.current.pause();
+        setIsVoicePlaying(false);
+      }
+      musicBox.pauseForBackground();
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState !== 'visible')) {
+        pauseAudioInBackground();
+      } else {
+        musicBox.resumeFromBackground();
+      }
+    };
+
     window.addEventListener('pointerdown', unlockAudio, { passive: true });
     window.addEventListener('touchstart', unlockAudio, { passive: true });
     window.addEventListener('keydown', unlockAudio, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', pauseAudioInBackground);
 
     return () => {
+      unsubscribeMusic();
       window.removeEventListener('pointerdown', unlockAudio);
       window.removeEventListener('touchstart', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', pauseAudioInBackground);
       musicBox.stop();
     };
   }, []);

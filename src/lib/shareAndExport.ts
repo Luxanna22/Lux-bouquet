@@ -1077,14 +1077,121 @@ export async function exportSvgElementToPng(
 
 // ============================================================================
 
+export interface MusicBoxAudioGainParam {
+  value?: number;
+  cancelScheduledValues(cancelTime: number): void;
+  setValueAtTime(value: number, startTime: number): void;
+  linearRampToValueAtTime(value: number, endTime: number): void;
+  exponentialRampToValueAtTime(value: number, endTime: number): void;
+}
+
+export interface MusicBoxGainNode {
+  gain: MusicBoxAudioGainParam;
+  connect(destination: unknown): void;
+  disconnect(): void;
+}
+
+export interface MusicBoxOscillatorNode {
+  type: OscillatorType;
+  frequency: { setValueAtTime(value: number, startTime: number): void };
+  connect(destination: unknown): void;
+  start(when?: number): void;
+  stop(when?: number): void;
+}
+
+export interface MusicBoxAudioContext {
+  readonly state: AudioContextState | 'interrupted';
+  readonly currentTime: number;
+  readonly destination: unknown;
+  createOscillator(): MusicBoxOscillatorNode;
+  createGain(): MusicBoxGainNode;
+  resume(): Promise<void>;
+  suspend(): Promise<void>;
+  close(): Promise<void>;
+  addEventListener?: (type: string, listener: () => void) => void;
+  removeEventListener?: (type: string, listener: () => void) => void;
+}
+
+export interface MusicBoxEnvironment {
+  createAudioContext?: () => MusicBoxAudioContext | null;
+  isHidden?: () => boolean;
+  hasUserGesture?: () => boolean;
+  isMobileOrTouch?: () => boolean;
+  setIntervalFn?: (cb: () => void, ms: number) => number;
+  clearIntervalFn?: (id: number) => void;
+  addDocumentListener?: (event: string, listener: () => void) => void;
+  removeDocumentListener?: (event: string, listener: () => void) => void;
+  addWindowListener?: (event: string, listener: () => void) => void;
+  removeWindowListener?: (event: string, listener: () => void) => void;
+}
+
 /**
- * Soft Procedural Web Audio Music Box Synthesizer (No Autoplay, Zero External Audio Files)
+ * Soft Procedural Web Audio Music Box Synthesizer (Foreground-Only, Zero External Audio Files)
+ * Strictly suspends AudioContext, detaches active oscillator tails, and stops timers whenever the
+ * tab is hidden, the phone is locked, the user switches apps/home, or the browser closes.
  */
 export class RomanticMusicBox {
-  private ctx: AudioContext | null = null;
-  private isPlaying = false;
+  private ctx: MusicBoxAudioContext | null = null;
+  private masterGain: MusicBoxGainNode | null = null;
+  private isEnabled = false;
+  private pausedForBackground = false;
   private timerId: number | null = null;
   private noteIndex = 0;
+  private listenersAttached = false;
+  private readonly subscribers = new Set<(isPlaying: boolean) => void>();
+  private readonly env: Required<MusicBoxEnvironment>;
+
+  private readonly handleVisibilityChange = () => {
+    if (this.isEnvironmentHidden()) {
+      this.pauseForBackground();
+    } else {
+      this.resumeFromBackground();
+    }
+  };
+
+  private readonly handlePageHide = () => {
+    this.pauseForBackground();
+  };
+
+  private readonly handleFreeze = () => {
+    this.pauseForBackground();
+  };
+
+  private readonly handleBeforeUnload = () => {
+    this.stopAndCloseContext();
+  };
+
+  private readonly handlePageShow = () => {
+    if (!this.isEnvironmentHidden()) {
+      this.resumeFromBackground();
+    }
+  };
+
+  private readonly handleWindowFocus = () => {
+    if (!this.isEnvironmentHidden()) {
+      this.resumeFromBackground();
+    }
+  };
+
+  private readonly handleWindowBlur = () => {
+    // On mobile phones and in-app WebViews (TikTok/IG/Messenger), locking or pressing Home
+    // fires blur immediately even if visibilitychange lags. On desktop, only pause if hidden.
+    if (this.env.isMobileOrTouch() || this.isEnvironmentHidden()) {
+      this.pauseForBackground();
+    }
+  };
+
+  private readonly handleContextStateChange = () => {
+    if (!this.ctx) return;
+    if (
+      this.ctx.state === 'running' &&
+      (!this.isEnabled || this.pausedForBackground || this.isEnvironmentHidden())
+    ) {
+      this.disconnectMasterGain();
+      this.clearIntervalTimer();
+      void this.ctx.suspend().catch(() => {});
+    }
+  };
 
   // Gentle pentatonic music-box arpeggio in F major / D minor
   private readonly melodyNotes = [
@@ -1106,8 +1213,133 @@ export class RomanticMusicBox {
     523.25  // C5
   ];
 
+  constructor(env: MusicBoxEnvironment = {}) {
+    this.env = {
+      createAudioContext:
+        env.createAudioContext ??
+        (() => {
+          if (typeof window === 'undefined') return null;
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          return AudioCtx ? (new AudioCtx() as unknown as MusicBoxAudioContext) : null;
+        }),
+      isHidden:
+        env.isHidden ??
+        (() =>
+          typeof document !== 'undefined' &&
+          (Boolean(document.hidden) ||
+            (typeof document.visibilityState === 'string' &&
+              document.visibilityState !== 'visible'))),
+      hasUserGesture:
+        env.hasUserGesture ??
+        (() =>
+          typeof navigator !== 'undefined' &&
+          Boolean(
+            (navigator as Navigator & { userActivation?: { hasBeenActive?: boolean } })
+              .userActivation?.hasBeenActive
+          )),
+      isMobileOrTouch:
+        env.isMobileOrTouch ??
+        (() => {
+          if (typeof window === 'undefined') return false;
+          const coarse = Boolean(window.matchMedia?.('(pointer: coarse)')?.matches);
+          const touchPoints =
+            typeof navigator !== 'undefined' ? (navigator.maxTouchPoints ?? 0) > 0 : false;
+          return coarse || touchPoints;
+        }),
+      setIntervalFn:
+        env.setIntervalFn ??
+        ((cb, ms) => (typeof window !== 'undefined' ? window.setInterval(cb, ms) : (0 as number))),
+      clearIntervalFn:
+        env.clearIntervalFn ??
+        ((id) => {
+          if (typeof window !== 'undefined') {
+            window.clearInterval(id);
+          } else {
+            clearInterval(id);
+          }
+        }),
+      addDocumentListener:
+        env.addDocumentListener ??
+        ((event, listener) => {
+          if (typeof document !== 'undefined') {
+            document.addEventListener(event, listener);
+          }
+        }),
+      removeDocumentListener:
+        env.removeDocumentListener ??
+        ((event, listener) => {
+          if (typeof document !== 'undefined') {
+            document.removeEventListener(event, listener);
+          }
+        }),
+      addWindowListener:
+        env.addWindowListener ??
+        ((event, listener) => {
+          if (typeof window !== 'undefined') {
+            window.addEventListener(event, listener);
+          }
+        }),
+      removeWindowListener:
+        env.removeWindowListener ??
+        ((event, listener) => {
+          if (typeof window !== 'undefined') {
+            window.removeEventListener(event, listener);
+          }
+        }),
+    };
+
+    this.attachLifecycleListeners();
+  }
+
+  public attachLifecycleListeners(): void {
+    if (this.listenersAttached) return;
+    this.listenersAttached = true;
+
+    this.env.addDocumentListener('visibilitychange', this.handleVisibilityChange);
+    this.env.addDocumentListener('freeze', this.handleFreeze);
+    this.env.addDocumentListener('resume', this.handlePageShow);
+    this.env.addWindowListener('pagehide', this.handlePageHide);
+    this.env.addWindowListener('pageshow', this.handlePageShow);
+    this.env.addWindowListener('beforeunload', this.handleBeforeUnload);
+    this.env.addWindowListener('focus', this.handleWindowFocus);
+    this.env.addWindowListener('blur', this.handleWindowBlur);
+  }
+
+  public dispose(): void {
+    this.stopAndCloseContext();
+    if (this.listenersAttached) {
+      this.env.removeDocumentListener('visibilitychange', this.handleVisibilityChange);
+      this.env.removeDocumentListener('freeze', this.handleFreeze);
+      this.env.removeDocumentListener('resume', this.handlePageShow);
+      this.env.removeWindowListener('pagehide', this.handlePageHide);
+      this.env.removeWindowListener('pageshow', this.handlePageShow);
+      this.env.removeWindowListener('beforeunload', this.handleBeforeUnload);
+      this.env.removeWindowListener('focus', this.handleWindowFocus);
+      this.env.removeWindowListener('blur', this.handleWindowBlur);
+      this.listenersAttached = false;
+    }
+    this.subscribers.clear();
+  }
+
+  public subscribe(listener: (isPlaying: boolean) => void): () => void {
+    this.subscribers.add(listener);
+    return () => {
+      this.subscribers.delete(listener);
+    };
+  }
+
+  public getIsPlaying(): boolean {
+    return this.isEnabled;
+  }
+
+  public isPausedInBackground(): boolean {
+    return this.pausedForBackground;
+  }
+
   public toggle(): boolean {
-    if (this.isPlaying) {
+    if (this.isEnabled) {
       this.stop();
       return false;
     } else {
@@ -1117,69 +1349,237 @@ export class RomanticMusicBox {
   }
 
   public start(): void {
-    if (typeof window === 'undefined') return;
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
+    this.attachLifecycleListeners();
+    const wasEnabled = this.isEnabled;
+    this.isEnabled = true;
 
-    const hasUserGesture =
-      typeof navigator !== 'undefined' &&
-      Boolean(
-        (navigator as Navigator & { userActivation?: { hasBeenActive?: boolean } })
-          .userActivation?.hasBeenActive
-      );
-
-    if (hasUserGesture) {
-      if (!this.ctx) {
-        this.ctx = new AudioCtx();
+    if (this.isEnvironmentHidden()) {
+      this.pausedForBackground = true;
+      this.clearIntervalTimer();
+      this.disconnectMasterGain();
+      this.suspendContext();
+      if (!wasEnabled) {
+        this.notifySubscribers();
       }
-      if (this.ctx.state === 'suspended') {
-        this.ctx.resume().catch(() => {});
+      return;
+    }
+
+    this.pausedForBackground = false;
+    if (!wasEnabled) {
+      this.notifySubscribers();
+    }
+
+    if (this.env.hasUserGesture()) {
+      this.ensureAudioContext();
+      if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')) {
+        void this.ctx
+          .resume()
+          .then(() => {
+            if (this.canScheduleAudio()) {
+              this.ensureIntervalLoop();
+              this.playChimeNote();
+            }
+          })
+          .catch(() => {});
+        return;
       }
     }
 
-    if (this.isPlaying) return;
-    this.isPlaying = true;
-    if (this.ctx && this.ctx.state === 'running') {
+    if (this.ctx) {
+      this.ensureIntervalLoop();
+      if (this.canScheduleAudio()) {
+        this.playChimeNote();
+      }
+    }
+  }
+
+  public resumeIfBlocked(): void {
+    if (!this.isEnabled || this.isEnvironmentHidden()) return;
+    const hadCtx = Boolean(this.ctx);
+    const wasPausedForBg = this.pausedForBackground;
+    if (this.pausedForBackground) {
+      this.pausedForBackground = false;
+    }
+
+    const ctx = this.ensureAudioContext();
+    if (!ctx) return;
+
+    this.ensureIntervalLoop();
+
+    if (ctx.state === 'running') {
+      if ((!hadCtx || wasPausedForBg) && this.canScheduleAudio()) {
+        this.playChimeNote();
+      }
+      return;
+    }
+
+    if (ctx.state === 'suspended' || ctx.state === 'interrupted') {
+      void ctx
+        .resume()
+        .then(() => {
+          if (this.canScheduleAudio()) {
+            this.ensureIntervalLoop();
+            this.playChimeNote();
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  public pauseForBackground(): void {
+    if (this.isEnabled) {
+      this.pausedForBackground = true;
+    }
+    this.clearIntervalTimer();
+    this.disconnectMasterGain();
+    this.suspendContext();
+  }
+
+  public resumeFromBackground(): void {
+    if (!this.isEnabled || this.isEnvironmentHidden()) return;
+    if (!this.pausedForBackground && this.ctx?.state === 'running' && this.timerId !== null) {
+      return;
+    }
+
+    this.pausedForBackground = false;
+    const ctx = this.ctx ?? (this.env.hasUserGesture() ? this.ensureAudioContext() : null);
+    if (!ctx) return;
+
+    this.ensureIntervalLoop();
+    if (ctx.state === 'suspended' || ctx.state === 'interrupted') {
+      void ctx
+        .resume()
+        .then(() => {
+          if (this.canScheduleAudio()) {
+            this.ensureIntervalLoop();
+            this.playChimeNote();
+          }
+        })
+        .catch(() => {});
+    } else if (this.canScheduleAudio()) {
       this.playChimeNote();
     }
-    this.timerId = window.setInterval(() => {
-      if (this.isPlaying) {
+  }
+
+  public stop(): void {
+    const wasEnabled = this.isEnabled;
+    this.isEnabled = false;
+    this.pausedForBackground = false;
+    this.clearIntervalTimer();
+    this.disconnectMasterGain();
+    this.suspendContext();
+    if (wasEnabled) {
+      this.notifySubscribers();
+    }
+  }
+
+  private stopAndCloseContext(): void {
+    this.stop();
+    if (this.ctx) {
+      const ctxToClose = this.ctx;
+      ctxToClose.removeEventListener?.('statechange', this.handleContextStateChange);
+      this.ctx = null;
+      if (ctxToClose.state !== 'closed') {
+        void ctxToClose.close().catch(() => {});
+      }
+    }
+  }
+
+  private isEnvironmentHidden(): boolean {
+    try {
+      return Boolean(this.env.isHidden());
+    } catch {
+      return false;
+    }
+  }
+
+  private canScheduleAudio(): boolean {
+    return Boolean(
+      this.ctx &&
+        this.isEnabled &&
+        !this.pausedForBackground &&
+        !this.isEnvironmentHidden() &&
+        this.ctx.state === 'running'
+    );
+  }
+
+  private ensureAudioContext(): MusicBoxAudioContext | null {
+    if (this.isEnvironmentHidden()) return null;
+    if (!this.ctx) {
+      this.ctx = this.env.createAudioContext();
+      this.ctx?.addEventListener?.('statechange', this.handleContextStateChange);
+    }
+    return this.ctx;
+  }
+
+  private ensureMasterGain(): MusicBoxGainNode | null {
+    if (!this.ctx) return null;
+    if (!this.masterGain) {
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(1, this.ctx.currentTime);
+      gain.connect(this.ctx.destination);
+      this.masterGain = gain;
+    }
+    return this.masterGain;
+  }
+
+  private disconnectMasterGain(): void {
+    if (this.masterGain && this.ctx) {
+      try {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
+        this.masterGain.disconnect();
+      } catch {
+        // Ignore AudioNode cleanup errors
+      }
+    }
+    this.masterGain = null;
+  }
+
+  private suspendContext(): void {
+    if (this.ctx && this.ctx.state !== 'suspended' && this.ctx.state !== 'closed') {
+      void this.ctx.suspend().catch(() => {});
+    }
+  }
+
+  private clearIntervalTimer(): void {
+    if (this.timerId !== null) {
+      this.env.clearIntervalFn(this.timerId);
+      this.timerId = null;
+    }
+  }
+
+  private ensureIntervalLoop(): void {
+    if (this.timerId !== null || !this.isEnabled || this.pausedForBackground || this.isEnvironmentHidden()) {
+      return;
+    }
+    this.timerId = this.env.setIntervalFn(() => {
+      if (this.isEnvironmentHidden()) {
+        this.pauseForBackground();
+        return;
+      }
+      if (this.canScheduleAudio()) {
         this.playChimeNote();
       }
     }, 680);
   }
 
-  public resumeIfBlocked(): void {
-    if (!this.isPlaying) return;
-    if (typeof window === 'undefined') return;
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    if (!this.ctx) {
-      this.ctx = new AudioCtx();
-      if (this.ctx.state === 'running' && this.isPlaying) {
-        this.playChimeNote();
+  private notifySubscribers(): void {
+    for (const listener of this.subscribers) {
+      try {
+        listener(this.isEnabled);
+      } catch {
+        // Ignore subscriber error
       }
-    }
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume().then(() => {
-        if (this.isPlaying) {
-          this.playChimeNote();
-        }
-      }).catch(() => {});
-    }
-  }
-
-  public stop(): void {
-    this.isPlaying = false;
-    if (this.timerId !== null) {
-      clearInterval(this.timerId);
-      this.timerId = null;
     }
   }
 
   private playChimeNote(): void {
-    if (!this.ctx || !this.isPlaying || this.ctx.state === 'suspended') return;
+    if (!this.canScheduleAudio() || !this.ctx) return;
     try {
+      const master = this.ensureMasterGain();
+      if (!master) return;
+
       const now = this.ctx.currentTime;
       const freq = this.melodyNotes[this.noteIndex % this.melodyNotes.length];
       this.noteIndex += 1;
@@ -1195,7 +1595,7 @@ export class RomanticMusicBox {
       gain.gain.exponentialRampToValueAtTime(0.0008, now + 1.45);
 
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(master);
       osc.start(now);
       osc.stop(now + 1.5);
 
@@ -1210,7 +1610,7 @@ export class RomanticMusicBox {
       subGain.gain.exponentialRampToValueAtTime(0.0005, now + 1.55);
 
       subOsc.connect(subGain);
-      subGain.connect(this.ctx.destination);
+      subGain.connect(master);
       subOsc.start(now);
       subOsc.stop(now + 1.6);
     } catch {
