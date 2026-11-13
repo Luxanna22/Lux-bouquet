@@ -457,13 +457,27 @@ export function getSavedVaultBouquets(): SavedVaultBouquet[] {
     if (!raw) return inMemoryVaultCache ? deduplicateVaultList(inMemoryVaultCache, true) : [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return inMemoryVaultCache || [];
-    // Merge any richer in-memory draftPayload from the current session
+    // Merge any richer in-memory draftPayload from the current session and ensure any unshared
+    // local entry (missing shareUrl) is strictly marked as a private draft, never public.
     const merged = parsed.map((item: SavedVaultBouquet) => {
       const memMatch = inMemoryVaultCache?.find((m) => m.code === item.code);
-      if (memMatch && memMatch.draftPayload && (!item.draftPayload || memMatch.draftPayload.length > item.draftPayload.length)) {
-        return { ...item, draftPayload: memMatch.draftPayload };
+      const withPayload =
+        memMatch &&
+        memMatch.draftPayload &&
+        (!item.draftPayload || memMatch.draftPayload.length > item.draftPayload.length)
+          ? { ...item, draftPayload: memMatch.draftPayload }
+          : item;
+      const hasShareUrl =
+        typeof withPayload?.shareUrl === 'string' && withPayload.shareUrl.trim().length > 0;
+      if (!hasShareUrl) {
+        return {
+          ...withPayload,
+          shareUrl: '',
+          isDraft: true,
+          pinToShowcase: false,
+        };
       }
-      return item;
+      return withPayload;
     });
     const cleaned = deduplicateVaultList(merged, true);
     if (cleaned.length !== parsed.length) {
@@ -516,7 +530,12 @@ function parseGarlandFeedData(data?: Partial<SharedBouquetRecord> | null): Saved
     if (!Array.isArray(parsed)) return [];
     return deduplicateVaultList(
       parsed.filter(
-        (item) => item && typeof item.code === 'string' && !item.isDraft && item.pinToShowcase !== false
+        (item) =>
+          item &&
+          typeof item.code === 'string' &&
+          !item.code.startsWith('draft_') &&
+          item.isDraft === false &&
+          item.pinToShowcase === true
       ),
       true
     );
@@ -562,7 +581,17 @@ export async function publishBouquetToGlobalGarlandFeed(
   entry: SavedVaultBouquet,
   replaceCode?: string | null
 ): Promise<boolean> {
-  if (!entry || !entry.code || entry.isDraft || entry.pinToShowcase === false) return false;
+  if (
+    !entry ||
+    !entry.code ||
+    entry.code.startsWith('draft_') ||
+    entry.isDraft !== false ||
+    entry.pinToShowcase !== true ||
+    typeof entry.shareUrl !== 'string' ||
+    entry.shareUrl.trim().length === 0
+  ) {
+    return false;
+  }
   try {
     const feedDocRef = doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE);
     const snap = await getDoc(feedDocRef);
@@ -653,7 +682,14 @@ export async function removeBouquetFromFirestoreAndGarland(code: string): Promis
     const parsed = JSON.parse(snapData.voiceAudioDataUrl);
     if (!Array.isArray(parsed)) return;
     const existing = deduplicateVaultList(
-      parsed.filter((item) => item && typeof item.code === 'string' && !item.isDraft && item.pinToShowcase !== false)
+      parsed.filter(
+        (item) =>
+          item &&
+          typeof item.code === 'string' &&
+          !item.code.startsWith('draft_') &&
+          item.isDraft === false &&
+          item.pinToShowcase === true
+      )
     );
     const filtered = existing.filter((b) => b.code !== code);
     if (filtered.length !== existing.length) {

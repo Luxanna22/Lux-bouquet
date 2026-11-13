@@ -48,7 +48,7 @@ const PRIVACY_SECTIONS = [
   {
     num: '02',
     title: 'Local Drafts & Device Storage',
-    body: 'Your unfinished drafts, Saved Bouquets vault history, theme preference, and active Pass Key are stored locally in your browser on your own device. Clearing your browser data removes local drafts unless you have sealed them into a gift link.',
+    body: 'Drafts you save manually, temporary canvas recovery (to protect against accidental reloads or browser exits), Saved Bouquets vault history, theme preference, and active Pass Key are stored locally in your browser on your own device. Clearing your browser data removes local drafts unless you have sealed them into a gift link.',
   },
   {
     num: '03',

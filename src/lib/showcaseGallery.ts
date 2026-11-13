@@ -395,6 +395,37 @@ function darkenHex(hex: string, amount = 22): string {
 }
 
 /**
+ * Strictly validates whether a bouquet entry is explicitly shared and opted in for the public
+ * Shared Creations Lace Garland. Saved drafts, unshared local bouquets, and entries missing
+ * explicit `isDraft === false` + `pinToShowcase === true` flags are always excluded.
+ */
+export function isEligibleGarlandFeedEntry(
+  entry?: SavedVaultBouquet | null,
+  options?: { requireShareUrl?: boolean }
+): entry is SavedVaultBouquet {
+  if (!entry || typeof entry.code !== 'string') return false;
+  const code = entry.code.trim();
+  if (!code || code.startsWith('draft_')) return false;
+  if (entry.isDraft !== false) return false;
+  if (entry.pinToShowcase !== true) return false;
+  if (options?.requireShareUrl) {
+    if (typeof entry.shareUrl !== 'string' || entry.shareUrl.trim().length === 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function filterEligiblePublicGarlandEntries(
+  entries: Array<SavedVaultBouquet | null | undefined>,
+  options?: { requireShareUrl?: boolean }
+): SavedVaultBouquet[] {
+  return entries.filter((entry): entry is SavedVaultBouquet =>
+    isEligibleGarlandFeedEntry(entry, options)
+  );
+}
+
+/**
  * Converts a user's saved/shared bouquet into a Lace Garland Showcase item.
  */
 export function convertVaultBouquetToShowcaseEntry(

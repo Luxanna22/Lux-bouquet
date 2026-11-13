@@ -228,7 +228,15 @@ function stripInlinePhotosFromCompactPayloadServer(payload) {
 
 async function publishToGarlandFeedRest(code, payload, garlandEntry) {
   const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
-  if (!safeCode || !garlandEntry || garlandEntry.isDraft || garlandEntry.pinToShowcase === false) {
+  if (
+    !safeCode ||
+    safeCode.startsWith('draft_') ||
+    !garlandEntry ||
+    garlandEntry.isDraft !== false ||
+    garlandEntry.pinToShowcase !== true ||
+    typeof garlandEntry.shareUrl !== 'string' ||
+    garlandEntry.shareUrl.trim().length === 0
+  ) {
     return false;
   }
   try {
@@ -261,8 +269,9 @@ async function publishToGarlandFeedRest(code, payload, garlandEntry) {
               (item) =>
                 item &&
                 typeof item.code === 'string' &&
-                !item.isDraft &&
-                item.pinToShowcase !== false
+                !item.code.startsWith('draft_') &&
+                item.isDraft === false &&
+                item.pinToShowcase === true
             );
           }
         } catch {
@@ -517,7 +526,8 @@ export default async function handler(req, res) {
       if (
         bodyObj.garlandEntry &&
         typeof bodyObj.garlandEntry === 'object' &&
-        bodyObj.garlandEntry.pinToShowcase !== false
+        bodyObj.garlandEntry.isDraft === false &&
+        bodyObj.garlandEntry.pinToShowcase === true
       ) {
         await publishToGarlandFeedRest(code, payload, bodyObj.garlandEntry).catch(() => {});
       }

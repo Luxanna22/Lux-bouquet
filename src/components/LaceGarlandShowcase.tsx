@@ -10,13 +10,14 @@ import {
   computeSingleLaceCarouselItemTransform,
   convertVaultBouquetToShowcaseEntry,
   evaluateCatenaryCurveY,
+  filterEligiblePublicGarlandEntries,
   filterShowcaseBouquets,
+  isEligibleGarlandFeedEntry,
   ShowcaseBouquetEntry,
 } from '../lib/showcaseGallery';
 import {
   fetchGlobalGarlandFeedFromFirestore,
   fetchSharedBouquetFromFirestore,
-  getSavedVaultBouquets,
   SharedBouquetRecord,
   subscribeToGlobalGarlandFeed,
 } from '../lib/firebase';
@@ -81,12 +82,9 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let cancelled = false;
-    const combinedVault = [...getSavedVaultBouquets(), ...remoteFeedEntries];
+    const eligibleFeed = filterEligiblePublicGarlandEntries(remoteFeedEntries);
 
-    for (const v of combinedVault) {
-      if (!v || v.isDraft || v.pinToShowcase === false || !v.code || v.code.startsWith('draft_')) {
-        continue;
-      }
+    for (const v of eligibleFeed) {
       if (!hydratedRecords[v.code]) {
         fetchSharedBouquetFromFirestore(v.code)
           .then((record) => {
@@ -119,27 +117,21 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       return filterShowcaseBouquets(curated, { nowMs });
     }
 
-    // Preserve insertion order: local shared creations not yet in remoteFeedEntries first,
-    // followed by remoteFeedEntries (which always stores the newest shared creation at index 0),
-    // avoiding client-vs-sandbox clock skew reordering.
-    const localShared = getSavedVaultBouquets().filter(
-      (b) => b && !b.isDraft && b.pinToShowcase !== false && b.code && !b.code.startsWith('draft_')
-    );
-    const remoteCodes = new Set(remoteFeedEntries.map((r) => r?.code).filter(Boolean));
-    const localPendingOnly = localShared.filter((b) => !remoteCodes.has(b.code));
-    const combinedVault = [...localPendingOnly, ...remoteFeedEntries, ...localShared];
+    // Strictly render ONLY creations explicitly published and pinned to the global Garland feed
+    // (`sab_garland_feed_v1`) — never merge private or unshared local device drafts/saves.
+    const eligibleFeed = filterEligiblePublicGarlandEntries(remoteFeedEntries);
     const seenCodes = new Set<string>();
     const userEntries: ShowcaseBouquetEntry[] = [];
 
-    for (let idx = 0; idx < combinedVault.length; idx++) {
-      const v = combinedVault[idx];
-      if (!v || v.isDraft || v.pinToShowcase === false || (v.code && v.code.startsWith('draft_'))) {
+    for (let idx = 0; idx < eligibleFeed.length; idx++) {
+      const v = eligibleFeed[idx];
+      if (!isEligibleGarlandFeedEntry(v)) {
         continue;
       }
-      if (v.code && seenCodes.has(v.code)) {
+      if (seenCodes.has(v.code)) {
         continue;
       }
-      if (v.code) seenCodes.add(v.code);
+      seenCodes.add(v.code);
 
       const firestoreRecord = v.code ? hydratedRecords[v.code] : undefined;
       let decodedSnap = null;

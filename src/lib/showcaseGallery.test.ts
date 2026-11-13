@@ -7,8 +7,10 @@ import {
   computeSingleLaceCarouselItemTransform,
   convertVaultBouquetToShowcaseEntry,
   evaluateCatenaryCurveY,
+  filterEligiblePublicGarlandEntries,
   filterShowcaseBouquets,
   getShowcaseFreshnessInfo,
+  isEligibleGarlandFeedEntry,
   isShowcaseBouquetActive,
   isShowcaseBouquetExpired,
 } from './showcaseGallery';
@@ -358,5 +360,64 @@ test('Firestore deduplicated audio + hydration preserves 100% of edited draft as
   assert.equal(slimDecoded.items[1].photoStyle, 'stamp');
   assert.equal(slimDecoded.items[1].photoCaption, 'Paris 2026');
   assert.equal(slimDecoded.items[1].clippedToBouquet, true);
+});
+
+test('Garland feed strictly excludes saved drafts, unshared bouquets, legacy entries without flags, and unchecked pinToShowcase items', () => {
+  const savedDraft = {
+    code: 'abc1234',
+    to: 'Alice',
+    from: 'Bob',
+    createdAt: new Date(FIXED_NOW).toISOString(),
+    shareUrl: '',
+    isDraft: true,
+    pinToShowcase: false,
+  };
+  const legacySavedWithoutFlags = {
+    code: 'leg1234',
+    to: 'Old Draft',
+    from: 'Bob',
+    createdAt: new Date(FIXED_NOW).toISOString(),
+    shareUrl: '',
+  };
+  const sharedUnpinned = {
+    code: 'priv1234',
+    to: 'Private',
+    from: 'Bob',
+    createdAt: new Date(FIXED_NOW).toISOString(),
+    shareUrl: 'https://sendabouquet.online/priv1234',
+    isDraft: false,
+    pinToShowcase: false,
+  };
+  const draftPrefix = {
+    code: 'draft_999',
+    to: 'Temp',
+    from: 'Bob',
+    createdAt: new Date(FIXED_NOW).toISOString(),
+    shareUrl: 'https://sendabouquet.online/draft_999',
+    isDraft: false,
+    pinToShowcase: true,
+  };
+  const explicitlySharedAndPinned = {
+    code: 'pub1234',
+    to: 'Elena',
+    from: 'Mateo',
+    createdAt: new Date(FIXED_NOW).toISOString(),
+    shareUrl: 'https://sendabouquet.online/pub1234',
+    isDraft: false,
+    pinToShowcase: true,
+  };
+
+  assert.equal(isEligibleGarlandFeedEntry(savedDraft), false);
+  assert.equal(isEligibleGarlandFeedEntry(legacySavedWithoutFlags), false);
+  assert.equal(isEligibleGarlandFeedEntry(sharedUnpinned), false);
+  assert.equal(isEligibleGarlandFeedEntry(draftPrefix), false);
+  assert.equal(isEligibleGarlandFeedEntry(explicitlySharedAndPinned, { requireShareUrl: true }), true);
+
+  const eligible = filterEligiblePublicGarlandEntries(
+    [savedDraft, legacySavedWithoutFlags, sharedUnpinned, draftPrefix, explicitlySharedAndPinned],
+    { requireShareUrl: true }
+  );
+  assert.equal(eligible.length, 1);
+  assert.equal(eligible[0].code, 'pub1234');
 });
 

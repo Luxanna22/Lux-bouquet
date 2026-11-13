@@ -176,6 +176,12 @@ import {
   getActiveSeasonalEvent,
   getAvailableSeasonalCatalog,
 } from '../lib/seasonalCalendar';
+import {
+  clearCanvasRecoverySnapshot,
+  loadCanvasRecoverySnapshot,
+  saveCanvasRecoverySnapshot,
+  setCanvasRecoveryInStudioFlag,
+} from '../lib/canvasRecovery';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -279,7 +285,11 @@ export default function App() {
     ) {
       return false;
     }
-    if (detectInitialSeoRoute(window.location.pathname) === 'studio') return false;
+    const seoRoute = detectInitialSeoRoute(window.location.pathname);
+    if (seoRoute === 'studio') return false;
+    if (seoRoute === 'garland') return true;
+    const recovered = loadCanvasRecoverySnapshot();
+    if (recovered?.wasInStudio) return false;
     return true;
   });
   const [studioEntranceKey, setStudioEntranceKey] = useState<number>(0);
@@ -331,9 +341,9 @@ export default function App() {
   const [surpriseEmailSentTo, setSurpriseEmailSentTo] = useState<string | null>(null);
   const [surpriseEmailError, setSurpriseEmailError] = useState<string | null>(null);
   const [savedDraftPulse, setSavedDraftPulse] = useState(false);
+  const [hasUnsavedDraftChanges, setHasUnsavedDraftChanges] = useState(false);
   const [isInAppBrowserModalOpen, setIsInAppBrowserModalOpen] = useState(false);
   const [corruptedLinkAlert, setCorruptedLinkAlert] = useState<string | null>(null);
-  const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'saving'>('saved');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
       return localStorage.getItem('bouquet_studio_dark_mode') === 'true';
@@ -356,6 +366,18 @@ export default function App() {
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
   const currentSessionVaultCodeRef = useRef<string | null>(null);
+  const currentSessionVaultIsDraftRef = useRef<boolean>(false);
+  const skipNextDirtyMarkRef = useRef<boolean>(false);
+  const suppressRecoveryUntilNextEditRef = useRef<boolean>(false);
+  const recoveryMetaRef = useRef<{
+    canPersist: boolean;
+    wasInStudio: boolean;
+    hasUnsavedChanges: boolean;
+  }>({
+    canPersist: false,
+    wasInStudio: false,
+    hasUnsavedChanges: false,
+  });
   const [returnToCreationsPage, setReturnToCreationsPage] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return detectInitialSeoRoute(window.location.pathname) === 'garland';
@@ -1123,6 +1145,16 @@ export default function App() {
     setShowGiftCardReveal(true);
   }, [handleStopVoice]);
 
+  const resetStudioCanvasSession = useCallback(() => {
+    currentSessionVaultCodeRef.current = null;
+    currentSessionVaultIsDraftRef.current = false;
+    skipNextDirtyMarkRef.current = true;
+    suppressRecoveryUntilNextEditRef.current = true;
+    setHasUnsavedDraftChanges(false);
+    clearCanvasRecoverySnapshot();
+    clearBouquet();
+  }, [clearBouquet]);
+
   // When a recipient clicks "Craft Yours" on a shared or showcase bouquet, start a fresh empty bouquet
   // so they can never edit or overwrite the sender's shared arrangement!
   const handleCreateOwnFromShared = useCallback(() => {
@@ -1138,7 +1170,8 @@ export default function App() {
     } catch {
       // Ignore history error
     }
-    clearBouquet();
+    setActiveShortCode(null);
+    resetStudioCanvasSession();
     selectItem(null);
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
@@ -1147,7 +1180,7 @@ export default function App() {
     setShowGiftCardReveal(true);
     trackStudioTelemetry({ eventType: 'recipient_to_studio' });
     triggerToast('Canvas reset');
-  }, [clearBouquet, selectItem, triggerToast, handleStopVoice]);
+  }, [resetStudioCanvasSession, selectItem, triggerToast, handleStopVoice]);
 
   // Returns to the Landing Page from a view-only showcase/shared bouquet and resets the studio canvas
   const handleReturnHomeFromGiftView = useCallback(() => {
@@ -1163,7 +1196,8 @@ export default function App() {
     } catch {
       // Ignore history error
     }
-    clearBouquet();
+    setActiveShortCode(null);
+    resetStudioCanvasSession();
     selectItem(null);
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
@@ -1171,7 +1205,7 @@ export default function App() {
     setBloomedCount(undefined);
     setShowGiftCardReveal(true);
     setShowLandingPage(true);
-  }, [clearBouquet, selectItem, handleStopVoice]);
+  }, [resetStudioCanvasSession, selectItem, handleStopVoice]);
 
   // Vercel Web Analytics + First-Party Telemetry + Auto-Unlock Tester Voucher Magic Links (`?voucher=BLOOM-...`)
   useEffect(() => {
@@ -1314,11 +1348,17 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [triggerToast]);
 
-  // Autosave to localStorage & Hydrate Shared Links (including first-party /<code> short links)
+  // Hydrate Shared Links (including first-party /<code> short links) OR accidental browser exit/reload canvas recovery.
+  // Saved Drafts remain strictly manual-only via Save Draft.
   useEffect(() => {
     if (!hasHydratedRef.current) {
       hasHydratedRef.current = true;
       try {
+        try {
+          localStorage.removeItem('bouquet_studio_autosave_v2');
+        } catch {
+          // Ignore storage errors
+        }
         const hash = window.location.hash;
         const pathCode = getShortCodeFromPathname(window.location.pathname);
         if (pathCode) {
@@ -1337,6 +1377,7 @@ export default function App() {
           const effectiveCode =
             pathCode || computeShortCode(encodeBouquetToCompactPayload(shared, true));
           setActiveShortCode(effectiveCode);
+          skipNextDirtyMarkRef.current = true;
           loadSnapshot(shared);
           selectItem(null);
           setIsResolvingShortCode(false);
@@ -1361,6 +1402,7 @@ export default function App() {
                     ? fromFirestoreSnap
                     : shared;
                 const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, docData);
+                skipNextDirtyMarkRef.current = true;
                 loadSnapshot(hydrated);
               })
               .catch(() => {});
@@ -1400,6 +1442,7 @@ export default function App() {
                 const resolvedSnap = decodeBouquetFromHash(data.payload);
                 if (resolvedSnap && Array.isArray(resolvedSnap.items) && resolvedSnap.items.length > 0) {
                   const hydratedSnap = hydrateSnapshotWithFirestoreRecord(resolvedSnap, data);
+                  skipNextDirtyMarkRef.current = true;
                   loadSnapshot(hydratedSnap);
                   selectItem(null);
                   startGiftBloomAnimation(hydratedSnap.items.length, false);
@@ -1417,49 +1460,125 @@ export default function App() {
         // Only fall back quietly to default bouquet if link cannot be parsed (no alarming banner on recipient gift view)
         if (!giftMode && (hash.includes('bouquet=') || hash.startsWith('#b='))) {
           setCorruptedLinkAlert('Could not load shared bouquet link. It may have been truncated or corrupted.');
+          skipNextDirtyMarkRef.current = false;
+          return;
         }
 
-        const saved = localStorage.getItem('bouquet_studio_autosave_v2');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed.items)) {
-            loadSnapshot(parsed);
-          }
+        // Restore accidental exit/reload canvas session (stored separately from Saved Drafts)
+        const recovered = loadCanvasRecoverySnapshot();
+        if (recovered) {
+          skipNextDirtyMarkRef.current = true;
+          suppressRecoveryUntilNextEditRef.current = false;
+          loadSnapshot(recovered.snapshot);
+          selectItem(null);
+          currentSessionVaultCodeRef.current = recovered.sourceVaultCode;
+          currentSessionVaultIsDraftRef.current = recovered.isSourceDraft;
+          setHasUnsavedDraftChanges(recovered.hasUnsavedChanges);
+          return;
         }
+
+        skipNextDirtyMarkRef.current = false;
       } catch {
+        skipNextDirtyMarkRef.current = false;
         setIsResolvingShortCode(false);
       }
       return;
     }
 
-    // Do not overwrite user's local studio autosave while viewing a shared recipient gift link
     if (isGiftView && !isPreviewMode) {
       return;
     }
-
-    setAutosaveStatus('saving');
-    const timer = setTimeout(() => {
-      try {
-        const snap: BouquetSnapshot = {
-          items,
-          wrapStyle,
-          wrapColor,
-          ribbonColor,
-          ribbonStyle,
-          environment,
-          bouquetPose,
-          card,
-          voice,
-          lock,
-        };
-        localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
-        setAutosaveStatus('saved');
-      } catch {
-        setAutosaveStatus('saved');
-      }
-    }, 600);
-    return () => clearTimeout(timer);
+    if (skipNextDirtyMarkRef.current) {
+      skipNextDirtyMarkRef.current = false;
+      return;
+    }
+    suppressRecoveryUntilNextEditRef.current = false;
+    setHasUnsavedDraftChanges(true);
   }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, isGiftView, isPreviewMode, loadSnapshot, selectItem, triggerToast, startGiftBloomAnimation]);
+
+  const flushCanvasRecoverySnapshotNow = useCallback(() => {
+    if (!hasHydratedRef.current || suppressRecoveryUntilNextEditRef.current) return;
+    const meta = recoveryMetaRef.current;
+    if (!meta.canPersist) return;
+    const s = useBouquetStore.getState();
+    saveCanvasRecoverySnapshot({
+      snapshot: {
+        items: s.items,
+        wrapStyle: s.wrapStyle,
+        wrapColor: s.wrapColor,
+        ribbonColor: s.ribbonColor,
+        ribbonStyle: s.ribbonStyle,
+        environment: s.environment,
+        bouquetPose: s.bouquetPose,
+        card: s.card,
+        voice: s.voice,
+        lock: s.lock,
+      },
+      wasInStudio: meta.wasInStudio,
+      hasUnsavedChanges: meta.hasUnsavedChanges,
+      sourceVaultCode: currentSessionVaultCodeRef.current,
+      isSourceDraft: currentSessionVaultIsDraftRef.current,
+    });
+  }, []);
+
+  recoveryMetaRef.current = {
+    canPersist:
+      hasHydratedRef.current &&
+      !isGiftView &&
+      !isPreviewMode &&
+      !isResolvingShortCode &&
+      !activeShortCode &&
+      !stealthGateSlug,
+    wasInStudio: !showLandingPage && !isGiftView && !isPreviewMode && !stealthGateSlug,
+    hasUnsavedChanges: hasUnsavedDraftChanges,
+  };
+
+  // Persist accidental reload/exit canvas recovery (separate from manual Saved Drafts)
+  useEffect(() => {
+    if (!hasHydratedRef.current || suppressRecoveryUntilNextEditRef.current) return;
+    if (!recoveryMetaRef.current.canPersist) return;
+    const timer = window.setTimeout(() => {
+      flushCanvasRecoverySnapshotNow();
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [
+    items,
+    wrapStyle,
+    wrapColor,
+    ribbonColor,
+    ribbonStyle,
+    environment,
+    bouquetPose,
+    card,
+    voice,
+    lock,
+    showLandingPage,
+    hasUnsavedDraftChanges,
+    isGiftView,
+    isPreviewMode,
+    isResolvingShortCode,
+    activeShortCode,
+    stealthGateSlug,
+    flushCanvasRecoverySnapshotNow,
+  ]);
+
+  // Synchronously flush recovery snapshot when closing tab, reloading, or backgrounding the browser
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const handleVisibilityFlush = () => {
+      if (document.hidden) {
+        flushCanvasRecoverySnapshotNow();
+      }
+    };
+    window.addEventListener('pagehide', flushCanvasRecoverySnapshotNow);
+    window.addEventListener('beforeunload', flushCanvasRecoverySnapshotNow);
+    document.addEventListener('visibilitychange', handleVisibilityFlush);
+    return () => {
+      window.removeEventListener('pagehide', flushCanvasRecoverySnapshotNow);
+      window.removeEventListener('beforeunload', flushCanvasRecoverySnapshotNow);
+      document.removeEventListener('visibilitychange', handleVisibilityFlush);
+    };
+  }, [flushCanvasRecoverySnapshotNow]);
 
   // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
@@ -1646,7 +1765,9 @@ export default function App() {
         retentionDays: policy.retentionDays,
       }).catch(() => false);
 
-      const previousSessionCode = currentSessionVaultCodeRef.current;
+      const previousDraftCode = currentSessionVaultIsDraftRef.current
+        ? currentSessionVaultCodeRef.current
+        : null;
       const shouldPinToGarland = Boolean(pinToShowcaseChecked);
 
       // Save to local account-free Bouquet Vault
@@ -1669,15 +1790,17 @@ export default function App() {
       };
       const updatedVault = saveBouquetToLocalVault(
         vaultEntry,
-        previousSessionCode
+        previousDraftCode
       );
       const garlandPublishPromise = shouldPinToGarland
         ? publishBouquetToGlobalGarlandFeed(
             vaultEntry,
-            previousSessionCode
+            previousDraftCode
           ).catch(() => false)
         : Promise.resolve(true);
       currentSessionVaultCodeRef.current = code;
+      currentSessionVaultIsDraftRef.current = false;
+      setHasUnsavedDraftChanges(false);
       setVaultCount(updatedVault.length);
 
       if (!countedCreatedCodeSetRef.current.has(code)) {
@@ -1707,7 +1830,7 @@ export default function App() {
           garlandEntry: shouldPinToGarland
             ? {
                 ...vaultEntry,
-                replaceCode: previousSessionCode || null,
+                replaceCode: previousDraftCode || null,
               }
             : null,
         })
@@ -1741,7 +1864,6 @@ export default function App() {
     const code = computeShortCode(hashPayload);
     localShortCodeCache.set(code, hashPayload);
     try {
-      localStorage.setItem('bouquet_studio_autosave_v2', JSON.stringify(snap));
       localStorage.setItem(`bq_short_${code}`, hashPayload);
     } catch {
       // Ignore quota errors
@@ -1752,6 +1874,10 @@ export default function App() {
       isPremium: policy.isPremiumEternal,
       retentionDays: policy.retentionDays,
     }).catch(() => {});
+
+    const replaceDraftCode = currentSessionVaultIsDraftRef.current
+      ? currentSessionVaultCodeRef.current
+      : null;
 
     const updatedVault = saveBouquetToLocalVault(
       {
@@ -1769,9 +1895,12 @@ export default function App() {
         pinToShowcase: false,
         draftPayload: hashPayload,
       },
-      currentSessionVaultCodeRef.current
+      replaceDraftCode
     );
     currentSessionVaultCodeRef.current = code;
+    currentSessionVaultIsDraftRef.current = true;
+    suppressRecoveryUntilNextEditRef.current = false;
+    setHasUnsavedDraftChanges(false);
     setVaultCount(updatedVault.length);
     setSavedDraftPulse(true);
     setTimeout(() => setSavedDraftPulse(false), 1600);
@@ -1779,12 +1908,14 @@ export default function App() {
   }, [items, wrapStyle, wrapColor, ribbonColor, ribbonStyle, environment, bouquetPose, card, voice, lock, activeStudioPass, triggerToast]);
 
   const handleResumeDraftFromDevice = useCallback(
-    (draftPayload: string, sourceVaultCode?: string) => {
+    (draftPayload: string, sourceVaultCode?: string, isSourceDraft = true) => {
+      currentSessionVaultCodeRef.current = sourceVaultCode || null;
+      currentSessionVaultIsDraftRef.current = Boolean(isSourceDraft);
+      suppressRecoveryUntilNextEditRef.current = false;
+      setHasUnsavedDraftChanges(false);
       const decoded = draftPayload ? decodeBouquetFromHash(draftPayload) : null;
-      if (sourceVaultCode) {
-        currentSessionVaultCodeRef.current = sourceVaultCode;
-      }
       if (decoded) {
+        skipNextDirtyMarkRef.current = true;
         loadSnapshot(decoded);
         setIsGiftView(false);
         setIsPreviewMode(false);
@@ -1823,6 +1954,7 @@ export default function App() {
               return;
             }
             const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, record);
+            skipNextDirtyMarkRef.current = true;
             loadSnapshot(hydrated);
             if (!decoded) {
               setIsGiftView(false);
@@ -1851,13 +1983,12 @@ export default function App() {
         shouldResetStudioOnShareCloseRef.current = false;
         setSealedGiftUrl('');
         setShareStep('dedication');
-        currentSessionVaultCodeRef.current = null;
-        clearBouquet();
+        resetStudioCanvasSession();
       } else if (shareStep === 'ready') {
         setShareStep('dedication');
       }
     }
-  }, [isShareModalOpen, shareStep, clearBouquet]);
+  }, [isShareModalOpen, shareStep, resetStudioCanvasSession]);
 
   const handleShareLink = async (asGift = true, overridePass?: StudioPassRecord | null) => {
     const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;
@@ -2166,6 +2297,7 @@ export default function App() {
           onStartCrafting={() => {
             setReturnToCreationsPage(false);
             setStudioEntranceKey((k) => k + 1);
+            setCanvasRecoveryInStudioFlag(true);
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'studio_session' });
           }}
@@ -2251,7 +2383,10 @@ export default function App() {
             {/* Left: Brand Wordmark (Returns to Home) */}
             <button
               type="button"
-              onClick={() => setShowLandingPage(true)}
+              onClick={() => {
+                setCanvasRecoveryInStudioFlag(false);
+                setShowLandingPage(true);
+              }}
               title="Back to Send A Bouquet Home"
               aria-label="Open Send A Bouquet Home Page"
               className="flex items-center gap-1.5 sm:gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
@@ -2311,8 +2446,12 @@ export default function App() {
                   data-testid="save-draft-device-btn"
                   onClick={handleSaveDraftOnDevice}
                   aria-label="Save bouquet draft on this device"
-                  title="Save Draft on Device"
-                  className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
+                  title={
+                    hasUnsavedDraftChanges
+                      ? 'Save Draft on Device (unsaved changes)'
+                      : 'Save Draft on Device'
+                  }
+                  className={`relative w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
                     savedDraftPulse
                       ? 'bg-emerald-500/20 text-emerald-500 scale-105'
                       : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
@@ -2322,6 +2461,12 @@ export default function App() {
                     <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
                   ) : (
                     <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B4846C]" />
+                  )}
+                  {hasUnsavedDraftChanges && !savedDraftPulse && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#B4846C]"
+                    />
                   )}
                 </button>
                 <span
@@ -2333,8 +2478,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    currentSessionVaultCodeRef.current = null;
-                    clearBouquet();
+                    resetStudioCanvasSession();
                     triggerToast('Canvas reset');
                   }}
                   aria-label="Reset bouquet and start over"
@@ -2589,16 +2733,6 @@ export default function App() {
           >
             Flowers For You
           </h1>
-          {!isGiftView && (
-            <span
-              className="inline-flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 font-normal"
-              title="Automatically saved to browser storage"
-            >
-              <span className="hidden sm:inline">
-                {autosaveStatus === 'saving' ? 'Saving...' : 'Saved'}
-              </span>
-            </span>
-          )}
         </div>
 
         {/* Center Controls (Undo / Redo / Randomize) */}
@@ -4596,8 +4730,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      currentSessionVaultCodeRef.current = null;
-                      clearBouquet();
+                      resetStudioCanvasSession();
                       triggerToast('Canvas reset');
                     }}
                     className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
@@ -4622,6 +4755,8 @@ export default function App() {
                       type="button"
                       onClick={() => {
                         currentSessionVaultCodeRef.current = null;
+                        currentSessionVaultIsDraftRef.current = false;
+                        suppressRecoveryUntilNextEditRef.current = false;
                         loadSnapshot(tpl.snapshot);
                         triggerToast(`Loaded ${tpl.name}`);
                       }}
@@ -5435,6 +5570,9 @@ export default function App() {
                           key={tpl.id}
                           type="button"
                           onClick={() => {
+                            currentSessionVaultCodeRef.current = null;
+                            currentSessionVaultIsDraftRef.current = false;
+                            suppressRecoveryUntilNextEditRef.current = false;
                             loadSnapshot(tpl.snapshot);
                             triggerToast(`Loaded "${tpl.name}" template`);
                           }}
@@ -5467,7 +5605,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          clearBouquet();
+                          resetStudioCanvasSession();
                           triggerToast('Canvas reset');
                         }}
                         className="text-[11px] font-medium text-stone-500 hover:text-red-600 dark:text-stone-400 dark:hover:text-red-400 flex items-center gap-1 transition"
