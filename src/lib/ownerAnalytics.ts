@@ -122,6 +122,7 @@ export type PaidPassChannel =
   | 'manual_maya'
   | 'manual_bank'
   | 'kofi'
+  | 'sikatpay'
   | 'bayadgate'
   | 'paymongo'
   | 'other';

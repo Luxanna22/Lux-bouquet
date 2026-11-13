@@ -342,6 +342,7 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
     !deviceTokenHash ||
     normKey.startsWith('BLOOM-KS') ||
     normKey.startsWith('BLOOM-BG') ||
+    normKey.startsWith('BLOOM-SP') ||
     normKey === 'BLOOM-KCFG-SHOP'
   ) {
     return {

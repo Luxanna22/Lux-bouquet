@@ -371,6 +371,82 @@ export function parseBayadgateAmountToMinor(rawAmount) {
   return Math.round(parsed * 100);
 }
 
+/**
+ * Derives a deterministic, Firestore-valid `BLOOM-SPXX-XXXX` pending/paid order slot key
+ * from a SikatPay `order_id` so `create-checkout`, `/api/webhooks/sikatpay`, and
+ * `/api/payments/verify-and-issue` share state cleanly across serverless instances.
+ */
+export function deriveSikatpayOrderSlotKey(orderId) {
+  const cleanOrderId = String(orderId || '').trim();
+  const digest = crypto
+    .createHash('sha256')
+    .update(`sab_sikatpay_order_v1:${cleanOrderId}`)
+    .digest();
+
+  let p1 = 'SP';
+  for (let i = 0; i < 2; i++) {
+    p1 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  let p2 = '';
+  for (let i = 2; i < 6; i++) {
+    p2 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  return `BLOOM-${p1}-${p2}`;
+}
+
+export function getSikatpayConfig() {
+  const apiKey = (process.env.SIKATPAY_API_KEY || '').trim();
+  const webhookSecret = (process.env.SIKATPAY_WEBHOOK_SECRET || '').trim();
+  const baseUrl = (process.env.SIKATPAY_API_BASE_URL || 'https://payment.sikatpinoy.net/api/v1')
+    .trim()
+    .replace(/\/+$/, '');
+  const isTestKey = apiKey.startsWith('mk_test_');
+  return {
+    apiKey,
+    webhookSecret,
+    baseUrl,
+    isTestKey,
+    configured: Boolean(apiKey),
+  };
+}
+
+/**
+ * SikatPay webhook HMAC-SHA256 verification:
+ * Header `X-Signature: t=<unix seconds>,v1=<hex>`
+ * Signed payload: `${t}.${rawBody}`
+ * Rejects timestamps older/newer than 300s to prevent replay attacks.
+ */
+export function verifySikatpayWebhookSignature(
+  rawBody,
+  signatureHeader,
+  webhookSecret,
+  nowMs = Date.now()
+) {
+  if (!signatureHeader || !webhookSecret || rawBody === undefined || rawBody === null) {
+    return false;
+  }
+  const parts = {};
+  for (const segment of String(signatureHeader).split(',')) {
+    const eqIdx = segment.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const k = segment.slice(0, eqIdx).trim();
+    const v = segment.slice(eqIdx + 1).trim();
+    if (k && v) parts[k] = v;
+  }
+  const timestamp = Number(parts.t);
+  const candidateSig = String(parts.v1 || '').toLowerCase();
+  if (!Number.isFinite(timestamp) || !candidateSig) return false;
+  if (Math.abs(nowMs / 1000 - timestamp) > 300) return false;
+
+  const expectedSig = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(`${parts.t}.${String(rawBody)}`, 'utf8')
+    .digest('hex')
+    .toLowerCase();
+
+  return timingSafeMatch(expectedSig, candidateSig);
+}
+
 export function timingSafeMatch(a, b) {
   const bufA = Buffer.from(String(a || ''), 'utf8');
   const bufB = Buffer.from(String(b || ''), 'utf8');
@@ -640,6 +716,7 @@ export function validateAndBindPassRedemptionServer(
   if (
     normKey.startsWith('BLOOM-KS') ||
     normKey.startsWith('BLOOM-BG') ||
+    normKey.startsWith('BLOOM-SP') ||
     normKey === 'BLOOM-KCFG-SHOP'
   ) {
     return {
@@ -747,6 +824,7 @@ export function verifyActiveStudioPassForActionServer(params) {
   if (
     normKey.startsWith('BLOOM-KS') ||
     normKey.startsWith('BLOOM-BG') ||
+    normKey.startsWith('BLOOM-SP') ||
     normKey === 'BLOOM-KCFG-SHOP'
   ) {
     return {
@@ -1479,7 +1557,8 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
   if (
     normKey === 'BLOOM-KCFG-SHOP' ||
     normKey.startsWith('BLOOM-KS') ||
-    normKey.startsWith('BLOOM-BG')
+    normKey.startsWith('BLOOM-BG') ||
+    normKey.startsWith('BLOOM-SP')
   ) {
     return false;
   }
@@ -1514,6 +1593,8 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
     const channel =
       typeof options.channel === 'string' && options.channel
         ? options.channel
+        : pass.paymentProvider === 'sikatpay'
+        ? 'sikatpay'
         : pass.paymentProvider === 'bayadgate'
         ? 'bayadgate'
         : pass.paymentProvider === 'paymongo'
@@ -1568,7 +1649,14 @@ async function syncRealAnalyticsSnapshotServer() {
   let phpCentavos = 0;
 
   for (const [key, pass] of SERVER_PASS_STORE.entries()) {
-    if (!pass || key === 'BLOOM-KCFG-SHOP' || key.startsWith('BLOOM-KS') || key.startsWith('BLOOM-BG')) continue;
+    if (
+      !pass ||
+      key === 'BLOOM-KCFG-SHOP' ||
+      key.startsWith('BLOOM-KS') ||
+      key.startsWith('BLOOM-BG') ||
+      key.startsWith('BLOOM-SP')
+    )
+      continue;
     if (isTesterVoucherPassServer(pass)) {
       if (!TESTER_VOUCHER_LEDGER.has(key)) testerCount += 1;
       continue;
@@ -1915,6 +2003,7 @@ const ALLOWED_MANUAL_CHANNELS = new Set([
   'manual_maya',
   'manual_bank',
   'kofi',
+  'sikatpay',
   'bayadgate',
   'paymongo',
   'other',
@@ -2134,33 +2223,38 @@ export function verifyPaymongoWebhookSignature(rawBody, signatureHeader, webhook
 
 async function readRequestBody(req) {
   const parseStringPayload = (str) => {
-    const trimmed = String(str || '').trim();
-    if (!trimmed) return { raw: '', parsed: {} };
+    const rawExact = String(str || '');
+    const trimmed = rawExact.trim();
+    if (!trimmed) return { raw: '', rawExact, parsed: {} };
     if (trimmed.startsWith('data=')) {
       const params = new URLSearchParams(trimmed);
       const dataStr = params.get('data') || '{}';
       try {
-        return { raw: trimmed, parsed: sanitizeJsonValue(JSON.parse(dataStr)) };
+        return { raw: trimmed, rawExact, parsed: sanitizeJsonValue(JSON.parse(dataStr)) };
       } catch {
-        return { raw: trimmed, parsed: {} };
+        return { raw: trimmed, rawExact, parsed: {} };
       }
     }
     try {
-      return { raw: trimmed, parsed: sanitizeJsonValue(JSON.parse(trimmed)) };
+      return { raw: trimmed, rawExact, parsed: sanitizeJsonValue(JSON.parse(trimmed)) };
     } catch {
       const params = new URLSearchParams(trimmed);
       const dataStr = params.get('data');
       if (dataStr) {
         try {
-          return { raw: trimmed, parsed: sanitizeJsonValue(JSON.parse(dataStr)) };
+          return { raw: trimmed, rawExact, parsed: sanitizeJsonValue(JSON.parse(dataStr)) };
         } catch {
-          return { raw: trimmed, parsed: {} };
+          return { raw: trimmed, rawExact, parsed: {} };
         }
       }
       if (trimmed.includes('=')) {
-        return { raw: trimmed, parsed: sanitizeJsonValue(Object.fromEntries(params.entries())) };
+        return {
+          raw: trimmed,
+          rawExact,
+          parsed: sanitizeJsonValue(Object.fromEntries(params.entries())),
+        };
       }
-      return { raw: trimmed, parsed: {} };
+      return { raw: trimmed, rawExact, parsed: {} };
     }
   };
 
@@ -2174,13 +2268,13 @@ async function readRequestBody(req) {
     if (typeof req.body === 'object') {
       if (typeof req.body.data === 'string' && req.body.data.trim().startsWith('{')) {
         try {
-          return { raw: req.body.data, parsed: JSON.parse(req.body.data) };
+          return { raw: req.body.data, rawExact: req.body.data, parsed: JSON.parse(req.body.data) };
         } catch {
-          return { raw: req.body.data, parsed: {} };
+          return { raw: req.body.data, rawExact: req.body.data, parsed: {} };
         }
       }
       const rawStr = JSON.stringify(req.body);
-      return { raw: rawStr, parsed: req.body };
+      return { raw: rawStr, rawExact: rawStr, parsed: req.body };
     }
   }
 
@@ -2330,11 +2424,13 @@ export function resolveKofiShopOrderTier(parsedWebhook, configuredShopCodes) {
 export function resolveCheckoutRegionAndProvider({
   requestedRegion,
   requestedProvider,
+  sikatpayApiKey = '',
   paymongoSecret = '',
   bayadgateMerchantId = '',
   bayadgateSecret = '',
   vercelCountry = '',
 } = {}) {
+  const hasSikatpay = Boolean(String(sikatpayApiKey || '').trim());
   const hasPaymongo = Boolean(String(paymongoSecret || '').trim());
   const hasBayadgate = Boolean(
     String(bayadgateMerchantId || '').trim() && String(bayadgateSecret || '').trim()
@@ -2342,7 +2438,7 @@ export function resolveCheckoutRegionAndProvider({
   const normalizedCountry = String(vercelCountry || '').trim().toUpperCase();
 
   // While no PH local gateway is configured, strictly enforce USD ('INTL') + Ko-fi Shop.
-  if (!hasPaymongo && !hasBayadgate) {
+  if (!hasSikatpay && !hasPaymongo && !hasBayadgate) {
     return { region: 'INTL', provider: 'kofi' };
   }
 
@@ -2361,8 +2457,17 @@ export function resolveCheckoutRegionAndProvider({
     return { region: 'INTL', provider: 'kofi' };
   }
 
+  if (requestedProvider === 'sikatpay' && hasSikatpay) {
+    return { region: 'PH', provider: 'sikatpay' };
+  }
+  if (requestedProvider === 'bayadgate' && hasBayadgate) {
+    return { region: 'PH', provider: 'bayadgate' };
+  }
   if (requestedProvider === 'paymongo' && hasPaymongo) {
     return { region: 'PH', provider: 'paymongo' };
+  }
+  if (hasSikatpay) {
+    return { region: 'PH', provider: 'sikatpay' };
   }
   if (hasBayadgate) {
     return { region: 'PH', provider: 'bayadgate' };
@@ -2413,6 +2518,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
   try {
     // 0. GET /api/payments/create-checkout — Server-authoritative gateway & regional capability check
     if (pathname === '/api/payments/create-checkout' && req.method === 'GET') {
+      const sikatpay = getSikatpayConfig();
       const bayadgate = getBayadgateConfig();
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const hasPaymongo = Boolean(paymongoSecret);
@@ -2420,7 +2526,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         typeof req.headers?.['x-vercel-ip-country'] === 'string'
           ? req.headers['x-vercel-ip-country'].trim().toUpperCase()
           : '';
-      const phGateway = bayadgate.configured ? 'bayadgate' : hasPaymongo ? 'paymongo' : null;
+      const phGateway = sikatpay.configured
+        ? 'sikatpay'
+        : bayadgate.configured
+        ? 'bayadgate'
+        : hasPaymongo
+        ? 'paymongo'
+        : null;
       const isCountryPhOrLocal = !vercelCountry || vercelCountry === 'PH';
       const isPhEligible = Boolean(phGateway && isCountryPhOrLocal);
       const defaultRegion = phGateway && vercelCountry === 'PH' ? 'PH' : 'INTL';
@@ -2432,7 +2544,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         isPhEligible,
         defaultRegion,
         phGateway,
-        phMethods: bayadgate.configured ? BAYADGATE_PAYMENT_METHODS : [],
+        sikatpayTestMode: sikatpay.isTestKey,
+        phMethods:
+          phGateway === 'sikatpay'
+            ? ['QRPH', 'GCASH', 'MAYA']
+            : bayadgate.configured
+            ? BAYADGATE_PAYMENT_METHODS
+            : [],
         availableProviders,
       });
       return true;
@@ -2450,6 +2568,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       const tier = isValidTier(parsed.tier) ? parsed.tier : 'pass_7d';
+      const sikatpay = getSikatpayConfig();
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const bayadgate = getBayadgateConfig();
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
@@ -2465,6 +2584,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const isProductionEnv = Boolean(
         process.env.VERCEL ||
+          sikatpay.configured ||
           paymongoSecret ||
           bayadgate.configured ||
           kofiVerificationToken ||
@@ -2475,6 +2595,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const { region, provider } = resolveCheckoutRegionAndProvider({
         requestedRegion: parsed.region,
         requestedProvider: parsed.provider,
+        sikatpayApiKey: sikatpay.apiKey,
         paymongoSecret,
         bayadgateMerchantId: bayadgate.merchantId,
         bayadgateSecret: bayadgate.secretKey,
@@ -2496,11 +2617,84 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       let checkoutUrl = null;
       let paymongoSessionId;
+      let sikatpayPaymentId = null;
+      let sikatpayOrderId = null;
       let bayadgateOrderId = null;
       let bayadgatePaymentMethod = null;
       let liveGatewayConfigured = false;
 
-      if (provider === 'bayadgate' && bayadgate.configured && region === 'PH') {
+      if (provider === 'sikatpay' && sikatpay.configured && region === 'PH') {
+        liveGatewayConfigured = true;
+        sikatpayOrderId = `SB-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+        const rawOrigin =
+          typeof parsed.origin === 'string' && parsed.origin.startsWith('http')
+            ? parsed.origin.replace(/\/+$/, '')
+            : 'https://www.sendabouquet.online';
+
+        const spPayload = {
+          amount: PRICING_CATALOG.PH[tier].amountMinor,
+          order_id: sikatpayOrderId,
+          description: `Send A Bouquet - ${plan.name}`.slice(0, 120),
+        };
+        if (rawOrigin.startsWith('https://')) {
+          spPayload.success_url = `${rawOrigin}/?checkout_success=${encodeURIComponent(checkoutId)}`;
+          spPayload.cancel_url = `${rawOrigin}/?checkout_cancelled=1`;
+        }
+
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          const spRes = await fetch(`${sikatpay.baseUrl}/payments`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${sikatpay.apiKey}`,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify(spPayload),
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+
+          const spJson = await spRes.json().catch(() => null);
+          if ((spRes.status !== 201 && spRes.status !== 200) || !spJson?.checkout_url || !spJson?.id) {
+            sendJson(res, 502, {
+              ok: false,
+              status: 'GATEWAY_ERROR',
+              message:
+                spJson?.error?.message ||
+                'SikatPay checkout could not be created right now. Please try Ko-fi or try again in a moment.',
+            });
+            return true;
+          }
+
+          sikatpayPaymentId = String(spJson.id);
+          checkoutUrl = String(spJson.checkout_url);
+
+          const slotKey = deriveSikatpayOrderSlotKey(sikatpayOrderId);
+          const pendingSlot = createSignedStudioPassServer({
+            passKey: slotKey,
+            tier,
+            region: 'PH',
+            deviceTokenHash,
+            secondaryDeviceHash: 'PENDING_PAYMENT',
+            boundBouquetCode: `${passKey}|${boundBouquetCode || ''}`,
+            paymentProvider: 'sikatpay',
+            paymentReference: `sppend_${sikatpayOrderId}`,
+          });
+          pendingSlot.activeSessionNonce = sikatpayPaymentId;
+          pendingSlot.signature = computePassIntegritySignature(pendingSlot, CLIENT_SIGNATURE_SALT);
+          SERVER_PASS_STORE.set(slotKey, pendingSlot);
+          await saveStudioPassToFirestoreRest(pendingSlot);
+        } catch {
+          sendJson(res, 502, {
+            ok: false,
+            status: 'GATEWAY_UNREACHABLE',
+            message: 'Could not reach SikatPay right now. Please try again in a moment.',
+          });
+          return true;
+        }
+      } else if (provider === 'bayadgate' && bayadgate.configured && region === 'PH') {
         liveGatewayConfigured = true;
         bayadgatePaymentMethod = normalizeBayadgatePaymentMethod(parsed.paymentMethod);
         bayadgateOrderId = `BG${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
@@ -2641,6 +2835,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         b: boundBouquetCode,
         dlc: tierDirectLinkCode || null,
         pmId: paymongoSessionId || null,
+        spId: sikatpayPaymentId || null,
+        spOid: sikatpayOrderId || null,
         bgOid: bayadgateOrderId || null,
         bgMethod: bayadgatePaymentMethod || null,
         live: liveGatewayConfigured,
@@ -2659,6 +2855,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         directLinkCode: tierDirectLinkCode || null,
         provider,
         paymongoSessionId,
+        sikatpayPaymentId,
+        sikatpayOrderId,
         bayadgateOrderId,
         bayadgatePaymentMethod,
         checkoutUrl,
@@ -2674,7 +2872,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         passKeyPreview: passKey,
         plan,
         provider,
-        orderId: bayadgateOrderId,
+        orderId: sikatpayOrderId || bayadgateOrderId,
+        sikatpayPaymentId,
         paymentMethod: bayadgatePaymentMethod,
         checkoutUrl,
         directLinkCode: tierDirectLinkCode || null,
@@ -2711,6 +2910,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           boundBouquetCode: decodedToken.b || null,
           directLinkCode: decodedToken.dlc || null,
           paymongoSessionId: decodedToken.pmId || undefined,
+          sikatpayPaymentId: decodedToken.spId || null,
+          sikatpayOrderId: decodedToken.spOid || null,
           bayadgateOrderId: decodedToken.bgOid || null,
           bayadgatePaymentMethod: decodedToken.bgMethod || null,
           liveGatewayConfigured: Boolean(decodedToken.live),
@@ -2740,6 +2941,109 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ok: false,
           message: 'Device mismatch during checkout verification.',
         });
+        return true;
+      }
+
+      // Case A00: SikatPay Order Verification (Webhook slot OR GET /v1/payments/:id fallback)
+      if (pending.provider === 'sikatpay') {
+        const sikatpay = getSikatpayConfig();
+        const orderId = pending.sikatpayOrderId || '';
+        const slotKey = orderId ? deriveSikatpayOrderSlotKey(orderId) : '';
+
+        // 1. Check if webhook (or prior check) already minted and persisted the final pass
+        const existingPass =
+          SERVER_PASS_STORE.get(pending.passKey) ||
+          (await fetchStudioPassFromFirestoreRest(pending.passKey));
+        if (
+          existingPass &&
+          verifyPassIntegritySignature(existingPass) &&
+          verifyServerPaymentReference(existingPass)
+        ) {
+          pending.status = 'paid';
+          SERVER_PASS_STORE.set(existingPass.passKey, existingPass);
+          sendJson(res, 200, { ok: true, pass: existingPass });
+          return true;
+        }
+
+        // 2. Check Firestore order slot status in case webhook marked PAID across serverless instances
+        const orderSlot = slotKey
+          ? SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey))
+          : null;
+        let confirmedPaid = orderSlot?.secondaryDeviceHash === 'PAID';
+        const paymentId = pending.sikatpayPaymentId || orderSlot?.activeSessionNonce || '';
+
+        // 3. Fallback: Query SikatPay GET /v1/payments/:id directly
+        if (!confirmedPaid && sikatpay.configured && paymentId) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const spCheckRes = await fetch(
+              `${sikatpay.baseUrl}/payments/${encodeURIComponent(paymentId)}`,
+              {
+                method: 'GET',
+                headers: {
+                  Authorization: `Bearer ${sikatpay.apiKey}`,
+                  Accept: 'application/json',
+                },
+                signal: controller.signal,
+              }
+            );
+            clearTimeout(timer);
+            if (spCheckRes.ok) {
+              const pJson = await spCheckRes.json().catch(() => null);
+              const expectedMinor = PRICING_CATALOG.PH[pending.tier]?.amountMinor;
+              const livemodeOk = sikatpay.isTestKey || pJson?.livemode === true;
+              const orderMatch = !orderId || !pJson?.order_id || pJson.order_id === orderId;
+              if (
+                pJson?.status === 'paid' &&
+                String(pJson?.currency || '').toUpperCase() === 'PHP' &&
+                Number(pJson?.amount) === expectedMinor &&
+                livemodeOk &&
+                orderMatch
+              ) {
+                confirmedPaid = true;
+              }
+            }
+          } catch {
+            // Keep pending if upstream status endpoint unreachable
+          }
+        }
+
+        if (!confirmedPaid) {
+          sendJson(res, 402, {
+            ok: false,
+            status: 'PENDING_PAYMENT',
+            message:
+              'Payment is still awaiting confirmation from QR Ph / GCash / Maya. Complete payment and tap Verify Order again.',
+          });
+          return true;
+        }
+
+        pending.status = 'paid';
+        const mintedPass = createSignedStudioPassServer({
+          passKey: pending.passKey,
+          tier: pending.tier,
+          region: 'PH',
+          deviceTokenHash: pending.deviceTokenHash,
+          boundBouquetCode: pending.boundBouquetCode,
+          paymentProvider: 'sikatpay',
+          paymentReference: `sp_${orderId || pending.checkoutId}`,
+        });
+        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+        await saveStudioPassToFirestoreRest(mintedPass);
+
+        if (orderSlot) {
+          const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+          paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+          SERVER_PASS_STORE.set(slotKey, paidSlot);
+          await saveStudioPassToFirestoreRest(paidSlot);
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        recordPaidPassIssuanceServer(mintedPass);
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, { ok: true, pass: mintedPass });
         return true;
       }
 
@@ -3080,12 +3384,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const passKey = normalizePassKey(rawKey);
 
-      // Prevent internal Ko-fi/BayadGate receipt slots (`BLOOM-KS...`, `BLOOM-BG...`, `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
+      // Prevent internal Ko-fi/BayadGate/SikatPay receipt slots (`BLOOM-KS...`, `BLOOM-BG...`, `BLOOM-SP...`, `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
       if (
         !isValidPassKeyFormat(passKey) ||
         !deviceTokenHash ||
         passKey.startsWith('BLOOM-KS') ||
         passKey.startsWith('BLOOM-BG') ||
+        passKey.startsWith('BLOOM-SP') ||
         passKey === 'BLOOM-KCFG-SHOP'
       ) {
         sendJson(res, 400, {
@@ -3202,6 +3507,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             existingPaid?.channel ||
             (result.updatedPass.paymentProvider === 'kofi'
               ? 'kofi'
+              : result.updatedPass.paymentProvider === 'sikatpay'
+              ? 'sikatpay'
               : result.updatedPass.paymentProvider === 'bayadgate'
               ? 'bayadgate'
               : result.updatedPass.paymentProvider === 'paymongo'
@@ -3637,6 +3944,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         !isValidPassKeyFormat(normKey) ||
         normKey.startsWith('BLOOM-KS') ||
         normKey.startsWith('BLOOM-BG') ||
+        normKey.startsWith('BLOOM-SP') ||
         normKey === 'BLOOM-KCFG-SHOP'
       ) {
         sendJson(res, 403, {
@@ -3986,6 +4294,149 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       res.end('SUCCESS');
+      return true;
+    }
+
+    // 8. POST /api/webhooks/sikatpay — SikatPay `payment.paid` & `ping` Webhook Listener
+    if (pathname === '/api/webhooks/sikatpay' && req.method === 'POST') {
+      const { raw, rawExact, parsed } = await readRequestBody(req);
+      const sikatpay = getSikatpayConfig();
+
+      if (!sikatpay.webhookSecret) {
+        sendJson(res, 503, { ok: false, message: 'SikatPay webhook secret not configured' });
+        return true;
+      }
+
+      const sigHeader = req.headers?.['x-signature'] || req.headers?.['X-Signature'] || '';
+      if (
+        !verifySikatpayWebhookSignature(
+          rawExact !== undefined ? rawExact : raw,
+          sigHeader,
+          sikatpay.webhookSecret
+        )
+      ) {
+        sendJson(res, 401, { ok: false, message: 'Invalid SikatPay webhook signature' });
+        return true;
+      }
+
+      const eventType = String(parsed?.type || '').trim();
+      if (eventType === 'ping') {
+        sendJson(res, 200, { ok: true, type: 'ping' });
+        return true;
+      }
+
+      // Acknowledge any unknown future event types with 200 per SikatPay docs
+      if (eventType !== 'payment.paid') {
+        sendJson(res, 200, { ok: true, ignored: true, type: eventType });
+        return true;
+      }
+
+      const data = parsed?.data && typeof parsed.data === 'object' ? parsed.data : {};
+      const orderId = String(data.order_id || '').trim();
+      const paymentLivemode = Boolean(parsed?.livemode ?? data?.livemode);
+
+      // Never let test-mode or dashboard sample events unlock production passes when a live key is active
+      if (
+        (!sikatpay.isTestKey && !paymentLivemode) ||
+        orderId.startsWith('SAMPLE-ORDER-')
+      ) {
+        sendJson(res, 200, {
+          ok: true,
+          ignored: true,
+          reason: 'TEST_EVENT_ON_LIVE_MODE',
+        });
+        return true;
+      }
+
+      if (!orderId || String(data.status || '') !== 'paid') {
+        sendJson(res, 200, { ok: true, ignored: true, reason: 'NON_PAID_OR_MISSING_ORDER' });
+        return true;
+      }
+
+      const slotKey = deriveSikatpayOrderSlotKey(orderId);
+      const orderSlot =
+        SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+
+      let pendingEntry = null;
+      for (const entry of PENDING_CHECKOUT_STORE.values()) {
+        if (entry.sikatpayOrderId === orderId) {
+          pendingEntry = entry;
+          break;
+        }
+      }
+
+      if (!orderSlot && !pendingEntry) {
+        sendJson(res, 404, { ok: false, message: 'Order not found' });
+        return true;
+      }
+
+      if (orderSlot && !verifyServerPaymentReference(orderSlot)) {
+        sendJson(res, 403, { ok: false, message: 'Invalid order slot provenance' });
+        return true;
+      }
+
+      const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
+        ? orderSlot?.tier || pendingEntry?.tier
+        : 'pass_7d';
+      const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+      const incomingAmount = Number(data.amount);
+      const incomingCurrency = String(data.currency || '').toUpperCase();
+
+      if (
+        incomingCurrency !== 'PHP' ||
+        !Number.isInteger(incomingAmount) ||
+        incomingAmount !== expectedMinor
+      ) {
+        sendJson(res, 400, { ok: false, message: 'Amount or currency mismatch' });
+        return true;
+      }
+
+      // Idempotent guard: already fulfilled
+      if (orderSlot?.secondaryDeviceHash === 'PAID' || pendingEntry?.status === 'paid') {
+        sendJson(res, 200, { ok: true, duplicate: true });
+        return true;
+      }
+
+      const packedMeta = String(orderSlot?.boundBouquetCode || '');
+      const pipeIdx = packedMeta.indexOf('|');
+      const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
+      const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+      const targetPassKey = isValidPassKeyFormat(decodedPassKey)
+        ? decodedPassKey
+        : pendingEntry?.passKey || generatePassKeyCode();
+      const targetDeviceHash =
+        orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
+      const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
+
+      const mintedPass = createSignedStudioPassServer({
+        passKey: targetPassKey,
+        tier,
+        region: 'PH',
+        deviceTokenHash: targetDeviceHash,
+        boundBouquetCode: targetBouquetCode,
+        paymentProvider: 'sikatpay',
+        paymentReference: `sp_${orderId}`,
+      });
+
+      SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+      await saveStudioPassToFirestoreRest(mintedPass);
+
+      if (orderSlot) {
+        const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+        paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+        SERVER_PASS_STORE.set(slotKey, paidSlot);
+        await saveStudioPassToFirestoreRest(paidSlot);
+      }
+
+      if (pendingEntry) {
+        pendingEntry.status = 'paid';
+      }
+
+      await hydratePersistentOwnerVaultServer();
+      recordPaidPassIssuanceServer(mintedPass);
+      await savePersistentOwnerVaultServer();
+
+      sendJson(res, 200, { ok: true, passKey: mintedPass.passKey });
       return true;
     }
 

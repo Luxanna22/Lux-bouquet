@@ -1328,5 +1328,515 @@ test('BayadGate PH integration: MD5 signing, form-urlencoded checkout, webhook c
   }
 });
 
+test('SikatPay PH flow: create-checkout, HMAC-SHA256 webhook, amount/livemode guards, and verify-and-issue', async () => {
+  // @ts-expect-error ESM server handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  // @ts-expect-error ESM couture guard
+  const coutureGuard = await import('../../api/_lib/coutureGuard.js');
+  const { EventEmitter } = await import('node:events');
+  const cryptoMod = await import('node:crypto');
+
+  const prevSecret = process.env.PASS_SIGNING_SECRET;
+  const prevSpKey = process.env.SIKATPAY_API_KEY;
+  const prevSpWhSecret = process.env.SIKATPAY_WEBHOOK_SECRET;
+  const prevBgMerchant = process.env.BAYADGATE_MERCHANT_ID;
+  const prevBgSecret = process.env.BAYADGATE_SECRET_KEY;
+  const originalFetch = globalThis.fetch;
+
+  process.env.PASS_SIGNING_SECRET = 'SuperSecurePassSecret_SikatPayTest99';
+  process.env.SIKATPAY_API_KEY = 'mk_test_abc123def456';
+  process.env.SIKATPAY_WEBHOOK_SECRET = 'whsec_test_sikatpay_secret_789';
+  delete process.env.BAYADGATE_MERCHANT_ID;
+  delete process.env.BAYADGATE_SECRET_KEY;
+
+  const makeReq = (
+    method: string,
+    url: string,
+    bodyStr?: string,
+    headers: Record<string, string> = {}
+  ) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: { host: 'www.sendabouquet.online', ...headers },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    let statusCode = 200;
+    const headers: Record<string, string> = {};
+    let rawBody = '';
+    return {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(val: number) {
+        statusCode = val;
+      },
+      setHeader(k: string, v: string) {
+        headers[k.toLowerCase()] = v;
+      },
+      getHeader(k: string) {
+        return headers[k.toLowerCase()];
+      },
+      end(chunk?: string) {
+        if (chunk) rawBody += chunk;
+      },
+      text() {
+        return rawBody;
+      },
+      json() {
+        return JSON.parse(rawBody || '{}');
+      },
+    };
+  };
+
+  const signSikatpayWebhook = (rawBody: string, secret: string, tsSec: number) => {
+    const sig = cryptoMod
+      .createHmac('sha256', secret)
+      .update(`${tsSec}.${rawBody}`, 'utf8')
+      .digest('hex');
+    return `t=${tsSec},v1=${sig}`;
+  };
+
+  try {
+    // 1. Verify HMAC-SHA256 webhook signature helper & 300s replay guard
+    const nowMs = 1_790_000_000_000;
+    const nowSec = Math.floor(nowMs / 1000);
+    const sampleRaw = JSON.stringify({ id: 'evt_1', type: 'ping' }) + '\n';
+    const validHeader = signSikatpayWebhook(sampleRaw, 'whsec_test_sikatpay_secret_789', nowSec);
+    assert.equal(
+      paymentLib.verifySikatpayWebhookSignature(
+        sampleRaw,
+        validHeader,
+        'whsec_test_sikatpay_secret_789',
+        nowMs
+      ),
+      true
+    );
+    const expiredHeader = signSikatpayWebhook(
+      sampleRaw,
+      'whsec_test_sikatpay_secret_789',
+      nowSec - 301
+    );
+    assert.equal(
+      paymentLib.verifySikatpayWebhookSignature(
+        sampleRaw,
+        expiredHeader,
+        'whsec_test_sikatpay_secret_789',
+        nowMs
+      ),
+      false
+    );
+    assert.equal(
+      paymentLib.verifySikatpayWebhookSignature(
+        sampleRaw.replace('ping', 'evil'),
+        validHeader,
+        'whsec_test_sikatpay_secret_789',
+        nowMs
+      ),
+      false
+    );
+
+    // 2. Capability check returns sikatpay for PH and blocks US
+    const capPhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, { 'x-vercel-ip-country': 'PH' }),
+      capPhRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capPhRes.statusCode, 200);
+    assert.equal(capPhRes.json().isPhEligible, true);
+    assert.equal(capPhRes.json().phGateway, 'sikatpay');
+    assert.equal(capPhRes.json().sikatpayTestMode, true);
+    assert.equal(capPhRes.json().defaultRegion, 'PH');
+
+    const capUsRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, { 'x-vercel-ip-country': 'US' }),
+      capUsRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capUsRes.json().isPhEligible, false);
+
+    // 3. Anti-arbitrage: US IP requesting PH + sikatpay gets forced to INTL + kofi
+    const usSpoofRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'PH',
+          provider: 'sikatpay',
+          deviceTokenHash: 'dev_us_sp_arb_attempt_01',
+        }),
+        { 'x-vercel-ip-country': 'US', 'content-type': 'application/json' }
+      ),
+      usSpoofRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(usSpoofRes.statusCode, 200);
+    assert.equal(usSpoofRes.json().provider, 'kofi');
+    assert.equal(usSpoofRes.json().plan.currency, 'USD');
+
+    // 4. Mock SikatPay upstream API (POST /v1/payments & GET /v1/payments/:id)
+    let capturedCreatePayload: Record<string, unknown> = {};
+    let capturedAuthHeader = '';
+    let mockPaymentStatus: 'pending' | 'paid' = 'pending';
+    let mockPaymentLivemode = false;
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr === 'https://payment.sikatpinoy.net/api/v1/payments' && init?.method === 'POST') {
+        capturedAuthHeader = String(
+          (init?.headers as Record<string, string>)?.Authorization || ''
+        );
+        capturedCreatePayload = JSON.parse(String(init?.body || '{}'));
+        return new Response(
+          JSON.stringify({
+            id: 'SpPay9876543210abcde',
+            status: 'pending',
+            amount: capturedCreatePayload.amount,
+            currency: 'PHP',
+            order_id: capturedCreatePayload.order_id,
+            checkout_url: 'https://payment.sikatpinoy.net/pay?id=SpPay9876543210abcde',
+            expires_at: new Date(Date.now() + 3600_000).toISOString(),
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr === 'https://payment.sikatpinoy.net/api/v1/payments/SpPay9876543210abcde') {
+        return new Response(
+          JSON.stringify({
+            id: 'SpPay9876543210abcde',
+            livemode: mockPaymentLivemode,
+            status: mockPaymentStatus,
+            amount: capturedCreatePayload.amount,
+            currency: 'PHP',
+            order_id: capturedCreatePayload.order_id,
+            method: 'qrph',
+            platform_fee: 294,
+            net_amount: 4606,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    }) as typeof fetch;
+
+    // 5. PH buyer creates SikatPay checkout for Single Bouquet (₱49.00 = 4900 centavos)
+    const devPh = 'dev_ph_buyer_sikatpay_01';
+    const createRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'PH',
+          provider: 'sikatpay',
+          deviceTokenHash: devPh,
+          origin: 'https://www.sendabouquet.online',
+        }),
+        { 'x-vercel-ip-country': 'PH', 'content-type': 'application/json' }
+      ),
+      createRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(createRes.statusCode, 200);
+    const created = createRes.json();
+    assert.equal(created.ok, true);
+    assert.equal(created.provider, 'sikatpay');
+    assert.equal(created.plan.currency, 'PHP');
+    assert.equal(created.plan.amountMinor, 4900);
+    assert.equal(created.checkoutUrl, 'https://payment.sikatpinoy.net/pay?id=SpPay9876543210abcde');
+    assert.match(created.orderId, /^SB-[A-F0-9]{12}$/);
+    assert.equal(capturedAuthHeader, 'Bearer mk_test_abc123def456');
+    assert.equal(capturedCreatePayload.amount, 4900);
+    assert.equal(capturedCreatePayload.description, 'Send A Bouquet - Single Bouquet');
+    assert.match(String(capturedCreatePayload.success_url || ''), /^https:\/\/www\.sendabouquet\.online\/\?checkout_success=/);
+
+    const slotKey = paymentLib.deriveSikatpayOrderSlotKey(created.orderId);
+    assert.equal(slotKey.startsWith('BLOOM-SP'), true);
+
+    // 6. BLOOM-SP internal slot cannot be redeemed or used for Couture unlock
+    const redeemSlotRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({ passKey: slotKey, deviceTokenHash: devPh }),
+        { 'content-type': 'application/json' }
+      ),
+      redeemSlotRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(redeemSlotRes.statusCode, 400);
+
+    const shortenSlotCheck = await coutureGuard.verifyShortenCouturePermission({
+      code: 'c_sptest1',
+      payload: '#c=vase',
+      isPremium: true,
+      passKey: slotKey,
+      deviceTokenHash: devPh,
+      activeSessionNonce: 'SpPay9876543210abcde',
+    });
+    assert.equal(shortenSlotCheck.ok, false);
+    assert.equal(shortenSlotCheck.statusCode, 403);
+
+    // 7. Pending check returns 402 PENDING_PAYMENT
+    const pendingRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: created.checkoutId,
+          checkoutToken: created.checkoutToken,
+          deviceTokenHash: devPh,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      pendingRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(pendingRes.statusCode, 402);
+    assert.equal(pendingRes.json().status, 'PENDING_PAYMENT');
+
+    // 8. Ping webhook returns 200; invalid signature returns 401
+    const liveNowSec = Math.floor(Date.now() / 1000);
+    const pingRaw = JSON.stringify({ id: 'evt_ping_1', type: 'ping' });
+    const pingRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', pingRaw, {
+        'content-type': 'application/json',
+        'x-signature': signSikatpayWebhook(pingRaw, 'whsec_test_sikatpay_secret_789', liveNowSec),
+      }),
+      pingRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(pingRes.statusCode, 200);
+    assert.equal(pingRes.json().type, 'ping');
+
+    const badSigRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', pingRaw, {
+        'content-type': 'application/json',
+        'x-signature': `t=${liveNowSec},v1=deadbeef`,
+      }),
+      badSigRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(badSigRes.statusCode, 401);
+
+    // 9. Test-mode webhook event (livemode: false) is ignored if a LIVE mk_ key is active
+    process.env.SIKATPAY_API_KEY = 'mk_live_production_key_only';
+    const testEventOnLiveRaw = JSON.stringify({
+      id: 'evt_test_on_live',
+      type: 'payment.paid',
+      livemode: false,
+      created: liveNowSec,
+      data: {
+        id: 'SpPay9876543210abcde',
+        livemode: false,
+        status: 'paid',
+        amount: 4900,
+        currency: 'PHP',
+        order_id: created.orderId,
+      },
+    });
+    const testOnLiveRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', testEventOnLiveRaw, {
+        'content-type': 'application/json',
+        'x-signature': signSikatpayWebhook(
+          testEventOnLiveRaw,
+          'whsec_test_sikatpay_secret_789',
+          liveNowSec
+        ),
+      }),
+      testOnLiveRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(testOnLiveRes.statusCode, 200);
+    assert.equal(testOnLiveRes.json().ignored, true);
+    assert.equal(testOnLiveRes.json().reason, 'TEST_EVENT_ON_LIVE_MODE');
+
+    // Switch back to test key so simulated checkout can complete
+    process.env.SIKATPAY_API_KEY = 'mk_test_abc123def456';
+
+    // 10. Underpaid webhook (2000 centavos instead of 4900) is rejected with 400
+    const underpaidRaw = JSON.stringify({
+      id: 'evt_underpaid',
+      type: 'payment.paid',
+      livemode: false,
+      created: liveNowSec,
+      data: {
+        id: 'SpPay9876543210abcde',
+        livemode: false,
+        status: 'paid',
+        amount: 2000,
+        currency: 'PHP',
+        order_id: created.orderId,
+      },
+    });
+    const underpaidRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', underpaidRaw, {
+        'content-type': 'application/json',
+        'x-signature': signSikatpayWebhook(
+          underpaidRaw,
+          'whsec_test_sikatpay_secret_789',
+          liveNowSec
+        ),
+      }),
+      underpaidRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(underpaidRes.statusCode, 400);
+
+    // 11. Valid signed payment.paid webhook with trailing newline fulfills order & is idempotent on retry
+    const paidRaw =
+      JSON.stringify({
+        id: 'evt_paid_1',
+        type: 'payment.paid',
+        livemode: false,
+        created: liveNowSec,
+        data: {
+          id: 'SpPay9876543210abcde',
+          livemode: false,
+          status: 'paid',
+          amount: 4900,
+          currency: 'PHP',
+          order_id: created.orderId,
+          method: 'qrph',
+          platform_fee: 294,
+          net_amount: 4606,
+        },
+      }) + '\n';
+    const paidSig = signSikatpayWebhook(paidRaw, 'whsec_test_sikatpay_secret_789', liveNowSec);
+
+    const validWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', paidRaw, {
+        'content-type': 'application/json',
+        'x-signature': paidSig,
+      }),
+      validWhRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(validWhRes.statusCode, 200);
+    assert.equal(validWhRes.json().ok, true);
+    assert.equal(validWhRes.json().passKey, created.passKeyPreview);
+
+    const retryWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', paidRaw, {
+        'content-type': 'application/json',
+        'x-signature': paidSig,
+      }),
+      retryWhRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(retryWhRes.statusCode, 200);
+    assert.equal(retryWhRes.json().duplicate, true);
+
+    // 12. verify-and-issue returns the verified signed SikatPay pass
+    const verifyPaidRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: created.checkoutId,
+          checkoutToken: created.checkoutToken,
+          deviceTokenHash: devPh,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      verifyPaidRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyPaidRes.statusCode, 200);
+    const issued = verifyPaidRes.json();
+    assert.equal(issued.ok, true);
+    assert.equal(issued.pass.paymentProvider, 'sikatpay');
+    assert.equal(issued.pass.region, 'PH');
+    assert.equal(issued.pass.tier, 'single');
+    assert.equal(paymentLib.verifyPassIntegritySignature(issued.pass), true);
+    assert.equal(paymentLib.verifyServerPaymentReference(issued.pass), true);
+
+    paymentLib.SERVER_PASS_STORE.delete(slotKey);
+    paymentLib.SERVER_PASS_STORE.delete(issued.pass.passKey);
+
+    // 13. Also test GET /v1/payments/:id fallback path (no webhook delivered yet)
+    const createFallbackRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'PH',
+          provider: 'sikatpay',
+          deviceTokenHash: devPh,
+          origin: 'https://www.sendabouquet.online',
+        }),
+        { 'x-vercel-ip-country': 'PH', 'content-type': 'application/json' }
+      ),
+      createFallbackRes,
+      '/api/payments/create-checkout'
+    );
+    const created2 = createFallbackRes.json();
+    const slotKey2 = paymentLib.deriveSikatpayOrderSlotKey(created2.orderId);
+    mockPaymentStatus = 'paid';
+    mockPaymentLivemode = false;
+
+    const verifyFallbackRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: created2.checkoutId,
+          checkoutToken: created2.checkoutToken,
+          deviceTokenHash: devPh,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      verifyFallbackRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyFallbackRes.statusCode, 200);
+    const issued2 = verifyFallbackRes.json();
+    assert.equal(issued2.pass.paymentProvider, 'sikatpay');
+    assert.equal(paymentLib.verifyPassIntegritySignature(issued2.pass), true);
+
+    paymentLib.SERVER_PASS_STORE.delete(slotKey2);
+    paymentLib.SERVER_PASS_STORE.delete(issued2.pass.passKey);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (prevSecret !== undefined) process.env.PASS_SIGNING_SECRET = prevSecret;
+    else delete process.env.PASS_SIGNING_SECRET;
+    if (prevSpKey !== undefined) process.env.SIKATPAY_API_KEY = prevSpKey;
+    else delete process.env.SIKATPAY_API_KEY;
+    if (prevSpWhSecret !== undefined) process.env.SIKATPAY_WEBHOOK_SECRET = prevSpWhSecret;
+    else delete process.env.SIKATPAY_WEBHOOK_SECRET;
+    if (prevBgMerchant !== undefined) process.env.BAYADGATE_MERCHANT_ID = prevBgMerchant;
+    else delete process.env.BAYADGATE_MERCHANT_ID;
+    if (prevBgSecret !== undefined) process.env.BAYADGATE_SECRET_KEY = prevBgSecret;
+    else delete process.env.BAYADGATE_SECRET_KEY;
+  }
+});
+
 
 

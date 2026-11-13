@@ -384,8 +384,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 }) => {
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
   const [isPhEligible, setIsPhEligible] = useState(false);
-  const [phGateway, setPhGateway] = useState<'bayadgate' | 'paymongo' | null>(null);
-  const [paymentGateway, setPaymentGateway] = useState<'bayadgate' | 'paymongo' | 'kofi'>('kofi');
+  const [phGateway, setPhGateway] = useState<'sikatpay' | 'bayadgate' | 'paymongo' | null>(null);
+  const [paymentGateway, setPaymentGateway] = useState<'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi'>('kofi');
   const [bayadgateMethod, setBayadgateMethod] = useState<BayadgatePaymentMethod>('GCASH');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : 'plans')
@@ -396,7 +396,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     checkoutToken: string;
     passKeyPreview: string;
     plan: PricingTierPlan;
-    provider: 'bayadgate' | 'paymongo' | 'kofi';
+    provider: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
     orderId?: string | null;
     paymentMethod?: BayadgatePaymentMethod | null;
     checkoutUrl: string | null;
@@ -429,7 +429,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           ok?: boolean;
           isPhEligible?: boolean;
           defaultRegion?: PricingRegion;
-          phGateway?: 'bayadgate' | 'paymongo' | null;
+          phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
         } | null;
       })
       .then((cfg) => {
@@ -500,7 +500,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         checkoutToken: data.checkoutToken,
         passKeyPreview: data.passKeyPreview,
         plan: data.plan,
-        provider: data.provider as 'bayadgate' | 'paymongo' | 'kofi',
+        provider: data.provider as 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi',
         orderId: data.orderId || null,
         paymentMethod: (data.paymentMethod || null) as BayadgatePaymentMethod | null,
         checkoutUrl: data.checkoutUrl || null,
@@ -873,8 +873,38 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               })}
             </div>
 
-            {/* Payment Method: Server-Gated PH Local E-Wallets (BayadGate) vs USD Ko-fi */}
-            {isPhEligible && paymentGateway === 'bayadgate' ? (
+            {/* Payment Method: Server-Gated PH Local E-Wallets (SikatPay / BayadGate) vs USD Ko-fi */}
+            {isPhEligible && paymentGateway === 'sikatpay' ? (
+              <div className="space-y-2">
+                <div
+                  data-testid="gateway-sikatpay"
+                  className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                    isDarkMode
+                      ? 'border-[#E6B89C] bg-[#3B302C]'
+                      : 'border-[#6E4434] bg-[#FAF3EB]'
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-semibold">QR Ph · GCash · Maya</div>
+                    <div className="text-[10px] opacity-70">Any PH bank or e-wallet app</div>
+                  </div>
+                  <div className="text-[10.5px] opacity-75">Instant PH Pay</div>
+                </div>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    data-testid="switch-to-kofi-btn"
+                    onClick={() => {
+                      setPaymentGateway('kofi');
+                      setErrorMessage(null);
+                    }}
+                    className="text-[11px] underline opacity-70 hover:opacity-100 transition cursor-pointer"
+                  >
+                    Prefer PayPal or card? Pay in USD via Ko-fi
+                  </button>
+                </div>
+              </div>
+            ) : isPhEligible && paymentGateway === 'bayadgate' ? (
               <div className="space-y-2">
                 <div
                   data-testid="gateway-bayadgate"
@@ -950,14 +980,16 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   <div className="text-center">
                     <button
                       type="button"
-                      data-testid="switch-to-bayadgate-btn"
+                      data-testid="switch-to-ph-btn"
                       onClick={() => {
                         setPaymentGateway(phGateway);
                         setErrorMessage(null);
                       }}
                       className="text-[11px] underline opacity-75 hover:opacity-100 transition cursor-pointer"
                     >
-                      In the Philippines? Pay in PHP via GCash / Maya / GoTyme
+                      {phGateway === 'sikatpay'
+                        ? 'In the Philippines? Pay in PHP via QR Ph / GCash / Maya'
+                        : 'In the Philippines? Pay in PHP via GCash / Maya / GoTyme'}
                     </button>
                   </div>
                 )}
@@ -1015,7 +1047,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     {pendingCheckout.plan.name} · {pendingCheckout.plan.displayPrice}
                   </div>
                   <div className="text-[11px] opacity-75">
-                    {pendingCheckout.provider === 'bayadgate'
+                    {pendingCheckout.provider === 'sikatpay'
+                      ? 'QR Ph · GCash · Maya (SikatPay PH)'
+                      : pendingCheckout.provider === 'bayadgate'
                       ? `${
                           pendingCheckout.paymentMethod === 'GOTYME'
                             ? 'GoTyme'
@@ -1030,7 +1064,35 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 </div>
               </div>
 
-              {pendingCheckout.provider === 'bayadgate' ? (
+              {pendingCheckout.provider === 'sikatpay' ? (
+                <div className="space-y-3 text-center pt-1">
+                  {pendingCheckout.checkoutUrl && (
+                    <a
+                      href={pendingCheckout.checkoutUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="open-sikatpay-btn"
+                      className={`w-full py-3 px-5 rounded-full text-xs sm:text-sm font-semibold shadow-sm ring-2 flex items-center justify-center gap-2 transition active:scale-99 cursor-pointer ${
+                        isDarkMode
+                          ? 'bg-[#E6B89C] text-[#231C18] ring-[#E6B89C]/35 hover:bg-[#F0C8B0]'
+                          : 'bg-[#6E4434] text-[#FFFDF9] ring-[#6E4434]/25 hover:bg-[#5B3729]'
+                      }`}
+                    >
+                      <CoutureBloomSeal className="w-4 h-4 shrink-0" />
+                      <span>Pay {pendingCheckout.plan.displayPrice} via QR Ph / GCash / Maya ↗</span>
+                    </a>
+                  )}
+                  <p className="text-[11px] opacity-75 leading-relaxed">
+                    Complete payment on the secure SikatPay page (wallet apps show{' '}
+                    <span className="font-semibold">PMP BONGGOT TECH</span>), then tap Verify Order below.
+                  </p>
+                  {pendingCheckout.orderId && (
+                    <div className="inline-block px-3 py-1 rounded-full border border-dashed border-[#B4846C]/50 font-mono text-[10.5px] opacity-80">
+                      Order {pendingCheckout.orderId}
+                    </div>
+                  )}
+                </div>
+              ) : pendingCheckout.provider === 'bayadgate' ? (
                 <div className="space-y-3 text-center pt-1">
                   {pendingCheckout.checkoutUrl && (
                     <a
@@ -1162,7 +1224,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               >
                 {isProcessing
                   ? 'Verifying...'
-                  : pendingCheckout.provider === 'kofi' || pendingCheckout.provider === 'bayadgate'
+                  : pendingCheckout.provider === 'kofi' ||
+                    pendingCheckout.provider === 'bayadgate' ||
+                    pendingCheckout.provider === 'sikatpay'
                   ? "I've Paid · Verify Order"
                   : 'Complete & Unlock'}
               </button>

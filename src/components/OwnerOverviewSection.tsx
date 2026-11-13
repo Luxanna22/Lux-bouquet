@@ -20,6 +20,7 @@ const CHANNEL_NAMES: Record<string, string> = {
   manual_gcash: 'GCash Manual',
   manual_maya: 'Maya Manual',
   manual_bank: 'Bank Transfer',
+  sikatpay: 'SikatPay (QR Ph / GCash / Maya)',
   bayadgate: 'BayadGate',
   paymongo: 'PayMongo',
   kofi: 'Ko-fi Shop',

@@ -588,7 +588,7 @@ export interface StudioPassRecord {
   boundBouquetCode: string | null; // For 'single' tier: locks unlock to that bouquet's short code; for tester voucher: 'TV:<cap>:<label>'
   dailyUsageDate: string; // YYYY-MM-DD
   dailyUsageCount: number;
-  paymentProvider: 'bayadgate' | 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
+  paymentProvider: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
   paymentReference: string;
   signature: string; // Cryptographic signature preventing localStorage manipulation
 }
@@ -820,7 +820,7 @@ export function createSignedStudioPass(params: {
   region: PricingRegion;
   deviceTokenHash: string;
   boundBouquetCode?: string | null;
-  paymentProvider?: 'bayadgate' | 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
+  paymentProvider?: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi' | 'verified_checkout' | 'tester_voucher';
   paymentReference?: string;
   durationHours?: number;
   isTesterVoucher?: boolean;
@@ -1331,7 +1331,7 @@ export function saveStoredKofiShopConfig(config: KofiShopItemConfig): KofiShopIt
 export interface PendingCheckoutStorageRecord {
   checkoutId: string;
   checkoutToken: string;
-  provider: 'bayadgate' | 'paymongo' | 'kofi';
+  provider: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
   orderId?: string | null;
   paymentMethod?: BayadgatePaymentMethod | null;
   resumeAction: 'share' | 'png' | 'pass_menu';
