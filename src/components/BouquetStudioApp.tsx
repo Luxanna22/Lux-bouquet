@@ -1516,7 +1516,7 @@ export default function App() {
         bouquetCode: currentBouquetShortCode,
         incrementUsage: false,
       });
-      if (!serverVerify.valid) {
+      if (!serverVerify.valid || !serverVerify.updatedPass) {
         if (
           activeStudioPass &&
           activeStudioPass.passKey === unlockedPassForCurrentBouquet.passKey
@@ -1534,6 +1534,11 @@ export default function App() {
         setCheckoutTriggerAction('png');
         setIsCheckoutModalOpen(true);
         return;
+      }
+      if (activeStudioPass && activeStudioPass.passKey === serverVerify.updatedPass.passKey) {
+        lastServerVerifiedPassSigRef.current = serverVerify.updatedPass.signature;
+        saveStoredStudioPass(serverVerify.updatedPass);
+        setActiveStudioPass(serverVerify.updatedPass);
       }
     }
     await performSvgPngDownload();
@@ -6951,6 +6956,23 @@ export default function App() {
             await handleShareLink(true, newPass);
           } else if (resumeAction === 'png') {
             setIsCheckoutModalOpen(false);
+            const pngVerify = await verifyStudioPassOnServer({
+              pass: newPass,
+              bouquetCode: currentBouquetShortCode,
+              incrementUsage: false,
+            });
+            if (!pngVerify.valid || !pngVerify.updatedPass) {
+              lastServerVerifiedPassSigRef.current = '';
+              saveStoredStudioPass(null);
+              setActiveStudioPass(null);
+              triggerToast(
+                pngVerify.message || 'Please unlock with a valid Bloom Key to export High-Res PNG.'
+              );
+              return;
+            }
+            lastServerVerifiedPassSigRef.current = pngVerify.updatedPass.signature;
+            saveStoredStudioPass(pngVerify.updatedPass);
+            setActiveStudioPass(pngVerify.updatedPass);
             await performSvgPngDownload();
           } else if (newPass.tier === 'single') {
             setIsCheckoutModalOpen(false);

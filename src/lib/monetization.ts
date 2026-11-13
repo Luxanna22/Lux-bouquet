@@ -1109,20 +1109,47 @@ export function verifyActiveStudioPassForAction(params: {
           'This Single-Bouquet Unlock was already used for another bouquet. Grab a 7-Day or 30-Day Pass for unlimited creations!',
       };
     }
+    const singleAlreadyUsed =
+      pass.secondaryDeviceHash === 'SINGLE_CONSUMED' || Number(pass.dailyUsageCount || 0) >= 1;
+    if (singleAlreadyUsed) {
+      const matchesBoundBouquet = Boolean(
+        !params.incrementUsage &&
+          params.bouquetCode &&
+          pass.boundBouquetCode &&
+          params.bouquetCode === pass.boundBouquetCode
+      );
+      if (!matchesBoundBouquet) {
+        return {
+          valid: false,
+          status: 'SINGLE_BOUQUET_ALREADY_USED',
+          message:
+            'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!',
+        };
+      }
+    }
   }
 
   const todayIso = new Date(now).toISOString().slice(0, 10);
   const currentDailyCount =
-    pass.dailyUsageDate === todayIso ? pass.dailyUsageCount || 0 : 0;
+    pass.tier === 'single' && !isTester
+      ? Number(pass.dailyUsageCount || 0)
+      : pass.dailyUsageDate === todayIso
+      ? pass.dailyUsageCount || 0
+      : 0;
   const maxDailyAllowed = isTester
     ? parseTesterVoucherMeta(pass.boundBouquetCode).dailyCap
+    : pass.tier === 'single'
+    ? 1
     : MAX_DAILY_PASS_BOUQUETS;
 
   if (params.incrementUsage && currentDailyCount >= maxDailyAllowed) {
     return {
       valid: false,
-      status: 'DAILY_LIMIT_REACHED',
-      message: `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
+      status: pass.tier === 'single' && !isTester ? 'SINGLE_BOUQUET_ALREADY_USED' : 'DAILY_LIMIT_REACHED',
+      message:
+        pass.tier === 'single' && !isTester
+          ? 'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!'
+          : `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
     };
   }
 
@@ -1131,9 +1158,14 @@ export function verifyActiveStudioPassForAction(params: {
     : pass.tier === 'single'
     ? pass.boundBouquetCode || params.bouquetCode || null
     : null;
+  const nextSecondaryDeviceHash =
+    pass.tier === 'single' && !isTester && params.incrementUsage
+      ? 'SINGLE_CONSUMED'
+      : pass.secondaryDeviceHash;
 
   const updatedDraft: Omit<StudioPassRecord, 'signature'> = {
     ...pass,
+    secondaryDeviceHash: nextSecondaryDeviceHash,
     boundBouquetCode: nextBoundCode,
     dailyUsageDate: todayIso,
     dailyUsageCount: params.incrementUsage ? currentDailyCount + 1 : currentDailyCount,

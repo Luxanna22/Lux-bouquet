@@ -2106,3 +2106,428 @@ test('Admin Disable PH toggle forces USD-only checkout across GET, POST, and ver
     else delete process.env.DISABLE_PH_PAYMENTS;
   }
 });
+
+test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent, Pass duration expires, or key is revoked', async () => {
+  const { EventEmitter } = await import('node:events');
+  const cryptoMod = await import('node:crypto');
+  // @ts-expect-error ESM server handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+
+  const prevSecret = process.env.PASS_SIGNING_SECRET;
+  const prevSpKey = process.env.SIKATPAY_API_KEY;
+  const prevSpWhSecret = process.env.SIKATPAY_WEBHOOK_SECRET;
+  const prevDisabledState = paymentLib.isPhPaymentsDisabledServer();
+  const originalFetch = globalThis.fetch;
+
+  process.env.PASS_SIGNING_SECRET = 'test_signing_secret_order_id_bypass_fix';
+  process.env.SIKATPAY_API_KEY = 'mk_test_bypass_guard_123';
+  process.env.SIKATPAY_WEBHOOK_SECRET = 'whsec_test_bypass_guard_456';
+  paymentLib.togglePhPaymentsDisabledServer(false);
+
+  const makeReq = (
+    method: string,
+    url: string,
+    bodyStr?: string,
+    headers: Record<string, string> = {}
+  ) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: { host: 'www.sendabouquet.online', ...headers },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    let statusCode = 200;
+    const headers: Record<string, string> = {};
+    let rawBody = '';
+    return {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(val: number) {
+        statusCode = val;
+      },
+      setHeader(k: string, v: string) {
+        headers[k.toLowerCase()] = v;
+      },
+      getHeader(k: string) {
+        return headers[k.toLowerCase()];
+      },
+      end(chunk?: string) {
+        if (chunk) rawBody += chunk;
+      },
+      json() {
+        return JSON.parse(rawBody || '{}');
+      },
+    };
+  };
+
+  const signSikatpayWebhook = (rawBody: string, secret: string, tsSec: number) => {
+    const sig = cryptoMod
+      .createHmac('sha256', secret)
+      .update(`${tsSec}.${rawBody}`, 'utf8')
+      .digest('hex');
+    return `t=${tsSec},v1=${sig}`;
+  };
+
+  let createdCounter = 0;
+  let lastCreatedAmount = 4900;
+  let lastCreatedOrderId = '';
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    if (urlStr === 'https://payment.sikatpinoy.net/api/v1/payments' && init?.method === 'POST') {
+      createdCounter += 1;
+      const body = JSON.parse(String(init.body || '{}'));
+      lastCreatedAmount = Number(body.amount || 4900);
+      lastCreatedOrderId = String(body.order_id || '');
+      return new Response(
+        JSON.stringify({
+          id: `SpPayOrder_${createdCounter}`,
+          livemode: false,
+          status: 'pending',
+          amount: lastCreatedAmount,
+          currency: 'PHP',
+          order_id: lastCreatedOrderId,
+          checkout_url: `https://payment.sikatpinoy.net/pay?id=SpPayOrder_${createdCounter}`,
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  }) as typeof fetch;
+
+  const createdKeysToClean: string[] = [];
+
+  try {
+    const devBuyer = 'dev_buyer_order_bypass_guard_01';
+
+    // === PART A: Single Bouquet Sent/Consumed Blocks Order ID, Pass Key, & Verify Replay ===
+    const singleCheckoutRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'PH',
+          provider: 'sikatpay',
+          bouquetCode: 'bq_initial_draft_ignored',
+          deviceTokenHash: devBuyer,
+          origin: 'https://www.sendabouquet.online',
+        }),
+        { 'x-vercel-ip-country': 'PH', 'content-type': 'application/json' }
+      ),
+      singleCheckoutRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(singleCheckoutRes.statusCode, 200);
+    const singleChk = singleCheckoutRes.json();
+    const singleSlotKey = paymentLib.deriveSikatpayOrderSlotKey(singleChk.orderId);
+    createdKeysToClean.push(singleSlotKey);
+
+    // Webhook marks Single Bouquet order PAID
+    const tsSec = Math.floor(Date.now() / 1000);
+    const singlePaidRaw = JSON.stringify({
+      id: 'evt_single_paid_1',
+      type: 'payment.paid',
+      livemode: false,
+      created: tsSec,
+      data: {
+        id: 'SpPayOrder_1',
+        livemode: false,
+        status: 'paid',
+        amount: 4900,
+        currency: 'PHP',
+        order_id: singleChk.orderId,
+      },
+    });
+    const singleWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', singlePaidRaw, {
+        'content-type': 'application/json',
+        'x-signature': signSikatpayWebhook(singlePaidRaw, 'whsec_test_bypass_guard_456', tsSec),
+      }),
+      singleWhRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(singleWhRes.statusCode, 200);
+    const singlePassKey = singleWhRes.json().passKey;
+    createdKeysToClean.push(singlePassKey);
+
+    // 1. Before sealing/sending, buyer CAN still recover accidentally-closed modal via Order ID
+    const recoverBeforeSendRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({
+          passKey: singleChk.orderId,
+          deviceTokenHash: devBuyer,
+          bouquetCode: 'bq_final_edited_gift',
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      recoverBeforeSendRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(recoverBeforeSendRes.statusCode, 200);
+    const recoveredSinglePass = recoverBeforeSendRes.json().pass;
+    assert.equal(recoveredSinglePass.tier, 'single');
+    assert.equal(recoveredSinglePass.boundBouquetCode, null);
+
+    // 2. Buyer seals & sends 1st bouquet (incrementUsage: true) -> succeeds and binds/consumes Single
+    const sealRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'verify_pass',
+          passKey: recoveredSinglePass.passKey,
+          activeSessionNonce: recoveredSinglePass.activeSessionNonce,
+          deviceTokenHash: devBuyer,
+          bouquetCode: 'bq_final_edited_gift',
+          incrementUsage: true,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      sealRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(sealRes.statusCode, 200);
+    const sealedPass = sealRes.json().pass;
+    assert.equal(sealedPass.boundBouquetCode, 'bq_final_edited_gift');
+    assert.equal(sealedPass.dailyUsageCount, 1);
+    assert.equal(sealedPass.secondaryDeviceHash, 'SINGLE_CONSUMED');
+
+    // Post-seal read-only check on the SAME sealed bouquet (used by /api/shorten & email) still passes
+    const sameBouquetCheckRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'verify_pass',
+          passKey: sealedPass.passKey,
+          activeSessionNonce: sealedPass.activeSessionNonce,
+          deviceTokenHash: devBuyer,
+          bouquetCode: 'bq_final_edited_gift',
+          incrementUsage: false,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      sameBouquetCheckRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(sameBouquetCheckRes.statusCode, 200);
+
+    // 3. Reusing the copied SikatPay Order ID (SB-...) AFTER bouquet was sent MUST FAIL (403)
+    const reuseOrderAfterSendRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({
+          passKey: singleChk.orderId,
+          deviceTokenHash: devBuyer,
+          bouquetCode: 'bq_brand_new_attempt',
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      reuseOrderAfterSendRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(reuseOrderAfterSendRes.statusCode, 403);
+    assert.equal(reuseOrderAfterSendRes.json().status, 'SINGLE_BOUQUET_ALREADY_USED');
+
+    // 4. Reusing the Pass Key (BLOOM-...) AFTER bouquet was sent MUST FAIL (403)
+    const reuseKeyAfterSendRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({
+          passKey: singlePassKey,
+          deviceTokenHash: devBuyer,
+          bouquetCode: 'bq_brand_new_attempt',
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      reuseKeyAfterSendRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(reuseKeyAfterSendRes.statusCode, 403);
+    assert.equal(reuseKeyAfterSendRes.json().status, 'SINGLE_BOUQUET_ALREADY_USED');
+
+    // 5. Replaying /api/payments/verify-and-issue AFTER bouquet was sent MUST FAIL (403)
+    const replayVerifyAfterSendRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: singleChk.checkoutId,
+          checkoutToken: singleChk.checkoutToken,
+          deviceTokenHash: devBuyer,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      replayVerifyAfterSendRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(replayVerifyAfterSendRes.statusCode, 403);
+    assert.equal(replayVerifyAfterSendRes.json().status, 'SINGLE_BOUQUET_ALREADY_USED');
+
+    // === PART B: Expired 7-Day Pass Blocks Order ID, Pass Key, Verify Replay, and Slot Fallback ===
+    const p7CheckoutRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'pass_7d',
+          region: 'PH',
+          provider: 'sikatpay',
+          deviceTokenHash: devBuyer,
+          origin: 'https://www.sendabouquet.online',
+        }),
+        { 'x-vercel-ip-country': 'PH', 'content-type': 'application/json' }
+      ),
+      p7CheckoutRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(p7CheckoutRes.statusCode, 200);
+    const p7Chk = p7CheckoutRes.json();
+    const p7SlotKey = paymentLib.deriveSikatpayOrderSlotKey(p7Chk.orderId);
+    createdKeysToClean.push(p7SlotKey);
+
+    const p7PaidRaw = JSON.stringify({
+      id: 'evt_p7_paid_1',
+      type: 'payment.paid',
+      livemode: false,
+      created: tsSec,
+      data: {
+        id: 'SpPayOrder_2',
+        livemode: false,
+        status: 'paid',
+        amount: 9900,
+        currency: 'PHP',
+        order_id: p7Chk.orderId,
+      },
+    });
+    const p7WhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/sikatpay', p7PaidRaw, {
+        'content-type': 'application/json',
+        'x-signature': signSikatpayWebhook(p7PaidRaw, 'whsec_test_bypass_guard_456', tsSec),
+      }),
+      p7WhRes,
+      '/api/webhooks/sikatpay'
+    );
+    assert.equal(p7WhRes.statusCode, 200);
+    const p7PassKey = p7WhRes.json().passKey;
+    createdKeysToClean.push(p7PassKey);
+
+    // Backdate pass & order slot to simulate duration running out (>7 days ago)
+    const pastCreatedIso = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    const pastExpiresIso = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const expiredPassRecord = paymentLib.createSignedStudioPassServer({
+      passKey: p7PassKey,
+      tier: 'pass_7d',
+      region: 'PH',
+      createdAt: pastCreatedIso,
+      expiresAt: pastExpiresIso,
+      deviceTokenHash: devBuyer,
+      paymentProvider: 'sikatpay',
+      paymentReference: `sptest_${p7Chk.orderId}`,
+    });
+    paymentLib.SERVER_PASS_STORE.set(p7PassKey, expiredPassRecord);
+
+    // 6. Expired Order ID via /api/payments/redeem-pass MUST FAIL (403 EXPIRED)
+    const expiredOrderRedeemRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({ passKey: p7Chk.orderId, deviceTokenHash: devBuyer }),
+        { 'content-type': 'application/json' }
+      ),
+      expiredOrderRedeemRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(expiredOrderRedeemRes.statusCode, 403);
+    assert.equal(expiredOrderRedeemRes.json().status, 'EXPIRED');
+
+    // 7. Expired verify-and-issue replay MUST FAIL (403 EXPIRED)
+    const expiredVerifyReplayRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: p7Chk.checkoutId,
+          checkoutToken: p7Chk.checkoutToken,
+          deviceTokenHash: devBuyer,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      expiredVerifyReplayRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(expiredVerifyReplayRes.statusCode, 403);
+    assert.equal(expiredVerifyReplayRes.json().status, 'EXPIRED');
+
+    // 8. Even if pass doc wasn't cached, expired orderSlot MUST block minting a fresh pass
+    const existingSlot = paymentLib.SERVER_PASS_STORE.get(p7SlotKey);
+    const expiredSlot = paymentLib.createSignedStudioPassServer({
+      passKey: p7SlotKey,
+      tier: 'pass_7d',
+      region: 'PH',
+      createdAt: pastCreatedIso,
+      expiresAt: pastExpiresIso,
+      deviceTokenHash: devBuyer,
+      secondaryDeviceHash: 'PAID',
+      boundBouquetCode: existingSlot.boundBouquetCode,
+      paymentProvider: 'sikatpay',
+      paymentReference: `sppend_${p7Chk.orderId}`,
+    });
+    paymentLib.SERVER_PASS_STORE.set(p7SlotKey, expiredSlot);
+    paymentLib.SERVER_PASS_STORE.delete(p7PassKey);
+
+    const expiredSlotRedeemRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({ passKey: p7Chk.orderId, deviceTokenHash: devBuyer }),
+        { 'content-type': 'application/json' }
+      ),
+      expiredSlotRedeemRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(expiredSlotRedeemRes.statusCode, 403);
+    assert.equal(expiredSlotRedeemRes.json().status, 'EXPIRED');
+  } finally {
+    for (const k of createdKeysToClean) {
+      paymentLib.SERVER_PASS_STORE.delete(k);
+    }
+    paymentLib.togglePhPaymentsDisabledServer(prevDisabledState);
+    globalThis.fetch = originalFetch;
+    if (prevSecret !== undefined) process.env.PASS_SIGNING_SECRET = prevSecret;
+    else delete process.env.PASS_SIGNING_SECRET;
+    if (prevSpKey !== undefined) process.env.SIKATPAY_API_KEY = prevSpKey;
+    else delete process.env.SIKATPAY_API_KEY;
+    if (prevSpWhSecret !== undefined) process.env.SIKATPAY_WEBHOOK_SECRET = prevSpWhSecret;
+    else delete process.env.SIKATPAY_WEBHOOK_SECRET;
+  }
+});
+

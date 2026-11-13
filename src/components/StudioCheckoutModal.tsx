@@ -806,6 +806,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         body: JSON.stringify({
           passKey: cleanedKey,
           deviceTokenHash,
+          bouquetCode: bouquetCode || null,
         }),
       });
       const data = await res.json();

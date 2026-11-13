@@ -506,6 +506,7 @@ export function isValidPassKeyFormat(raw) {
 
 export const TESTER_SINGLE_DEVICE_SENTINEL = 'TESTER_SINGLE_DEVICE_LOCK';
 export const REVOKED_PASS_SENTINEL = 'REVOKED_BY_OWNER';
+export const SINGLE_CONSUMED_SENTINEL = 'SINGLE_CONSUMED';
 
 export function generatePassKeyCode() {
   const bytes = crypto.randomBytes(8);
@@ -699,10 +700,22 @@ export function createSignedStudioPassServer(params) {
 
 export const REVOKED_VOUCHER_KEYS = new Set();
 
+export function isSinglePassConsumedServer(pass) {
+  if (!pass || pass.tier !== 'single' || isTesterVoucherPassServer(pass)) return false;
+  const normKey = normalizePassKey(pass.passKey);
+  const ledgerEntry = normKey ? PAID_PASS_LEDGER.get(normKey) : null;
+  return (
+    pass.secondaryDeviceHash === SINGLE_CONSUMED_SENTINEL ||
+    Number(pass.dailyUsageCount || 0) >= 1 ||
+    Number(ledgerEntry?.bouquetsCreated || 0) >= 1
+  );
+}
+
 export function validateAndBindPassRedemptionServer(
   existingRecord,
   requestDeviceTokenHash,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  options = {}
 ) {
   if (!existingRecord || !isValidPassKeyFormat(existingRecord.passKey)) {
     return {
@@ -733,10 +746,12 @@ export function validateAndBindPassRedemptionServer(
       message: 'This Pass Key failed server security verification.',
     };
   }
+  const ledgerEntry = PAID_PASS_LEDGER.get(normKey);
   if (
     REVOKED_VOUCHER_KEYS.has(normKey) ||
     existingRecord.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
-    existingRecord.primaryDeviceHash === REVOKED_PASS_SENTINEL
+    existingRecord.primaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    ledgerEntry?.status === 'revoked'
   ) {
     return {
       valid: false,
@@ -757,6 +772,28 @@ export function validateAndBindPassRedemptionServer(
   }
 
   const isTester = isTesterVoucherPassServer(existingRecord);
+  if (existingRecord.tier === 'single' && !isTester) {
+    if (isSinglePassConsumedServer(existingRecord)) {
+      return {
+        valid: false,
+        status: 'SINGLE_BOUQUET_ALREADY_USED',
+        message:
+          'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+      };
+    }
+    if (
+      existingRecord.boundBouquetCode &&
+      options?.bouquetCode &&
+      existingRecord.boundBouquetCode !== options.bouquetCode
+    ) {
+      return {
+        valid: false,
+        status: 'SINGLE_BOUQUET_ALREADY_USED',
+        message:
+          'This Single-Bouquet Unlock is already bound to another bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+      };
+    }
+  }
   let nextPrimary = existingRecord.primaryDeviceHash || '';
   let nextSecondary = existingRecord.secondaryDeviceHash || null;
 
@@ -909,19 +946,45 @@ export function verifyActiveStudioPassForActionServer(params) {
           'This Single-Bouquet Unlock was already used for another bouquet. Grab a 7-Day or 30-Day Pass for unlimited creations!',
       };
     }
+    if (isSinglePassConsumedServer(pass)) {
+      const matchesBoundBouquet = Boolean(
+        !params.incrementUsage &&
+          params.bouquetCode &&
+          pass.boundBouquetCode &&
+          params.bouquetCode === pass.boundBouquetCode
+      );
+      if (!matchesBoundBouquet) {
+        return {
+          valid: false,
+          status: 'SINGLE_BOUQUET_ALREADY_USED',
+          message:
+            'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!',
+        };
+      }
+    }
   }
 
   const todayIso = new Date(now).toISOString().slice(0, 10);
-  const currentDailyCount = pass.dailyUsageDate === todayIso ? pass.dailyUsageCount || 0 : 0;
+  const currentDailyCount =
+    pass.tier === 'single' && !isTester
+      ? Number(pass.dailyUsageCount || 0)
+      : pass.dailyUsageDate === todayIso
+      ? pass.dailyUsageCount || 0
+      : 0;
   const maxDailyAllowed = isTester
     ? parseTesterVoucherMetaServer(pass.boundBouquetCode).dailyCap
+    : pass.tier === 'single'
+    ? 1
     : MAX_DAILY_PASS_BOUQUETS;
 
   if (params.incrementUsage && currentDailyCount >= maxDailyAllowed) {
     return {
       valid: false,
-      status: 'DAILY_LIMIT_REACHED',
-      message: `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
+      status: pass.tier === 'single' && !isTester ? 'SINGLE_BOUQUET_ALREADY_USED' : 'DAILY_LIMIT_REACHED',
+      message:
+        pass.tier === 'single' && !isTester
+          ? 'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!'
+          : `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
     };
   }
 
@@ -930,9 +993,14 @@ export function verifyActiveStudioPassForActionServer(params) {
     : pass.tier === 'single'
     ? pass.boundBouquetCode || params.bouquetCode || null
     : null;
+  const nextSecondaryDeviceHash =
+    pass.tier === 'single' && !isTester && params.incrementUsage
+      ? SINGLE_CONSUMED_SENTINEL
+      : pass.secondaryDeviceHash;
 
   const updatedDraft = {
     ...pass,
+    secondaryDeviceHash: nextSecondaryDeviceHash,
     boundBouquetCode: nextBoundCode,
     dailyUsageDate: todayIso,
     dailyUsageCount: params.incrementUsage ? currentDailyCount + 1 : currentDailyCount,
@@ -2899,10 +2967,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         typeof parsed.deviceTokenHash === 'string' && parsed.deviceTokenHash.length >= 8
           ? parsed.deviceTokenHash.slice(0, 64)
           : 'anonymous_device_hash';
-      const boundBouquetCode =
-        typeof parsed.bouquetCode === 'string' && parsed.bouquetCode.trim()
-          ? parsed.bouquetCode.trim().slice(0, 48)
-          : null;
+      const boundBouquetCode = null;
 
       const plan = PRICING_CATALOG[region][tier];
       const checkoutId = `chk_${crypto.randomBytes(8).toString('hex')}`;
@@ -3244,6 +3309,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const slotKey = orderId ? deriveSikatpayOrderSlotKey(orderId) : '';
 
         // 1. Check if webhook (or prior check) already minted and persisted the final pass
+        await hydratePersistentOwnerVaultServer();
         const existingPass =
           SERVER_PASS_STORE.get(pending.passKey) ||
           (await fetchStudioPassFromFirestoreRest(pending.passKey));
@@ -3252,9 +3318,24 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           verifyPassIntegritySignature(existingPass) &&
           verifyServerPaymentReference(existingPass)
         ) {
+          const checkReusable = validateAndBindPassRedemptionServer(
+            existingPass,
+            deviceTokenHash,
+            Date.now(),
+            { bouquetCode: pending.boundBouquetCode || null }
+          );
+          if (!checkReusable.valid || !checkReusable.updatedPass) {
+            sendJson(res, 403, {
+              ok: false,
+              status: checkReusable.status,
+              message: checkReusable.message,
+            });
+            return true;
+          }
           pending.status = 'paid';
-          SERVER_PASS_STORE.set(existingPass.passKey, existingPass);
-          sendJson(res, 200, { ok: true, pass: existingPass });
+          SERVER_PASS_STORE.set(checkReusable.updatedPass.passKey, checkReusable.updatedPass);
+          await saveStudioPassToFirestoreRest(checkReusable.updatedPass);
+          sendJson(res, 200, { ok: true, pass: checkReusable.updatedPass });
           return true;
         }
 
@@ -3262,6 +3343,38 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const orderSlot = slotKey
           ? SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey))
           : null;
+        if (orderSlot) {
+          const slotExpMs = Date.parse(orderSlot.expiresAt);
+          if (Number.isFinite(slotExpMs) && Date.now() > slotExpMs) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'EXPIRED',
+              message: 'This Studio Pass / Order ID has expired.',
+            });
+            return true;
+          }
+          const ledgerEntry = PAID_PASS_LEDGER.get(normalizePassKey(pending.passKey));
+          if (
+            REVOKED_VOUCHER_KEYS.has(normalizePassKey(pending.passKey)) ||
+            ledgerEntry?.status === 'revoked'
+          ) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'REVOKED',
+              message: 'This pass has been revoked by the studio owner.',
+            });
+            return true;
+          }
+          if (pending.tier === 'single' && Number(ledgerEntry?.bouquetsCreated || 0) >= 1) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'SINGLE_BOUQUET_ALREADY_USED',
+              message:
+                'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+            });
+            return true;
+          }
+        }
         let confirmedPaid = orderSlot?.secondaryDeviceHash === 'PAID';
         let verifiedLivemode = !sikatpay.isTestKey;
         const paymentId = pending.sikatpayPaymentId || orderSlot?.activeSessionNonce || '';
@@ -3321,10 +3434,17 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
 
         pending.status = 'paid';
+        const anchorCreatedAt =
+          orderSlot?.secondaryDeviceHash === 'PAID' && orderSlot.createdAt
+            ? orderSlot.createdAt
+            : undefined;
+        const anchorNowMs = anchorCreatedAt ? Date.parse(anchorCreatedAt) || Date.now() : Date.now();
         const mintedPass = createSignedStudioPassServer({
           passKey: pending.passKey,
           tier: pending.tier,
           region: 'PH',
+          createdAt: anchorCreatedAt,
+          nowMs: anchorNowMs,
           deviceTokenHash: pending.deviceTokenHash,
           boundBouquetCode: pending.boundBouquetCode,
           paymentProvider: 'sikatpay',
@@ -3357,6 +3477,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const slotKey = orderId ? deriveBayadgateOrderSlotKey(orderId) : '';
 
         // 1. Check if webhook (or prior check) already minted and persisted the final pass
+        await hydratePersistentOwnerVaultServer();
         const existingPass =
           SERVER_PASS_STORE.get(pending.passKey) ||
           (await fetchStudioPassFromFirestoreRest(pending.passKey));
@@ -3365,9 +3486,24 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           verifyPassIntegritySignature(existingPass) &&
           verifyServerPaymentReference(existingPass)
         ) {
+          const checkReusable = validateAndBindPassRedemptionServer(
+            existingPass,
+            deviceTokenHash,
+            Date.now(),
+            { bouquetCode: pending.boundBouquetCode || null }
+          );
+          if (!checkReusable.valid || !checkReusable.updatedPass) {
+            sendJson(res, 403, {
+              ok: false,
+              status: checkReusable.status,
+              message: checkReusable.message,
+            });
+            return true;
+          }
           pending.status = 'paid';
-          SERVER_PASS_STORE.set(existingPass.passKey, existingPass);
-          sendJson(res, 200, { ok: true, pass: existingPass });
+          SERVER_PASS_STORE.set(checkReusable.updatedPass.passKey, checkReusable.updatedPass);
+          await saveStudioPassToFirestoreRest(checkReusable.updatedPass);
+          sendJson(res, 200, { ok: true, pass: checkReusable.updatedPass });
           return true;
         }
 
@@ -3375,6 +3511,38 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const orderSlot = slotKey
           ? SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey))
           : null;
+        if (orderSlot) {
+          const slotExpMs = Date.parse(orderSlot.expiresAt);
+          if (Number.isFinite(slotExpMs) && Date.now() > slotExpMs) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'EXPIRED',
+              message: 'This Studio Pass / Order ID has expired.',
+            });
+            return true;
+          }
+          const ledgerEntry = PAID_PASS_LEDGER.get(normalizePassKey(pending.passKey));
+          if (
+            REVOKED_VOUCHER_KEYS.has(normalizePassKey(pending.passKey)) ||
+            ledgerEntry?.status === 'revoked'
+          ) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'REVOKED',
+              message: 'This pass has been revoked by the studio owner.',
+            });
+            return true;
+          }
+          if (pending.tier === 'single' && Number(ledgerEntry?.bouquetsCreated || 0) >= 1) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'SINGLE_BOUQUET_ALREADY_USED',
+              message:
+                'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+            });
+            return true;
+          }
+        }
         let confirmedPaid = orderSlot?.secondaryDeviceHash === 'PAID';
 
         // 3. Fallback: Query BayadGate status endpoint directly
@@ -3638,9 +3806,28 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       // Case C: Local Sandbox Preview / Confirmed PayMongo Session
-      pending.status = 'paid';
-      let passRecord = SERVER_PASS_STORE.get(pending.passKey);
-      if (!passRecord) {
+      await hydratePersistentOwnerVaultServer();
+      let passRecord =
+        SERVER_PASS_STORE.get(pending.passKey) ||
+        (await fetchStudioPassFromFirestoreRest(pending.passKey));
+      if (passRecord) {
+        const checkReusable = validateAndBindPassRedemptionServer(
+          passRecord,
+          deviceTokenHash,
+          Date.now(),
+          { bouquetCode: pending.boundBouquetCode || null }
+        );
+        if (!checkReusable.valid || !checkReusable.updatedPass) {
+          sendJson(res, 403, {
+            ok: false,
+            status: checkReusable.status,
+            message: checkReusable.message,
+          });
+          return true;
+        }
+        passRecord = checkReusable.updatedPass;
+        SERVER_PASS_STORE.set(passRecord.passKey, passRecord);
+      } else {
         passRecord = createSignedStudioPassServer({
           passKey: pending.passKey,
           tier: pending.tier,
@@ -3652,8 +3839,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         });
         SERVER_PASS_STORE.set(passRecord.passKey, passRecord);
       }
+      pending.status = 'paid';
       await saveStudioPassToFirestoreRest(passRecord);
-      await hydratePersistentOwnerVaultServer();
       recordPaidPassIssuanceServer(passRecord);
       await savePersistentOwnerVaultServer();
 
@@ -3685,11 +3872,17 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
+      const reqBouquetCode =
+        typeof parsed.bouquetCode === 'string' && parsed.bouquetCode.trim()
+          ? parsed.bouquetCode.trim().slice(0, 48)
+          : null;
       const trimmedOrderCandidate = rawKey.trim().toUpperCase();
       const isSikatpayOrderLookup = /^SB-[A-F0-9]{8,16}$/.test(trimmedOrderCandidate);
       const isBayadgateOrderLookup = /^BG[A-F0-9]{8,20}$/.test(trimmedOrderCandidate);
 
       if ((isSikatpayOrderLookup || isBayadgateOrderLookup) && deviceTokenHash) {
+        await hydratePersistentOwnerVaultServer();
+
         const slotKey = isSikatpayOrderLookup
           ? deriveSikatpayOrderSlotKey(trimmedOrderCandidate)
           : deriveBayadgateOrderSlotKey(trimmedOrderCandidate);
@@ -3714,6 +3907,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
+        const slotExpMs = Date.parse(orderSlot.expiresAt);
+        if (!Number.isFinite(slotExpMs) || Date.now() > slotExpMs) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'EXPIRED',
+            message: 'This Studio Pass / Order ID has expired.',
+          });
+          return true;
+        }
+
         const packedMeta = String(orderSlot.boundBouquetCode || '');
         const pipeIdx = packedMeta.indexOf('|');
         const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
@@ -3721,6 +3924,19 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const targetPassKey = isValidPassKeyFormat(decodedPassKey)
           ? decodedPassKey
           : generatePassKeyCode();
+
+        const ledgerEntry = PAID_PASS_LEDGER.get(normalizePassKey(targetPassKey));
+        if (
+          REVOKED_VOUCHER_KEYS.has(normalizePassKey(targetPassKey)) ||
+          ledgerEntry?.status === 'revoked'
+        ) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'REVOKED',
+            message: 'This voucher key has been revoked by the studio owner.',
+          });
+          return true;
+        }
 
         let existingPass =
           SERVER_PASS_STORE.get(targetPassKey) ||
@@ -3731,8 +3947,46 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           verifyPassIntegritySignature(existingPass) &&
           verifyServerPaymentReference(existingPass)
         ) {
-          SERVER_PASS_STORE.set(existingPass.passKey, existingPass);
-          sendJson(res, 200, { ok: true, pass: existingPass });
+          const check = validateAndBindPassRedemptionServer(
+            existingPass,
+            deviceTokenHash,
+            Date.now(),
+            { bouquetCode: reqBouquetCode }
+          );
+          if (!check.valid || !check.updatedPass) {
+            sendJson(res, 403, {
+              ok: false,
+              status: check.status,
+              message: check.message,
+            });
+            return true;
+          }
+          SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
+          await saveStudioPassToFirestoreRest(check.updatedPass);
+          if (PAID_PASS_LEDGER.has(check.updatedPass.passKey)) {
+            const paidItem = PAID_PASS_LEDGER.get(check.updatedPass.passKey);
+            paidItem.status = 'claimed';
+            paidItem.claimedDeviceHash = check.updatedPass.primaryDeviceHash;
+            paidItem.passRecord = check.updatedPass;
+            PAID_PASS_LEDGER.set(check.updatedPass.passKey, paidItem);
+            await savePersistentOwnerVaultServer();
+          }
+          sendJson(res, 200, {
+            ok: true,
+            status: check.status,
+            message: check.message,
+            pass: check.updatedPass,
+          });
+          return true;
+        }
+
+        if (orderSlot.tier === 'single' && Number(ledgerEntry?.bouquetsCreated || 0) >= 1) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'SINGLE_BOUQUET_ALREADY_USED',
+            message:
+              'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+          });
           return true;
         }
 
@@ -3791,7 +4045,6 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        await hydratePersistentOwnerVaultServer();
         const isSikatpayTest =
           isSikatpayOrderLookup &&
           (getSikatpayConfig().isTestKey ||
@@ -3799,10 +4052,17 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting));
 
         const resolvedTier = isValidTier(orderSlot.tier) ? orderSlot.tier : 'pass_7d';
+        const anchorCreatedAt =
+          orderSlot.secondaryDeviceHash === 'PAID' && orderSlot.createdAt
+            ? orderSlot.createdAt
+            : undefined;
+        const anchorNowMs = anchorCreatedAt ? Date.parse(anchorCreatedAt) || Date.now() : Date.now();
         const mintedPass = createSignedStudioPassServer({
           passKey: targetPassKey,
           tier: resolvedTier,
           region: 'PH',
+          createdAt: anchorCreatedAt,
+          nowMs: anchorNowMs,
           deviceTokenHash: orderSlot.primaryDeviceHash,
           boundBouquetCode: decodedBouquetCode || null,
           paymentProvider: isSikatpayOrderLookup ? 'sikatpay' : 'bayadgate',
@@ -3862,7 +4122,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const result = validateAndBindPassRedemptionServer(
         existingRecord,
         deviceTokenHash,
-        Date.now()
+        Date.now(),
+        { bouquetCode: reqBouquetCode }
       );
 
       if (!result.valid || !result.updatedPass) {
