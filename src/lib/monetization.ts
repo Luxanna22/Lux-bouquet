@@ -1334,11 +1334,17 @@ export interface PendingCheckoutStorageRecord {
   provider: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
   orderId?: string | null;
   paymentMethod?: BayadgatePaymentMethod | null;
+  checkoutUrl?: string | null;
+  passKeyPreview?: string | null;
+  plan?: PricingTierPlan | null;
+  liveGatewayConfigured?: boolean;
+  bouquetCode?: string | null;
   resumeAction: 'share' | 'png' | 'pass_menu';
   createdAtMs: number;
 }
 
 const PENDING_CHECKOUT_STORAGE_KEY = 'sab_pending_checkout_v1';
+const PENDING_CHECKOUT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function savePendingCheckoutStorage(record: PendingCheckoutStorageRecord): void {
   if (typeof window === 'undefined') return;
@@ -1349,13 +1355,20 @@ export function savePendingCheckoutStorage(record: PendingCheckoutStorageRecord)
   }
 }
 
-export function loadPendingCheckoutStorage(): PendingCheckoutStorageRecord | null {
+export function loadPendingCheckoutStorage(nowMs: number = Date.now()): PendingCheckoutStorageRecord | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(PENDING_CHECKOUT_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingCheckoutStorageRecord>;
     if (!parsed || typeof parsed.checkoutId !== 'string' || typeof parsed.checkoutToken !== 'string') {
+      return null;
+    }
+    if (
+      typeof parsed.createdAtMs === 'number' &&
+      nowMs - parsed.createdAtMs > PENDING_CHECKOUT_MAX_AGE_MS
+    ) {
+      window.localStorage.removeItem(PENDING_CHECKOUT_STORAGE_KEY);
       return null;
     }
     return parsed as PendingCheckoutStorageRecord;

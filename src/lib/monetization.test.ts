@@ -1852,6 +1852,41 @@ test('SikatPay PH flow: create-checkout, HMAC-SHA256 webhook, amount/livemode gu
     assert.equal(issued2.pass.paymentProvider, 'sikatpay');
     assert.equal(paymentLib.verifyPassIntegritySignature(issued2.pass), true);
 
+    // 14. Same-device Order ID recovery via /api/payments/redeem-pass (`SB-...`) succeeds
+    //     on the original buyer device and rejects a different device with 403
+    const orderRecoveryOkRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({
+          passKey: created2.orderId,
+          deviceTokenHash: devPh,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      orderRecoveryOkRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(orderRecoveryOkRes.statusCode, 200);
+    assert.equal(orderRecoveryOkRes.json().pass.passKey, issued2.pass.passKey);
+
+    const orderRecoveryWrongDeviceRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/redeem-pass',
+        JSON.stringify({
+          passKey: created2.orderId,
+          deviceTokenHash: 'dev_stranger_different_device_99',
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      orderRecoveryWrongDeviceRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(orderRecoveryWrongDeviceRes.statusCode, 403);
+
     paymentLib.SERVER_PASS_STORE.delete(slotKey2);
     paymentLib.SERVER_PASS_STORE.delete(issued2.pass.passKey);
   } finally {

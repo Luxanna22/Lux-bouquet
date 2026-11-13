@@ -160,9 +160,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Owner PIN rotation state
+  // Owner PIN rotation & income testing/reset state
   const [newOwnerPin, setNewOwnerPin] = useState('');
   const [isUpdatingPin, setIsUpdatingPin] = useState(false);
+  const [isTogglingIncomePause, setIsTogglingIncomePause] = useState(false);
+  const [isResettingIncome, setIsResettingIncome] = useState(false);
+  const [isClearingKeys, setIsClearingKeys] = useState(false);
 
   // Verify the encrypted per-visit gateSlug with the server on mount; if forged or tampered in F12, exit immediately
   useEffect(() => {
@@ -474,6 +477,98 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       onToast('Network error updating passphrase.');
     } finally {
       setIsUpdatingPin(false);
+    }
+  };
+
+  const handleToggleIncomePause = async (nextPaused: boolean) => {
+    if (!adminSessionToken) return;
+    setIsTogglingIncomePause(true);
+    try {
+      const res = await fetch('/api/payments/verify-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle_income_pause',
+          adminSessionToken,
+          deviceTokenHash,
+          paused: nextPaused,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        handleSyncKeysResponse(data);
+        onToast(
+          nextPaused
+            ? 'Live income paused for webhook testing.'
+            : 'Live income counting resumed.'
+        );
+      } else {
+        onToast(data.message || 'Could not update income mode.');
+      }
+    } catch {
+      onToast('Network error updating income mode.');
+    } finally {
+      setIsTogglingIncomePause(false);
+    }
+  };
+
+  const handleResetIncome = async (purgeTestAndRevoked = true) => {
+    if (!adminSessionToken) return;
+    setIsResettingIncome(true);
+    try {
+      const res = await fetch('/api/payments/verify-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reset_owner_income',
+          adminSessionToken,
+          deviceTokenHash,
+          purgeTestAndRevoked,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        handleSyncKeysResponse(data);
+        onToast('Dashboard income reset to $0.00.');
+      } else {
+        onToast(data.message || 'Could not reset income.');
+      }
+    } catch {
+      onToast('Network error resetting dashboard income.');
+    } finally {
+      setIsResettingIncome(false);
+    }
+  };
+
+  const handleClearTestAndRevoked = async () => {
+    if (!adminSessionToken) return;
+    setIsClearingKeys(true);
+    try {
+      const res = await fetch('/api/payments/verify-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'clear_test_and_revoked_keys',
+          adminSessionToken,
+          deviceTokenHash,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        handleSyncKeysResponse(data);
+        const removed = Number(data.removedCount || 0);
+        onToast(
+          removed > 0
+            ? `Cleared ${removed} test/revoked key${removed === 1 ? '' : 's'}.`
+            : 'No test or revoked keys to clear.'
+        );
+      } else {
+        onToast(data.message || 'Could not clear keys.');
+      }
+    } catch {
+      onToast('Network error clearing test & revoked keys.');
+    } finally {
+      setIsClearingKeys(false);
     }
   };
 
@@ -1138,6 +1233,10 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               testerCount={testerVouchers.length}
               isDarkMode={isDarkMode}
               formatLabel={formatLabel}
+              isTogglingIncomePause={isTogglingIncomePause}
+              isResettingIncome={isResettingIncome}
+              onToggleIncomePause={handleToggleIncomePause}
+              onResetIncome={handleResetIncome}
             />
           )}
 
@@ -1153,6 +1252,9 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               onCopyText={copyText}
               onSyncResponse={handleSyncKeysResponse}
               onToast={onToast}
+              incomePausedForTesting={Boolean(realAnalytics.incomePausedForTesting)}
+              isClearingKeys={isClearingKeys}
+              onClearTestAndRevoked={handleClearTestAndRevoked}
             />
           )}
 

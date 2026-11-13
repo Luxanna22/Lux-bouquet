@@ -21,7 +21,7 @@ import {
   TESTER_SINGLE_DEVICE_SENTINEL,
 } from './monetization';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
-import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, mintPaidPassServer, revokePaidPassServer, validateAndBindPassRedemptionServer, verifyActiveStudioPassForActionServer, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER, PAID_PASS_LEDGER } from '../../api/_lib/paymentHandler.js';
+import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, mintPaidPassServer, revokePaidPassServer, validateAndBindPassRedemptionServer, verifyActiveStudioPassForActionServer, toggleIncomePauseServer, resetOwnerIncomeServer, clearTestAndRevokedPaidKeysServer, recomputePaidRevenueFromLedgerServer, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER, PAID_PASS_LEDGER } from '../../api/_lib/paymentHandler.js';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
 import { sanitizeAnalyticsForAi, runOwnerAnalyticsAi, resetOwnerAiStateForTests } from '../../api/_lib/ownerAiHandler.js';
 import { detectInitialSeoRoute, extractGarlandQueryParam } from './seoMeta';
@@ -273,10 +273,12 @@ describe('Direct Paid Key Generator & Revocation (PH & INTL)', () => {
     assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, usdBefore + 899);
     assert.equal(OWNER_ANALYTICS_STATE.passesIssued.pass_30d, eternalCountBefore + 1);
 
-    // 3. Revoking the paid key blocks future redemptions and marks ledger revoked
+    // 3. Revoking the paid key blocks future redemptions, marks ledger revoked, and excludes its revenue
     const revRes = revokePaidPassServer(mintedEternal.pass.passKey);
     assert.equal(revRes.ok, true);
     assert.equal(PAID_PASS_LEDGER.get(mintedEternal.pass.passKey)?.status, 'revoked');
+    assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, usdBefore);
+    assert.equal(OWNER_ANALYTICS_STATE.passesIssued.pass_30d, eternalCountBefore);
 
     const blockedRedeem = validateAndBindPassRedemptionServer(
       mintedEternal.pass,
@@ -285,6 +287,114 @@ describe('Direct Paid Key Generator & Revocation (PH & INTL)', () => {
     );
     assert.equal(blockedRedeem.valid, false);
     assert.equal(blockedRedeem.status, 'REVOKED');
+  });
+
+  it('isolates test webhooks, supports pause/resume live income mode, and prevents Math.max reset resurrection', () => {
+    const prevEpoch = OWNER_ANALYTICS_STATE.incomeResetEpoch;
+    const prevResetAtMs = OWNER_ANALYTICS_STATE.incomeResetAtMs;
+    const prevPaused = OWNER_ANALYTICS_STATE.incomePausedForTesting;
+    try {
+      // Reset clean slate first
+      resetOwnerIncomeServer({ purgeTestAndRevoked: true, nowMs: Date.now() });
+      assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, 0);
+      assert.equal(OWNER_ANALYTICS_STATE.revenuePhpCentavos, 0);
+
+      // 1. SikatPay test key (sptest_ prefix / isTest: true) issues working pass but adds $0 to gross
+      const testPass = createSignedStudioPass({
+        tier: 'single',
+        region: 'PH',
+        deviceTokenHash: 'webhook_tester_dev_1',
+        paymentProvider: 'sikatpay',
+        paymentReference: 'sptest_123456',
+      });
+      recordPaidPassIssuanceServer(testPass, { isTest: true, channel: 'sikatpay' });
+      assert.equal(OWNER_ANALYTICS_STATE.revenuePhpCentavos, 0);
+      assert.equal(OWNER_ANALYTICS_STATE.passesIssued.single, 0);
+      assert.equal(PAID_PASS_LEDGER.get(testPass.passKey)?.isTest, true);
+
+      // 2. Pausing live income isolates subsequent issuances even without sptest_ prefix
+      toggleIncomePauseServer(true);
+      assert.equal(OWNER_ANALYTICS_STATE.incomePausedForTesting, true);
+
+      const pausedLivePass = createSignedStudioPass({
+        tier: 'pass_7d',
+        region: 'PH',
+        deviceTokenHash: 'webhook_tester_dev_2',
+        paymentProvider: 'sikatpay',
+        paymentReference: 'sp_live_during_pause',
+      });
+      recordPaidPassIssuanceServer(pausedLivePass, { isTest: false, channel: 'sikatpay' });
+      assert.equal(OWNER_ANALYTICS_STATE.revenuePhpCentavos, 0);
+      assert.equal(PAID_PASS_LEDGER.get(pausedLivePass.passKey)?.isTest, true);
+
+      // 3. Resuming live income counts real payments again
+      toggleIncomePauseServer(false);
+      assert.equal(OWNER_ANALYTICS_STATE.incomePausedForTesting, false);
+
+      const realPass = createSignedStudioPass({
+        tier: 'pass_7d',
+        region: 'INTL',
+        deviceTokenHash: 'real_buyer_dev_1',
+        paymentProvider: 'kofi',
+        paymentReference: 'kofi_real_001',
+      });
+      recordPaidPassIssuanceServer(realPass, { isTest: false, channel: 'kofi' });
+      assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, 499);
+      assert.equal(OWNER_ANALYTICS_STATE.passesIssued.pass_7d, 1);
+
+      // 4. Resetting income zeroes totals and stale remote vault sync cannot resurrect pre-reset income
+      const epochBeforeReset = OWNER_ANALYTICS_STATE.incomeResetEpoch;
+      resetOwnerIncomeServer({ purgeTestAndRevoked: true, nowMs: Date.now() + 5000 });
+      assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, 0);
+      assert.equal(OWNER_ANALYTICS_STATE.revenuePhpCentavos, 0);
+      assert.ok(OWNER_ANALYTICS_STATE.incomeResetEpoch > epochBeforeReset);
+
+      mergeRemoteOwnerVaultIntoMemory({
+        incomeResetEpoch: 0,
+        analytics: {
+          revenueUsdCents: 9999,
+          revenuePhpCentavos: 54500,
+        },
+        paidPasses: [
+          {
+            passKey: 'BLOOM-STALE-TEST',
+            label: 'Stale Pre-Reset Pass',
+            tier: 'pass_30d',
+            region: 'PH',
+            channel: 'sikatpay',
+            amountMinor: 19900,
+            currency: 'PHP',
+            createdAt: '2026-11-01T00:00:00.000Z',
+            expiresAt: '2026-12-01T00:00:00.000Z',
+            status: 'claimed',
+            claimedDeviceHash: 'old_dev',
+            bouquetsCreated: 0,
+            blockedAttempts: 0,
+          },
+        ],
+      });
+      recomputePaidRevenueFromLedgerServer();
+      assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, 0);
+      assert.equal(OWNER_ANALYTICS_STATE.revenuePhpCentavos, 0);
+
+      // 5. Clear test/revoked helper removes any remaining test keys cleanly
+      const testPass2 = createSignedStudioPass({
+        tier: 'single',
+        region: 'PH',
+        deviceTokenHash: 'tester_clear_1',
+        paymentProvider: 'sikatpay',
+        paymentReference: 'sptest_clear_me',
+      });
+      recordPaidPassIssuanceServer(testPass2, { isTest: true });
+      assert.ok(PAID_PASS_LEDGER.has(testPass2.passKey));
+      const removed = clearTestAndRevokedPaidKeysServer();
+      assert.ok(removed >= 1);
+      assert.equal(PAID_PASS_LEDGER.has(testPass2.passKey), false);
+    } finally {
+      OWNER_ANALYTICS_STATE.incomeResetEpoch = prevEpoch;
+      OWNER_ANALYTICS_STATE.incomeResetAtMs = prevResetAtMs;
+      OWNER_ANALYTICS_STATE.incomePausedForTesting = prevPaused;
+    }
   });
 });
 

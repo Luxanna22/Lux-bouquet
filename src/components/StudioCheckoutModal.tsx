@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Check, Copy, QrCode, X } from 'lucide-react';
 import {
   BayadgatePaymentMethod,
@@ -10,6 +10,7 @@ import {
   getPricingCatalog,
   getStoredKofiShopConfig,
   isTesterVoucherPass,
+  loadPendingCheckoutStorage,
   normalizePassKey,
   parseTesterVoucherMeta,
   PremiumAssetConfig,
@@ -370,6 +371,84 @@ export interface StudioCheckoutModalProps {
   onToast: (msg: string) => void;
 }
 
+export interface CheckoutCapabilityState {
+  isPhEligible: boolean;
+  defaultRegion: PricingRegion;
+  phGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
+  initialGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
+}
+
+let cachedCheckoutCapability: CheckoutCapabilityState | null = null;
+let inFlightCapabilityPromise: Promise<CheckoutCapabilityState> | null = null;
+
+function resolveInitialGatewayFromConfig(cfg: {
+  isPhEligible?: boolean;
+  defaultRegion?: PricingRegion;
+  phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
+}): CheckoutCapabilityState {
+  const eligible = Boolean(cfg.isPhEligible && cfg.phGateway);
+  const phGw = cfg.phGateway || null;
+  let initialGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi' = 'kofi';
+  if (eligible && phGw) {
+    const browserLocalPh =
+      cfg.defaultRegion === 'PH' ||
+      (typeof navigator !== 'undefined' &&
+        detectPricingRegion(
+          Intl.DateTimeFormat().resolvedOptions().timeZone,
+          navigator.language
+        ) === 'PH');
+    initialGateway = browserLocalPh ? phGw : 'kofi';
+  }
+  return {
+    isPhEligible: eligible,
+    defaultRegion: cfg.defaultRegion === 'PH' ? 'PH' : 'INTL',
+    phGateway: phGw,
+    initialGateway,
+  };
+}
+
+export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
+  if (cachedCheckoutCapability) {
+    return Promise.resolve(cachedCheckoutCapability);
+  }
+  if (inFlightCapabilityPromise) {
+    return inFlightCapabilityPromise;
+  }
+  inFlightCapabilityPromise = fetch('/api/payments/create-checkout', { method: 'GET' })
+    .then(async (res) => {
+      if (!res.ok) return null;
+      return (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        isPhEligible?: boolean;
+        defaultRegion?: PricingRegion;
+        phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
+      } | null;
+    })
+    .then((cfg) => {
+      const resolved =
+        cfg && cfg.ok
+          ? resolveInitialGatewayFromConfig(cfg)
+          : {
+              isPhEligible: false,
+              defaultRegion: 'INTL' as PricingRegion,
+              phGateway: null,
+              initialGateway: 'kofi' as const,
+            };
+      cachedCheckoutCapability = resolved;
+      return resolved;
+    })
+    .catch(() => ({
+      isPhEligible: false,
+      defaultRegion: 'INTL' as PricingRegion,
+      phGateway: null,
+      initialGateway: 'kofi' as const,
+    }))
+    .finally(() => {
+      inFlightCapabilityPromise = null;
+    });
+  return inFlightCapabilityPromise;
+}
+
 export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   isOpen,
   isDarkMode,
@@ -383,9 +462,15 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   onToast,
 }) => {
   const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
-  const [isPhEligible, setIsPhEligible] = useState(false);
-  const [phGateway, setPhGateway] = useState<'sikatpay' | 'bayadgate' | 'paymongo' | null>(null);
-  const [paymentGateway, setPaymentGateway] = useState<'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi'>('kofi');
+  const [isResolvingRegion, setIsResolvingRegion] = useState<boolean>(
+    () => !cachedCheckoutCapability
+  );
+  const [isPhEligible, setIsPhEligible] = useState<boolean>(
+    () => cachedCheckoutCapability?.isPhEligible ?? false
+  );
+  const [paymentGateway, setPaymentGateway] = useState<
+    'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi'
+  >(() => cachedCheckoutCapability?.initialGateway ?? 'kofi');
   const [bayadgateMethod, setBayadgateMethod] = useState<BayadgatePaymentMethod>('GCASH');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : 'plans')
@@ -408,60 +493,136 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const [buyerEmail, setBuyerEmail] = useState('');
   const [redeemInput, setRedeemInput] = useState('');
   const [copiedPassKey, setCopiedPassKey] = useState(false);
+  const autoVerifyInFlightRef = useRef(false);
   const shopConfig = getStoredKofiShopConfig();
+
+  const activateVerifiedPass = useCallback(
+    async (issuedPass: StudioPassRecord) => {
+      clearPendingCheckoutStorage();
+      setPendingCheckout(null);
+      setCheckoutStep('select');
+      await saveStudioPassToFirestore(issuedPass).catch(() => {});
+      onPassActivated(issuedPass, triggerAction);
+      if (issuedPass.tier === 'single') {
+        onClose();
+      } else {
+        setActiveView('pass_card');
+      }
+    },
+    [onPassActivated, onClose, triggerAction]
+  );
+
+  const trySilentPendingVerification = useCallback(async () => {
+    if (!pendingCheckout || pendingCheckout.provider === 'kofi') return;
+    if (autoVerifyInFlightRef.current) return;
+    autoVerifyInFlightRef.current = true;
+    try {
+      const deviceTokenHash = getOrCreateDeviceTokenHash();
+      const res = await fetch('/api/payments/verify-and-issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkoutId: pendingCheckout.checkoutId,
+          checkoutToken: pendingCheckout.checkoutToken,
+          deviceTokenHash,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok && data?.pass) {
+        await activateVerifiedPass(data.pass as StudioPassRecord);
+      }
+    } catch {
+      // Silent retry continues on next poll or focus
+    } finally {
+      autoVerifyInFlightRef.current = false;
+    }
+  }, [pendingCheckout, activateVerifiedPass]);
 
   useEffect(() => {
     if (!isOpen) return;
     setErrorMessage(null);
-    setCheckoutStep('select');
-    setPendingCheckout(null);
     if (activePass) {
+      setCheckoutStep('select');
+      setPendingCheckout(null);
       setActiveView('pass_card');
     } else {
       setActiveView('plans');
+      const storedPending = loadPendingCheckoutStorage();
+      if (storedPending) {
+        const fallbackRegion: PricingRegion = storedPending.provider === 'kofi' ? 'INTL' : 'PH';
+        const fallbackPlan = getPricingCatalog(fallbackRegion)[1];
+        setPendingCheckout({
+          checkoutId: storedPending.checkoutId,
+          checkoutToken: storedPending.checkoutToken,
+          passKeyPreview: storedPending.passKeyPreview || 'BLOOM-••••-••••',
+          plan: storedPending.plan || fallbackPlan,
+          provider: storedPending.provider,
+          orderId: storedPending.orderId || null,
+          paymentMethod: storedPending.paymentMethod || null,
+          checkoutUrl: storedPending.checkoutUrl || null,
+          liveGatewayConfigured: Boolean(storedPending.liveGatewayConfigured ?? true),
+        });
+        setCheckoutStep('qr_confirm');
+      } else {
+        setCheckoutStep('select');
+        setPendingCheckout(null);
+      }
+    }
+
+    if (cachedCheckoutCapability) {
+      setIsPhEligible(cachedCheckoutCapability.isPhEligible);
+      setPaymentGateway(cachedCheckoutCapability.initialGateway);
+      setIsResolvingRegion(false);
+      return;
     }
 
     let cancelled = false;
-    fetch('/api/payments/create-checkout', { method: 'GET' })
-      .then(async (res) => {
-        if (!res.ok) return null;
-        return (await res.json().catch(() => null)) as {
-          ok?: boolean;
-          isPhEligible?: boolean;
-          defaultRegion?: PricingRegion;
-          phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
-        } | null;
-      })
-      .then((cfg) => {
-        if (cancelled || !cfg || !cfg.ok) return;
-        const eligible = Boolean(cfg.isPhEligible && cfg.phGateway);
-        setIsPhEligible(eligible);
-        setPhGateway(cfg.phGateway || null);
-        if (eligible && cfg.phGateway) {
-          const browserLocalPh =
-            cfg.defaultRegion === 'PH' ||
-            (typeof navigator !== 'undefined' &&
-              detectPricingRegion(
-                Intl.DateTimeFormat().resolvedOptions().timeZone,
-                navigator.language
-              ) === 'PH');
-          setPaymentGateway(browserLocalPh ? cfg.phGateway : 'kofi');
-        } else {
-          setPaymentGateway('kofi');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIsPhEligible(false);
-          setPhGateway(null);
-          setPaymentGateway('kofi');
-        }
-      });
+    setIsResolvingRegion(true);
+    fetchCheckoutCapability().then((resolved) => {
+      if (cancelled) return;
+      setIsPhEligible(resolved.isPhEligible);
+      setPaymentGateway(resolved.initialGateway);
+      setIsResolvingRegion(false);
+    });
 
     return () => {
       cancelled = true;
     };
   }, [isOpen, activePass, triggerAction]);
+
+  // Auto-poll & re-check immediately when returning from external wallet/SikatPay tab
+  useEffect(() => {
+    if (
+      !isOpen ||
+      activePass ||
+      activeView !== 'plans' ||
+      checkoutStep !== 'qr_confirm' ||
+      !pendingCheckout ||
+      pendingCheckout.provider === 'kofi'
+    ) {
+      return;
+    }
+
+    void trySilentPendingVerification();
+
+    const intervalId = window.setInterval(() => {
+      void trySilentPendingVerification();
+    }, 3000);
+
+    const handleReturnCheck = () => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        void trySilentPendingVerification();
+      }
+    };
+    window.addEventListener('focus', handleReturnCheck);
+    document.addEventListener('visibilitychange', handleReturnCheck);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleReturnCheck);
+      document.removeEventListener('visibilitychange', handleReturnCheck);
+    };
+  }, [isOpen, activePass, activeView, checkoutStep, pendingCheckout, trySilentPendingVerification]);
 
   if (!isOpen) return null;
 
@@ -513,6 +674,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         provider: nextPending.provider,
         orderId: nextPending.orderId,
         paymentMethod: nextPending.paymentMethod,
+        checkoutUrl: nextPending.checkoutUrl,
+        passKeyPreview: nextPending.passKeyPreview,
+        plan: nextPending.plan,
+        liveGatewayConfigured: nextPending.liveGatewayConfigured,
+        bouquetCode: bouquetCode || null,
         resumeAction: triggerAction,
         createdAtMs: Date.now(),
       });
@@ -553,20 +719,19 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         return;
       }
 
-      clearPendingCheckoutStorage();
-      const issuedPass = data.pass as StudioPassRecord;
-      await saveStudioPassToFirestore(issuedPass).catch(() => {});
-      onPassActivated(issuedPass, triggerAction);
-      if (issuedPass.tier === 'single') {
-        onClose();
-      } else {
-        setActiveView('pass_card');
-      }
+      await activateVerifiedPass(data.pass as StudioPassRecord);
     } catch {
       setErrorMessage('Could not verify pass.');
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleDiscardPendingCheckout = () => {
+    clearPendingCheckoutStorage();
+    setPendingCheckout(null);
+    setCheckoutStep('select');
+    setErrorMessage(null);
   };
 
   const handleRedeemPassKey = async (e: React.FormEvent) => {
@@ -603,9 +768,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       return;
     }
 
-    const cleanedKey = normalizePassKey(redeemInput);
+    const upperTrimmed = rawTrimmed.toUpperCase();
+    const isOrderIdLookup = /^(SB-[A-F0-9]{8,16}|BG[A-F0-9]{8,20})$/.test(upperTrimmed);
+    const cleanedKey = isOrderIdLookup ? upperTrimmed : normalizePassKey(redeemInput);
     if (!cleanedKey) {
-      setErrorMessage('Enter your BLOOM-XXXX-XXXX key.');
+      setErrorMessage('Enter your BLOOM-XXXX-XXXX key or Order ID (SB-...).');
       return;
     }
 
@@ -627,6 +794,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         return;
       }
 
+      clearPendingCheckoutStorage();
+      setPendingCheckout(null);
+      setCheckoutStep('select');
       const verifiedPass = data.pass as StudioPassRecord;
       await saveStudioPassToFirestore(verifiedPass).catch(() => {});
       onPassActivated(verifiedPass, triggerAction);
@@ -668,7 +838,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       aria-modal="true"
       aria-label="Studio Pass"
       data-testid="studio-checkout-modal"
-      onClick={onClose}
+      onClick={() => {
+        if (checkoutStep !== 'qr_confirm') {
+          onClose();
+        }
+      }}
       className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-5 animate-in fade-in duration-200"
     >
       <div
@@ -863,10 +1037,19 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     </div>
 
                     <div
-                      className="text-base sm:text-xl font-semibold tracking-tight pt-0.5"
+                      className="text-base sm:text-xl font-semibold tracking-tight pt-0.5 min-h-[26px] flex items-center justify-center"
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
-                      {plan.displayPrice}
+                      {isResolvingRegion ? (
+                        <span
+                          aria-hidden="true"
+                          className={`inline-block h-4 w-11 rounded-full animate-pulse ${
+                            isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
+                          }`}
+                        />
+                      ) : (
+                        plan.displayPrice
+                      )}
                     </div>
                   </button>
                 );
@@ -874,125 +1057,96 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             </div>
 
             {/* Payment Method: Server-Gated PH Local E-Wallets (SikatPay / BayadGate) vs USD Ko-fi */}
-            {isPhEligible && paymentGateway === 'sikatpay' ? (
-              <div className="space-y-2">
-                <div
-                  data-testid="gateway-sikatpay"
-                  className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
-                    isDarkMode
-                      ? 'border-[#E6B89C] bg-[#3B302C]'
-                      : 'border-[#6E4434] bg-[#FAF3EB]'
+            {isResolvingRegion ? (
+              <div
+                aria-busy="true"
+                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                  isDarkMode
+                    ? 'border-[#544540] bg-[#2B2321]/70'
+                    : 'border-[#DECBB9] bg-[#FAF4EE]'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-36 rounded-full animate-pulse ${
+                    isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
                   }`}
-                >
-                  <div>
-                    <div className="text-xs font-semibold">QR Ph · GCash · Maya</div>
-                    <div className="text-[10px] opacity-70">Any PH bank or e-wallet app</div>
-                  </div>
-                  <div className="text-[10.5px] opacity-75">Instant PH Pay</div>
+                />
+                <span
+                  className={`inline-block h-3 w-16 rounded-full animate-pulse ${
+                    isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
+                  }`}
+                />
+              </div>
+            ) : isPhEligible && paymentGateway === 'sikatpay' ? (
+              <div
+                data-testid="gateway-sikatpay"
+                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#3B302C]'
+                    : 'border-[#6E4434] bg-[#FAF3EB]'
+                }`}
+              >
+                <div>
+                  <div className="text-xs font-semibold">QR Ph · GCash · Maya</div>
+                  <div className="text-[10px] opacity-70">Any PH bank or e-wallet app</div>
                 </div>
-                <div className="text-center">
-                  <button
-                    type="button"
-                    data-testid="switch-to-kofi-btn"
-                    onClick={() => {
-                      setPaymentGateway('kofi');
-                      setErrorMessage(null);
-                    }}
-                    className="text-[11px] underline opacity-70 hover:opacity-100 transition cursor-pointer"
-                  >
-                    Prefer PayPal or card? Pay in USD via Ko-fi
-                  </button>
-                </div>
+                <div className="text-[10.5px] opacity-75">Instant PH Pay</div>
               </div>
             ) : isPhEligible && paymentGateway === 'bayadgate' ? (
-              <div className="space-y-2">
-                <div
-                  data-testid="gateway-bayadgate"
-                  className={`p-3 rounded-xl border border-dashed space-y-2.5 ${
-                    isDarkMode
-                      ? 'border-[#E6B89C] bg-[#3B302C]'
-                      : 'border-[#6E4434] bg-[#FAF3EB]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-semibold">GCash · Maya · GoTyme</div>
-                    <div className="text-[10.5px] opacity-75">Instant PH Wallet</div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(
-                      [
-                        { id: 'GCASH', label: 'GCash' },
-                        { id: 'MAYA', label: 'Maya' },
-                        { id: 'GOTYME', label: 'GoTyme' },
-                      ] as const
-                    ).map((wallet) => {
-                      const active = bayadgateMethod === wallet.id;
-                      return (
-                        <button
-                          key={wallet.id}
-                          type="button"
-                          data-testid={`bayadgate-method-${wallet.id}`}
-                          onClick={() => setBayadgateMethod(wallet.id)}
-                          className={`py-1.5 px-2 rounded-lg text-[11px] font-medium border border-dashed transition cursor-pointer ${
-                            active
-                              ? isDarkMode
-                                ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C]'
-                                : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434]'
-                              : isDarkMode
-                              ? 'bg-[#2B2321]/70 text-[#E6D6C7] border-[#5E4E49] hover:border-[#E6B89C]/60'
-                              : 'bg-[#FFFDF9] text-[#5C4438] border-[#DECBB9] hover:border-[#6E4434]/60'
-                          }`}
-                        >
-                          {wallet.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div
+                data-testid="gateway-bayadgate"
+                className={`p-3 rounded-xl border border-dashed space-y-2.5 ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#3B302C]'
+                    : 'border-[#6E4434] bg-[#FAF3EB]'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold">GCash · Maya · GoTyme</div>
+                  <div className="text-[10.5px] opacity-75">Instant PH Wallet</div>
                 </div>
-                <div className="text-center">
-                  <button
-                    type="button"
-                    data-testid="switch-to-kofi-btn"
-                    onClick={() => {
-                      setPaymentGateway('kofi');
-                      setErrorMessage(null);
-                    }}
-                    className="text-[11px] underline opacity-70 hover:opacity-100 transition cursor-pointer"
-                  >
-                    Prefer PayPal or card? Pay in USD via Ko-fi
-                  </button>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      { id: 'GCASH', label: 'GCash' },
+                      { id: 'MAYA', label: 'Maya' },
+                      { id: 'GOTYME', label: 'GoTyme' },
+                    ] as const
+                  ).map((wallet) => {
+                    const active = bayadgateMethod === wallet.id;
+                    return (
+                      <button
+                        key={wallet.id}
+                        type="button"
+                        data-testid={`bayadgate-method-${wallet.id}`}
+                        onClick={() => setBayadgateMethod(wallet.id)}
+                        className={`py-1.5 px-2 rounded-lg text-[11px] font-medium border border-dashed transition cursor-pointer ${
+                          active
+                            ? isDarkMode
+                              ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C]'
+                              : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434]'
+                            : isDarkMode
+                            ? 'bg-[#2B2321]/70 text-[#E6D6C7] border-[#5E4E49] hover:border-[#E6B89C]/60'
+                            : 'bg-[#FFFDF9] text-[#5C4438] border-[#DECBB9] hover:border-[#6E4434]/60'
+                        }`}
+                      >
+                        {wallet.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
-              <div className="space-y-2">
-                <div
-                  data-testid="gateway-kofi"
-                  className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
-                    isDarkMode
-                      ? 'border-[#E6B89C] bg-[#3B302C]'
-                      : 'border-[#6E4434] bg-[#FAF3EB]'
-                  }`}
-                >
-                  <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
-                  <div className="text-[10.5px] opacity-75">Instant Unlock</div>
-                </div>
-                {isPhEligible && phGateway && (
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      data-testid="switch-to-ph-btn"
-                      onClick={() => {
-                        setPaymentGateway(phGateway);
-                        setErrorMessage(null);
-                      }}
-                      className="text-[11px] underline opacity-75 hover:opacity-100 transition cursor-pointer"
-                    >
-                      {phGateway === 'sikatpay'
-                        ? 'In the Philippines? Pay in PHP via QR Ph / GCash / Maya'
-                        : 'In the Philippines? Pay in PHP via GCash / Maya / GoTyme'}
-                    </button>
-                  </div>
-                )}
+              <div
+                data-testid="gateway-kofi"
+                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#3B302C]'
+                    : 'border-[#6E4434] bg-[#FAF3EB]'
+                }`}
+              >
+                <div className="text-xs font-semibold">PayPal · Card · Ko-fi</div>
+                <div className="text-[10.5px] opacity-75">Instant Unlock</div>
               </div>
             )}
 
@@ -1000,7 +1154,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
             <button
               type="button"
               data-testid="start-checkout-btn"
-              disabled={isProcessing}
+              disabled={isProcessing || isResolvingRegion}
               onClick={handleStartCheckout}
               className={`w-full py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition active:scale-99 cursor-pointer disabled:opacity-50 ${
                 isDarkMode
@@ -1008,7 +1162,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
               }`}
             >
-              {isProcessing
+              {isResolvingRegion
+                ? 'Loading local pricing...'
+                : isProcessing
                 ? 'Preparing...'
                 : `Continue · ${currentPlan.displayPrice}`}
             </button>
@@ -1199,17 +1355,24 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               )}
             </div>
 
+            {pendingCheckout.provider !== 'kofi' && (
+              <div className="text-center text-[10.5px] opacity-70">
+                Checking payment automatically · Your order stays saved if you close this window
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setCheckoutStep('select')}
+                data-testid="discard-pending-checkout-btn"
+                onClick={handleDiscardPendingCheckout}
                 className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
                   isDarkMode
                     ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
                     : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
                 }`}
               >
-                Back
+                Switch plan
               </button>
               <button
                 type="button"
@@ -1235,7 +1398,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         )}
 
         {/* ===================================================================
-            VIEW 2: REDEEM PASS KEY
+            VIEW 2: REDEEM PASS KEY OR ORDER ID
             =================================================================== */}
         {activeView === 'redeem' && (
           <form onSubmit={handleRedeemPassKey} className="mt-4 space-y-3">
@@ -1251,8 +1414,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 data-testid="redeem-pass-input"
                 value={redeemInput}
                 onChange={(e) => setRedeemInput(e.target.value.toUpperCase())}
-                placeholder="BLOOM-XXXX-XXXX"
-                maxLength={18}
+                placeholder="BLOOM-XXXX-XXXX or Order ID (SB-...)"
+                maxLength={24}
                 className={`w-full px-3.5 py-2 rounded-xl border border-dashed font-mono text-sm tracking-wider uppercase text-center focus:outline-none focus:border-[#B4846C] ${
                   isDarkMode
                     ? 'bg-[#352C29] border-[#66554F] text-[#FBF6F1]'
@@ -1260,7 +1423,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 }`}
               />
               <p className="text-[11px] opacity-65 text-center">
-                Locked to your device · 1 active session
+                Enter your Pass Key or SikatPay Order ID · 1 active session
               </p>
             </div>
 

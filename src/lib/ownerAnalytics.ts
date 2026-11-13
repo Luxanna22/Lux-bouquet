@@ -123,6 +123,7 @@ export type PaidPassChannel =
   | 'manual_bank'
   | 'kofi'
   | 'sikatpay'
+  | 'sikatpay_test'
   | 'bayadgate'
   | 'paymongo'
   | 'other';
@@ -144,6 +145,8 @@ export interface PaidPassLedgerItem {
   bouquetsCreated: number;
   blockedAttempts: number;
   boundBouquetCode?: string | null;
+  isTest?: boolean;
+  archivedFromIncome?: boolean;
   passRecord?: StudioPassRecord;
 }
 
@@ -188,6 +191,9 @@ export interface OwnerAnalyticsSummary {
   };
   revenueUsdCents: number;
   revenuePhpCentavos: number;
+  incomePausedForTesting?: boolean;
+  incomeResetAtMs?: number;
+  incomeResetEpoch?: number;
   blockedShareAttempts: number;
   blockedPinAttempts: number;
   shareChannels: {
@@ -265,6 +271,9 @@ export function createInitialAnalyticsSummary(nowMs: number = Date.now()): Owner
     },
     revenueUsdCents: 0,
     revenuePhpCentavos: 0,
+    incomePausedForTesting: false,
+    incomeResetAtMs: 0,
+    incomeResetEpoch: 0,
     blockedShareAttempts: 0,
     blockedPinAttempts: 0,
     shareChannels: {

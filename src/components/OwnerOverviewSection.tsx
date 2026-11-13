@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Pause, Play, RotateCcw } from 'lucide-react';
 import {
   OwnerAnalyticsSummary,
   PaidPassLedgerItem,
@@ -12,6 +13,10 @@ interface OwnerOverviewSectionProps {
   testerCount: number;
   isDarkMode: boolean;
   formatLabel: (raw: string) => string;
+  isTogglingIncomePause?: boolean;
+  isResettingIncome?: boolean;
+  onToggleIncomePause?: (nextPaused: boolean) => void;
+  onResetIncome?: (purgeTestAndRevoked: boolean) => void;
 }
 
 type ChartSeriesMode = 'traffic' | 'revenue';
@@ -33,9 +38,14 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   testerCount,
   isDarkMode,
   formatLabel,
+  isTogglingIncomePause = false,
+  isResettingIncome = false,
+  onToggleIncomePause,
+  onResetIncome,
 }) => {
   const [chartMode, setChartMode] = useState<ChartSeriesMode>('traffic');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   // Interactive Growth / Buyer Scale Simulator (Projection Sandbox — separate from recorded actuals)
   const [simDailyVisitors, setSimDailyVisitors] = useState<number>(500);
@@ -81,7 +91,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   const channelBreakdown = useMemo(() => {
     const map: Record<string, { count: number; estUsd: number }> = {};
     for (const p of paidPasses) {
-      if (p.status === 'revoked') continue;
+      if (p.status === 'revoked' || p.isTest || p.archivedFromIncome) continue;
       const ch = p.channel || 'other';
       if (!map[ch]) map[ch] = { count: 0, estUsd: 0 };
       map[ch].count += 1;
@@ -115,20 +125,120 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   const accentFill = isDarkMode ? '#E6B89C' : '#6E4434';
   const sageColor = isDarkMode ? '#8AB89A' : '#5E8568';
 
+  const isIncomePaused = Boolean(analytics.incomePausedForTesting);
+
   return (
     <div className="space-y-6 animate-[fadeIn_180ms_ease-out]">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
-        <h1
-          style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          className="text-2xl sm:text-3xl font-normal tracking-tight"
-        >
-          Revenue & Studio Overview
-        </h1>
-        <p className="text-xs opacity-60 tabular-nums">
-          Live telemetry · {metrics.totalPaidPasses} paid keys · {testerCount} tester invites
-        </p>
+      {/* Page Header & Webhook Testing / Income Controls */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div>
+          <h1
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+            className="text-2xl sm:text-3xl font-normal tracking-tight"
+          >
+            Revenue & Studio Overview
+          </h1>
+          <p className="text-xs opacity-60 tabular-nums mt-0.5">
+            Live telemetry · {metrics.totalPaidPasses} paid keys · {testerCount} tester invites
+            {isIncomePaused ? ' · Income Paused (Test Mode)' : ''}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {onToggleIncomePause && (
+            <button
+              data-testid="toggle-income-pause-btn"
+              type="button"
+              disabled={isTogglingIncomePause}
+              onClick={() => onToggleIncomePause(!isIncomePaused)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 ${
+                isIncomePaused
+                  ? isDarkMode
+                    ? 'bg-amber-500/15 border-amber-400/50 text-amber-200 hover:bg-amber-500/25'
+                    : 'bg-amber-50 border-amber-400/60 text-amber-900 hover:bg-amber-100'
+                  : `${hairlineBorder} hover:bg-current/5`
+              }`}
+            >
+              {isIncomePaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+              <span>
+                {isTogglingIncomePause
+                  ? 'Updating...'
+                  : isIncomePaused
+                  ? 'Resume Live Income'
+                  : 'Pause Income (Test)'}
+              </span>
+            </button>
+          )}
+
+          {onResetIncome && !confirmingReset && (
+            <button
+              data-testid="reset-owner-income-btn"
+              type="button"
+              disabled={isResettingIncome}
+              onClick={() => setConfirmingReset(true)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 ${hairlineBorder} hover:bg-current/5`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Income</span>
+            </button>
+          )}
+
+          {onResetIncome && confirmingReset && (
+            <div className="inline-flex items-center gap-1.5">
+              <button
+                data-testid="confirm-reset-income-btn"
+                type="button"
+                disabled={isResettingIncome}
+                onClick={() => {
+                  setConfirmingReset(false);
+                  onResetIncome(true);
+                }}
+                className="px-3 py-1.5 rounded-lg border border-rose-500/50 bg-rose-600 text-white text-xs font-medium hover:bg-rose-700 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isResettingIncome ? 'Resetting...' : 'Confirm $0.00 Reset'}
+              </button>
+              <button
+                data-testid="cancel-reset-income-btn"
+                type="button"
+                disabled={isResettingIncome}
+                onClick={() => setConfirmingReset(false)}
+                className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
+      {isIncomePaused && (
+        <div
+          data-testid="income-paused-banner"
+          className={`rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+            isDarkMode
+              ? 'bg-amber-950/30 border-amber-500/40 text-amber-100'
+              : 'bg-amber-50/90 border-amber-300 text-amber-950'
+          }`}
+        >
+          <p className="leading-relaxed">
+            <span className="font-medium">Webhook Test Mode active:</span> Live income counting is paused. Webhooks and test checkouts still issue working passes tagged <span className="font-mono">Test</span> without adding to Gross Revenue.
+          </p>
+          {onToggleIncomePause && (
+            <button
+              type="button"
+              disabled={isTogglingIncomePause}
+              onClick={() => onToggleIncomePause(false)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium shrink-0 cursor-pointer transition-colors ${
+                isDarkMode
+                  ? 'border-amber-400/50 hover:bg-amber-500/20'
+                  : 'border-amber-400 hover:bg-amber-100'
+              }`}
+            >
+              Resume Live Income
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Top KPI Strip (Symmetrical 1px hairlines via gap-px grid across 2x2 mobile & 4-col desktop) */}
       <section className={`rounded-xl border ${hairlineBorder} overflow-hidden`}>

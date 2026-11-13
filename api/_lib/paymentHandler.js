@@ -1131,6 +1131,9 @@ export const OWNER_ANALYTICS_STATE = {
   },
   revenueUsdCents: 0,
   revenuePhpCentavos: 0,
+  incomePausedForTesting: false,
+  incomeResetAtMs: 0,
+  incomeResetEpoch: 0,
   blockedShareAttempts: 0,
   blockedPinAttempts: 0,
   shareChannels: {
@@ -1178,12 +1181,49 @@ export const OWNER_ANALYTICS_STATE = {
   updatedAt: new Date().toISOString(),
 };
 
+let incomePauseUpdatedAtMs = 0;
+
 export const TESTER_VOUCHER_LEDGER = new Map();
 export const PAID_PASS_LEDGER = new Map();
 export const ISSUED_PASS_KEYS = new Set();
 
 export function mergeRemoteOwnerVaultIntoMemory(remote) {
   if (!remote || typeof remote !== 'object') return;
+
+  const localEpoch = Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0);
+  const remoteEpoch = Number(remote.incomeResetEpoch ?? remote.analytics?.incomeResetEpoch ?? 0);
+  const remoteHasNewerReset = remoteEpoch > localEpoch;
+  const localHasNewerReset = localEpoch > remoteEpoch;
+
+  const remotePauseTs = Number(remote.incomePauseUpdatedAtMs || 0);
+  if (remotePauseTs > incomePauseUpdatedAtMs) {
+    incomePauseUpdatedAtMs = remotePauseTs;
+    OWNER_ANALYTICS_STATE.incomePausedForTesting = Boolean(
+      remote.incomePausedForTesting ?? remote.analytics?.incomePausedForTesting
+    );
+  } else if (incomePauseUpdatedAtMs === 0 && remote.analytics?.incomePausedForTesting !== undefined) {
+    OWNER_ANALYTICS_STATE.incomePausedForTesting = Boolean(remote.analytics.incomePausedForTesting);
+  }
+
+  if (remoteHasNewerReset) {
+    OWNER_ANALYTICS_STATE.incomeResetEpoch = remoteEpoch;
+    OWNER_ANALYTICS_STATE.incomeResetAtMs = Number(
+      remote.incomeResetAtMs ?? remote.analytics?.incomeResetAtMs ?? 0
+    );
+    OWNER_ANALYTICS_STATE.revenueUsdCents = 0;
+    OWNER_ANALYTICS_STATE.revenuePhpCentavos = 0;
+    OWNER_ANALYTICS_STATE.passesIssued.single = 0;
+    OWNER_ANALYTICS_STATE.passesIssued.pass_7d = 0;
+    OWNER_ANALYTICS_STATE.passesIssued.pass_30d = 0;
+    for (const day of OWNER_ANALYTICS_STATE.dailySeries) {
+      day.revenueUsdCents = 0;
+      day.revenuePhpCentavos = 0;
+      day.paidSingle = 0;
+      day.paid7d = 0;
+      day.paid30d = 0;
+    }
+    PAID_PASS_LEDGER.clear();
+  }
 
   if (typeof remote.customOwnerPin === 'string' && remote.customOwnerPin.trim().length >= 4) {
     if (!cachedCustomOwnerPin) {
@@ -1269,7 +1309,7 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     }
   }
 
-  if (Array.isArray(remote.paidPasses)) {
+  if (!localHasNewerReset && Array.isArray(remote.paidPasses)) {
     for (const rp of remote.paidPasses) {
       if (!rp || typeof rp !== 'object' || !rp.passKey) continue;
       const normKey = normalizePassKey(rp.passKey);
@@ -1307,6 +1347,8 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
             rp.boundBouquetCode ||
             mergedPassRecord?.boundBouquetCode ||
             null,
+          isTest: Boolean(localP.isTest || rp.isTest),
+          archivedFromIncome: Boolean(localP.archivedFromIncome || rp.archivedFromIncome),
           bouquetsCreated: Math.max(
             Number(localP.bouquetsCreated || 0),
             Number(rp.bouquetsCreated || 0)
@@ -1344,8 +1386,6 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
       'recipientToStudioClicks',
       'paywallOpens',
       'checkoutsStarted',
-      'revenueUsdCents',
-      'revenuePhpCentavos',
       'blockedShareAttempts',
       'blockedPinAttempts',
     ];
@@ -1354,6 +1394,13 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
         Number(OWNER_ANALYTICS_STATE[f] || 0),
         Number(ra[f] || 0)
       );
+    }
+    if (!localHasNewerReset) {
+      for (const revField of ['revenueUsdCents', 'revenuePhpCentavos']) {
+        OWNER_ANALYTICS_STATE[revField] = remoteHasNewerReset
+          ? Number(ra[revField] || 0)
+          : Math.max(Number(OWNER_ANALYTICS_STATE[revField] || 0), Number(ra[revField] || 0));
+      }
     }
 
     const nestedFixedMaps = [
@@ -1494,6 +1541,10 @@ export async function savePersistentOwnerVaultServer() {
     const vaultPayload = {
       v: 1,
       updatedAt: new Date(nowMs).toISOString(),
+      incomeResetEpoch: Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0),
+      incomeResetAtMs: Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0),
+      incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
+      incomePauseUpdatedAtMs,
       customOwnerPin: cachedCustomOwnerPin || '',
       revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
       issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
@@ -1551,6 +1602,202 @@ function resolvePaidPassCatalogMeta(tier, region) {
   };
 }
 
+export function isPaidPassCountableForRevenue(normKey, ledgerItem, passRecord) {
+  if (
+    !normKey ||
+    normKey === 'BLOOM-KCFG-SHOP' ||
+    normKey.startsWith('BLOOM-KS') ||
+    normKey.startsWith('BLOOM-BG') ||
+    normKey.startsWith('BLOOM-SP')
+  ) {
+    return false;
+  }
+  if (
+    REVOKED_VOUCHER_KEYS.has(normKey) ||
+    ledgerItem?.status === 'revoked' ||
+    passRecord?.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    passRecord?.primaryDeviceHash === REVOKED_PASS_SENTINEL
+  ) {
+    return false;
+  }
+  if (
+    ledgerItem?.isTest === true ||
+    ledgerItem?.channel === 'sikatpay_test' ||
+    String(passRecord?.paymentReference || '').startsWith('sptest_')
+  ) {
+    return false;
+  }
+  if (ledgerItem?.archivedFromIncome === true) {
+    return false;
+  }
+  const resetAtMs = Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0);
+  if (resetAtMs > 0) {
+    const createdMs = Date.parse(ledgerItem?.createdAt || passRecord?.createdAt || '');
+    if (Number.isFinite(createdMs) && createdMs < resetAtMs) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function recomputePaidRevenueFromLedgerServer() {
+  let singleCount = 0;
+  let pass7dCount = 0;
+  let pass30dCount = 0;
+  let usdCents = 0;
+  let phpCentavos = 0;
+
+  const dailyRev = new Map();
+  for (const pt of OWNER_ANALYTICS_STATE.dailySeries) {
+    pt.revenueUsdCents = 0;
+    pt.revenuePhpCentavos = 0;
+    pt.paidSingle = 0;
+    pt.paid7d = 0;
+    pt.paid30d = 0;
+    pt.passUnlocks = 0;
+    dailyRev.set(pt.date, pt);
+  }
+
+  for (const tv of TESTER_VOUCHER_LEDGER.values()) {
+    if (!tv || tv.status === 'revoked' || REVOKED_VOUCHER_KEYS.has(tv.passKey)) continue;
+    const dayKey = String(tv.createdAt || '').slice(0, 10);
+    const bucket = dailyRev.get(dayKey);
+    if (bucket) bucket.passUnlocks += 1;
+  }
+
+  const seenKeys = new Set();
+  const processEntry = (normKey, ledgerItem, passRecord) => {
+    if (seenKeys.has(normKey)) return;
+    seenKeys.add(normKey);
+
+    const record = passRecord || ledgerItem?.passRecord;
+    if (record && isTesterVoucherPassServer(record)) return;
+    if (!isPaidPassCountableForRevenue(normKey, ledgerItem, record)) return;
+
+    const rawTier = ledgerItem?.tier || record?.tier;
+    const rawRegion = ledgerItem?.region || record?.region;
+    const { tier, region, amountMinor } = resolvePaidPassCatalogMeta(rawTier, rawRegion);
+    const finalAmount =
+      typeof ledgerItem?.amountMinor === 'number' && ledgerItem.amountMinor > 0
+        ? ledgerItem.amountMinor
+        : amountMinor;
+
+    const dayKey = String(ledgerItem?.createdAt || record?.createdAt || '').slice(0, 10);
+    const bucket = dailyRev.get(dayKey);
+
+    if (tier === 'single') {
+      singleCount += 1;
+      if (bucket) bucket.paidSingle += 1;
+    } else if (tier === 'pass_7d') {
+      pass7dCount += 1;
+      if (bucket) bucket.paid7d += 1;
+    } else if (tier === 'pass_30d') {
+      pass30dCount += 1;
+      if (bucket) bucket.paid30d += 1;
+    }
+
+    if (region === 'PH') {
+      phpCentavos += finalAmount;
+      if (bucket) bucket.revenuePhpCentavos += finalAmount;
+    } else {
+      usdCents += finalAmount;
+      if (bucket) bucket.revenueUsdCents += finalAmount;
+    }
+    if (bucket) bucket.passUnlocks += 1;
+  };
+
+  for (const [key, item] of PAID_PASS_LEDGER.entries()) {
+    const normKey = normalizePassKey(key);
+    processEntry(normKey, item, SERVER_PASS_STORE.get(normKey) || item.passRecord);
+  }
+
+  for (const [key, pass] of SERVER_PASS_STORE.entries()) {
+    const normKey = normalizePassKey(key);
+    if (seenKeys.has(normKey) || PAID_PASS_LEDGER.has(normKey)) continue;
+    processEntry(normKey, null, pass);
+  }
+
+  OWNER_ANALYTICS_STATE.passesIssued.single = singleCount;
+  OWNER_ANALYTICS_STATE.passesIssued.pass_7d = pass7dCount;
+  OWNER_ANALYTICS_STATE.passesIssued.pass_30d = pass30dCount;
+  OWNER_ANALYTICS_STATE.revenueUsdCents = usdCents;
+  OWNER_ANALYTICS_STATE.revenuePhpCentavos = phpCentavos;
+  OWNER_ANALYTICS_STATE.updatedAt = new Date().toISOString();
+}
+
+export function toggleIncomePauseServer(paused, nowMs = Date.now()) {
+  OWNER_ANALYTICS_STATE.incomePausedForTesting =
+    typeof paused === 'boolean' ? paused : !OWNER_ANALYTICS_STATE.incomePausedForTesting;
+  incomePauseUpdatedAtMs = Math.max(nowMs, incomePauseUpdatedAtMs + 1);
+  pushAnalyticsEventServer(
+    'monetization',
+    OWNER_ANALYTICS_STATE.incomePausedForTesting ? 'income_paused' : 'income_resumed',
+    OWNER_ANALYTICS_STATE.incomePausedForTesting
+      ? 'Owner paused live income counting for webhook testing (test keys still issue)'
+      : 'Owner resumed live income counting for production payments',
+    'desktop',
+    'INTL'
+  );
+  return OWNER_ANALYTICS_STATE.incomePausedForTesting;
+}
+
+export function clearTestAndRevokedPaidKeysServer() {
+  let removedCount = 0;
+  for (const [key, item] of PAID_PASS_LEDGER.entries()) {
+    const isRevoked =
+      item.status === 'revoked' ||
+      REVOKED_VOUCHER_KEYS.has(key) ||
+      item.passRecord?.secondaryDeviceHash === REVOKED_PASS_SENTINEL;
+    const isTest =
+      Boolean(item.isTest) ||
+      item.channel === 'sikatpay_test' ||
+      String(item.passRecord?.paymentReference || '').startsWith('sptest_');
+    if (isRevoked || isTest) {
+      PAID_PASS_LEDGER.delete(key);
+      ISSUED_PASS_KEYS.delete(key);
+      removedCount += 1;
+    }
+  }
+  recomputePaidRevenueFromLedgerServer();
+  return removedCount;
+}
+
+export function resetOwnerIncomeServer({ purgeTestAndRevoked = true, nowMs = Date.now() } = {}) {
+  OWNER_ANALYTICS_STATE.incomeResetEpoch = Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0) + 1;
+  OWNER_ANALYTICS_STATE.incomeResetAtMs = nowMs;
+
+  for (const [key, item] of PAID_PASS_LEDGER.entries()) {
+    const isRevoked =
+      item.status === 'revoked' ||
+      REVOKED_VOUCHER_KEYS.has(key) ||
+      item.passRecord?.secondaryDeviceHash === REVOKED_PASS_SENTINEL;
+    const isTest =
+      Boolean(item.isTest) ||
+      item.channel === 'sikatpay_test' ||
+      String(item.passRecord?.paymentReference || '').startsWith('sptest_');
+
+    if (purgeTestAndRevoked && (isRevoked || isTest)) {
+      PAID_PASS_LEDGER.delete(key);
+      ISSUED_PASS_KEYS.delete(key);
+    } else {
+      PAID_PASS_LEDGER.set(key, {
+        ...item,
+        archivedFromIncome: true,
+      });
+    }
+  }
+
+  recomputePaidRevenueFromLedgerServer();
+  pushAnalyticsEventServer(
+    'monetization',
+    'income_reset',
+    'Owner reset dashboard income to $0.00 (excluded prior test/revoked payments)',
+    'desktop',
+    'INTL'
+  );
+  return OWNER_ANALYTICS_STATE;
+}
+
 export function recordPaidPassIssuanceServer(pass, options = {}) {
   if (!pass || !pass.passKey || isTesterVoucherPassServer(pass)) return false;
   const normKey = normalizePassKey(pass.passKey);
@@ -1566,28 +1813,11 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
 
   ISSUED_PASS_KEYS.add(normKey);
   const { tier, region, currency, amountMinor } = resolvePaidPassCatalogMeta(pass.tier, pass.region);
-  const bucket = getTodayDailyBucketServer();
-
-  if (tier === 'single') {
-    OWNER_ANALYTICS_STATE.passesIssued.single += 1;
-    bucket.paidSingle = (bucket.paidSingle || 0) + 1;
-  } else if (tier === 'pass_7d') {
-    OWNER_ANALYTICS_STATE.passesIssued.pass_7d += 1;
-    bucket.paid7d = (bucket.paid7d || 0) + 1;
-  } else if (tier === 'pass_30d') {
-    OWNER_ANALYTICS_STATE.passesIssued.pass_30d += 1;
-    bucket.paid30d = (bucket.paid30d || 0) + 1;
-  }
-
-  if (region === 'PH') {
-    OWNER_ANALYTICS_STATE.revenuePhpCentavos += amountMinor;
-    bucket.revenuePhpCentavos = (bucket.revenuePhpCentavos || 0) + amountMinor;
-  } else {
-    OWNER_ANALYTICS_STATE.revenueUsdCents += amountMinor;
-    bucket.revenueUsdCents = (bucket.revenueUsdCents || 0) + amountMinor;
-  }
-
-  bucket.passUnlocks += 1;
+  const isTestIssuance = Boolean(
+    options.isTest ||
+      OWNER_ANALYTICS_STATE.incomePausedForTesting ||
+      String(pass.paymentReference || '').startsWith('sptest_')
+  );
 
   if (!PAID_PASS_LEDGER.has(normKey)) {
     const channel =
@@ -1607,7 +1837,11 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
         .replace(/[|:]/g, ' ')
         .trim()
         .slice(0, 32) ||
-      (pass.paymentProvider === 'owner_manual' ? 'Direct Buyer' : `${pass.paymentProvider || 'checkout'} Buyer`);
+      (pass.paymentProvider === 'owner_manual'
+        ? 'Direct Buyer'
+        : isTestIssuance
+        ? `${pass.paymentProvider || 'checkout'} Test`
+        : `${pass.paymentProvider || 'checkout'} Buyer`);
     PAID_PASS_LEDGER.set(normKey, {
       passKey: normKey,
       label,
@@ -1625,13 +1859,20 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
       bouquetsCreated: pass.dailyUsageCount || 0,
       blockedAttempts: 0,
       boundBouquetCode: pass.boundBouquetCode || null,
+      isTest: isTestIssuance,
       passRecord: pass,
     });
   }
 
+  recomputePaidRevenueFromLedgerServer();
+
+  const priceDisplay =
+    currency === 'PHP' ? `₱${(amountMinor / 100).toFixed(0)}` : `$${(amountMinor / 100).toFixed(2)}`;
   const eventSummary =
     options.summary ||
-    `Issued ${tier} Studio Pass (${region} ${currency === 'PHP' ? `₱${(amountMinor / 100).toFixed(0)}` : `$${(amountMinor / 100).toFixed(2)}`})`;
+    (isTestIssuance
+      ? `[TEST] Issued ${tier} Studio Pass (${region} ${priceDisplay} excluded from live income)`
+      : `Issued ${tier} Studio Pass (${region} ${priceDisplay})`);
   pushAnalyticsEventServer('monetization', 'pass_issued', eventSummary, 'mobile', region);
   return true;
 }
@@ -1640,13 +1881,8 @@ async function syncRealAnalyticsSnapshotServer() {
   // 0. Hydrate persistent Owner Analytics, Tester Vouchers, Revenue & Custom PIN from Firestore
   await hydratePersistentOwnerVaultServer();
 
-  // 1. Reconcile real issued Studio Passes & Tester Vouchers in SERVER_PASS_STORE
-  let singleCount = 0;
-  let pass7dCount = 0;
-  let pass30dCount = 0;
+  // 1. Reconcile real issued Studio Passes & Tester Vouchers, strictly excluding revoked & test passes
   let testerCount = TESTER_VOUCHER_LEDGER.size;
-  let usdCents = 0;
-  let phpCentavos = 0;
 
   for (const [key, pass] of SERVER_PASS_STORE.entries()) {
     if (
@@ -1662,42 +1898,13 @@ async function syncRealAnalyticsSnapshotServer() {
       continue;
     }
     ISSUED_PASS_KEYS.add(normalizePassKey(key));
-    if (pass.tier === 'single') {
-      singleCount += 1;
-      if (pass.region === 'PH') phpCentavos += 4900;
-      else usdCents += 299;
-    } else if (pass.tier === 'pass_7d') {
-      pass7dCount += 1;
-      if (pass.region === 'PH') phpCentavos += 9900;
-      else usdCents += 499;
-    } else if (pass.tier === 'pass_30d') {
-      pass30dCount += 1;
-      if (pass.region === 'PH') phpCentavos += 19900;
-      else usdCents += 899;
-    }
   }
 
-  OWNER_ANALYTICS_STATE.passesIssued.single = Math.max(
-    OWNER_ANALYTICS_STATE.passesIssued.single,
-    singleCount
-  );
-  OWNER_ANALYTICS_STATE.passesIssued.pass_7d = Math.max(
-    OWNER_ANALYTICS_STATE.passesIssued.pass_7d,
-    pass7dCount
-  );
-  OWNER_ANALYTICS_STATE.passesIssued.pass_30d = Math.max(
-    OWNER_ANALYTICS_STATE.passesIssued.pass_30d,
-    pass30dCount
-  );
   OWNER_ANALYTICS_STATE.passesIssued.tester = Math.max(
     OWNER_ANALYTICS_STATE.passesIssued.tester,
     testerCount
   );
-  OWNER_ANALYTICS_STATE.revenueUsdCents = Math.max(OWNER_ANALYTICS_STATE.revenueUsdCents, usdCents);
-  OWNER_ANALYTICS_STATE.revenuePhpCentavos = Math.max(
-    OWNER_ANALYTICS_STATE.revenuePhpCentavos,
-    phpCentavos
-  );
+  recomputePaidRevenueFromLedgerServer();
 
   // 2. Sync real global counters from Firestore studio_stats/global (stripping any legacy 1284/3910 seed offset)
   try {
@@ -2014,6 +2221,7 @@ export function mintPaidPassServer({
   region = 'PH',
   label = 'Direct Buyer',
   channel = 'manual_gcash',
+  isTest,
   nowMs = Date.now(),
 } = {}) {
   const cleanTier = isValidTier(tier) ? tier : 'pass_7d';
@@ -2025,6 +2233,9 @@ export function mintPaidPassServer({
       .slice(0, 32) || 'Direct Buyer';
   const cleanChannel = ALLOWED_MANUAL_CHANNELS.has(channel) ? channel : 'manual_gcash';
   const { currency, amountMinor } = resolvePaidPassCatalogMeta(cleanTier, cleanRegion);
+  const resolvedIsTest = Boolean(
+    isTest !== undefined ? isTest : OWNER_ANALYTICS_STATE.incomePausedForTesting
+  );
 
   const signedPass = createSignedStudioPassServer({
     tier: cleanTier,
@@ -2045,7 +2256,10 @@ export function mintPaidPassServer({
   recordPaidPassIssuanceServer(signedPass, {
     label: cleanLabel,
     channel: cleanChannel,
-    summary: `Minted Paid ${cleanTier} Key (${cleanRegion} ${priceText}) for "${cleanLabel}" via ${cleanChannel}`,
+    isTest: resolvedIsTest,
+    summary: resolvedIsTest
+      ? `[TEST] Minted ${cleanTier} Key (${cleanRegion} ${priceText} excluded from live income) for "${cleanLabel}"`
+      : `Minted Paid ${cleanTier} Key (${cleanRegion} ${priceText}) for "${cleanLabel}" via ${cleanChannel}`,
   });
 
   const ledgerEntry = PAID_PASS_LEDGER.get(signedPass.passKey);
@@ -2075,6 +2289,7 @@ export function revokePaidPassServer(passKey) {
     item.status = 'revoked';
     PAID_PASS_LEDGER.set(targetKey, item);
   }
+  recomputePaidRevenueFromLedgerServer();
   pushAnalyticsEventServer(
     'security',
     'paid_key_revoked',
@@ -2994,6 +3209,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ? SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey))
           : null;
         let confirmedPaid = orderSlot?.secondaryDeviceHash === 'PAID';
+        let verifiedLivemode = !sikatpay.isTestKey;
         const paymentId = pending.sikatpayPaymentId || orderSlot?.activeSessionNonce || '';
 
         // 3. Fallback: Query SikatPay GET /v1/payments/:id directly
@@ -3026,6 +3242,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
                 orderMatch
               ) {
                 confirmedPaid = true;
+                verifiedLivemode = !sikatpay.isTestKey && pJson?.livemode === true;
               }
             }
           } catch {
@@ -3043,6 +3260,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
+        await hydratePersistentOwnerVaultServer();
+        const isSikatpayTest =
+          sikatpay.isTestKey ||
+          !verifiedLivemode ||
+          Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
+
         pending.status = 'paid';
         const mintedPass = createSignedStudioPassServer({
           passKey: pending.passKey,
@@ -3051,7 +3274,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           deviceTokenHash: pending.deviceTokenHash,
           boundBouquetCode: pending.boundBouquetCode,
           paymentProvider: 'sikatpay',
-          paymentReference: `sp_${orderId || pending.checkoutId}`,
+          paymentReference: `${isSikatpayTest ? 'sptest' : 'sp'}_${orderId || pending.checkoutId}`,
         });
         SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
         await saveStudioPassToFirestoreRest(mintedPass);
@@ -3063,8 +3286,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           await saveStudioPassToFirestoreRest(paidSlot);
         }
 
-        await hydratePersistentOwnerVaultServer();
-        recordPaidPassIssuanceServer(mintedPass);
+        recordPaidPassIssuanceServer(mintedPass, {
+          isTest: isSikatpayTest,
+          label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
+        });
         await savePersistentOwnerVaultServer();
 
         sendJson(res, 200, { ok: true, pass: mintedPass });
@@ -3406,6 +3631,147 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
+      const trimmedOrderCandidate = rawKey.trim().toUpperCase();
+      const isSikatpayOrderLookup = /^SB-[A-F0-9]{8,16}$/.test(trimmedOrderCandidate);
+      const isBayadgateOrderLookup = /^BG[A-F0-9]{8,20}$/.test(trimmedOrderCandidate);
+
+      if ((isSikatpayOrderLookup || isBayadgateOrderLookup) && deviceTokenHash) {
+        const slotKey = isSikatpayOrderLookup
+          ? deriveSikatpayOrderSlotKey(trimmedOrderCandidate)
+          : deriveBayadgateOrderSlotKey(trimmedOrderCandidate);
+        const orderSlot =
+          SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+
+        if (!orderSlot || !verifyServerPaymentReference(orderSlot)) {
+          sendJson(res, 404, {
+            ok: false,
+            status: 'ORDER_NOT_FOUND',
+            message: 'Order ID not found. Make sure you are on the same browser used for checkout.',
+          });
+          return true;
+        }
+
+        if (orderSlot.primaryDeviceHash !== deviceTokenHash) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'DEVICE_MISMATCH',
+            message: 'This Order ID belongs to another browser or device.',
+          });
+          return true;
+        }
+
+        const packedMeta = String(orderSlot.boundBouquetCode || '');
+        const pipeIdx = packedMeta.indexOf('|');
+        const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
+        const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+        const targetPassKey = isValidPassKeyFormat(decodedPassKey)
+          ? decodedPassKey
+          : generatePassKeyCode();
+
+        let existingPass =
+          SERVER_PASS_STORE.get(targetPassKey) ||
+          (await fetchStudioPassFromFirestoreRest(targetPassKey));
+
+        if (
+          existingPass &&
+          verifyPassIntegritySignature(existingPass) &&
+          verifyServerPaymentReference(existingPass)
+        ) {
+          SERVER_PASS_STORE.set(existingPass.passKey, existingPass);
+          sendJson(res, 200, { ok: true, pass: existingPass });
+          return true;
+        }
+
+        let confirmedPaid = orderSlot.secondaryDeviceHash === 'PAID';
+        let verifiedLivemode = isSikatpayOrderLookup ? !getSikatpayConfig().isTestKey : true;
+        if (!confirmedPaid && isSikatpayOrderLookup) {
+          const sikatpay = getSikatpayConfig();
+          const paymentId = orderSlot.activeSessionNonce || '';
+          if (sikatpay.configured && paymentId) {
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 8000);
+              const spCheckRes = await fetch(
+                `${sikatpay.baseUrl}/payments/${encodeURIComponent(paymentId)}`,
+                {
+                  method: 'GET',
+                  headers: {
+                    Authorization: `Bearer ${sikatpay.apiKey}`,
+                    Accept: 'application/json',
+                  },
+                  signal: controller.signal,
+                }
+              );
+              clearTimeout(timer);
+              if (spCheckRes.ok) {
+                const pJson = await spCheckRes.json().catch(() => null);
+                const tier = isValidTier(orderSlot.tier) ? orderSlot.tier : 'pass_7d';
+                const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+                const livemodeOk = sikatpay.isTestKey || pJson?.livemode === true;
+                const orderMatch =
+                  !pJson?.order_id || pJson.order_id === trimmedOrderCandidate;
+                if (
+                  pJson?.status === 'paid' &&
+                  String(pJson?.currency || '').toUpperCase() === 'PHP' &&
+                  Number(pJson?.amount) === expectedMinor &&
+                  livemodeOk &&
+                  orderMatch
+                ) {
+                  confirmedPaid = true;
+                  verifiedLivemode = !sikatpay.isTestKey && pJson?.livemode === true;
+                }
+              }
+            } catch {
+              // Fall through to pending response
+            }
+          }
+        }
+
+        if (!confirmedPaid) {
+          sendJson(res, 402, {
+            ok: false,
+            status: 'PENDING_PAYMENT',
+            message:
+              'Payment for this Order ID is not confirmed yet. Complete payment and try again in a few seconds.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        const isSikatpayTest =
+          isSikatpayOrderLookup &&
+          (getSikatpayConfig().isTestKey ||
+            !verifiedLivemode ||
+            Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting));
+
+        const resolvedTier = isValidTier(orderSlot.tier) ? orderSlot.tier : 'pass_7d';
+        const mintedPass = createSignedStudioPassServer({
+          passKey: targetPassKey,
+          tier: resolvedTier,
+          region: 'PH',
+          deviceTokenHash: orderSlot.primaryDeviceHash,
+          boundBouquetCode: decodedBouquetCode || null,
+          paymentProvider: isSikatpayOrderLookup ? 'sikatpay' : 'bayadgate',
+          paymentReference: `${isSikatpayOrderLookup ? (isSikatpayTest ? 'sptest' : 'sp') : 'bg'}_${trimmedOrderCandidate}`,
+        });
+        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+        await saveStudioPassToFirestoreRest(mintedPass);
+
+        const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+        paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+        SERVER_PASS_STORE.set(slotKey, paidSlot);
+        await saveStudioPassToFirestoreRest(paidSlot);
+
+        recordPaidPassIssuanceServer(mintedPass, {
+          isTest: isSikatpayTest,
+          label: isSikatpayTest ? 'SikatPay Test' : undefined,
+        });
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, { ok: true, pass: mintedPass });
+        return true;
+      }
+
       const passKey = normalizePassKey(rawKey);
 
       // Prevent internal Ko-fi/BayadGate/SikatPay receipt slots (`BLOOM-KS...`, `BLOOM-BG...`, `BLOOM-SP...`, `BLOOM-KCFG-SHOP`) from being redeemed directly as user keys
@@ -3420,7 +3786,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         sendJson(res, 400, {
           ok: false,
           status: 'INVALID_FORMAT',
-          message: 'Please enter a valid Pass Key (e.g., BLOOM-7K4M-9P2X).',
+          message: 'Please enter a valid Pass Key (BLOOM-XXXX-XXXX) or Order ID (SB-...).',
         });
         return true;
       }
@@ -3746,6 +4112,88 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
         sendJson(res, 200, {
           ok: true,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4D-3b. Toggle Income Pause Mode (for safe end-to-end webhook testing without inflating revenue)
+      if (actionType === 'toggle_income_pause') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        toggleIncomePauseServer(typeof parsed.paused === 'boolean' ? parsed.paused : undefined);
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4D-3c. Reset Dashboard Income to $0.00 and optionally clear revoked/test keys
+      if (actionType === 'reset_owner_income') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        resetOwnerIncomeServer({
+          purgeTestAndRevoked: parsed.purgeTestAndRevoked !== false,
+        });
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4D-3d. Clear Test & Revoked keys from Issued Paid Keys ledger
+      if (actionType === 'clear_test_and_revoked_keys') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        const removedCount = clearTestAndRevokedPaidKeysServer();
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          removedCount,
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),
@@ -4432,6 +4880,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
       const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
 
+      await hydratePersistentOwnerVaultServer();
+      const isSikatpayTest =
+        sikatpay.isTestKey ||
+        !paymentLivemode ||
+        Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
+
       const mintedPass = createSignedStudioPassServer({
         passKey: targetPassKey,
         tier,
@@ -4439,7 +4893,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         deviceTokenHash: targetDeviceHash,
         boundBouquetCode: targetBouquetCode,
         paymentProvider: 'sikatpay',
-        paymentReference: `sp_${orderId}`,
+        paymentReference: `${isSikatpayTest ? 'sptest' : 'sp'}_${orderId}`,
       });
 
       SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
@@ -4456,11 +4910,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         pendingEntry.status = 'paid';
       }
 
-      await hydratePersistentOwnerVaultServer();
-      recordPaidPassIssuanceServer(mintedPass);
+      recordPaidPassIssuanceServer(mintedPass, {
+        isTest: isSikatpayTest,
+        label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
+      });
       await savePersistentOwnerVaultServer();
 
-      sendJson(res, 200, { ok: true, passKey: mintedPass.passKey });
+      sendJson(res, 200, { ok: true, passKey: mintedPass.passKey, isTest: isSikatpayTest });
       return true;
     }
 

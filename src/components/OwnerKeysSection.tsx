@@ -23,6 +23,9 @@ interface OwnerKeysSectionProps {
     paidPasses?: PaidPassLedgerItem[];
   }) => void;
   onToast: (msg: string) => void;
+  incomePausedForTesting?: boolean;
+  isClearingKeys?: boolean;
+  onClearTestAndRevoked?: () => void;
 }
 
 const PAID_TIER_OPTIONS: Array<{
@@ -63,6 +66,18 @@ const CHANNEL_OPTIONS: Array<{ id: PaidPassChannel; label: string }> = [
   { id: 'other', label: 'Other' },
 ];
 
+const CHANNEL_LABELS: Record<string, string> = {
+  manual_gcash: 'GCash Manual',
+  manual_maya: 'Maya Manual',
+  manual_bank: 'Bank Transfer',
+  kofi: 'Ko-fi Direct',
+  sikatpay: 'SikatPay',
+  sikatpay_test: 'SikatPay Test',
+  bayadgate: 'BayadGate',
+  paymongo: 'PayMongo',
+  other: 'Other',
+};
+
 export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
   adminSessionToken,
   deviceTokenHash,
@@ -73,6 +88,9 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
   onCopyText,
   onSyncResponse,
   onToast,
+  incomePausedForTesting = false,
+  isClearingKeys = false,
+  onClearTestAndRevoked,
 }) => {
   const [keyMode, setKeyMode] = useState<'paid' | 'tester'>('paid');
 
@@ -309,7 +327,9 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               >
                 Generate Paid Key
               </h2>
-              <span className="text-[11px] opacity-60">Recorded in live revenue</span>
+              <span className="text-[11px] opacity-60">
+                {incomePausedForTesting ? 'Paused (marked Test)' : 'Recorded in live revenue'}
+              </span>
             </div>
 
             <div>
@@ -463,14 +483,39 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
 
           {/* Paid Keys Ledger (Clean 1px hairline list — zero nested card boxes or metadata pills) */}
           <div className={`lg:col-span-7 rounded-xl border p-5 ${panelClass}`}>
-            <div className="flex items-center justify-between mb-3">
-              <h2
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                className="text-xl font-medium"
-              >
-                Issued Paid Keys
-              </h2>
-              <span className="text-xs opacity-60 tabular-nums">{paidPasses.length} keys</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-baseline gap-2.5">
+                <h2
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  className="text-xl font-medium"
+                >
+                  Issued Paid Keys
+                </h2>
+                <span className="text-xs opacity-60 tabular-nums">{paidPasses.length} keys</span>
+              </div>
+              {(() => {
+                const clearableCount = paidPasses.filter(
+                  (p) =>
+                    p.status === 'revoked' ||
+                    p.isTest ||
+                    p.channel === 'sikatpay_test' ||
+                    p.archivedFromIncome
+                ).length;
+                if (clearableCount === 0 || !onClearTestAndRevoked) return null;
+                return (
+                  <button
+                    data-testid="clear-test-revoked-keys-btn"
+                    type="button"
+                    disabled={isClearingKeys}
+                    onClick={onClearTestAndRevoked}
+                    className={`px-2.5 py-1 rounded-md border text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${hairlineBorder} hover:bg-current/5`}
+                  >
+                    {isClearingKeys
+                      ? 'Clearing...'
+                      : `Clear Test & Revoked (${clearableCount})`}
+                  </button>
+                );
+              })()}
             </div>
 
             {paidPasses.length === 0 ? (
@@ -526,6 +571,11 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                           >
                             · {statusLabel}
                           </span>
+                          {(p.isTest || p.channel === 'sikatpay_test') && (
+                            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                              · Test
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs opacity-65 font-mono tabular-nums flex items-center gap-2 flex-wrap">
                           <span>{p.passKey}</span>
@@ -535,7 +585,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                           </span>
                           <span>·</span>
                           <span className="font-sans">
-                            {CHANNEL_OPTIONS.find((c) => c.id === p.channel)?.label || p.channel}
+                            {CHANNEL_LABELS[p.channel] || p.channel}
                           </span>
                           {p.bouquetsCreated > 0 && (
                             <>

@@ -158,6 +158,7 @@ import {
   StudioCheckoutModal,
   CoutureBloomSeal,
   CoutureItemBadge,
+  fetchCheckoutCapability,
 } from './StudioCheckoutModal';
 import { BotanicalQrCard } from './BotanicalQrCard';
 import { StealthGateAndOwnerConsole } from './OwnerAnalyticsConsole';
@@ -461,9 +462,12 @@ export default function App() {
       }
       lastServerVerifiedPassSigRef.current = res.updatedPass.signature;
       if (
+        !activeStudioPass ||
+        activeStudioPass.passKey !== res.updatedPass.passKey ||
         res.updatedPass.signature !== candidate.signature ||
         res.updatedPass.dailyUsageCount !== candidate.dailyUsageCount
       ) {
+        clearPendingCheckoutStorage();
         saveStoredStudioPass(res.updatedPass);
         setActiveStudioPass(res.updatedPass);
       }
@@ -735,6 +739,11 @@ export default function App() {
       window.removeEventListener('keydown', unlockAudio);
       musicBox.stop();
     };
+  }, []);
+
+  // Warm checkout region capability in background so opening Studio Pass never flashes USD/PHP
+  useEffect(() => {
+    void fetchCheckoutCapability();
   }, []);
 
   const handleToggleMusic = () => {
@@ -1179,10 +1188,12 @@ export default function App() {
         });
     }
 
-    // Auto-verify BayadGate / gateway redirect return (`/?checkout_success=<checkoutId>`)
+    // Auto-verify gateway redirect return (`/?checkout_success=<checkoutId>`) OR silently recover any paid pending order on load
     const urlParams = new URLSearchParams(window.location.search);
     const checkoutSuccessId = urlParams.get('checkout_success');
     const checkoutCancelled = urlParams.get('checkout_cancelled');
+    const pendingRecord = loadPendingCheckoutStorage();
+
     if (checkoutSuccessId || checkoutCancelled) {
       try {
         urlParams.delete('checkout_success');
@@ -1197,44 +1208,75 @@ export default function App() {
       setShowLandingPage(false);
 
       if (checkoutCancelled) {
-        triggerToast('Payment was cancelled. You can choose another wallet anytime.');
-      } else if (checkoutSuccessId) {
-        const pendingRecord = loadPendingCheckoutStorage();
-        if (pendingRecord && pendingRecord.checkoutId === checkoutSuccessId) {
-          const deviceTokenHash = getOrCreateDeviceTokenHash();
-          fetch('/api/payments/verify-and-issue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              checkoutId: pendingRecord.checkoutId,
-              checkoutToken: pendingRecord.checkoutToken,
-              deviceTokenHash,
-            }),
-          })
-            .then(async (res) => {
-              const data = await res.json().catch(() => ({}));
-              if (res.ok && data.ok && data.pass) {
-                clearPendingCheckoutStorage();
-                lastServerVerifiedPassSigRef.current = data.pass.signature;
-                saveStoredStudioPass(data.pass);
-                setActiveStudioPass(data.pass);
-                triggerToast('Payment confirmed — Bloom Pass activated!');
-              } else {
-                setCheckoutTriggerAction(pendingRecord.resumeAction || 'pass_menu');
-                setIsCheckoutModalOpen(true);
-                triggerToast(
-                  data.message ||
-                    'Awaiting wallet confirmation — tap Verify Order inside the pass dialog.'
-                );
-              }
-            })
-            .catch(() => {
-              setCheckoutTriggerAction(pendingRecord.resumeAction || 'pass_menu');
-              setIsCheckoutModalOpen(true);
-              triggerToast('Could not confirm payment yet — please verify in the pass dialog.');
+        triggerToast('Payment was cancelled — your bouquet and order remain saved.');
+      } else if (checkoutSuccessId && pendingRecord) {
+        const deviceTokenHash = getOrCreateDeviceTokenHash();
+        const attemptVerifyOnReturn = async (attempt: number): Promise<void> => {
+          try {
+            const res = await fetch('/api/payments/verify-and-issue', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                checkoutId: pendingRecord.checkoutId,
+                checkoutToken: pendingRecord.checkoutToken,
+                deviceTokenHash,
+              }),
             });
-        }
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.ok && data.pass) {
+              clearPendingCheckoutStorage();
+              lastServerVerifiedPassSigRef.current = data.pass.signature;
+              saveStoredStudioPass(data.pass);
+              setActiveStudioPass(data.pass);
+              triggerToast('Payment confirmed — Bloom Pass activated!');
+              return;
+            }
+            if (res.status === 402 && attempt < 2) {
+              window.setTimeout(() => {
+                void attemptVerifyOnReturn(attempt + 1);
+              }, 1400);
+              return;
+            }
+            setCheckoutTriggerAction(pendingRecord.resumeAction || 'pass_menu');
+            setIsCheckoutModalOpen(true);
+            triggerToast(
+              data.message || 'Confirming your payment — checking status automatically.'
+            );
+          } catch {
+            setCheckoutTriggerAction(pendingRecord.resumeAction || 'pass_menu');
+            setIsCheckoutModalOpen(true);
+            triggerToast('Could not confirm payment yet — checking in the pass dialog.');
+          }
+        };
+        void attemptVerifyOnReturn(0);
       }
+    } else if (
+      pendingRecord &&
+      pendingRecord.provider !== 'kofi' &&
+      !getStoredStudioPass()
+    ) {
+      // Background recovery: if user paid, closed modal/tab, and returned later without ?checkout_success=
+      const deviceTokenHash = getOrCreateDeviceTokenHash();
+      fetch('/api/payments/verify-and-issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkoutId: pendingRecord.checkoutId,
+          checkoutToken: pendingRecord.checkoutToken,
+          deviceTokenHash,
+        }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok && data.pass) {
+            clearPendingCheckoutStorage();
+            lastServerVerifiedPassSigRef.current = data.pass.signature;
+            saveStoredStudioPass(data.pass);
+            setActiveStudioPass(data.pass);
+            triggerToast('Payment confirmed — Bloom Pass activated!');
+          }
+        })
+        .catch(() => {});
     }
 
     return () => window.removeEventListener('popstate', handlePopState);
@@ -6901,14 +6943,6 @@ export default function App() {
           setShowLandingPage(false);
         }}
         onPassActivated={async (newPass, resumeAction) => {
-          if (newPass.tier === 'single') {
-            setIsCheckoutModalOpen(false);
-            await handleShareLink(true, newPass);
-            if (resumeAction === 'png') {
-              await performSvgPngDownload();
-            }
-            return;
-          }
           lastServerVerifiedPassSigRef.current = newPass.signature;
           saveStoredStudioPass(newPass);
           setActiveStudioPass(newPass);
@@ -6918,6 +6952,9 @@ export default function App() {
           } else if (resumeAction === 'png') {
             setIsCheckoutModalOpen(false);
             await performSvgPngDownload();
+          } else if (newPass.tier === 'single') {
+            setIsCheckoutModalOpen(false);
+            triggerToast('Single Bouquet Unlock activated — ready to share or export!');
           } else {
             triggerToast('Bloom Pass Activated!');
           }
