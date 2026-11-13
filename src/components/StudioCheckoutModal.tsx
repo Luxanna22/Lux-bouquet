@@ -735,13 +735,16 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       });
       const data = await res.json();
       if (!res.ok || !data.ok || !data.pass) {
-        setErrorMessage(data.message || 'Payment not confirmed yet.');
+        setErrorMessage(
+          data.message ||
+            'Your payment is still being confirmed. Please complete payment and tap Verify Order again in a moment.'
+        );
         return;
       }
 
       await activateVerifiedPass(data.pass as StudioPassRecord);
     } catch {
-      setErrorMessage('Could not verify pass.');
+      setErrorMessage('We couldn’t reach the verification server right now. Please try again in a moment.');
     } finally {
       setIsProcessing(false);
     }
@@ -792,7 +795,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     const isOrderIdLookup = /^(SB-[A-F0-9]{8,16}|BG[A-F0-9]{8,20})$/.test(upperTrimmed);
     const cleanedKey = isOrderIdLookup ? upperTrimmed : normalizePassKey(redeemInput);
     if (!cleanedKey) {
-      setErrorMessage('Enter your BLOOM-XXXX-XXXX key or Order ID (SB-...).');
+      setErrorMessage('Please enter your BLOOM-XXXX-XXXX Pass Key or SB-... Order ID.');
       return;
     }
 
@@ -811,7 +814,10 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       });
       const data = await res.json();
       if (!res.ok || !data.ok || !data.pass) {
-        setErrorMessage(data.message || 'Invalid or already bound Pass Key.');
+        setErrorMessage(
+          data.message ||
+            'We couldn’t activate that key. Please double-check your code or choose a Studio Pass in the Passes tab.'
+        );
         return;
       }
 
@@ -824,7 +830,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setRedeemInput('');
       setActiveView('pass_card');
     } catch {
-      setErrorMessage('Could not verify Pass Key.');
+      setErrorMessage('We couldn’t verify your Pass Key right now. Please check your connection and try again.');
     } finally {
       setIsProcessing(false);
     }

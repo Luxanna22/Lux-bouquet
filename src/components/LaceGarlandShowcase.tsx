@@ -30,15 +30,6 @@ import {
   syncDocumentSeoMeta,
 } from '../lib/seoMeta';
 
-const DEFAULT_GARLAND_NAMES = new Set([
-  '',
-  'my dearest',
-  'yours always',
-  'someone special',
-  'yours',
-  'secret admirer',
-]);
-
 /**
  * Shared hook to merge user's locally saved/shared bouquets and the Firestore global Lace Garland feed
  * with the curated community showcase, deduplicating by short code (and collapsing older drafts),
@@ -112,7 +103,6 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       return tB - tA;
     });
     const seenCodes = new Set<string>();
-    const seenCustomRecipientSender = new Map<string, number>();
     const userEntries: ShowcaseBouquetEntry[] = [];
 
     for (let idx = 0; idx < combinedVault.length; idx++) {
@@ -123,24 +113,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       if (v.code && seenCodes.has(v.code)) {
         continue;
       }
-
-      const normTo = (v.to || v.recipientName || '').trim().toLowerCase();
-      const normFrom = (v.from || v.senderName || '').trim().toLowerCase();
-      const hasCustomNames = !DEFAULT_GARLAND_NAMES.has(normTo) || !DEFAULT_GARLAND_NAMES.has(normFrom);
-      const recipientSenderKey = `${normTo}__${normFrom}`;
-      const vTime = Date.parse(v.createdAt || '') || 0;
-
-      // Only collapse rapid-fire re-shares for the exact same custom recipient/sender within 30 minutes
-      if (hasCustomNames && seenCustomRecipientSender.has(recipientSenderKey)) {
-        const newestTime = seenCustomRecipientSender.get(recipientSenderKey) || 0;
-        if (Math.abs(newestTime - vTime) < 30 * 60 * 1000) {
-          continue;
-        }
-      }
       if (v.code) seenCodes.add(v.code);
-      if (hasCustomNames && !seenCustomRecipientSender.has(recipientSenderKey)) {
-        seenCustomRecipientSender.set(recipientSenderKey, vTime);
-      }
 
       const firestoreRecord = v.code ? hydratedRecords[v.code] : undefined;
       let decodedSnap = null;

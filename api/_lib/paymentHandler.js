@@ -721,7 +721,7 @@ export function validateAndBindPassRedemptionServer(
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'Invalid Pass Key format. Expected BLOOM-XXXX-XXXX.',
+      message: 'Please enter a valid Pass Key (BLOOM-XXXX-XXXX) or switch to the Passes tab.',
     };
   }
 
@@ -735,7 +735,7 @@ export function validateAndBindPassRedemptionServer(
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'Please enter a valid Pass Key (e.g., BLOOM-7K4M-9P2X).',
+      message: 'Please enter your BLOOM-XXXX-XXXX Pass Key or SB-... Order ID.',
     };
   }
 
@@ -743,7 +743,8 @@ export function validateAndBindPassRedemptionServer(
     return {
       valid: false,
       status: 'TAMPERED_SIGNATURE',
-      message: 'This Pass Key failed server security verification.',
+      message:
+        'We couldn’t verify this Pass Key. Please double-check your BLOOM-XXXX-XXXX code or choose a pass in the Passes tab.',
     };
   }
   const ledgerEntry = PAID_PASS_LEDGER.get(normKey);
@@ -756,7 +757,8 @@ export function validateAndBindPassRedemptionServer(
     return {
       valid: false,
       status: 'REVOKED',
-      message: 'This voucher key has been revoked by the studio owner.',
+      message:
+        'This pass or order is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
     };
   }
 
@@ -765,9 +767,8 @@ export function validateAndBindPassRedemptionServer(
     return {
       valid: false,
       status: 'EXPIRED',
-      message: isTesterVoucherPassServer(existingRecord)
-        ? 'This Tester Voucher has expired.'
-        : 'This Studio Pass has expired.',
+      message:
+        'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
     };
   }
 
@@ -779,7 +780,7 @@ export function validateAndBindPassRedemptionServer(
         valid: false,
         status: 'SINGLE_BOUQUET_ALREADY_USED',
         message:
-          'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+          'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
       };
     }
   }
@@ -797,7 +798,7 @@ export function validateAndBindPassRedemptionServer(
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
         message:
-          'This Tester Voucher is locked to the first device that claimed it and cannot be shared or forwarded to others.',
+          'This complimentary Tester Pass is already active on another device. Please return to the original browser where you first claimed it, or choose a Studio Pass in the Passes tab.',
       };
     }
     if (!nextSecondary) {
@@ -807,7 +808,7 @@ export function validateAndBindPassRedemptionServer(
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
         message:
-          'This Pass Key is already locked to its owner’s devices and cannot be shared with additional people.',
+          'This Pass Key is already linked to its maximum of 2 devices. Please open the Studio on one of your linked devices, or choose a new pass in the Passes tab.',
       };
     }
   }
@@ -842,7 +843,7 @@ export function verifyActiveStudioPassForActionServer(params) {
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'No active Studio Pass found.',
+      message: 'Please unlock a Studio Pass or enter your Pass Key under "Have a Key?" to continue.',
     };
   }
 
@@ -856,7 +857,7 @@ export function verifyActiveStudioPassForActionServer(params) {
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'No valid Studio Pass found.',
+      message: 'Please unlock a Studio Pass or enter your Pass Key under "Have a Key?" to continue.',
     };
   }
 
@@ -864,7 +865,8 @@ export function verifyActiveStudioPassForActionServer(params) {
     return {
       valid: false,
       status: 'TAMPERED_SIGNATURE',
-      message: 'Studio Pass cryptographic verification failed.',
+      message:
+        'We couldn’t verify this Pass Key. Please re-enter your BLOOM-XXXX-XXXX code under "Have a Key?" or choose a pass in the Passes tab.',
     };
   }
   if (
@@ -875,7 +877,8 @@ export function verifyActiveStudioPassForActionServer(params) {
     return {
       valid: false,
       status: 'REVOKED',
-      message: 'Your Tester Voucher has been revoked.',
+      message:
+        'This pass is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
     };
   }
 
@@ -884,9 +887,8 @@ export function verifyActiveStudioPassForActionServer(params) {
     return {
       valid: false,
       status: 'EXPIRED',
-      message: isTesterVoucherPassServer(pass)
-        ? 'Your Tester Voucher has expired.'
-        : 'Your Studio Pass has expired.',
+      message:
+        'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
     };
   }
 
@@ -904,7 +906,8 @@ export function verifyActiveStudioPassForActionServer(params) {
       return {
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
-        message: 'This Tester Voucher is locked to another device and cannot be shared.',
+        message:
+          'This complimentary Tester Pass is already active on another device. Please return to the original browser where you first claimed it, or choose a Studio Pass in the Passes tab.',
       };
     }
   } else if (
@@ -914,7 +917,8 @@ export function verifyActiveStudioPassForActionServer(params) {
     return {
       valid: false,
       status: 'DEVICE_LIMIT_EXCEEDED',
-      message: 'This Pass Key belongs to another device.',
+      message:
+        'This Pass Key is already linked to its maximum of 2 devices. Please open the Studio on one of your linked devices, or choose a new pass in the Passes tab.',
     };
   }
 
@@ -936,7 +940,7 @@ export function verifyActiveStudioPassForActionServer(params) {
       valid: false,
       status: 'SESSION_SUPERSEDED',
       message:
-        'This Pass Key was activated on another device or browser. Only 1 active session is allowed at a time.',
+        'Your Pass Key was recently opened on another device. To continue crafting here, simply re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
     };
   }
 
@@ -957,7 +961,7 @@ export function verifyActiveStudioPassForActionServer(params) {
         valid: false,
         status: 'SINGLE_BOUQUET_ALREADY_USED',
         message:
-          'This Single-Bouquet Unlock was already used for another bouquet. Grab a 7-Day or 30-Day Pass for unlimited creations!',
+          'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
       };
     }
     if (isSinglePassConsumedServer(pass)) {
@@ -972,7 +976,7 @@ export function verifyActiveStudioPassForActionServer(params) {
           valid: false,
           status: 'SINGLE_BOUQUET_ALREADY_USED',
           message:
-            'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!',
+            'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
         };
       }
     }
@@ -997,8 +1001,8 @@ export function verifyActiveStudioPassForActionServer(params) {
       status: pass.tier === 'single' && !isTester ? 'SINGLE_BOUQUET_ALREADY_USED' : 'DAILY_LIMIT_REACHED',
       message:
         pass.tier === 'single' && !isTester
-          ? 'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!'
-          : `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
+          ? 'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.'
+          : `You’ve reached today’s fair-use limit (${maxDailyAllowed} bouquets/day). Your pass will automatically refresh tomorrow!`,
     };
   }
 
@@ -3490,7 +3494,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             sendJson(res, 403, {
               ok: false,
               status: 'EXPIRED',
-              message: 'This Studio Pass / Order ID has expired.',
+              message:
+                'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
             });
             return true;
           }
@@ -3502,7 +3507,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             sendJson(res, 403, {
               ok: false,
               status: 'REVOKED',
-              message: 'This pass has been revoked by the studio owner.',
+              message:
+                'This pass or order is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
             });
             return true;
           }
@@ -3511,7 +3517,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               ok: false,
               status: 'SINGLE_BOUQUET_ALREADY_USED',
               message:
-                'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+                'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
             });
             return true;
           }
@@ -3658,7 +3664,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             sendJson(res, 403, {
               ok: false,
               status: 'EXPIRED',
-              message: 'This Studio Pass / Order ID has expired.',
+              message:
+                'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
             });
             return true;
           }
@@ -3670,7 +3677,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             sendJson(res, 403, {
               ok: false,
               status: 'REVOKED',
-              message: 'This pass has been revoked by the studio owner.',
+              message:
+                'This pass or order is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
             });
             return true;
           }
@@ -3679,7 +3687,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               ok: false,
               status: 'SINGLE_BOUQUET_ALREADY_USED',
               message:
-                'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+                'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
             });
             return true;
           }
@@ -3908,7 +3916,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             ok: false,
             status: 'ORDER_ALREADY_CLAIMED',
             message:
-              'This Ko-fi Shop order has already been claimed. Check "My Key" or place a new order on Ko-fi Shop.',
+              'This Ko-fi Shop order has already been activated. Enter your saved BLOOM-XXXX-XXXX key under "Have a Key?", or start a fresh order in the Passes tab.',
           });
           return true;
         }
@@ -4034,7 +4042,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sendJson(res, 404, {
             ok: false,
             status: 'ORDER_NOT_FOUND',
-            message: 'Order ID not found. Make sure you are on the same browser used for checkout.',
+            message:
+              'We couldn’t find that Order ID yet. Please check the code, or open this page in the same browser where you started checkout.',
           });
           return true;
         }
@@ -4043,7 +4052,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sendJson(res, 403, {
             ok: false,
             status: 'DEVICE_MISMATCH',
-            message: 'This Order ID belongs to another browser or device.',
+            message:
+              'For your security, Order IDs can only be activated on the same browser where checkout was started. Please enter your BLOOM-XXXX-XXXX Pass Key instead, or return to your original browser.',
           });
           return true;
         }
@@ -4053,7 +4063,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sendJson(res, 403, {
             ok: false,
             status: 'EXPIRED',
-            message: 'This Studio Pass / Order ID has expired.',
+            message:
+              'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
           });
           return true;
         }
@@ -4074,7 +4085,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sendJson(res, 403, {
             ok: false,
             status: 'REVOKED',
-            message: 'This voucher key has been revoked by the studio owner.',
+            message:
+              'This pass or order is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
           });
           return true;
         }
@@ -4126,7 +4138,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             ok: false,
             status: 'SINGLE_BOUQUET_ALREADY_USED',
             message:
-              'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
+              'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
           });
           return true;
         }
@@ -4254,7 +4266,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         sendJson(res, 404, {
           ok: false,
           status: 'NOT_FOUND',
-          message: 'Pass Key not found. Double-check your code or complete checkout first.',
+          message:
+            'We couldn’t find that Pass Key yet. Please check for typos, or switch to the Passes tab if you still need to complete checkout.',
         });
         return true;
       }
@@ -4906,7 +4919,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         sendJson(res, 403, {
           ok: false,
           status: 'INVALID_FORMAT',
-          message: 'No valid Studio Pass found.',
+          message: 'Please unlock a Studio Pass or enter your Pass Key under "Have a Key?" to continue.',
         });
         return true;
       }
@@ -4919,7 +4932,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         sendJson(res, 403, {
           ok: false,
           status: 'NOT_FOUND',
-          message: 'Studio Pass could not be verified on the server.',
+          message:
+            'We couldn’t verify your active pass right now. Please re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
         });
         return true;
       }

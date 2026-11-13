@@ -949,7 +949,7 @@ export function validateAndBindPassRedemption(
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'Invalid Pass Key format. Expected BLOOM-XXXX-XXXX.',
+      message: 'Please enter a valid Pass Key (BLOOM-XXXX-XXXX) or switch to the Passes tab.',
     };
   }
 
@@ -957,7 +957,8 @@ export function validateAndBindPassRedemption(
     return {
       valid: false,
       status: 'TAMPERED_SIGNATURE',
-      message: 'This Pass Key failed security verification.',
+      message:
+        'We couldn’t verify this Pass Key. Please double-check your BLOOM-XXXX-XXXX code or choose a pass in the Passes tab.',
     };
   }
 
@@ -968,7 +969,8 @@ export function validateAndBindPassRedemption(
     return {
       valid: false,
       status: 'REVOKED',
-      message: 'This voucher key has been revoked by the studio owner.',
+      message:
+        'This pass or order is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
     };
   }
 
@@ -977,9 +979,8 @@ export function validateAndBindPassRedemption(
     return {
       valid: false,
       status: 'EXPIRED',
-      message: isTesterVoucherPass(existingRecord)
-        ? 'This Tester Voucher has expired.'
-        : 'This Studio Pass has expired.',
+      message:
+        'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
     };
   }
 
@@ -998,7 +999,7 @@ export function validateAndBindPassRedemption(
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
         message:
-          'This Tester Voucher is locked to the first device that claimed it and cannot be shared or forwarded to others.',
+          'This complimentary Tester Pass is already active on another device. Please return to the original browser where you first claimed it, or choose a Studio Pass in the Passes tab.',
       };
     }
     if (!nextSecondary) {
@@ -1010,7 +1011,7 @@ export function validateAndBindPassRedemption(
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
         message:
-          'This Pass Key is already locked to its owner’s devices and cannot be shared with additional people.',
+          'This Pass Key is already linked to its maximum of 2 devices. Please open the Studio on one of your linked devices, or choose a new pass in the Passes tab.',
       };
     }
   }
@@ -1059,7 +1060,7 @@ export function verifyActiveStudioPassForAction(params: {
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'No active Studio Pass found.',
+      message: 'Please unlock a Studio Pass or enter your Pass Key under "Have a Key?" to continue.',
     };
   }
 
@@ -1067,7 +1068,8 @@ export function verifyActiveStudioPassForAction(params: {
     return {
       valid: false,
       status: 'TAMPERED_SIGNATURE',
-      message: 'Studio Pass signature verification failed.',
+      message:
+        'We couldn’t verify this Pass Key. Please re-enter your BLOOM-XXXX-XXXX code under "Have a Key?" or choose a pass in the Passes tab.',
     };
   }
 
@@ -1078,7 +1080,8 @@ export function verifyActiveStudioPassForAction(params: {
     return {
       valid: false,
       status: 'REVOKED',
-      message: 'Your Tester Voucher has been revoked.',
+      message:
+        'This pass is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
     };
   }
 
@@ -1087,9 +1090,8 @@ export function verifyActiveStudioPassForAction(params: {
     return {
       valid: false,
       status: 'EXPIRED',
-      message: isTesterVoucherPass(pass)
-        ? 'Your Tester Voucher has expired.'
-        : 'Your Studio Pass has expired.',
+      message:
+        'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
     };
   }
 
@@ -1099,7 +1101,8 @@ export function verifyActiveStudioPassForAction(params: {
       return {
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
-        message: 'This Tester Voucher is locked to another device and cannot be shared.',
+        message:
+          'This complimentary Tester Pass is already active on another device. Please return to the original browser where you first claimed it, or choose a Studio Pass in the Passes tab.',
       };
     }
   } else if (
@@ -1109,7 +1112,8 @@ export function verifyActiveStudioPassForAction(params: {
     return {
       valid: false,
       status: 'DEVICE_LIMIT_EXCEEDED',
-      message: 'This Pass Key belongs to another device.',
+      message:
+        'This Pass Key is already linked to its maximum of 2 devices. Please open the Studio on one of your linked devices, or choose a new pass in the Passes tab.',
     };
   }
 
@@ -1131,7 +1135,7 @@ export function verifyActiveStudioPassForAction(params: {
       valid: false,
       status: 'SESSION_SUPERSEDED',
       message:
-        'This Pass Key was activated on another device or browser. Only 1 active session is allowed at a time.',
+        'Your Pass Key was recently opened on another device. To continue crafting here, simply re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
     };
   }
 
@@ -1149,7 +1153,7 @@ export function verifyActiveStudioPassForAction(params: {
         valid: false,
         status: 'SINGLE_BOUQUET_ALREADY_USED',
         message:
-          'This Single-Bouquet Unlock was already used for another bouquet. Grab a 7-Day or 30-Day Pass for unlimited creations!',
+          'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
       };
     }
     if (singleAlreadyUsed) {
@@ -1164,7 +1168,7 @@ export function verifyActiveStudioPassForAction(params: {
           valid: false,
           status: 'SINGLE_BOUQUET_ALREADY_USED',
           message:
-            'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!',
+            'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
         };
       }
     }
@@ -1189,8 +1193,8 @@ export function verifyActiveStudioPassForAction(params: {
       status: pass.tier === 'single' && !isTester ? 'SINGLE_BOUQUET_ALREADY_USED' : 'DAILY_LIMIT_REACHED',
       message:
         pass.tier === 'single' && !isTester
-          ? 'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass for unlimited creations!'
-          : `Fair-use limit reached (${maxDailyAllowed} bouquets/day). Your pass resets tomorrow!`,
+          ? 'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.'
+          : `You’ve reached today’s fair-use limit (${maxDailyAllowed} bouquets/day). Your pass will automatically refresh tomorrow!`,
     };
   }
 
@@ -1269,7 +1273,7 @@ export async function verifyStudioPassOnServer(params: {
     return {
       valid: false,
       status: 'INVALID_FORMAT',
-      message: 'No active Studio Pass found.',
+      message: 'Please unlock a Studio Pass or enter your Pass Key under "Have a Key?" to continue.',
     };
   }
   try {
@@ -1299,7 +1303,7 @@ export async function verifyStudioPassOnServer(params: {
         status: data.status || 'TAMPERED_SIGNATURE',
         message:
           data.message ||
-          'Your Studio Pass could not be verified on the server. Please unlock or re-enter your Pass Key.',
+          'We couldn’t verify your active pass right now. Please re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
       };
     }
     return {
@@ -1312,7 +1316,7 @@ export async function verifyStudioPassOnServer(params: {
     return {
       valid: false,
       status: 'TAMPERED_SIGNATURE',
-      message: 'Could not verify your Studio Pass right now. Please try again.',
+      message: 'Could not verify your Studio Pass right now. Please check your connection and try again.',
     };
   }
 }

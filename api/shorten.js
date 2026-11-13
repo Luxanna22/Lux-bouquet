@@ -209,6 +209,156 @@ async function saveToFirestoreRest(code, payload, extra = {}) {
   }
 }
 
+const GARLAND_FEED_DOC_CODE = 'sab_garland_feed_v1';
+const GARLAND_FEED_IMMUTABLE_CREATED_AT = '2026-11-08T00:00:00.000Z';
+const GARLAND_FEED_IMMUTABLE_PAYLOAD = '#sab_garland_feed_v1';
+
+function stripInlinePhotosFromCompactPayloadServer(payload) {
+  if (!payload || typeof payload !== 'string') return '';
+  return payload.replace(/(&c=)([^&]*)/, (_match, prefix, cBody) => {
+    const parts = cBody.split('~');
+    for (let i = 3; i < parts.length; i++) {
+      if (parts[i] && parts[i].startsWith('data:image/')) {
+        parts[i] = '';
+      }
+    }
+    return `${prefix}${parts.join('~')}`;
+  });
+}
+
+async function publishToGarlandFeedRest(code, payload, garlandEntry) {
+  const safeCode = String(code).replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || !garlandEntry || garlandEntry.isDraft || garlandEntry.pinToShowcase === false) {
+    return false;
+  }
+  if (garlandEntry.lockMode && garlandEntry.lockMode !== 'none') {
+    return false;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const feedUrl = `${FIRESTORE_BASE_URL}/${GARLAND_FEED_DOC_CODE}`;
+    const existingResp = await fetch(feedUrl, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+
+    let preservedCreatedAt = GARLAND_FEED_IMMUTABLE_CREATED_AT;
+    let preservedPayload = GARLAND_FEED_IMMUTABLE_PAYLOAD;
+    let existingList = [];
+
+    if (existingResp.ok) {
+      const existingDoc = await existingResp.json();
+      const exFields = existingDoc?.fields;
+      if (exFields?.createdAt?.stringValue && exFields.createdAt.stringValue.length >= 10) {
+        preservedCreatedAt = exFields.createdAt.stringValue;
+      }
+      if (exFields?.payload?.stringValue && exFields.payload.stringValue.length >= 3) {
+        preservedPayload = exFields.payload.stringValue;
+      }
+      if (exFields?.voiceAudioDataUrl?.stringValue) {
+        try {
+          const parsed = JSON.parse(exFields.voiceAudioDataUrl.stringValue);
+          if (Array.isArray(parsed)) {
+            existingList = parsed.filter(
+              (item) =>
+                item &&
+                typeof item.code === 'string' &&
+                !item.isDraft &&
+                item.pinToShowcase !== false
+            );
+          }
+        } catch {
+          existingList = [];
+        }
+      }
+    }
+
+    const replaceCode =
+      typeof garlandEntry.replaceCode === 'string' && garlandEntry.replaceCode.trim()
+        ? garlandEntry.replaceCode.trim()
+        : null;
+
+    const cleanDraftPayload = stripInlineAudioFromCompactPayload(
+      String(garlandEntry.draftPayload || payload || '')
+    );
+
+    const compactEntry = {
+      code: safeCode,
+      to: String(garlandEntry.to || garlandEntry.recipientName || 'Someone Special').slice(0, 80),
+      from: String(garlandEntry.from || garlandEntry.senderName || 'Yours').slice(0, 80),
+      recipientName: String(garlandEntry.recipientName || garlandEntry.to || 'Someone Special').slice(0, 80),
+      senderName: String(garlandEntry.senderName || garlandEntry.from || 'Yours').slice(0, 80),
+      createdAt:
+        typeof garlandEntry.createdAt === 'string' && garlandEntry.createdAt.length >= 10
+          ? garlandEntry.createdAt
+          : new Date().toISOString(),
+      shareUrl: String(garlandEntry.shareUrl || `/${safeCode}`).slice(0, 240),
+      lockMode: 'none',
+      hasVoice: Boolean(garlandEntry.hasVoice),
+      flowerCount: typeof garlandEntry.flowerCount === 'number' ? garlandEntry.flowerCount : 1,
+      isPremium: Boolean(garlandEntry.isPremium),
+      retentionDays: typeof garlandEntry.retentionDays === 'number' ? garlandEntry.retentionDays : 30,
+      isDraft: false,
+      pinToShowcase: true,
+      draftPayload: cleanDraftPayload,
+    };
+
+    const seenCodes = new Set([safeCode]);
+    const merged = [compactEntry];
+    for (const item of existingList) {
+      if (!item || typeof item.code !== 'string') continue;
+      if (seenCodes.has(item.code)) continue;
+      if (replaceCode && item.code === replaceCode) continue;
+      seenCodes.add(item.code);
+      merged.push(item);
+      if (merged.length >= 24) break;
+    }
+
+    let jsonStr = JSON.stringify(merged);
+    if (jsonStr.length > 720000) {
+      for (let i = 3; i < merged.length; i++) {
+        merged[i] = {
+          ...merged[i],
+          draftPayload: stripInlinePhotosFromCompactPayloadServer(merged[i].draftPayload),
+        };
+      }
+      jsonStr = JSON.stringify(merged);
+    }
+    if (jsonStr.length > 880000) {
+      for (let i = 0; i < merged.length; i++) {
+        merged[i] = {
+          ...merged[i],
+          draftPayload: stripInlinePhotosFromCompactPayloadServer(merged[i].draftPayload),
+        };
+      }
+      jsonStr = JSON.stringify(merged);
+    }
+    if (jsonStr.length > 880000) {
+      clearTimeout(timer);
+      return false;
+    }
+
+    const fields = {
+      code: { stringValue: GARLAND_FEED_DOC_CODE },
+      payload: { stringValue: preservedPayload },
+      createdAt: { stringValue: preservedCreatedAt },
+      voiceAudioDataUrl: { stringValue: jsonStr },
+    };
+
+    const patchResp = await fetch(feedUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return patchResp.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -358,6 +508,17 @@ export default async function handler(req, res) {
 
       // 1. Persist full bouquet & voice recording to Firebase Firestore
       await saveToFirestoreRest(code, payload, extra);
+
+      // 1b. If the user ticked "Pin to Lace Garland", also persist to `shared_bouquets/sab_garland_feed_v1`
+      // on the server so shared creations (including resumed & sealed drafts) are guaranteed to appear for all users.
+      if (
+        bodyObj.garlandEntry &&
+        typeof bodyObj.garlandEntry === 'object' &&
+        bodyObj.garlandEntry.pinToShowcase !== false &&
+        (!bodyObj.garlandEntry.lockMode || bodyObj.garlandEntry.lockMode === 'none')
+      ) {
+        await publishToGarlandFeedRest(code, payload, bodyObj.garlandEntry).catch(() => {});
+      }
 
       // 2. Also keep secondary is.gd backup
       const normalizedPayload = payload.startsWith('#') ? payload : `#${payload}`;

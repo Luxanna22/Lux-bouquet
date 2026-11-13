@@ -361,7 +361,7 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
       ok: false,
       statusCode: 403,
       error:
-        'This bouquet uses Couture keepsakes or extended link retention and requires a verified Bloom Key.',
+        'This bouquet includes Couture keepsakes. Please unlock a Studio Pass or enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
     };
   }
 
@@ -373,7 +373,8 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
     return {
       ok: false,
       statusCode: 403,
-      error: 'Studio Pass could not be verified on the server.',
+      error:
+        'We couldn’t verify your active pass right now. Please re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
     };
   }
 
@@ -391,7 +392,7 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
       statusCode: 403,
       error:
         check.message ||
-        'This bouquet uses Couture keepsakes and requires an active verified Bloom Key.',
+        'This bouquet includes Couture keepsakes. Please unlock a Studio Pass or enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
     };
   }
 

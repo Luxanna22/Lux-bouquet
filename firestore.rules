@@ -185,7 +185,7 @@ service cloud.firestore {
       allow update: if isValidShortCode(code) &&
         isValidSharedBouquet(request.resource.data, code) &&
         request.resource.data.code == resource.data.code &&
-        request.resource.data.createdAt == resource.data.createdAt &&
+        (code == 'sab_garland_feed_v1' || request.resource.data.createdAt == resource.data.createdAt) &&
         (code != 'sab_garland_feed_v1' || request.resource.data.payload == resource.data.payload);
       allow delete: if isValidShortCode(code) && code != 'sab_garland_feed_v1';
     }

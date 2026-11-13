@@ -521,7 +521,34 @@ export async function publishBouquetToGlobalGarlandFeed(
   if (!entry || !entry.code || entry.isDraft || entry.pinToShowcase === false) return false;
   if (entry.lockMode && entry.lockMode !== 'none') return false;
   try {
-    const existing = await fetchGlobalGarlandFeedFromFirestore();
+    const feedDocRef = doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE);
+    const snap = await getDoc(feedDocRef);
+    const snapData = snap.exists() ? (snap.data() as Partial<SharedBouquetRecord>) : null;
+    const preservedCreatedAt =
+      snapData && typeof snapData.createdAt === 'string' && snapData.createdAt.length >= 10
+        ? snapData.createdAt
+        : GARLAND_FEED_IMMUTABLE_CREATED_AT;
+    const preservedPayload =
+      snapData && typeof snapData.payload === 'string' && snapData.payload.length >= 3
+        ? snapData.payload
+        : GARLAND_FEED_IMMUTABLE_PAYLOAD;
+
+    let existing: SavedVaultBouquet[] = [];
+    if (snapData?.voiceAudioDataUrl) {
+      try {
+        const parsed = JSON.parse(snapData.voiceAudioDataUrl);
+        if (Array.isArray(parsed)) {
+          existing = deduplicateVaultList(
+            parsed.filter(
+              (item) => item && typeof item.code === 'string' && !item.isDraft && item.pinToShowcase !== false
+            )
+          );
+        }
+      } catch {
+        existing = [];
+      }
+    }
+
     const compactEntry: SavedVaultBouquet = {
       ...entry,
       isDraft: false,
@@ -555,10 +582,10 @@ export async function publishBouquetToGlobalGarlandFeed(
     }
     if (jsonStr.length > 880_000) return false;
 
-    await setDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE), {
+    await setDoc(feedDocRef, {
       code: GARLAND_FEED_DOC_CODE,
-      payload: GARLAND_FEED_IMMUTABLE_PAYLOAD,
-      createdAt: GARLAND_FEED_IMMUTABLE_CREATED_AT,
+      payload: preservedPayload,
+      createdAt: preservedCreatedAt,
       voiceAudioDataUrl: jsonStr,
     });
     return true;
@@ -579,15 +606,32 @@ export async function removeBouquetFromFirestoreAndGarland(code: string): Promis
     // Ignore if document doesn't exist
   }
   try {
-    const existing = await fetchGlobalGarlandFeedFromFirestore();
+    const feedDocRef = doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE);
+    const snap = await getDoc(feedDocRef);
+    if (!snap.exists()) return;
+    const snapData = snap.data() as Partial<SharedBouquetRecord>;
+    if (!snapData?.voiceAudioDataUrl) return;
+    const parsed = JSON.parse(snapData.voiceAudioDataUrl);
+    if (!Array.isArray(parsed)) return;
+    const existing = deduplicateVaultList(
+      parsed.filter((item) => item && typeof item.code === 'string' && !item.isDraft && item.pinToShowcase !== false)
+    );
     const filtered = existing.filter((b) => b.code !== code);
     if (filtered.length !== existing.length) {
       const jsonStr = JSON.stringify(filtered);
       if (jsonStr.length <= 880_000) {
-        await setDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE), {
+        const preservedCreatedAt =
+          typeof snapData.createdAt === 'string' && snapData.createdAt.length >= 10
+            ? snapData.createdAt
+            : GARLAND_FEED_IMMUTABLE_CREATED_AT;
+        const preservedPayload =
+          typeof snapData.payload === 'string' && snapData.payload.length >= 3
+            ? snapData.payload
+            : GARLAND_FEED_IMMUTABLE_PAYLOAD;
+        await setDoc(feedDocRef, {
           code: GARLAND_FEED_DOC_CODE,
-          payload: GARLAND_FEED_IMMUTABLE_PAYLOAD,
-          createdAt: GARLAND_FEED_IMMUTABLE_CREATED_AT,
+          payload: preservedPayload,
+          createdAt: preservedCreatedAt,
           voiceAudioDataUrl: jsonStr,
         });
       }

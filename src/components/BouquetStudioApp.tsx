@@ -1180,12 +1180,13 @@ export default function App() {
             triggerToast('Tester Voucher activated — Couture unlocked on this device!');
           } else {
             triggerToast(
-              data.message || 'This Tester Voucher is already locked to another device.'
+              data.message ||
+                'This complimentary Tester Pass is already active on another device.'
             );
           }
         })
         .catch(() => {
-          triggerToast('Could not verify Tester Voucher link right now.');
+          triggerToast('We couldn’t verify your Tester Pass link right now. Please try again.');
         });
     }
 
@@ -1530,7 +1531,8 @@ export default function App() {
           handleExitGiftViewToEditor();
         }
         triggerToast(
-          serverVerify.message || 'Please unlock with a valid Bloom Key to export High-Res PNG.'
+          serverVerify.message ||
+            'Please unlock a Studio Pass or enter your BLOOM-XXXX-XXXX key to export High-Res PNG.'
         );
         setCheckoutTriggerAction('png');
         setIsCheckoutModalOpen(true);
@@ -1614,6 +1616,9 @@ export default function App() {
         retentionDays: policy.retentionDays,
       }).catch(() => {});
 
+      const previousSessionCode = currentSessionVaultCodeRef.current;
+      const shouldPinToGarland = Boolean(pinToShowcaseChecked && (lock?.mode || 'none') === 'none');
+
       // Save to local account-free Bouquet Vault
       const vaultEntry = {
         code,
@@ -1634,12 +1639,12 @@ export default function App() {
       };
       const updatedVault = saveBouquetToLocalVault(
         vaultEntry,
-        currentSessionVaultCodeRef.current
+        previousSessionCode
       );
-      if (pinToShowcaseChecked && (lock?.mode || 'none') === 'none') {
+      if (shouldPinToGarland) {
         publishBouquetToGlobalGarlandFeed(
           vaultEntry,
-          currentSessionVaultCodeRef.current
+          previousSessionCode
         ).catch(() => {});
       }
       currentSessionVaultCodeRef.current = code;
@@ -1650,7 +1655,8 @@ export default function App() {
         incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
       }
 
-      // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key)
+      // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key
+      // and also syncs shared Garland entries to Firestore REST as a guaranteed backup!)
       fetch('/api/shorten', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1667,6 +1673,13 @@ export default function App() {
           passKey: verifiedPass?.passKey || null,
           deviceTokenHash: devHash,
           activeSessionNonce: verifiedPass?.activeSessionNonce || null,
+          pass: verifiedPass || null,
+          garlandEntry: shouldPinToGarland
+            ? {
+                ...vaultEntry,
+                replaceCode: previousSessionCode || null,
+              }
+            : null,
         })
       }).catch(() => {});
 
@@ -1752,11 +1765,23 @@ export default function App() {
               if (!decoded) triggerToast('Could not load draft');
               return;
             }
+            if (record.payload) {
+              localShortCodeCache.set(sourceVaultCode, record.payload);
+              try {
+                localStorage.setItem(`bq_short_${sourceVaultCode}`, record.payload);
+              } catch {
+                // Ignore localStorage quota errors
+              }
+            }
             const fromRecordSnap = record.payload ? decodeBouquetFromHash(record.payload) : null;
-            const baseSnap =
-              decoded && (!fromRecordSnap || (decoded.items?.length || 0) >= (fromRecordSnap.items?.length || 0))
-                ? decoded
-                : fromRecordSnap;
+            // Prefer the canonical Firestore snapshot whenever its payload is richer (e.g. has inline photos that localStorage stripped)
+            const preferRecordSnap = Boolean(
+              fromRecordSnap &&
+                (!decoded ||
+                  (record.payload?.length || 0) >= (draftPayload?.length || 0) ||
+                  (fromRecordSnap.items?.length || 0) > (decoded.items?.length || 0))
+            );
+            const baseSnap = preferRecordSnap ? fromRecordSnap : decoded;
             if (!baseSnap) {
               if (!decoded) triggerToast('Could not load draft');
               return;
@@ -1833,7 +1858,8 @@ export default function App() {
         }
         if (currentPremiumInspection.isPremiumBouquet) {
           triggerToast(
-            serverVerify.message || 'Your Studio Pass could not be verified on the server.'
+            serverVerify.message ||
+              'Please unlock a Studio Pass or re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".'
           );
           setIsShareModalOpen(false);
           setCheckoutTriggerAction('share');
