@@ -1174,6 +1174,7 @@ export default function App() {
         .then(async (res) => {
           const data = await res.json().catch(() => ({}));
           if (res.ok && data.ok && data.pass) {
+            lastServerVerifiedPassSigRef.current = data.pass.signature;
             saveStoredStudioPass(data.pass);
             setActiveStudioPass(data.pass);
             triggerToast('Tester Voucher activated — Couture unlocked on this device!');
@@ -1825,7 +1826,7 @@ export default function App() {
       });
       if (!serverVerify.valid || !serverVerify.updatedPass) {
         setIsShorteningUrl(false);
-        if (activeStudioPass && activeStudioPass.passKey === effectivePass.passKey) {
+        if (!activeStudioPass || activeStudioPass.passKey === effectivePass.passKey) {
           lastServerVerifiedPassSigRef.current = '';
           saveStoredStudioPass(null);
           setActiveStudioPass(null);
@@ -1870,6 +1871,10 @@ export default function App() {
       lastServerVerifiedPassSigRef.current = '';
       saveStoredStudioPass(null);
       setActiveStudioPass(null);
+    } else if (verifiedPaidPass) {
+      lastServerVerifiedPassSigRef.current = verifiedPaidPass.signature;
+      saveStoredStudioPass(verifiedPaidPass);
+      setActiveStudioPass(verifiedPaidPass);
     }
 
     if (navigator.clipboard && navigator.clipboard.writeText) {

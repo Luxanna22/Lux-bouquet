@@ -212,7 +212,7 @@ service cloud.firestore {
       // Updates cannot escalate tier, extend expiresAt, or overwrite primaryDeviceHash once bound
       allow update: if isValidStudioPass(request.resource.data, passKey) &&
         (
-          passKey.matches('^BLOOM-KS[A-Z2-9]{2}-[A-Z2-9]{4}$') ||
+          passKey.matches('^BLOOM-(KS|BG|SP)[A-Z2-9]{2}-[A-Z2-9]{4}$') ||
           passKey == 'BLOOM-KCFG-SHOP' ||
           (
             request.resource.data.passKey == resource.data.passKey &&
@@ -222,7 +222,12 @@ service cloud.firestore {
             request.resource.data.retentionDays == resource.data.retentionDays &&
             request.resource.data.isEternalKeepsake == resource.data.isEternalKeepsake &&
             (resource.data.primaryDeviceHash == '' || request.resource.data.primaryDeviceHash == resource.data.primaryDeviceHash) &&
-            (resource.data.secondaryDeviceHash == '' || request.resource.data.secondaryDeviceHash == resource.data.secondaryDeviceHash)
+            (
+              resource.data.secondaryDeviceHash == '' ||
+              request.resource.data.secondaryDeviceHash == resource.data.secondaryDeviceHash ||
+              request.resource.data.secondaryDeviceHash == 'SINGLE_CONSUMED' ||
+              request.resource.data.secondaryDeviceHash == 'REVOKED_BY_OWNER'
+            )
           )
         );
       allow delete: if false;

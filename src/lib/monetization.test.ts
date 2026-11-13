@@ -247,26 +247,53 @@ test('Single-User Pass Key security prevents tampering, blocks 3rd-device sharin
   assert.equal(redeem3.status, 'DEVICE_LIMIT_EXCEEDED');
 });
 
-test('Single-Bouquet Unlock binds strictly to its bouquet code and cannot unlock a different bouquet', () => {
+test('Single-Bouquet Unlock allows draft edits before sealing, then binds strictly to its sealed bouquet code and cannot unlock a different bouquet', () => {
   const device1 = 'dev_hash_single_buyer_001';
   const singlePass = createSignedStudioPass({
     tier: 'single',
     region: 'PH',
     deviceTokenHash: device1,
-    boundBouquetCode: 'bq_first123',
+    boundBouquetCode: null,
     nowMs: FIXED_NOW,
   });
 
-  const allowedOnFirst = verifyActiveStudioPassForAction({
+  // Before sealing (incrementUsage: false), changing draft bouquet code does not lock or consume the pass
+  const draftPreviewCheck = verifyActiveStudioPassForAction({
+    pass: singlePass,
+    deviceTokenHash: device1,
+    bouquetCode: 'bq_draft_before_edit',
+    incrementUsage: false,
+    nowMs: FIXED_NOW,
+  });
+  assert.equal(draftPreviewCheck.valid, true);
+  assert.equal(draftPreviewCheck.updatedPass?.boundBouquetCode, null);
+
+  // Sealing the bouquet (incrementUsage: true) consumes the Single Unlock and binds it to 'bq_first123'
+  const sealedOnFirst = verifyActiveStudioPassForAction({
     pass: singlePass,
     deviceTokenHash: device1,
     bouquetCode: 'bq_first123',
+    incrementUsage: true,
     nowMs: FIXED_NOW,
   });
-  assert.equal(allowedOnFirst.valid, true);
+  assert.equal(sealedOnFirst.valid, true);
+  assert.ok(sealedOnFirst.updatedPass);
+  assert.equal(sealedOnFirst.updatedPass.boundBouquetCode, 'bq_first123');
+  assert.equal(sealedOnFirst.updatedPass.secondaryDeviceHash, 'SINGLE_CONSUMED');
 
+  // Non-incrementing checks for the same sealed bouquet ('bq_first123', e.g., PNG card download) remain allowed
+  const allowedOnSameSealed = verifyActiveStudioPassForAction({
+    pass: sealedOnFirst.updatedPass,
+    deviceTokenHash: device1,
+    bouquetCode: 'bq_first123',
+    incrementUsage: false,
+    nowMs: FIXED_NOW,
+  });
+  assert.equal(allowedOnSameSealed.valid, true);
+
+  // Attempting to use the consumed Single Pass on a second bouquet ('bq_second999') is strictly blocked
   const blockedOnSecond = verifyActiveStudioPassForAction({
-    pass: singlePass,
+    pass: sealedOnFirst.updatedPass,
     deviceTokenHash: device1,
     bouquetCode: 'bq_second999',
     nowMs: FIXED_NOW,
@@ -2530,4 +2557,140 @@ test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent
     else delete process.env.SIKATPAY_WEBHOOK_SECRET;
   }
 });
+
+test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redeem -> Seal & Send Gift even across stale serverless instance memory', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  // @ts-expect-error ESM serverless handler
+  const coutureGuard = await import('../../api/_lib/coutureGuard.js');
+
+  const ownerDevHash = 'dev_owner_same_browser_777';
+  const strangerDevHash = 'dev_other_person_999';
+  const createdKeys: string[] = [];
+
+  try {
+    // 1. Admin mints an unclaimed Tester Voucher (primaryDeviceHash: '')
+    const mintedVoucher = paymentLib.createSignedStudioPassServer({
+      isTesterVoucher: true,
+      tier: 'pass_7d',
+      region: 'INTL',
+      deviceTokenHash: '',
+      durationHours: 48,
+      testerLabel: 'Creator Self-Test',
+      testerDailyCap: 10,
+      retentionDaysOverride: 30,
+    });
+    paymentLib.SERVER_PASS_STORE.set(mintedVoucher.passKey, mintedVoucher);
+    createdKeys.push(mintedVoucher.passKey);
+
+    const unclaimedSnapshot = { ...paymentLib.SERVER_PASS_STORE.get(mintedVoucher.passKey) };
+    assert.equal(unclaimedSnapshot.primaryDeviceHash, '');
+
+    // 2. Owner clicks "Unlock & Seal" -> "Have a Key?" -> enters passKey on /api/payments/redeem-pass
+    const makeReq = (body: string) => ({
+      method: 'POST',
+      url: '/api/payments',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.parse(body),
+    });
+    const makeRes = () => {
+      const state: { statusCode: number; body: string } = { statusCode: 200, body: '' };
+      return {
+        set statusCode(v: number) {
+          state.statusCode = v;
+        },
+        get statusCode() {
+          return state.statusCode;
+        },
+        setHeader() {},
+        end(str = '') {
+          state.body = str;
+        },
+        json() {
+          return state.body ? JSON.parse(state.body) : {};
+        },
+      };
+    };
+
+    const redeemRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        JSON.stringify({
+          passKey: mintedVoucher.passKey,
+          deviceTokenHash: ownerDevHash,
+        })
+      ),
+      redeemRes,
+      '/api/payments/redeem-pass'
+    );
+    assert.equal(redeemRes.statusCode, 200);
+    const redeemedPass = redeemRes.json().pass;
+    assert.equal(redeemedPass.primaryDeviceHash, ownerDevHash);
+
+    // 3. Simulate serverless Instance A still holding the stale unclaimed record in SERVER_PASS_STORE
+    paymentLib.SERVER_PASS_STORE.set(mintedVoucher.passKey, unclaimedSnapshot);
+
+    // 4. Owner clicks "Seal & Send Gift" -> calls /api/payments/verify-action (action: 'verify_pass', incrementUsage: true)
+    const verifyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        JSON.stringify({
+          action: 'verify_pass',
+          passKey: redeemedPass.passKey,
+          activeSessionNonce: redeemedPass.activeSessionNonce,
+          deviceTokenHash: ownerDevHash,
+          bouquetCode: 'bq_couture_seal_1',
+          incrementUsage: true,
+          pass: redeemedPass,
+        })
+      ),
+      verifyRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(verifyRes.statusCode, 200);
+    const verifyData = verifyRes.json();
+    assert.equal(verifyData.ok, true);
+    assert.equal(verifyData.pass.primaryDeviceHash, ownerDevHash);
+    assert.equal(verifyData.pass.dailyUsageCount, 1);
+
+    // 5. Simulate stale unclaimed record again before /api/shorten (verifyShortenCouturePermission)
+    paymentLib.SERVER_PASS_STORE.set(mintedVoucher.passKey, unclaimedSnapshot);
+    const shortenCheck = await coutureGuard.verifyShortenCouturePermission({
+      code: 'bq_couture_seal_1',
+      payload: '#g=3~0~0~8.1~0~0~!.b0000000~0', // Couture wrap + ribbon + bloom
+      isPremium: true,
+      retentionDays: 90,
+      passKey: verifyData.pass.passKey,
+      deviceTokenHash: ownerDevHash,
+      activeSessionNonce: verifyData.pass.activeSessionNonce,
+      pass: verifyData.pass,
+    });
+    assert.equal(shortenCheck.ok, true);
+
+    // 6. Another device attempting to use the bound Tester Voucher is still strictly blocked
+    const strangerVerifyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        JSON.stringify({
+          action: 'verify_pass',
+          passKey: verifyData.pass.passKey,
+          activeSessionNonce: verifyData.pass.activeSessionNonce,
+          deviceTokenHash: strangerDevHash,
+          bouquetCode: 'bq_stranger_attempt',
+          incrementUsage: true,
+          pass: verifyData.pass,
+        })
+      ),
+      strangerVerifyRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(strangerVerifyRes.statusCode, 403);
+    assert.equal(strangerVerifyRes.json().status, 'DEVICE_LIMIT_EXCEEDED');
+  } finally {
+    for (const k of createdKeys) {
+      paymentLib.SERVER_PASS_STORE.delete(k);
+    }
+  }
+});
+
 

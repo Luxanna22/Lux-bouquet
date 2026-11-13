@@ -1,9 +1,8 @@
 import {
-  SERVER_PASS_STORE,
-  fetchStudioPassFromFirestoreRest,
   hydratePersistentOwnerVaultServer,
   isValidPassKeyFormat,
   normalizePassKey,
+  resolveCanonicalStudioPassServer,
   verifyActiveStudioPassForActionServer,
 } from './paymentHandler.js';
 
@@ -368,8 +367,7 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
 
   await hydratePersistentOwnerVaultServer();
 
-  const canonicalPass =
-    SERVER_PASS_STORE.get(normKey) || (await fetchStudioPassFromFirestoreRest(normKey));
+  const canonicalPass = await resolveCanonicalStudioPassServer(normKey, clientPass);
 
   if (!canonicalPass) {
     return {

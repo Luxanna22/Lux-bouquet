@@ -1113,7 +1113,17 @@ export function verifyActiveStudioPassForAction(params: {
     };
   }
 
+  const hasSecondDistinctDevice =
+    !isTester &&
+    Boolean(
+      pass.secondaryDeviceHash &&
+        pass.secondaryDeviceHash !== 'SINGLE_CONSUMED' &&
+        pass.secondaryDeviceHash !== 'TESTER_SINGLE_DEVICE_LOCK' &&
+        pass.secondaryDeviceHash !== 'REVOKED_BY_OWNER' &&
+        pass.secondaryDeviceHash !== pass.primaryDeviceHash
+    );
   if (
+    hasSecondDistinctDevice &&
     params.clientSessionNonce &&
     params.clientSessionNonce !== pass.activeSessionNonce
   ) {
@@ -1127,7 +1137,10 @@ export function verifyActiveStudioPassForAction(params: {
 
   // Enforce Single-Bouquet Unlock binding so a ₱49/$2.99 single unlock cannot be reused on new bouquets
   if (pass.tier === 'single' && !isTester) {
+    const singleAlreadyUsed =
+      pass.secondaryDeviceHash === 'SINGLE_CONSUMED' || Number(pass.dailyUsageCount || 0) >= 1;
     if (
+      singleAlreadyUsed &&
       pass.boundBouquetCode &&
       params.bouquetCode &&
       pass.boundBouquetCode !== params.bouquetCode
@@ -1139,8 +1152,6 @@ export function verifyActiveStudioPassForAction(params: {
           'This Single-Bouquet Unlock was already used for another bouquet. Grab a 7-Day or 30-Day Pass for unlimited creations!',
       };
     }
-    const singleAlreadyUsed =
-      pass.secondaryDeviceHash === 'SINGLE_CONSUMED' || Number(pass.dailyUsageCount || 0) >= 1;
     if (singleAlreadyUsed) {
       const matchesBoundBouquet = Boolean(
         !params.incrementUsage &&
@@ -1186,7 +1197,7 @@ export function verifyActiveStudioPassForAction(params: {
   const nextBoundCode = isTester
     ? pass.boundBouquetCode
     : pass.tier === 'single'
-    ? pass.boundBouquetCode || params.bouquetCode || null
+    ? pass.boundBouquetCode || (params.incrementUsage ? params.bouquetCode || null : null)
     : null;
   const nextSecondaryDeviceHash =
     pass.tier === 'single' && !isTester && params.incrementUsage
@@ -1273,6 +1284,7 @@ export async function verifyStudioPassOnServer(params: {
         deviceTokenHash,
         bouquetCode: params.bouquetCode || null,
         incrementUsage: Boolean(params.incrementUsage),
+        pass,
       }),
     });
     const data = (await res.json().catch(() => ({}))) as {

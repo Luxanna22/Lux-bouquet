@@ -772,25 +772,14 @@ export function validateAndBindPassRedemptionServer(
   }
 
   const isTester = isTesterVoucherPassServer(existingRecord);
+  const singleConsumed = existingRecord.tier === 'single' && !isTester && isSinglePassConsumedServer(existingRecord);
   if (existingRecord.tier === 'single' && !isTester) {
-    if (isSinglePassConsumedServer(existingRecord)) {
+    if (singleConsumed) {
       return {
         valid: false,
         status: 'SINGLE_BOUQUET_ALREADY_USED',
         message:
           'This Single-Bouquet Unlock was already used for a sent bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
-      };
-    }
-    if (
-      existingRecord.boundBouquetCode &&
-      options?.bouquetCode &&
-      existingRecord.boundBouquetCode !== options.bouquetCode
-    ) {
-      return {
-        valid: false,
-        status: 'SINGLE_BOUQUET_ALREADY_USED',
-        message:
-          'This Single-Bouquet Unlock is already bound to another bouquet. Grab another Single Unlock or 7-Day Pass to create a new bouquet!',
       };
     }
   }
@@ -902,8 +891,16 @@ export function verifyActiveStudioPassForActionServer(params) {
   }
 
   const isTester = isTesterVoucherPassServer(pass);
-  if (isTester) {
-    if (deviceTokenHash !== pass.primaryDeviceHash) {
+  let nextPrimaryDeviceHash = pass.primaryDeviceHash || '';
+  let baseSecondaryDeviceHash = pass.secondaryDeviceHash || null;
+
+  if (!nextPrimaryDeviceHash && deviceTokenHash) {
+    nextPrimaryDeviceHash = deviceTokenHash;
+    if (isTester) {
+      baseSecondaryDeviceHash = TESTER_SINGLE_DEVICE_SENTINEL;
+    }
+  } else if (isTester) {
+    if (deviceTokenHash !== nextPrimaryDeviceHash) {
       return {
         valid: false,
         status: 'DEVICE_LIMIT_EXCEEDED',
@@ -911,8 +908,8 @@ export function verifyActiveStudioPassForActionServer(params) {
       };
     }
   } else if (
-    deviceTokenHash !== pass.primaryDeviceHash &&
-    deviceTokenHash !== pass.secondaryDeviceHash
+    deviceTokenHash !== nextPrimaryDeviceHash &&
+    deviceTokenHash !== baseSecondaryDeviceHash
   ) {
     return {
       valid: false,
@@ -921,9 +918,19 @@ export function verifyActiveStudioPassForActionServer(params) {
     };
   }
 
+  const hasSecondDistinctDevice = Boolean(
+    !isTester &&
+      baseSecondaryDeviceHash &&
+      baseSecondaryDeviceHash !== SINGLE_CONSUMED_SENTINEL &&
+      baseSecondaryDeviceHash !== TESTER_SINGLE_DEVICE_SENTINEL &&
+      baseSecondaryDeviceHash !== REVOKED_PASS_SENTINEL &&
+      baseSecondaryDeviceHash !== nextPrimaryDeviceHash
+  );
+
   if (
     pass.activeSessionNonce &&
-    (!params.clientSessionNonce || params.clientSessionNonce !== pass.activeSessionNonce)
+    (!params.clientSessionNonce ||
+      (hasSecondDistinctDevice && params.clientSessionNonce !== pass.activeSessionNonce))
   ) {
     return {
       valid: false,
@@ -932,6 +939,13 @@ export function verifyActiveStudioPassForActionServer(params) {
         'This Pass Key was activated on another device or browser. Only 1 active session is allowed at a time.',
     };
   }
+
+  const nextActiveSessionNonce =
+    !hasSecondDistinctDevice &&
+    typeof params.clientSessionNonce === 'string' &&
+    params.clientSessionNonce.length >= 8
+      ? params.clientSessionNonce
+      : pass.activeSessionNonce;
 
   if (pass.tier === 'single' && !isTester) {
     if (
@@ -991,16 +1005,18 @@ export function verifyActiveStudioPassForActionServer(params) {
   const nextBoundCode = isTester
     ? pass.boundBouquetCode
     : pass.tier === 'single'
-    ? pass.boundBouquetCode || params.bouquetCode || null
+    ? pass.boundBouquetCode || (params.incrementUsage ? params.bouquetCode || null : null)
     : null;
   const nextSecondaryDeviceHash =
     pass.tier === 'single' && !isTester && params.incrementUsage
       ? SINGLE_CONSUMED_SENTINEL
-      : pass.secondaryDeviceHash;
+      : baseSecondaryDeviceHash;
 
   const updatedDraft = {
     ...pass,
+    primaryDeviceHash: nextPrimaryDeviceHash,
     secondaryDeviceHash: nextSecondaryDeviceHash,
+    activeSessionNonce: nextActiveSessionNonce,
     boundBouquetCode: nextBoundCode,
     dailyUsageDate: todayIso,
     dailyUsageCount: params.incrementUsage ? currentDailyCount + 1 : currentDailyCount,
@@ -1349,32 +1365,46 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
       const normKey = normalizePassKey(rv.passKey);
       const localV = TESTER_VOUCHER_LEDGER.get(normKey);
       if (!localV) {
-        TESTER_VOUCHER_LEDGER.set(normKey, { ...rv, passKey: normKey });
-        if (rv.passRecord && !SERVER_PASS_STORE.has(normKey)) {
-          SERVER_PASS_STORE.set(normKey, rv.passRecord);
+        const mergedPassRecord = pickCanonicalPassRecordServer(
+          SERVER_PASS_STORE.get(normKey),
+          rv.passRecord
+        );
+        TESTER_VOUCHER_LEDGER.set(normKey, {
+          ...rv,
+          passKey: normKey,
+          passRecord: mergedPassRecord || rv.passRecord,
+        });
+        if (mergedPassRecord) {
+          SERVER_PASS_STORE.set(normKey, mergedPassRecord);
         }
       } else {
         const isRevoked =
           localV.status === 'revoked' ||
           rv.status === 'revoked' ||
           REVOKED_VOUCHER_KEYS.has(normKey);
-        const isClaimed = !isRevoked && (localV.status === 'claimed' || rv.status === 'claimed');
-        const mergedPassRecord = localV.passRecord?.primaryDeviceHash
-          ? localV.passRecord
-          : rv.passRecord || localV.passRecord;
+        const mergedPassRecord = pickCanonicalPassRecordServer(
+          pickCanonicalPassRecordServer(SERVER_PASS_STORE.get(normKey), localV.passRecord),
+          rv.passRecord
+        );
+        const isClaimed =
+          !isRevoked &&
+          (localV.status === 'claimed' ||
+            rv.status === 'claimed' ||
+            Boolean(mergedPassRecord?.primaryDeviceHash));
         const mergedItem = {
           ...rv,
           ...localV,
           passKey: normKey,
           status: isRevoked ? 'revoked' : isClaimed ? 'claimed' : localV.status || rv.status || 'unclaimed',
           claimedDeviceHash:
+            mergedPassRecord?.primaryDeviceHash ||
             localV.claimedDeviceHash ||
             rv.claimedDeviceHash ||
-            mergedPassRecord?.primaryDeviceHash ||
             '',
           bouquetsCreated: Math.max(
             Number(localV.bouquetsCreated || 0),
-            Number(rv.bouquetsCreated || 0)
+            Number(rv.bouquetsCreated || 0),
+            Number(mergedPassRecord?.dailyUsageCount || 0)
           ),
           blockedAttempts: Math.max(
             Number(localV.blockedAttempts || 0),
@@ -1383,7 +1413,7 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
           passRecord: mergedPassRecord,
         };
         TESTER_VOUCHER_LEDGER.set(normKey, mergedItem);
-        if (mergedPassRecord && !SERVER_PASS_STORE.has(normKey)) {
+        if (mergedPassRecord) {
           SERVER_PASS_STORE.set(normKey, mergedPassRecord);
         }
       }
@@ -1396,19 +1426,32 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
       const normKey = normalizePassKey(rp.passKey);
       const localP = PAID_PASS_LEDGER.get(normKey);
       if (!localP) {
-        PAID_PASS_LEDGER.set(normKey, { ...rp, passKey: normKey });
-        if (rp.passRecord && !SERVER_PASS_STORE.has(normKey)) {
-          SERVER_PASS_STORE.set(normKey, rp.passRecord);
+        const mergedPassRecord = pickCanonicalPassRecordServer(
+          SERVER_PASS_STORE.get(normKey),
+          rp.passRecord
+        );
+        PAID_PASS_LEDGER.set(normKey, {
+          ...rp,
+          passKey: normKey,
+          passRecord: mergedPassRecord || rp.passRecord,
+        });
+        if (mergedPassRecord) {
+          SERVER_PASS_STORE.set(normKey, mergedPassRecord);
         }
       } else {
         const isRevoked =
           localP.status === 'revoked' ||
           rp.status === 'revoked' ||
           REVOKED_VOUCHER_KEYS.has(normKey);
-        const isClaimed = !isRevoked && (localP.status === 'claimed' || rp.status === 'claimed');
-        const mergedPassRecord = localP.passRecord?.primaryDeviceHash
-          ? localP.passRecord
-          : rp.passRecord || localP.passRecord;
+        const mergedPassRecord = pickCanonicalPassRecordServer(
+          pickCanonicalPassRecordServer(SERVER_PASS_STORE.get(normKey), localP.passRecord),
+          rp.passRecord
+        );
+        const isClaimed =
+          !isRevoked &&
+          (localP.status === 'claimed' ||
+            rp.status === 'claimed' ||
+            Boolean(mergedPassRecord?.primaryDeviceHash));
         const mergedItem = {
           ...rp,
           ...localP,
@@ -1419,20 +1462,21 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
             ? 'claimed'
             : localP.status || rp.status || 'unclaimed',
           claimedDeviceHash:
+            mergedPassRecord?.primaryDeviceHash ||
             localP.claimedDeviceHash ||
             rp.claimedDeviceHash ||
-            mergedPassRecord?.primaryDeviceHash ||
             '',
           boundBouquetCode:
+            mergedPassRecord?.boundBouquetCode ||
             localP.boundBouquetCode ||
             rp.boundBouquetCode ||
-            mergedPassRecord?.boundBouquetCode ||
             null,
           isTest: Boolean(localP.isTest || rp.isTest),
           archivedFromIncome: Boolean(localP.archivedFromIncome || rp.archivedFromIncome),
           bouquetsCreated: Math.max(
             Number(localP.bouquetsCreated || 0),
-            Number(rp.bouquetsCreated || 0)
+            Number(rp.bouquetsCreated || 0),
+            Number(mergedPassRecord?.dailyUsageCount || 0)
           ),
           blockedAttempts: Math.max(
             Number(localP.blockedAttempts || 0),
@@ -1441,7 +1485,7 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
           passRecord: mergedPassRecord,
         };
         PAID_PASS_LEDGER.set(normKey, mergedItem);
-        if (mergedPassRecord && !SERVER_PASS_STORE.has(normKey)) {
+        if (mergedPassRecord) {
           SERVER_PASS_STORE.set(normKey, mergedPassRecord);
         }
       }
@@ -2487,6 +2531,103 @@ export async function fetchStudioPassFromFirestoreRest(passKey) {
   } catch {
     return null;
   }
+}
+
+export function pickCanonicalPassRecordServer(passA, passB) {
+  const validA = Boolean(
+    passA &&
+      typeof passA === 'object' &&
+      isValidPassKeyFormat(passA.passKey) &&
+      verifyPassIntegritySignature(passA) &&
+      verifyServerPaymentReference(passA)
+  );
+  const validB = Boolean(
+    passB &&
+      typeof passB === 'object' &&
+      isValidPassKeyFormat(passB.passKey) &&
+      verifyPassIntegritySignature(passB) &&
+      verifyServerPaymentReference(passB)
+  );
+  if (!validA && !validB) return passB || passA || null;
+  if (validA && !validB) return passA;
+  if (!validA && validB) return passB;
+
+  const isRevoked = (p) =>
+    p.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+    p.primaryDeviceHash === REVOKED_PASS_SENTINEL;
+  if (isRevoked(passA) !== isRevoked(passB)) {
+    return isRevoked(passA) ? passA : passB;
+  }
+
+  const isConsumed = (p) => p.secondaryDeviceHash === SINGLE_CONSUMED_SENTINEL;
+  if (isConsumed(passA) !== isConsumed(passB)) {
+    return isConsumed(passA) ? passA : passB;
+  }
+
+  const claimedA = Boolean(passA.primaryDeviceHash);
+  const claimedB = Boolean(passB.primaryDeviceHash);
+  if (claimedA !== claimedB) {
+    return claimedA ? passA : passB;
+  }
+
+  const hasSecondary = (p) =>
+    Boolean(
+      p.secondaryDeviceHash &&
+        p.secondaryDeviceHash !== TESTER_SINGLE_DEVICE_SENTINEL &&
+        p.secondaryDeviceHash !== SINGLE_CONSUMED_SENTINEL
+    );
+  if (hasSecondary(passA) !== hasSecondary(passB)) {
+    return hasSecondary(passA) ? passA : passB;
+  }
+
+  const countA = Number(passA.dailyUsageCount || 0);
+  const countB = Number(passB.dailyUsageCount || 0);
+  if (passA.tier === 'single') {
+    if (countA !== countB) return countA > countB ? passA : passB;
+    if (Boolean(passA.boundBouquetCode) !== Boolean(passB.boundBouquetCode)) {
+      return passA.boundBouquetCode ? passA : passB;
+    }
+  } else {
+    const dateA = String(passA.dailyUsageDate || '');
+    const dateB = String(passB.dailyUsageDate || '');
+    if (dateA !== dateB) {
+      return dateA > dateB ? passA : passB;
+    }
+    if (countA !== countB) {
+      return countA > countB ? passA : passB;
+    }
+  }
+
+  return passB;
+}
+
+export async function resolveCanonicalStudioPassServer(passKey, clientPassCandidate = null) {
+  const normKey = normalizePassKey(passKey);
+  if (!isValidPassKeyFormat(normKey)) return null;
+
+  const memPass =
+    SERVER_PASS_STORE.get(normKey) ||
+    TESTER_VOUCHER_LEDGER.get(normKey)?.passRecord ||
+    PAID_PASS_LEDGER.get(normKey)?.passRecord ||
+    null;
+  const remotePass = await fetchStudioPassFromFirestoreRest(normKey);
+  let best = pickCanonicalPassRecordServer(memPass, remotePass);
+
+  if (
+    clientPassCandidate &&
+    typeof clientPassCandidate === 'object' &&
+    normalizePassKey(clientPassCandidate.passKey || '') === normKey &&
+    verifyPassIntegritySignature(clientPassCandidate) &&
+    verifyServerPaymentReference(clientPassCandidate) &&
+    !REVOKED_VOUCHER_KEYS.has(normKey)
+  ) {
+    best = pickCanonicalPassRecordServer(best, clientPassCandidate);
+  }
+
+  if (best) {
+    SERVER_PASS_STORE.set(normKey, best);
+  }
+  return best;
 }
 
 /**
@@ -4107,8 +4248,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       await hydratePersistentOwnerVaultServer();
 
-      const existingRecord =
-        SERVER_PASS_STORE.get(passKey) || (await fetchStudioPassFromFirestoreRest(passKey));
+      const existingRecord = await resolveCanonicalStudioPassServer(passKey);
 
       if (!existingRecord) {
         sendJson(res, 404, {
@@ -4773,8 +4913,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       await hydratePersistentOwnerVaultServer();
 
-      const canonicalPass =
-        SERVER_PASS_STORE.get(normKey) || (await fetchStudioPassFromFirestoreRest(normKey));
+      const canonicalPass = await resolveCanonicalStudioPassServer(normKey, clientPass);
 
       if (!canonicalPass) {
         sendJson(res, 403, {
@@ -4805,9 +4944,18 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
       await saveStudioPassToFirestoreRest(check.updatedPass);
 
-      if (incrementUsage && TESTER_VOUCHER_LEDGER.has(normKey)) {
+      if (TESTER_VOUCHER_LEDGER.has(normKey)) {
         const entry = TESTER_VOUCHER_LEDGER.get(normKey);
-        entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
+        if (incrementUsage) {
+          entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
+        }
+        entry.status =
+          entry.status === 'revoked'
+            ? 'revoked'
+            : check.updatedPass.primaryDeviceHash
+            ? 'claimed'
+            : entry.status;
+        entry.claimedDeviceHash = check.updatedPass.primaryDeviceHash || entry.claimedDeviceHash || '';
         entry.passRecord = check.updatedPass;
         TESTER_VOUCHER_LEDGER.set(normKey, entry);
         await savePersistentOwnerVaultServer();
@@ -4816,6 +4964,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         if (incrementUsage) {
           entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
         }
+        entry.status =
+          entry.status === 'revoked'
+            ? 'revoked'
+            : check.updatedPass.primaryDeviceHash
+            ? 'claimed'
+            : entry.status;
+        entry.claimedDeviceHash = check.updatedPass.primaryDeviceHash || entry.claimedDeviceHash || '';
         entry.boundBouquetCode = check.updatedPass.boundBouquetCode || entry.boundBouquetCode || null;
         entry.passRecord = check.updatedPass;
         PAID_PASS_LEDGER.set(normKey, entry);
