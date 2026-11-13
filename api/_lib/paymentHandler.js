@@ -2475,6 +2475,36 @@ export function resolveCheckoutRegionAndProvider({
   return { region: 'PH', provider: 'paymongo' };
 }
 
+/**
+ * Resolves the visitor's 2-letter ISO country code from trusted edge proxy headers.
+ * When a domain is proxied through Cloudflare (orange cloud) in front of Vercel,
+ * Vercel sees Cloudflare's POP IP (often SG for PLDT visitors) in `x-vercel-ip-country`,
+ * while Cloudflare forwards the visitor's real IP country in `cf-ipcountry`.
+ */
+export function extractEdgeCountryCode(req) {
+  const headers = (req && req.headers) || {};
+  const cfCountryRaw =
+    typeof headers['cf-ipcountry'] === 'string' ? headers['cf-ipcountry'].trim().toUpperCase() : '';
+  const hasCloudflareProxyContext = Boolean(
+    (typeof headers['cf-ray'] === 'string' && headers['cf-ray'].trim()) ||
+      (typeof headers['cf-connecting-ip'] === 'string' && headers['cf-connecting-ip'].trim())
+  );
+  if (
+    hasCloudflareProxyContext &&
+    /^[A-Z]{2}$/.test(cfCountryRaw) &&
+    cfCountryRaw !== 'XX' &&
+    cfCountryRaw !== 'T1'
+  ) {
+    return cfCountryRaw;
+  }
+
+  const vercelCountryRaw =
+    typeof headers['x-vercel-ip-country'] === 'string'
+      ? headers['x-vercel-ip-country'].trim().toUpperCase()
+      : '';
+  return /^[A-Z]{2}$/.test(vercelCountryRaw) ? vercelCountryRaw : '';
+}
+
 export async function handlePaymentEndpoint(req, res, forcedPathname) {
   applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -2522,10 +2552,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const bayadgate = getBayadgateConfig();
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const hasPaymongo = Boolean(paymongoSecret);
-      const vercelCountry =
-        typeof req.headers?.['x-vercel-ip-country'] === 'string'
-          ? req.headers['x-vercel-ip-country'].trim().toUpperCase()
-          : '';
+      const vercelCountry = extractEdgeCountryCode(req);
       const phGateway = sikatpay.configured
         ? 'sikatpay'
         : bayadgate.configured
@@ -2572,10 +2599,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const bayadgate = getBayadgateConfig();
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
-      const vercelCountry =
-        typeof req.headers?.['x-vercel-ip-country'] === 'string'
-          ? req.headers['x-vercel-ip-country']
-          : '';
+      const vercelCountry = extractEdgeCountryCode(req);
 
       await syncOwnerShopCodesWithFirestore(parsed.shopCodes);
       const shopCodes = getActiveKofiShopCodes(parsed.shopCodes);

@@ -1467,6 +1467,37 @@ test('SikatPay PH flow: create-checkout, HMAC-SHA256 webhook, amount/livemode gu
     );
     assert.equal(capUsRes.json().isPhEligible, false);
 
+    // 2b. Cloudflare orange-cloud proxy in front of Vercel: PLDT routed via Cloudflare SG POP
+    // sets x-vercel-ip-country=SG while Cloudflare preserves visitor country in cf-ipcountry=PH
+    const capCfPhViaSgRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, {
+        'x-vercel-ip-country': 'SG',
+        'cf-ipcountry': 'PH',
+        'cf-ray': '8a1b2c3d4e5f6a7b-SIN',
+      }),
+      capCfPhViaSgRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capCfPhViaSgRes.statusCode, 200);
+    assert.equal(capCfPhViaSgRes.json().detectedCountry, 'PH');
+    assert.equal(capCfPhViaSgRes.json().isPhEligible, true);
+    assert.equal(capCfPhViaSgRes.json().defaultRegion, 'PH');
+    assert.equal(capCfPhViaSgRes.json().phGateway, 'sikatpay');
+
+    const capCfRealSgRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, {
+        'x-vercel-ip-country': 'SG',
+        'cf-ipcountry': 'SG',
+        'cf-ray': '8a1b2c3d4e5f6a7b-SIN',
+      }),
+      capCfRealSgRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capCfRealSgRes.json().detectedCountry, 'SG');
+    assert.equal(capCfRealSgRes.json().isPhEligible, false);
+
     // 3. Anti-arbitrage: US IP requesting PH + sikatpay gets forced to INTL + kofi
     const usSpoofRes = makeRes();
     await paymentLib.handlePaymentEndpoint(
