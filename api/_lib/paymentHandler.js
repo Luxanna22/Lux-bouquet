@@ -1132,6 +1132,7 @@ export const OWNER_ANALYTICS_STATE = {
   revenueUsdCents: 0,
   revenuePhpCentavos: 0,
   incomePausedForTesting: false,
+  phPaymentsDisabled: false,
   incomeResetAtMs: 0,
   incomeResetEpoch: 0,
   blockedShareAttempts: 0,
@@ -1182,6 +1183,8 @@ export const OWNER_ANALYTICS_STATE = {
 };
 
 let incomePauseUpdatedAtMs = 0;
+let phDisabledUpdatedAtMs = 0;
+let lastCheckoutFlagHydrateMs = 0;
 
 export const TESTER_VOUCHER_LEDGER = new Map();
 export const PAID_PASS_LEDGER = new Map();
@@ -1203,6 +1206,16 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     );
   } else if (incomePauseUpdatedAtMs === 0 && remote.analytics?.incomePausedForTesting !== undefined) {
     OWNER_ANALYTICS_STATE.incomePausedForTesting = Boolean(remote.analytics.incomePausedForTesting);
+  }
+
+  const remotePhDisabledTs = Number(remote.phDisabledUpdatedAtMs || 0);
+  if (remotePhDisabledTs > phDisabledUpdatedAtMs) {
+    phDisabledUpdatedAtMs = remotePhDisabledTs;
+    OWNER_ANALYTICS_STATE.phPaymentsDisabled = Boolean(
+      remote.phPaymentsDisabled ?? remote.analytics?.phPaymentsDisabled
+    );
+  } else if (phDisabledUpdatedAtMs === 0 && remote.analytics?.phPaymentsDisabled !== undefined) {
+    OWNER_ANALYTICS_STATE.phPaymentsDisabled = Boolean(remote.analytics.phPaymentsDisabled);
   }
 
   if (remoteHasNewerReset) {
@@ -1545,6 +1558,8 @@ export async function savePersistentOwnerVaultServer() {
       incomeResetAtMs: Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0),
       incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
       incomePauseUpdatedAtMs,
+      phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
+      phDisabledUpdatedAtMs,
       customOwnerPin: cachedCustomOwnerPin || '',
       revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
       issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
@@ -1739,6 +1754,37 @@ export function toggleIncomePauseServer(paused, nowMs = Date.now()) {
     'INTL'
   );
   return OWNER_ANALYTICS_STATE.incomePausedForTesting;
+}
+
+export function isPhPaymentsDisabledServer() {
+  const envVal = String(process.env.DISABLE_PH_PAYMENTS || '').trim().toLowerCase();
+  if (envVal === 'true' || envVal === '1') return true;
+  return Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled);
+}
+
+export function togglePhPaymentsDisabledServer(disabled, nowMs = Date.now()) {
+  OWNER_ANALYTICS_STATE.phPaymentsDisabled =
+    typeof disabled === 'boolean' ? disabled : !OWNER_ANALYTICS_STATE.phPaymentsDisabled;
+  phDisabledUpdatedAtMs = Math.max(nowMs, phDisabledUpdatedAtMs + 1);
+  lastCheckoutFlagHydrateMs = Date.now();
+  pushAnalyticsEventServer(
+    'monetization',
+    OWNER_ANALYTICS_STATE.phPaymentsDisabled ? 'ph_payments_disabled' : 'ph_payments_enabled',
+    OWNER_ANALYTICS_STATE.phPaymentsDisabled
+      ? 'Owner disabled PH payments (all checkouts routed to USD / Ko-fi)'
+      : 'Owner enabled PH payments for eligible PH visitors',
+    'desktop',
+    'PH'
+  );
+  return OWNER_ANALYTICS_STATE.phPaymentsDisabled;
+}
+
+async function ensureCheckoutFlagsHydratedServer() {
+  if (process.env.NODE_TEST_CONTEXT) return false;
+  const nowMs = Date.now();
+  if (nowMs - lastCheckoutFlagHydrateMs < 15_000) return false;
+  lastCheckoutFlagHydrateMs = nowMs;
+  return hydratePersistentOwnerVaultServer();
 }
 
 export function clearTestAndRevokedPaidKeysServer() {
@@ -2644,6 +2690,7 @@ export function resolveCheckoutRegionAndProvider({
   bayadgateMerchantId = '',
   bayadgateSecret = '',
   vercelCountry = '',
+  phDisabled = false,
 } = {}) {
   const hasSikatpay = Boolean(String(sikatpayApiKey || '').trim());
   const hasPaymongo = Boolean(String(paymongoSecret || '').trim());
@@ -2652,8 +2699,8 @@ export function resolveCheckoutRegionAndProvider({
   );
   const normalizedCountry = String(vercelCountry || '').trim().toUpperCase();
 
-  // While no PH local gateway is configured, strictly enforce USD ('INTL') + Ko-fi Shop.
-  if (!hasSikatpay && !hasPaymongo && !hasBayadgate) {
+  // When PH payments are disabled by owner or no PH local gateway is configured, strictly enforce USD ('INTL') + Ko-fi Shop.
+  if (phDisabled || (!hasSikatpay && !hasPaymongo && !hasBayadgate)) {
     return { region: 'INTL', provider: 'kofi' };
   }
 
@@ -2763,12 +2810,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
   try {
     // 0. GET /api/payments/create-checkout — Server-authoritative gateway & regional capability check
     if (pathname === '/api/payments/create-checkout' && req.method === 'GET') {
+      await ensureCheckoutFlagsHydratedServer();
+      const phDisabled = isPhPaymentsDisabledServer();
       const sikatpay = getSikatpayConfig();
       const bayadgate = getBayadgateConfig();
       const paymongoSecret = process.env.PAYMONGO_SECRET_KEY?.trim() || '';
       const hasPaymongo = Boolean(paymongoSecret);
       const vercelCountry = extractEdgeCountryCode(req);
-      const phGateway = sikatpay.configured
+      const phGateway = phDisabled
+        ? null
+        : sikatpay.configured
         ? 'sikatpay'
         : bayadgate.configured
         ? 'bayadgate'
@@ -2776,21 +2827,22 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         ? 'paymongo'
         : null;
       const isCountryPhOrLocal = !vercelCountry || vercelCountry === 'PH';
-      const isPhEligible = Boolean(phGateway && isCountryPhOrLocal);
-      const defaultRegion = phGateway && vercelCountry === 'PH' ? 'PH' : 'INTL';
+      const isPhEligible = Boolean(!phDisabled && phGateway && isCountryPhOrLocal);
+      const defaultRegion = !phDisabled && phGateway && vercelCountry === 'PH' ? 'PH' : 'INTL';
       const availableProviders = isPhEligible ? [phGateway, 'kofi'] : ['kofi'];
 
       sendJson(res, 200, {
         ok: true,
         detectedCountry: vercelCountry,
+        phDisabled,
         isPhEligible,
         defaultRegion,
         phGateway,
-        sikatpayTestMode: sikatpay.isTestKey,
+        sikatpayTestMode: !phDisabled && sikatpay.isTestKey,
         phMethods:
           phGateway === 'sikatpay'
             ? ['QRPH', 'GCASH', 'MAYA']
-            : bayadgate.configured
+            : phGateway === 'bayadgate'
             ? BAYADGATE_PAYMENT_METHODS
             : [],
         availableProviders,
@@ -2800,6 +2852,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
     // 1. POST /api/payments/create-checkout
     if (pathname === '/api/payments/create-checkout' && req.method === 'POST') {
+      await ensureCheckoutFlagsHydratedServer();
       const { parsed } = await readRequestBody(req);
 
       // Allow owner to sync their 3 Ko-fi Shop direct_link_codes
@@ -2839,6 +2892,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         bayadgateMerchantId: bayadgate.merchantId,
         bayadgateSecret: bayadgate.secretKey,
         vercelCountry,
+        phDisabled: isPhPaymentsDisabledServer(),
       });
 
       const deviceTokenHash =
@@ -4139,6 +4193,35 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         sendJson(res, 200, {
           ok: true,
           incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4D-3b2. Toggle PH Payments Disabled (forces USD / Ko-fi only while PH live gateway key verifies)
+      if (actionType === 'toggle_ph_payments') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        togglePhPaymentsDisabledServer(
+          typeof parsed.disabled === 'boolean' ? parsed.disabled : undefined
+        );
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),

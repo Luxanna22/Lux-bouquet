@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pause, Play, RotateCcw } from 'lucide-react';
+import { Globe, Pause, Play, RotateCcw } from 'lucide-react';
 import {
   OwnerAnalyticsSummary,
   PaidPassLedgerItem,
@@ -14,8 +14,10 @@ interface OwnerOverviewSectionProps {
   isDarkMode: boolean;
   formatLabel: (raw: string) => string;
   isTogglingIncomePause?: boolean;
+  isTogglingPhDisabled?: boolean;
   isResettingIncome?: boolean;
   onToggleIncomePause?: (nextPaused: boolean) => void;
+  onTogglePhDisabled?: (nextDisabled: boolean) => void;
   onResetIncome?: (purgeTestAndRevoked: boolean) => void;
 }
 
@@ -39,8 +41,10 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   isDarkMode,
   formatLabel,
   isTogglingIncomePause = false,
+  isTogglingPhDisabled = false,
   isResettingIncome = false,
   onToggleIncomePause,
+  onTogglePhDisabled,
   onResetIncome,
 }) => {
   const [chartMode, setChartMode] = useState<ChartSeriesMode>('traffic');
@@ -126,10 +130,11 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   const sageColor = isDarkMode ? '#8AB89A' : '#5E8568';
 
   const isIncomePaused = Boolean(analytics.incomePausedForTesting);
+  const isPhDisabled = Boolean(analytics.phPaymentsDisabled);
 
   return (
     <div className="space-y-6 animate-[fadeIn_180ms_ease-out]">
-      {/* Page Header & Webhook Testing / Income Controls */}
+      {/* Page Header & Webhook Testing / Income / Region Controls */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
           <h1
@@ -141,10 +146,36 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           <p className="text-xs opacity-60 tabular-nums mt-0.5">
             Live telemetry · {metrics.totalPaidPasses} paid keys · {testerCount} tester invites
             {isIncomePaused ? ' · Income Paused (Test Mode)' : ''}
+            {isPhDisabled ? ' · USD Only (PH Disabled)' : ''}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {onTogglePhDisabled && (
+            <button
+              data-testid="toggle-ph-disabled-btn"
+              type="button"
+              disabled={isTogglingPhDisabled}
+              onClick={() => onTogglePhDisabled(!isPhDisabled)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 ${
+                isPhDisabled
+                  ? isDarkMode
+                    ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C] hover:bg-[#F0C8AE]'
+                    : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434] hover:bg-[#593527]'
+                  : `${hairlineBorder} hover:bg-current/5`
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>
+                {isTogglingPhDisabled
+                  ? 'Updating...'
+                  : isPhDisabled
+                  ? 'PH Disabled · Enable PH'
+                  : 'Disable PH (USD Only)'}
+              </span>
+            </button>
+          )}
+
           {onToggleIncomePause && (
             <button
               data-testid="toggle-income-pause-btn"
@@ -235,6 +266,27 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
               }`}
             >
               Resume Live Income
+            </button>
+          )}
+        </div>
+      )}
+
+      {isPhDisabled && (
+        <div
+          data-testid="ph-disabled-banner"
+          className={`rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${panelClass}`}
+        >
+          <p className="leading-relaxed">
+            <span className="font-medium">PH Payments disabled (USD Only):</span> All visitors automatically see USD pricing ($2.99 / $4.99 / $8.99) and PayPal · Card · Ko-fi while PH live gateway approval is pending.
+          </p>
+          {onTogglePhDisabled && (
+            <button
+              type="button"
+              disabled={isTogglingPhDisabled}
+              onClick={() => onTogglePhDisabled(false)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium shrink-0 cursor-pointer transition-colors ${hairlineBorder} hover:bg-current/5`}
+            >
+              Enable PH Payments
             </button>
           )}
         </div>

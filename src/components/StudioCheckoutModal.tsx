@@ -373,6 +373,7 @@ export interface StudioCheckoutModalProps {
 
 export interface CheckoutCapabilityState {
   isPhEligible: boolean;
+  phDisabled?: boolean;
   defaultRegion: PricingRegion;
   phGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
   initialGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
@@ -381,11 +382,26 @@ export interface CheckoutCapabilityState {
 let cachedCheckoutCapability: CheckoutCapabilityState | null = null;
 let inFlightCapabilityPromise: Promise<CheckoutCapabilityState> | null = null;
 
+export function invalidateCheckoutCapabilityCache(): void {
+  cachedCheckoutCapability = null;
+  inFlightCapabilityPromise = null;
+}
+
 function resolveInitialGatewayFromConfig(cfg: {
   isPhEligible?: boolean;
+  phDisabled?: boolean;
   defaultRegion?: PricingRegion;
   phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
 }): CheckoutCapabilityState {
+  if (cfg.phDisabled) {
+    return {
+      isPhEligible: false,
+      phDisabled: true,
+      defaultRegion: 'INTL',
+      phGateway: null,
+      initialGateway: 'kofi',
+    };
+  }
   const eligible = Boolean(cfg.isPhEligible && cfg.phGateway);
   const phGw = cfg.phGateway || null;
   let initialGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi' = 'kofi';
@@ -401,6 +417,7 @@ function resolveInitialGatewayFromConfig(cfg: {
   }
   return {
     isPhEligible: eligible,
+    phDisabled: false,
     defaultRegion: cfg.defaultRegion === 'PH' ? 'PH' : 'INTL',
     phGateway: phGw,
     initialGateway,
@@ -420,6 +437,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
       return (await res.json().catch(() => null)) as {
         ok?: boolean;
         isPhEligible?: boolean;
+        phDisabled?: boolean;
         defaultRegion?: PricingRegion;
         phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
       } | null;
@@ -430,6 +448,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
           ? resolveInitialGatewayFromConfig(cfg)
           : {
               isPhEligible: false,
+              phDisabled: false,
               defaultRegion: 'INTL' as PricingRegion,
               phGateway: null,
               initialGateway: 'kofi' as const,
@@ -439,6 +458,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
     })
     .catch(() => ({
       isPhEligible: false,
+      phDisabled: false,
       defaultRegion: 'INTL' as PricingRegion,
       phGateway: null,
       initialGateway: 'kofi' as const,

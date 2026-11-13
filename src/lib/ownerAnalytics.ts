@@ -192,6 +192,7 @@ export interface OwnerAnalyticsSummary {
   revenueUsdCents: number;
   revenuePhpCentavos: number;
   incomePausedForTesting?: boolean;
+  phPaymentsDisabled?: boolean;
   incomeResetAtMs?: number;
   incomeResetEpoch?: number;
   blockedShareAttempts: number;
@@ -272,6 +273,7 @@ export function createInitialAnalyticsSummary(nowMs: number = Date.now()): Owner
     revenueUsdCents: 0,
     revenuePhpCentavos: 0,
     incomePausedForTesting: false,
+    phPaymentsDisabled: false,
     incomeResetAtMs: 0,
     incomeResetEpoch: 0,
     blockedShareAttempts: 0,

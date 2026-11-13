@@ -28,6 +28,7 @@ import { BrandLogoMark } from './BrandLogoMark';
 import { OwnerOverviewSection } from './OwnerOverviewSection';
 import { OwnerKeysSection } from './OwnerKeysSection';
 import { OwnerAiAdvisorPanel } from './OwnerAiAdvisorPanel';
+import { invalidateCheckoutCapabilityCache } from './StudioCheckoutModal';
 
 interface StealthGateAndOwnerConsoleProps {
   gateSlug: string;
@@ -164,6 +165,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [newOwnerPin, setNewOwnerPin] = useState('');
   const [isUpdatingPin, setIsUpdatingPin] = useState(false);
   const [isTogglingIncomePause, setIsTogglingIncomePause] = useState(false);
+  const [isTogglingPhDisabled, setIsTogglingPhDisabled] = useState(false);
   const [isResettingIncome, setIsResettingIncome] = useState(false);
   const [isClearingKeys, setIsClearingKeys] = useState(false);
 
@@ -509,6 +511,39 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       onToast('Network error updating income mode.');
     } finally {
       setIsTogglingIncomePause(false);
+    }
+  };
+
+  const handleTogglePhDisabled = async (nextDisabled: boolean) => {
+    if (!adminSessionToken) return;
+    setIsTogglingPhDisabled(true);
+    try {
+      const res = await fetch('/api/payments/verify-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle_ph_payments',
+          adminSessionToken,
+          deviceTokenHash,
+          disabled: nextDisabled,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        invalidateCheckoutCapabilityCache();
+        handleSyncKeysResponse(data);
+        onToast(
+          nextDisabled
+            ? 'PH payments disabled — checkout is now USD only.'
+            : 'PH payments re-enabled for PH visitors.'
+        );
+      } else {
+        onToast(data.message || 'Could not update PH payment mode.');
+      }
+    } catch {
+      onToast('Network error updating PH payment mode.');
+    } finally {
+      setIsTogglingPhDisabled(false);
     }
   };
 
@@ -1234,8 +1269,10 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               isDarkMode={isDarkMode}
               formatLabel={formatLabel}
               isTogglingIncomePause={isTogglingIncomePause}
+              isTogglingPhDisabled={isTogglingPhDisabled}
               isResettingIncome={isResettingIncome}
               onToggleIncomePause={handleToggleIncomePause}
+              onTogglePhDisabled={handleTogglePhDisabled}
               onResetIncome={handleResetIncome}
             />
           )}

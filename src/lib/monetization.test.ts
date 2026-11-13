@@ -1904,5 +1904,205 @@ test('SikatPay PH flow: create-checkout, HMAC-SHA256 webhook, amount/livemode gu
   }
 });
 
+test('Admin Disable PH toggle forces USD-only checkout across GET, POST, and verify-action', async () => {
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error ESM server handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
 
+  const prevSecret = process.env.PASS_SIGNING_SECRET;
+  const prevSpKey = process.env.SIKATPAY_API_KEY;
+  const prevDisableEnv = process.env.DISABLE_PH_PAYMENTS;
+  const prevDisabledState = paymentLib.isPhPaymentsDisabledServer();
+  const originalFetch = globalThis.fetch;
 
+  process.env.PASS_SIGNING_SECRET = 'test_signing_secret_for_ph_disable';
+  process.env.SIKATPAY_API_KEY = 'mk_test_ph_disable_key';
+  delete process.env.DISABLE_PH_PAYMENTS;
+
+  const makeReq = (
+    method: string,
+    url: string,
+    bodyStr?: string,
+    headers: Record<string, string> = {}
+  ) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: { host: 'www.sendabouquet.online', ...headers },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    let statusCode = 200;
+    const headers: Record<string, string> = {};
+    let rawBody = '';
+    return {
+      get statusCode() {
+        return statusCode;
+      },
+      set statusCode(val: number) {
+        statusCode = val;
+      },
+      setHeader(k: string, v: string) {
+        headers[k.toLowerCase()] = v;
+      },
+      getHeader(k: string) {
+        return headers[k.toLowerCase()];
+      },
+      end(chunk?: string) {
+        if (chunk) rawBody += chunk;
+      },
+      json() {
+        return JSON.parse(rawBody || '{}');
+      },
+    };
+  };
+
+  // Stub fetch so Firestore owner-vault persistence in verify-action returns fast locally
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    // 1. Pure routing helper enforces INTL + kofi whenever phDisabled is true
+    const forcedRouting = paymentLib.resolveCheckoutRegionAndProvider({
+      headerCountry: 'PH',
+      requestedRegion: 'PH',
+      requestedProvider: 'sikatpay',
+      sikatpayConfigured: true,
+      bayadgateConfigured: true,
+      paymongoConfigured: true,
+      phDisabled: true,
+    });
+    assert.deepEqual(forcedRouting, { region: 'INTL', provider: 'kofi' });
+
+    // 2. Toggle via togglePhPaymentsDisabledServer(true)
+    paymentLib.togglePhPaymentsDisabledServer(true);
+    assert.equal(paymentLib.isPhPaymentsDisabledServer(), true);
+
+    // 3. GET /api/payments/create-checkout returns phDisabled: true & INTL/kofi even with PH IP headers
+    const getDisabledRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, {
+        'x-vercel-ip-country': 'PH',
+        'cf-ipcountry': 'PH',
+      }),
+      getDisabledRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(getDisabledRes.statusCode, 200);
+    const getDisabledBody = getDisabledRes.json();
+    assert.equal(getDisabledBody.phDisabled, true);
+    assert.equal(getDisabledBody.isPhEligible, false);
+    assert.equal(getDisabledBody.defaultRegion, 'INTL');
+    assert.equal(getDisabledBody.phGateway, null);
+    assert.deepEqual(getDisabledBody.availableProviders, ['kofi']);
+
+    // 4. POST /api/payments/create-checkout refuses PH/sikatpay and creates USD/kofi checkout
+    const postDisabledRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'pass_7d',
+          region: 'PH',
+          provider: 'sikatpay',
+          deviceTokenHash: 'dev_ph_forced_usd_01',
+          origin: 'https://www.sendabouquet.online',
+        }),
+        {
+          'x-vercel-ip-country': 'PH',
+          'cf-ipcountry': 'PH',
+          'content-type': 'application/json',
+        }
+      ),
+      postDisabledRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(postDisabledRes.statusCode, 200);
+    const postDisabledBody = postDisabledRes.json();
+    assert.equal(postDisabledBody.ok, true);
+    assert.equal(postDisabledBody.provider, 'kofi');
+    assert.equal(postDisabledBody.plan.currency, 'USD');
+    assert.equal(postDisabledBody.plan.amountMinor, 499);
+
+    // 5. POST /api/payments/verify-action toggle_ph_payments requires valid admin session and toggles state
+    const devAdmin = 'dev_admin_toggle_ph_test';
+    const adminToken = paymentLib.createSignedAdminSessionToken(devAdmin);
+
+    const unauthToggleRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'toggle_ph_payments',
+          disabled: false,
+          adminSessionToken: 'invalid_token',
+          deviceTokenHash: devAdmin,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      unauthToggleRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(unauthToggleRes.statusCode, 401);
+
+    const reEnableRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'toggle_ph_payments',
+          disabled: false,
+          adminSessionToken: adminToken,
+          deviceTokenHash: devAdmin,
+        }),
+        { 'content-type': 'application/json' }
+      ),
+      reEnableRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(reEnableRes.statusCode, 200);
+    assert.equal(reEnableRes.json().ok, true);
+    assert.equal(reEnableRes.json().phPaymentsDisabled, false);
+    assert.equal(reEnableRes.json().analytics.phPaymentsDisabled, false);
+
+    // 6. After re-enabling, GET /api/payments/create-checkout restores PH/SikatPay for PH visitors
+    const getRestoredRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', '/api/payments/create-checkout', undefined, {
+        'x-vercel-ip-country': 'PH',
+      }),
+      getRestoredRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(getRestoredRes.statusCode, 200);
+    assert.equal(getRestoredRes.json().phDisabled, false);
+    assert.equal(getRestoredRes.json().isPhEligible, true);
+    assert.equal(getRestoredRes.json().defaultRegion, 'PH');
+    assert.equal(getRestoredRes.json().phGateway, 'sikatpay');
+  } finally {
+    paymentLib.togglePhPaymentsDisabledServer(prevDisabledState);
+    globalThis.fetch = originalFetch;
+    if (prevSecret !== undefined) process.env.PASS_SIGNING_SECRET = prevSecret;
+    else delete process.env.PASS_SIGNING_SECRET;
+    if (prevSpKey !== undefined) process.env.SIKATPAY_API_KEY = prevSpKey;
+    else delete process.env.SIKATPAY_API_KEY;
+    if (prevDisableEnv !== undefined) process.env.DISABLE_PH_PAYMENTS = prevDisableEnv;
+    else delete process.env.DISABLE_PH_PAYMENTS;
+  }
+});
