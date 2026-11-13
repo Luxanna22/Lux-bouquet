@@ -402,10 +402,11 @@ export function inspectBouquetPremiumUsage(
 }
 
 // ============================================================================
-// 2. THREE-TIER BOUQUET LINK LIFESPAN (30 Days vs. 90 Days Extended vs. Eternal)
-//    - Free Bouquet: 30 days on the Lace Garland
-//    - Paid Single Unlock / 7-Day Pass: 90 days (+60 bonus days, still expires!)
-//    - 30-Day Studio Pass: Eternal Keepsake (isPremium: true, never expires!)
+// 2. THREE-TIER GALLERY SHOWCASE LIFESPAN (vs. PERMANENT RECIPIENT LINKS)
+//    - Recipient Gift Links (`sendabouquet.online/<code>`): ALWAYS permanent
+//    - Free Bouquet: 30 days on Shared Creations gallery
+//    - Single Bouquet / 7-Day Pass: 90 days on Shared Creations gallery
+//    - 30-Day Pass: Eternal showcase (`isPremium: true`, stays on gallery forever)
 // ============================================================================
 
 export const FREE_BOUQUET_RETENTION_DAYS = 30;
@@ -426,20 +427,20 @@ export function getRetentionPolicyForPassTier(tier: StudioPassTier | 'free'): Bo
     return {
       retentionDays: ETERNAL_RETENTION_DAYS,
       isPremiumEternal: true,
-      badgeLabel: 'Never expires',
+      badgeLabel: 'Eternal gallery',
     };
   }
   if (tier === 'single' || tier === 'pass_7d') {
     return {
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isPremiumEternal: false,
-      badgeLabel: '90-day link',
+      badgeLabel: '90-day gallery',
     };
   }
   return {
     retentionDays: FREE_BOUQUET_RETENTION_DAYS,
     isPremiumEternal: false,
-    badgeLabel: '30-day link',
+    badgeLabel: '30-day gallery',
   };
 }
 
@@ -469,7 +470,7 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       tier: 'single',
       name: 'Single Bouquet',
       eyebrow: 'One Arrangement',
-      tagline: 'This bouquet + PNG · 90-day link',
+      tagline: '1 premium bouquet · 90-day gallery · Permanent link',
       currency: 'PHP',
       symbol: '₱',
       displayPrice: '₱49',
@@ -477,13 +478,13 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       durationDays: null,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
-      perks: ['1 bouquet + PNG', '90-day link'],
+      perks: ['1 premium bouquet', '90-day gallery', 'Permanent gift link'],
     },
     pass_7d: {
       tier: 'pass_7d',
       name: '7-Day Pass',
       eyebrow: 'Week Access',
-      tagline: 'Unlimited creations · 90-day links',
+      tagline: 'Unlimited for 7 days · 90-day gallery · Permanent links',
       currency: 'PHP',
       symbol: '₱',
       displayPrice: '₱99',
@@ -492,13 +493,13 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
       popular: true,
-      perks: ['7 days unlimited', 'PNG downloads', '90-day links'],
+      perks: ['Unlimited bouquets for 7 days', '90-day gallery', 'Permanent gift links'],
     },
     pass_30d: {
       tier: 'pass_30d',
-      name: '30-Day Eternal',
+      name: '30-Day Pass',
       eyebrow: 'Month Access',
-      tagline: 'Unlimited creations · Never expires',
+      tagline: 'Unlimited for 30 days · Eternal showcase · Permanent links',
       currency: 'PHP',
       symbol: '₱',
       displayPrice: '₱199',
@@ -506,7 +507,7 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       durationDays: 30,
       retentionDays: ETERNAL_RETENTION_DAYS,
       isEternalKeepsake: true,
-      perks: ['30 days unlimited', 'PNG downloads', 'Links never expire'],
+      perks: ['Unlimited bouquets for 30 days', 'Eternal gallery showcase', 'Permanent gift links'],
     },
   },
   INTL: {
@@ -514,44 +515,44 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       tier: 'single',
       name: 'Single Bouquet',
       eyebrow: 'One Arrangement',
-      tagline: 'This bouquet + PNG · 90-day link',
+      tagline: '1 premium bouquet · 90-day gallery · Permanent link',
       currency: 'USD',
       symbol: '$',
-      displayPrice: '$2.99',
-      amountMinor: 299,
+      displayPrice: '$1.99',
+      amountMinor: 199,
       durationDays: null,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
-      perks: ['1 bouquet + PNG', '90-day link'],
+      perks: ['1 premium bouquet', '90-day gallery', 'Permanent gift link'],
     },
     pass_7d: {
       tier: 'pass_7d',
       name: '7-Day Pass',
       eyebrow: 'Week Access',
-      tagline: 'Unlimited creations · 90-day links',
+      tagline: 'Unlimited for 7 days · 90-day gallery · Permanent links',
       currency: 'USD',
       symbol: '$',
-      displayPrice: '$4.99',
-      amountMinor: 499,
+      displayPrice: '$3.99',
+      amountMinor: 399,
       durationDays: 7,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
       popular: true,
-      perks: ['7 days unlimited', 'PNG downloads', '90-day links'],
+      perks: ['Unlimited bouquets for 7 days', '90-day gallery', 'Permanent gift links'],
     },
     pass_30d: {
       tier: 'pass_30d',
-      name: '30-Day Eternal',
+      name: '30-Day Pass',
       eyebrow: 'Month Access',
-      tagline: 'Unlimited creations · Never expires',
+      tagline: 'Unlimited for 30 days · Eternal showcase · Permanent links',
       currency: 'USD',
       symbol: '$',
-      displayPrice: '$8.99',
-      amountMinor: 899,
+      displayPrice: '$6.99',
+      amountMinor: 699,
       durationDays: 30,
       retentionDays: ETERNAL_RETENTION_DAYS,
       isEternalKeepsake: true,
-      perks: ['30 days unlimited', 'PNG downloads', 'Links never expire'],
+      perks: ['Unlimited bouquets for 30 days', 'Eternal gallery showcase', 'Permanent gift links'],
     },
   },
 };
@@ -1139,7 +1140,7 @@ export function verifyActiveStudioPassForAction(params: {
     };
   }
 
-  // Enforce Single-Bouquet Unlock binding so a ₱49/$2.99 single unlock cannot be reused on new bouquets
+  // Enforce Single-Bouquet Unlock binding so a ₱49/$1.99 single unlock cannot be reused on new bouquets
   if (pass.tier === 'single' && !isTester) {
     const singleAlreadyUsed =
       pass.secondaryDeviceHash === 'SINGLE_CONSUMED' || Number(pass.dailyUsageCount || 0) >= 1;

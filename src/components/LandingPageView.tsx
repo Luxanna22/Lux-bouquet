@@ -56,11 +56,11 @@ interface LandingPageViewProps {
 const FAQ_ITEMS = [
   {
     q: 'Is it free to craft and share bouquets?',
-    a: 'Yes! You can arrange unlimited custom digital bouquets with signature flowers, wraps, ribbons, and a personal card note completely for free. Free sealed bouquets stay active for 30 days.',
+    a: 'Yes! You can arrange and share unlimited classic bouquets with signature flowers, wraps, ribbons, and a handwritten card note completely for free. Every recipient gift link stays active permanently, while free bouquets appear in the Shared Creations gallery for 30 days.',
   },
   {
     q: 'What comes with a Couture Pass or Single Bouquet unlock?',
-    a: 'Unlocking a Single Bouquet ($2.99), 7-Day Pass ($4.99), or 30-Day Eternal Pass ($8.99) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 1,500-character notes, high-resolution PNG downloads, and eternal links on 30-day passes.',
+    a: 'Unlocking a Single Bouquet ($1.99 for 1 premium bouquet), 7-Day Pass ($3.99 for unlimited bouquets over 7 days), or 30-Day Pass ($6.99 for unlimited bouquets over 30 days) gives you glimmering luxury blooms, couture wraps & ribbons, photocards, voice keepsakes, longer 1,500-character notes, and high-resolution PNG downloads. Single Bouquet and 7-Day Pass include 90-day Shared Creations gallery visibility, the 30-Day Pass includes an eternal gallery showcase, and all passes include permanent recipient gift links.',
   },
   {
     q: 'Can I add photos and a recorded voice message?',

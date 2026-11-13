@@ -20,7 +20,7 @@ const TERMS_SECTIONS = [
   {
     num: '02',
     title: 'Free Studio & Couture Passes',
-    body: 'Anyone can craft and share unlimited classic bouquets for free (including 30-day gift links and local device drafts). Optional Couture Unlocks—Single Bouquet ($2.99), 7-Day Pass ($4.99), and 30-Day Eternal Pass ($8.99)—unlock glimmering couture blooms, luxury wraps and ribbons, photo keepsakes, voice notes, 1,500-character card notes, high-resolution PNG downloads, and extended 90-day or never-expiring gift links.',
+    body: 'Anyone can craft and share unlimited classic bouquets for free (including permanent recipient gift links, 30-day Shared Creations gallery listing, and local device drafts). Optional Couture Unlocks—Single Bouquet ($1.99 for 1 premium bouquet, 90-day gallery), 7-Day Pass ($3.99 for unlimited bouquets for 7 days, 90-day gallery), and 30-Day Pass ($6.99 for unlimited bouquets for 30 days, eternal gallery showcase)—unlock glimmering couture blooms, luxury wraps and ribbons, photo keepsakes, voice notes, 1,500-character card notes, high-resolution PNG downloads, and permanent recipient gift links.',
   },
   {
     num: '03',
@@ -53,7 +53,7 @@ const PRIVACY_SECTIONS = [
   {
     num: '03',
     title: 'Shared Gift Links, Photos & Voice Keepsakes',
-    body: 'When you seal a bouquet, its arrangement data, card note, attached photos, and optional voice recording are stored in our cloud database solely to deliver your gift via its unique short link (sendabouquet.online/<code>). Free links expire automatically after 30 days, Single and 7-Day Pass links after 90 days, and 30-Day Eternal Pass links are preserved indefinitely.',
+    body: 'When you seal a bouquet, its arrangement data, card note, attached photos, and optional voice recording are stored in our cloud database solely to deliver your gift via its unique short link (sendabouquet.online/<code>). Recipient gift links remain permanent across all tiers; if you choose to display your bouquet on the public Shared Creations gallery, free listings remain visible for 30 days, Single Bouquet and 7-Day Pass listings for 90 days, and 30-Day Pass showcase listings are preserved eternally.',
   },
   {
     num: '04',

@@ -257,7 +257,7 @@ describe('Direct Paid Key Generator & Revocation (PH & INTL)', () => {
     assert.equal(sealSecond.valid, false);
     assert.equal(sealSecond.status, 'SINGLE_BOUQUET_ALREADY_USED');
 
-    // 2. Mint an INTL 30-Day Eternal key ($8.99) -> Eternal keepsake, increments USD
+    // 2. Mint an INTL 30-Day Pass key ($6.99) -> Eternal showcase, increments USD
     const mintedEternal = mintPaidPassServer({
       tier: 'pass_30d',
       region: 'INTL',
@@ -268,9 +268,9 @@ describe('Direct Paid Key Generator & Revocation (PH & INTL)', () => {
 
     assert.equal(mintedEternal.pass.isEternalKeepsake, true);
     assert.equal(mintedEternal.pass.retentionDays, 36500);
-    assert.equal(mintedEternal.paidPass.amountMinor, 899);
+    assert.equal(mintedEternal.paidPass.amountMinor, 699);
     assert.equal(mintedEternal.paidPass.currency, 'USD');
-    assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, usdBefore + 899);
+    assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, usdBefore + 699);
     assert.equal(OWNER_ANALYTICS_STATE.passesIssued.pass_30d, eternalCountBefore + 1);
 
     // 3. Revoking the paid key blocks future redemptions, marks ledger revoked, and excludes its revenue
@@ -339,7 +339,7 @@ describe('Direct Paid Key Generator & Revocation (PH & INTL)', () => {
         paymentReference: 'kofi_real_001',
       });
       recordPaidPassIssuanceServer(realPass, { isTest: false, channel: 'kofi' });
-      assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, 499);
+      assert.equal(OWNER_ANALYTICS_STATE.revenueUsdCents, 399);
       assert.equal(OWNER_ANALYTICS_STATE.passesIssued.pass_7d, 1);
 
       // 4. Resetting income zeroes totals and stale remote vault sync cannot resurrect pre-reset income

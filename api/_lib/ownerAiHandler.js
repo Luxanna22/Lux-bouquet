@@ -134,7 +134,7 @@ export function sanitizeAnalyticsForAi(analytics, phpPerUsd = 56) {
       combinedGrossPhp,
       pricingCatalog: {
         PH: { singlePhp: 49, pass7dPhp: 99, pass30dPhp: 199 },
-        INTL: { singleUsd: 2.99, pass7dUsd: 4.99, pass30dUsd: 8.99 },
+        INTL: { singleUsd: 1.99, pass7dUsd: 3.99, pass30dUsd: 6.99 },
       },
       passesIssued: {
         single: singleIssued,
@@ -248,7 +248,7 @@ const SYSTEM_INSTRUCTION = [
   'Audience: the studio owner and prospective business buyers evaluating traction, unit economics, and monetization upside.',
   'Strict Data Rules:',
   '- Ground every claim strictly in the provided sanitized JSON metrics snapshot.',
-  '- Never fabricate numbers or claim revenue that is zero. If live counters are low or zero, state that clearly and walk through realistic sensitivity math using the live PH (₱49 / ₱99 / ₱199) and INTL ($2.99 / $4.99 / $8.99) catalog prices.',
+  '- Never fabricate numbers or claim revenue that is zero. If live counters are low or zero, state that clearly and walk through realistic sensitivity math using the live PH (₱49 / ₱99 / ₱199) and INTL ($1.99 / $3.99 / $6.99) catalog prices.',
   '- Never ask for or output secrets, pass keys, personal emails, or raw device tokens.',
   'Response Style:',
   '- Concise, scannable, plain executive prose with short bullet points (max ~220 words unless a detailed breakdown is explicitly asked).',

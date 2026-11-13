@@ -39,22 +39,22 @@ const PAID_TIER_OPTIONS: Array<{
     tier: 'single',
     label: 'Single Bouquet',
     phPrice: '₱49',
-    intlPrice: '$2.99',
-    detail: '1 arrangement · 90d',
+    intlPrice: '$1.99',
+    detail: '1 premium · 90d gallery',
   },
   {
     tier: 'pass_7d',
     label: '7-Day Pass',
     phPrice: '₱99',
-    intlPrice: '$4.99',
-    detail: 'Unlimited 7d · 90d',
+    intlPrice: '$3.99',
+    detail: 'Unlimited 7d · 90d gallery',
   },
   {
     tier: 'pass_30d',
-    label: '30-Day Eternal',
+    label: '30-Day Pass',
     phPrice: '₱199',
-    intlPrice: '$8.99',
-    detail: 'Unlimited 30d · Never expires',
+    intlPrice: '$6.99',
+    detail: 'Unlimited 30d · Eternal gallery',
   },
 ];
 
@@ -544,7 +544,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                       : `$${(p.amountMinor / 100).toFixed(2)}`;
                   const tierName =
                     p.tier === 'pass_30d'
-                      ? '30-Day Eternal'
+                      ? '30-Day Pass'
                       : p.tier === 'pass_7d'
                       ? '7-Day Pass'
                       : 'Single';

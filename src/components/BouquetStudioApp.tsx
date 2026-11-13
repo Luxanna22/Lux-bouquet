@@ -6592,22 +6592,27 @@ export default function App() {
                       : 'bg-[#FAF4EE]/65 border-[#E2D1C1]'
                   }`}
                 >
-                  {/* Lifespan Row */}
+                  {/* Gallery Showcase vs. Permanent Link Row */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium">Gift link lifespan</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-medium block">Shared Creations gallery</span>
+                      <span className="text-[10.5px] opacity-70 block">
+                        Recipient gift link is always permanent
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <span
                         data-testid="share-lifespan-badge"
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-dashed ${
+                        className={`text-[11px] font-semibold ${
                           activeRetentionPolicy.isPremiumEternal
-                            ? 'border-amber-500/60 text-amber-600 dark:text-amber-300'
+                            ? 'text-amber-600 dark:text-amber-300'
                             : activeRetentionPolicy.retentionDays > 30
                             ? isDarkMode
-                              ? 'border-[#E6B89C] text-[#F0C8B0]'
-                              : 'border-[#B4846C] text-[#6E4434]'
+                              ? 'text-[#F0C8B0]'
+                              : 'text-[#6E4434]'
                             : isDarkMode
-                            ? 'border-[#544540] text-[#C8B6AC]'
-                            : 'border-[#DECBB9] text-[#7D6B60]'
+                            ? 'text-[#C8B6AC]'
+                            : 'text-[#7D6B60]'
                         }`}
                       >
                         {activeRetentionPolicy.badgeLabel}

@@ -183,15 +183,20 @@ test('PPP region detection and pricing catalog return accurate PH (PHP) and INTL
   assert.equal(phCatalog[2].isEternalKeepsake, true);
 
   const intlCatalog = getPricingCatalog('INTL');
-  assert.equal(intlCatalog[0].displayPrice, '$2.99');
-  assert.equal(intlCatalog[1].displayPrice, '$4.99');
-  assert.equal(intlCatalog[2].displayPrice, '$8.99');
+  assert.equal(intlCatalog[0].displayPrice, '$1.99');
+  assert.equal(intlCatalog[1].displayPrice, '$3.99');
+  assert.equal(intlCatalog[2].displayPrice, '$6.99');
+  assert.equal(intlCatalog[2].name, '30-Day Pass');
 
-  // Verify 3-tier retention policy
+  // Verify 3-tier retention policy distinguishes gallery listing duration from permanent recipient links
   assert.equal(getRetentionPolicyForPassTier('free').retentionDays, 30);
+  assert.equal(getRetentionPolicyForPassTier('free').badgeLabel, '30-day gallery');
   assert.equal(getRetentionPolicyForPassTier('single').retentionDays, 90);
+  assert.equal(getRetentionPolicyForPassTier('single').badgeLabel, '90-day gallery');
   assert.equal(getRetentionPolicyForPassTier('pass_7d').retentionDays, 90);
+  assert.equal(getRetentionPolicyForPassTier('pass_7d').badgeLabel, '90-day gallery');
   assert.equal(getRetentionPolicyForPassTier('pass_30d').isPremiumEternal, true);
+  assert.equal(getRetentionPolicyForPassTier('pass_30d').badgeLabel, 'Eternal gallery');
 });
 
 test('Single-User Pass Key security prevents tampering, blocks 3rd-device sharing, and rotates activeSessionNonce', () => {
@@ -586,7 +591,7 @@ test('create-checkout blocks PHP PPP arbitrage when PayMongo is hidden and locks
     };
   };
 
-  // 2. HTTP create-checkout forces INTL USD ($2.99) + Ko-fi when PAYMONGO_SECRET_KEY is absent,
+  // 2. HTTP create-checkout forces INTL USD ($1.99) + Ko-fi when PAYMONGO_SECRET_KEY is absent,
   // even if a tampered client sends { region: 'PH', provider: 'paymongo' }
   const prevPaymongo = process.env.PAYMONGO_SECRET_KEY;
   delete process.env.PAYMONGO_SECRET_KEY;
@@ -607,7 +612,7 @@ test('create-checkout blocks PHP PPP arbitrage when PayMongo is hidden and locks
     assert.equal(json.ok, true);
     assert.equal(json.provider, 'kofi');
     assert.equal(json.plan.currency, 'USD');
-    assert.equal(json.plan.displayPrice, '$2.99');
+    assert.equal(json.plan.displayPrice, '$1.99');
   } finally {
     if (prevPaymongo !== undefined) process.env.PAYMONGO_SECRET_KEY = prevPaymongo;
   }
@@ -2063,7 +2068,7 @@ test('Admin Disable PH toggle forces USD-only checkout across GET, POST, and ver
     assert.equal(postDisabledBody.ok, true);
     assert.equal(postDisabledBody.provider, 'kofi');
     assert.equal(postDisabledBody.plan.currency, 'USD');
-    assert.equal(postDisabledBody.plan.amountMinor, 499);
+    assert.equal(postDisabledBody.plan.amountMinor, 399);
 
     // 5. POST /api/payments/verify-action toggle_ph_payments requires valid admin session and toggles state
     const devAdmin = 'dev_admin_toggle_ph_test';

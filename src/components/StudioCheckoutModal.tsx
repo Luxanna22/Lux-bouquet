@@ -853,16 +853,31 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     setTimeout(() => setCopiedPassKey(false), 2000);
   };
 
-  const planShortSubtitles: Record<StudioPassTier, string> = {
-    single: '1 bouquet · 90d link',
-    pass_7d: 'Unlimited · 90d links',
-    pass_30d: 'Unlimited · Forever',
-  };
-
-  const planCompactNames: Record<StudioPassTier, string> = {
-    single: 'Single',
-    pass_7d: '7-Day Pass',
-    pass_30d: '30-Day Eternal',
+  const planMeta: Record<
+    StudioPassTier,
+    {
+      compactName: string;
+      allowance: string;
+      galleryNote: string;
+      badge?: string;
+    }
+  > = {
+    single: {
+      compactName: 'Single Bouquet',
+      allowance: '1 premium bouquet',
+      galleryNote: '90-day gallery',
+    },
+    pass_7d: {
+      compactName: '7-Day Pass',
+      allowance: 'Unlimited · 7 days',
+      galleryNote: '90-day gallery',
+      badge: 'Popular',
+    },
+    pass_30d: {
+      compactName: '30-Day Pass',
+      allowance: 'Unlimited · 30 days',
+      galleryNote: 'Eternal showcase',
+    },
   };
 
   const hasActiveSubscriptionPass = Boolean(activePass && activePass.tier !== 'single');
@@ -965,53 +980,29 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           </div>
         )}
 
-        {/* Compact Couture Items Pill Strip (Only when triggered by Couture items, High-Res PNG, or Surprise Email Delivery) */}
+        {/* Unboxed Couture Trigger Summary (Only when triggered by Couture items, High-Res PNG, or Surprise Email Delivery) */}
         {activeView === 'plans' &&
           checkoutStep === 'select' &&
           (premiumInspection.isPremiumBouquet ||
             triggerAction === 'png' ||
             triggerAction === 'share') && (
-            <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-              {triggerAction === 'png' && (
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[11px] border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#5E4E49] text-[#E6D6C7]'
-                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438]'
-                  }`}
-                >
-                  High-Res PNG
-                </span>
-              )}
-              {triggerAction === 'share' && !premiumInspection.isPremiumBouquet && (
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[11px] border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#5E4E49] text-[#E6D6C7]'
-                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438]'
-                  }`}
-                >
-                  Surprise Email Delivery
-                </span>
-              )}
-              {premiumInspection.features.slice(0, 4).map((feat) => (
-                <span
-                  key={feat.id}
-                  className={`px-2.5 py-0.5 rounded-full text-[11px] border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#5E4E49] text-[#E6D6C7]'
-                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438]'
-                  }`}
-                >
-                  {feat.label}
-                </span>
-              ))}
-              {premiumInspection.features.length > 4 && (
-                <span className="text-[11px] opacity-65">
-                  +{premiumInspection.features.length - 4} more
-                </span>
-              )}
-            </div>
+            <p
+              className={`mt-2.5 text-[11px] leading-relaxed ${
+                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+              }`}
+            >
+              <span className="font-medium opacity-90">Includes in your unlock: </span>
+              {[
+                ...(triggerAction === 'png' ? ['High-Res PNG'] : []),
+                ...(triggerAction === 'share' && !premiumInspection.isPremiumBouquet
+                  ? ['Surprise Email Delivery']
+                  : []),
+                ...premiumInspection.features.slice(0, 4).map((f) => f.label),
+                ...(premiumInspection.features.length > 4
+                  ? [`+${premiumInspection.features.length - 4} more`]
+                  : []),
+              ].join(' · ')}
+            </p>
           )}
 
         {/* Error Alert */}
@@ -1030,16 +1021,17 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         {activeView === 'plans' && checkoutStep === 'select' && (
           <div className="mt-3.5 space-y-3">
             {/* 3 Horizontal Visual Line-Art Stationery Cards */}
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 items-stretch">
               {plans.map((plan) => {
                 const isSelected = selectedTier === plan.tier;
+                const meta = planMeta[plan.tier];
                 return (
                   <button
                     key={plan.tier}
                     type="button"
                     data-testid={`plan-card-${plan.tier}`}
                     onClick={() => setSelectedTier(plan.tier)}
-                    className={`text-center p-2 sm:p-2.5 rounded-2xl border border-dashed transition cursor-pointer flex flex-col items-center justify-between gap-1.5 sm:gap-2 ${
+                    className={`text-center p-2 sm:p-2.5 rounded-2xl border border-dashed transition cursor-pointer flex flex-col items-center justify-between gap-2 relative ${
                       isSelected
                         ? isDarkMode
                           ? 'bg-[#423632] border-[#E6B89C] ring-1 ring-[#E6B89C]/50'
@@ -1056,23 +1048,39 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                         isSelected={isSelected}
                         size="card"
                       />
-                      <div
-                        className="text-[13px] sm:text-base font-semibold leading-tight"
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                      >
-                        {planCompactNames[plan.tier]}
+                      <div className="pt-0.5 space-y-0.5">
+                        <div className="min-h-[14px] flex items-center justify-center">
+                          {meta.badge ? (
+                            <span
+                              className={`text-[9.5px] uppercase tracking-[0.1em] font-semibold ${
+                                isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A5A44]'
+                              }`}
+                            >
+                              {meta.badge}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div
+                          className="text-[13px] sm:text-[16px] font-semibold leading-tight"
+                          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                        >
+                          {meta.compactName}
+                        </div>
                       </div>
                       <div
-                        className={`text-[9.5px] sm:text-[10px] leading-tight ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
+                        className={`pt-1 border-t border-dashed space-y-0.5 text-[9.5px] sm:text-[10.5px] leading-snug ${
+                          isDarkMode
+                            ? 'border-[#544540] text-[#D8C7BE]'
+                            : 'border-[#E6D6C7] text-[#66544A]'
                         }`}
                       >
-                        {planShortSubtitles[plan.tier]}
+                        <div className="font-medium">{meta.allowance}</div>
+                        <div className="opacity-80">{meta.galleryNote}</div>
                       </div>
                     </div>
 
                     <div
-                      className="text-base sm:text-xl font-semibold tracking-tight pt-0.5 min-h-[26px] flex items-center justify-center"
+                      className="text-base sm:text-xl font-semibold tracking-tight pt-0.5 min-h-[26px] flex items-center justify-center tabular-nums"
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       {isResolvingRegion ? (
@@ -1089,6 +1097,32 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   </button>
                 );
               })}
+            </div>
+
+            {/* Clear Gallery Expiration vs. Permanent Recipient Link Note */}
+            <div
+              data-testid="entitlement-link-permanence-note"
+              className={`px-3.5 py-2.5 rounded-xl border border-dashed text-left ${
+                isDarkMode
+                  ? 'bg-[#2B2321]/75 border-[#544540] text-[#E6D6C7]'
+                  : 'bg-[#FAF4EE]/85 border-[#DECBB9] text-[#4E3D34]'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <CoutureBloomSeal
+                  className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+                    isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A5A44]'
+                  }`}
+                />
+                <div className="space-y-0.5 text-[11px] leading-snug">
+                  <p className="font-semibold">
+                    Recipient gift links never expire
+                  </p>
+                  <p className="opacity-80">
+                    Your recipient can open their bouquet link forever. Only public Shared Creations gallery listings expire (30d free · 90d Single &amp; 7-Day · Eternal on 30-Day Pass).
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Payment Method: Server-Gated PH Local E-Wallets (SikatPay / BayadGate) vs USD Ko-fi */}
@@ -1508,21 +1542,21 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                             parseTesterVoucherMeta(activePass).label
                           })`
                         : activePass.tier === 'pass_30d'
-                        ? '30-Day Eternal Pass'
+                        ? '30-Day Pass'
                         : activePass.tier === 'pass_7d'
                         ? '7-Day Pass'
                         : 'Single Bouquet Pass'}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full border border-dashed border-[#B4846C]/60 text-[10.5px] text-[#B4846C] font-medium shrink-0">
+                    <span className="text-[11px] text-[#B4846C] font-medium shrink-0 tabular-nums">
                       {formatPassRemainingTime(activePass.expiresAt)}
                     </span>
                   </div>
                   <p className="text-[11px] opacity-75 mt-0.5">
                     {isTesterVoucherPass(activePass)
-                      ? `1-device locked Tester Voucher · ${activePass.retentionDays}-day gift links`
+                      ? `1-device Tester Voucher · ${activePass.retentionDays}-day gallery · Permanent gift links`
                       : activePass.isEternalKeepsake
-                      ? 'All Couture flowers, wraps, ribbons & eternal gift links unlocked'
-                      : `All Couture pieces & ${activePass.retentionDays}-day extended gift links unlocked`}
+                      ? 'Unlimited for 30 days · Eternal gallery showcase · Permanent gift links'
+                      : `All Couture pieces · ${activePass.retentionDays}-day gallery · Permanent gift links`}
                   </p>
                 </div>
               </div>

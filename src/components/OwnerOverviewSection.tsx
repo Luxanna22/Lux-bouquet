@@ -277,7 +277,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           className={`rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${panelClass}`}
         >
           <p className="leading-relaxed">
-            <span className="font-medium">PH Payments disabled (USD Only):</span> All visitors automatically see USD pricing ($2.99 / $4.99 / $8.99) and PayPal · Card · Ko-fi while PH live gateway approval is pending.
+            <span className="font-medium">PH Payments disabled (USD Only):</span> All visitors automatically see USD pricing ($1.99 / $3.99 / $6.99) and PayPal · Card · Ko-fi while PH live gateway approval is pending.
           </p>
           {onTogglePhDisabled && (
             <button
@@ -707,7 +707,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
               Scale & Revenue Simulator
             </h2>
             <p className="text-xs opacity-65 mt-0.5">
-              Projection Sandbox using live PH (₱49 / ₱99 / ₱199) & INTL ($2.99 / $4.99 / $8.99) pricing — separate from recorded revenue.
+              Projection Sandbox using live PH (₱49 / ₱99 / ₱199) & INTL ($1.99 / $3.99 / $6.99) pricing — separate from recorded revenue.
             </p>
           </div>
           <div className="flex gap-2">

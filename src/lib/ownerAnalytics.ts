@@ -889,21 +889,21 @@ export function computeFinancialMetrics(
       label: 'Single Bouquet',
       count: single,
       sharePct: pct(single, totalPaidPasses),
-      priceRangeLabel: '₱49 / $2.99',
+      priceRangeLabel: '₱49 / $1.99',
     },
     {
       tier: 'pass_7d',
       label: '7-Day Pass',
       count: pass7d,
       sharePct: pct(pass7d, totalPaidPasses),
-      priceRangeLabel: '₱99 / $4.99',
+      priceRangeLabel: '₱99 / $3.99',
     },
     {
       tier: 'pass_30d',
-      label: '30-Day Eternal',
+      label: '30-Day Pass',
       count: pass30d,
       sharePct: pct(pass30d, totalPaidPasses),
-      priceRangeLabel: '₱199 / $8.99',
+      priceRangeLabel: '₱199 / $6.99',
     },
   ];
 
@@ -990,7 +990,7 @@ export function computeRevenueProjection(input: RevenueProjectionInput): Revenue
   const intlOrders = Math.max(0, monthlyPaidOrders - phOrders);
 
   const avgPhPhp = sW * 49 + p7W * 99 + p30W * 199;
-  const avgIntlUsd = sW * 2.99 + p7W * 4.99 + p30W * 8.99;
+  const avgIntlUsd = sW * 1.99 + p7W * 3.99 + p30W * 6.99;
 
   const monthlyGrossPhpOnly = Number((phOrders * avgPhPhp).toFixed(2));
   const monthlyGrossUsdOnly = Number((intlOrders * avgIntlUsd).toFixed(2));
