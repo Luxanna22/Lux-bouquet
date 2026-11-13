@@ -231,9 +231,6 @@ async function publishToGarlandFeedRest(code, payload, garlandEntry) {
   if (!safeCode || !garlandEntry || garlandEntry.isDraft || garlandEntry.pinToShowcase === false) {
     return false;
   }
-  if (garlandEntry.lockMode && garlandEntry.lockMode !== 'none') {
-    return false;
-  }
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
@@ -281,7 +278,16 @@ async function publishToGarlandFeedRest(code, payload, garlandEntry) {
 
     const cleanDraftPayload = stripInlineAudioFromCompactPayload(
       String(garlandEntry.draftPayload || payload || '')
+    ).replace(/&l=[^&]*/g, '');
+
+    const maxExistingTime = existingList.reduce(
+      (max, item) => Math.max(max, Date.parse(item?.createdAt || '') || 0),
+      0
     );
+    const entryTime = Date.parse(garlandEntry.createdAt || '') || 0;
+    const normalizedCreatedAt = new Date(
+      Math.max(entryTime, Date.now(), maxExistingTime + 1000)
+    ).toISOString();
 
     const compactEntry = {
       code: safeCode,
@@ -289,10 +295,7 @@ async function publishToGarlandFeedRest(code, payload, garlandEntry) {
       from: String(garlandEntry.from || garlandEntry.senderName || 'Yours').slice(0, 80),
       recipientName: String(garlandEntry.recipientName || garlandEntry.to || 'Someone Special').slice(0, 80),
       senderName: String(garlandEntry.senderName || garlandEntry.from || 'Yours').slice(0, 80),
-      createdAt:
-        typeof garlandEntry.createdAt === 'string' && garlandEntry.createdAt.length >= 10
-          ? garlandEntry.createdAt
-          : new Date().toISOString(),
+      createdAt: normalizedCreatedAt,
       shareUrl: String(garlandEntry.shareUrl || `/${safeCode}`).slice(0, 240),
       lockMode: 'none',
       hasVoice: Boolean(garlandEntry.hasVoice),
@@ -514,8 +517,7 @@ export default async function handler(req, res) {
       if (
         bodyObj.garlandEntry &&
         typeof bodyObj.garlandEntry === 'object' &&
-        bodyObj.garlandEntry.pinToShowcase !== false &&
-        (!bodyObj.garlandEntry.lockMode || bodyObj.garlandEntry.lockMode === 'none')
+        bodyObj.garlandEntry.pinToShowcase !== false
       ) {
         await publishToGarlandFeedRest(code, payload, bodyObj.garlandEntry).catch(() => {});
       }

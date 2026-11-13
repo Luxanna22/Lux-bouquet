@@ -18,6 +18,7 @@ import {
   fetchSharedBouquetFromFirestore,
   getSavedVaultBouquets,
   SharedBouquetRecord,
+  subscribeToGlobalGarlandFeed,
 } from '../lib/firebase';
 import { SavedVaultBouquet } from '../types/bouquet';
 import {
@@ -43,15 +44,37 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let cancelled = false;
-    fetchGlobalGarlandFeedFromFirestore()
-      .then((feed) => {
-        if (!cancelled && Array.isArray(feed)) {
-          setRemoteFeedEntries(feed);
-        }
-      })
-      .catch(() => {});
+
+    const refreshFeed = () => {
+      fetchGlobalGarlandFeedFromFirestore()
+        .then((feed) => {
+          if (!cancelled && Array.isArray(feed)) {
+            setRemoteFeedEntries(feed);
+          }
+        })
+        .catch(() => {});
+    };
+
+    refreshFeed();
+    const unsubscribe = subscribeToGlobalGarlandFeed((feed) => {
+      if (!cancelled && Array.isArray(feed)) {
+        setRemoteFeedEntries(feed);
+      }
+    });
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        refreshFeed();
+      }
+    };
+    window.addEventListener('focus', refreshFeed);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
     return () => {
       cancelled = true;
+      unsubscribe();
+      window.removeEventListener('focus', refreshFeed);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
   }, [vaultCount]);
 
@@ -96,12 +119,15 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       return filterShowcaseBouquets(curated, { nowMs });
     }
 
-    // Sort newest first so edited & re-shared bouquets always appear first with their latest state
-    const combinedVault = [...getSavedVaultBouquets(), ...remoteFeedEntries].sort((a, b) => {
-      const tA = Date.parse(a?.createdAt || '') || 0;
-      const tB = Date.parse(b?.createdAt || '') || 0;
-      return tB - tA;
-    });
+    // Preserve insertion order: local shared creations not yet in remoteFeedEntries first,
+    // followed by remoteFeedEntries (which always stores the newest shared creation at index 0),
+    // avoiding client-vs-sandbox clock skew reordering.
+    const localShared = getSavedVaultBouquets().filter(
+      (b) => b && !b.isDraft && b.pinToShowcase !== false && b.code && !b.code.startsWith('draft_')
+    );
+    const remoteCodes = new Set(remoteFeedEntries.map((r) => r?.code).filter(Boolean));
+    const localPendingOnly = localShared.filter((b) => !remoteCodes.has(b.code));
+    const combinedVault = [...localPendingOnly, ...remoteFeedEntries, ...localShared];
     const seenCodes = new Set<string>();
     const userEntries: ShowcaseBouquetEntry[] = [];
 

@@ -495,6 +495,7 @@ export function convertVaultBouquetToShowcaseEntry(
       ? {
           ...snapshot,
           environment: snapshot.environment || 'studio',
+          lock: { mode: 'none' },
           card: {
             ...snapshot.card,
             to: resolvedTo,

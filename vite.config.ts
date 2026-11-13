@@ -126,90 +126,6 @@ function handleBouquetImageMiddleware(
   next();
 }
 
-interface ShortCodeEntry {
-  code: string;
-  payload: string;
-  voiceAudioDataUrl?: string | null;
-  voiceStyle?: string | null;
-  voiceTitle?: string | null;
-  voiceDurationSec?: number | null;
-}
-
-const shortCodeStore = new Map<string, ShortCodeEntry>();
-const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
-const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
-const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/shared_bouquets`;
-
-async function fetchFromFirestoreRest(code: string): Promise<ShortCodeEntry | null> {
-  if (!code || code.length < 7 || code.length > 24) return null;
-  try {
-    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(code)}`);
-    if (!resp.ok) return null;
-    const docJson = (await resp.json()) as {
-      fields?: Record<string, { stringValue?: string; integerValue?: string; doubleValue?: number }>;
-    };
-    const fields = docJson?.fields;
-    if (!fields || !fields.payload?.stringValue) return null;
-    return {
-      code,
-      payload: fields.payload.stringValue,
-      voiceAudioDataUrl: fields.voiceAudioDataUrl?.stringValue || null,
-      voiceStyle: fields.voiceStyle?.stringValue || null,
-      voiceTitle: fields.voiceTitle?.stringValue || null,
-      voiceDurationSec:
-        fields.voiceDurationSec?.integerValue !== undefined
-          ? Number(fields.voiceDurationSec.integerValue)
-          : fields.voiceDurationSec?.doubleValue !== undefined
-          ? Number(fields.voiceDurationSec.doubleValue)
-          : null
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function saveToFirestoreRest(code: string, entry: ShortCodeEntry): Promise<boolean> {
-  if (!code || code.length < 7 || code.length > 24 || !entry.payload) return false;
-  try {
-    const fields: Record<string, Record<string, string>> = {
-      code: { stringValue: code },
-      payload: { stringValue: entry.payload.slice(0, 900000) },
-      createdAt: { stringValue: new Date().toISOString() }
-    };
-    if (entry.voiceAudioDataUrl) {
-      fields.voiceAudioDataUrl = { stringValue: entry.voiceAudioDataUrl.slice(0, 900000) };
-    }
-    if (entry.voiceStyle) {
-      fields.voiceStyle = { stringValue: entry.voiceStyle.slice(0, 32) };
-    }
-    if (entry.voiceTitle) {
-      fields.voiceTitle = { stringValue: entry.voiceTitle.slice(0, 64) };
-    }
-    if (typeof entry.voiceDurationSec === 'number' && Number.isFinite(entry.voiceDurationSec)) {
-      fields.voiceDurationSec = {
-        integerValue: String(Math.max(0, Math.min(600, Math.round(entry.voiceDurationSec))))
-      };
-    }
-    const existingResp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(code)}`);
-    if (existingResp.ok) {
-      const existingDoc = (await existingResp.json()) as {
-        fields?: { createdAt?: { stringValue?: string } };
-      };
-      if (existingDoc?.fields?.createdAt?.stringValue) {
-        fields.createdAt = { stringValue: existingDoc.fields.createdAt.stringValue };
-      }
-    }
-    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(code)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields })
-    });
-    return resp.ok;
-  } catch {
-    return false;
-  }
-}
-
 function handleShortenMiddleware(
   req: IncomingMessage,
   res: ServerResponse,
@@ -220,118 +136,19 @@ function handleShortenMiddleware(
     return;
   }
 
-  const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const codeParam = (urlObj.searchParams.get('c') || '').replace(/[^0-9A-Za-z_-]/g, '');
-
-  if (req.method === 'GET' && codeParam) {
-    (async () => {
-      let entry = shortCodeStore.get(codeParam) || null;
-      if (!entry) {
-        entry = await fetchFromFirestoreRest(codeParam);
-        if (entry) {
-          shortCodeStore.set(codeParam, entry);
-        }
-      }
-      if (!entry) {
-        try {
-          const slug = `bq_${codeParam}`;
-          const lookup = await fetch(`https://is.gd/${slug}`, { redirect: 'manual' });
-          const loc = lookup.headers.get('location') || '';
-          const hashIdx = loc.indexOf('#');
-          if (hashIdx !== -1) {
-            entry = { code: codeParam, payload: loc.slice(hashIdx) };
-            shortCodeStore.set(codeParam, entry);
-          }
-        } catch {
-          // Ignore network error
-        }
-      }
-      if (!entry || !entry.payload) {
-        res.statusCode = 404;
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ error: 'Not found' }));
-        return;
-      }
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(
-        JSON.stringify({
-          code: codeParam,
-          payload: entry.payload,
-          voiceAudioDataUrl: entry.voiceAudioDataUrl || null,
-          voiceStyle: entry.voiceStyle || null,
-          voiceTitle: entry.voiceTitle || null,
-          voiceDurationSec: entry.voiceDurationSec ?? null
-        })
-      );
-    })();
-    return;
-  }
-
-  if (req.method === 'POST') {
-    let rawBody = '';
-    req.on('data', (chunk: Buffer) => {
-      rawBody += chunk.toString();
-    });
-    req.on('end', async () => {
-      try {
-        const parsed = JSON.parse(rawBody || '{}');
-        const code = String(parsed.code || '').replace(/[^0-9A-Za-z_-]/g, '');
-        const payload = String(parsed.payload || '').trim();
-        const origin = String(parsed.origin || '').replace(/\/+$/, '');
-        if (!code || !payload) {
-          res.statusCode = 400;
-          res.end(JSON.stringify({ error: 'Missing code or payload' }));
-          return;
-        }
-
-        // @ts-expect-error Shared ESM guard in /api/_lib/coutureGuard.js
-        const { verifyShortenCouturePermission } = await import('./api/_lib/coutureGuard.js');
-        const coutureCheck = await verifyShortenCouturePermission(parsed);
-        if (!coutureCheck.ok) {
-          res.statusCode = coutureCheck.statusCode || 403;
-          res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(
-            JSON.stringify({
-              error:
-                coutureCheck.error ||
-                'This bouquet requires a verified Bloom Key before saving.',
-            })
-          );
-          return;
-        }
-
-        const entry: ShortCodeEntry = {
-          code,
-          payload,
-          voiceAudioDataUrl: parsed.voiceAudioDataUrl || null,
-          voiceStyle: parsed.voiceStyle || null,
-          voiceTitle: parsed.voiceTitle || null,
-          voiceDurationSec:
-            typeof parsed.voiceDurationSec === 'number' ? parsed.voiceDurationSec : null
-        };
-
-        shortCodeStore.set(code, entry);
-        if (shortCodeStore.size > 1000) {
-          const oldest = shortCodeStore.keys().next().value;
-          if (oldest) shortCodeStore.delete(oldest);
-        }
-
-        await saveToFirestoreRest(code, entry);
-
-        const shortUrl = origin ? `${origin}/${code}` : `/${code}`;
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.end(JSON.stringify({ code, shortUrl }));
-      } catch {
+  (async () => {
+    try {
+      // @ts-expect-error Shared serverless handler in /api/shorten.js
+      const { default: shortenHandler } = await import('./api/shorten.js');
+      await shortenHandler(req, res);
+    } catch {
+      if (!res.writableEnded) {
         res.statusCode = 500;
-        res.end(JSON.stringify({ error: 'Shorten failed' }));
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ error: 'Shorten service unavailable' }));
       }
-    });
-    return;
-  }
-
-  next();
+    }
+  })();
 }
 
 function handlePaymentsMiddleware(

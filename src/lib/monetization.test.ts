@@ -2558,15 +2558,64 @@ test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent
   }
 });
 
-test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redeem -> Seal & Send Gift even across stale serverless instance memory', async () => {
+test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redeem -> Seal & Send Gift even across stale serverless instance memory and publish resumed drafts to Garland feed', async () => {
+  const { EventEmitter } = await import('node:events');
   // @ts-expect-error ESM serverless handler
   const paymentLib = await import('../../api/_lib/paymentHandler.js');
   // @ts-expect-error ESM serverless handler
   const coutureGuard = await import('../../api/_lib/coutureGuard.js');
+  // @ts-expect-error ESM serverless handler
+  const { default: shortenHandler } = await import('../../api/shorten.js');
 
   const ownerDevHash = 'dev_owner_same_browser_777';
   const strangerDevHash = 'dev_other_person_999';
   const createdKeys: string[] = [];
+  const originalFetch = globalThis.fetch;
+
+  let capturedGarlandFeedWrite: string | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlStr = String(input);
+    if (urlStr.endsWith('/sab_garland_feed_v1') && (!init?.method || init.method === 'GET')) {
+      return new Response(
+        JSON.stringify({
+          fields: {
+            code: { stringValue: 'sab_garland_feed_v1' },
+            payload: { stringValue: '#sab_garland_feed_v1' },
+            createdAt: { stringValue: '2026-11-08T00:00:00.000Z' },
+            voiceAudioDataUrl: {
+              stringValue: JSON.stringify([
+                {
+                  code: 'existing_future_clock_item',
+                  to: 'Existing',
+                  from: 'Sender',
+                  createdAt: '2026-11-13T15:43:23.745Z',
+                  isDraft: false,
+                  pinToShowcase: true,
+                  draftPayload: '#g=2~~c084fc.f~RXhpc3Rpbmc~U2VuZGVy~SGVsbG8.',
+                },
+              ]),
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (urlStr.endsWith('/sab_garland_feed_v1') && init?.method === 'PATCH') {
+      const parsedBody = JSON.parse(String(init.body || '{}'));
+      capturedGarlandFeedWrite = parsedBody?.fields?.voiceAudioDataUrl?.stringValue || null;
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (urlStr.includes('/documents/shared_bouquets/') && init?.method === 'PATCH') {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
+  }) as typeof fetch;
 
   try {
     // 1. Admin mints an unclaimed Tester Voucher (primaryDeviceHash: '')
@@ -2655,9 +2704,10 @@ test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redee
 
     // 5. Simulate stale unclaimed record again before /api/shorten (verifyShortenCouturePermission)
     paymentLib.SERVER_PASS_STORE.set(mintedVoucher.passKey, unclaimedSnapshot);
+    const couturePayloadWithLock = '#g=3~0~0~8.1~0~0~!.b0000000~0&l=p~U2VjcmV0~QW5zd2Vy';
     const shortenCheck = await coutureGuard.verifyShortenCouturePermission({
       code: 'bq_couture_seal_1',
-      payload: '#g=3~0~0~8.1~0~0~!.b0000000~0', // Couture wrap + ribbon + bloom
+      payload: couturePayloadWithLock,
       isPremium: true,
       retentionDays: 90,
       passKey: verifyData.pass.passKey,
@@ -2666,6 +2716,56 @@ test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redee
       pass: verifyData.pass,
     });
     assert.equal(shortenCheck.ok, true);
+
+    // 5b. Execute POST /api/shorten with a resumed Couture draft (with lockMode: 'passcode' and real-world 2026-04 client timestamp)
+    const shortenStreamReq = Object.assign(new EventEmitter(), {
+      method: 'POST',
+      url: '/api/shorten',
+      headers: { host: 'localhost:3000', 'content-type': 'application/json' },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    const shortenRes = makeRes();
+    const shortenBody = {
+      code: 'bq_couture_seal_1',
+      payload: couturePayloadWithLock,
+      origin: 'https://sendabouquet.app',
+      isPremium: false,
+      retentionDays: 30,
+      passKey: verifyData.pass.passKey,
+      deviceTokenHash: ownerDevHash,
+      activeSessionNonce: verifyData.pass.activeSessionNonce,
+      pass: verifyData.pass,
+      garlandEntry: {
+        code: 'bq_couture_seal_1',
+        to: 'Beloved',
+        from: 'Studio Creator',
+        createdAt: '2026-04-13T10:00:00.000Z',
+        shareUrl: 'https://sendabouquet.app/bq_couture_seal_1',
+        lockMode: 'passcode',
+        hasVoice: false,
+        flowerCount: 5,
+        isDraft: false,
+        pinToShowcase: true,
+        draftPayload: couturePayloadWithLock,
+        replaceCode: 'draft_old_code_1',
+      },
+    };
+    process.nextTick(() => {
+      shortenStreamReq.emit('data', Buffer.from(JSON.stringify(shortenBody)));
+      shortenStreamReq.emit('end');
+    });
+    await shortenHandler(shortenStreamReq, shortenRes);
+    assert.equal(shortenRes.statusCode, 200);
+    assert.ok(capturedGarlandFeedWrite, 'Expected Garland feed to be updated on /api/shorten');
+    const publishedFeed = JSON.parse(capturedGarlandFeedWrite!);
+    assert.equal(publishedFeed[0].code, 'bq_couture_seal_1');
+    assert.equal(publishedFeed[0].to, 'Beloved');
+    assert.equal(publishedFeed[0].lockMode, 'none');
+    assert.equal(publishedFeed[0].draftPayload.includes('&l='), false);
+    assert.ok(
+      Date.parse(publishedFeed[0].createdAt) > Date.parse('2026-11-13T15:43:23.745Z'),
+      'Expected newly shared bouquet timestamp to be normalized ahead of existing feed items'
+    );
 
     // 6. Another device attempting to use the bound Tester Voucher is still strictly blocked
     const strangerVerifyRes = makeRes();
@@ -2687,10 +2787,12 @@ test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redee
     assert.equal(strangerVerifyRes.statusCode, 403);
     assert.equal(strangerVerifyRes.json().status, 'DEVICE_LIMIT_EXCEEDED');
   } finally {
+    globalThis.fetch = originalFetch;
     for (const k of createdKeys) {
       paymentLib.SERVER_PASS_STORE.delete(k);
     }
   }
 });
+
 
 

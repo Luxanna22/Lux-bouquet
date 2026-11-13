@@ -278,12 +278,16 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                 statusParts.push(`Voice played ${voicePlays}×`);
               }
 
-              const resolvedDraftPayload =
-                entry.draftPayload ||
-                live?.payload ||
-                (typeof window !== 'undefined'
+              const candidatePayloads = [
+                live?.payload,
+                entry.draftPayload,
+                typeof window !== 'undefined'
                   ? localStorage.getItem(`bq_short_${entry.code}`) || ''
-                  : '');
+                  : '',
+                entry.shareUrl && entry.shareUrl.includes('#') ? entry.shareUrl : '',
+              ].filter((p): p is string => Boolean(p && p.trim().length > 3));
+              const resolvedDraftPayload =
+                candidatePayloads.sort((a, b) => b.length - a.length)[0] || '';
 
               return (
                 <div

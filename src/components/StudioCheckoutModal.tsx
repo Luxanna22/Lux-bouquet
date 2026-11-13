@@ -358,6 +358,7 @@ export interface StudioCheckoutModalProps {
   isOpen: boolean;
   isDarkMode: boolean;
   triggerAction: 'share' | 'png' | 'pass_menu';
+  initialView?: 'plans' | 'redeem';
   bouquetCode: string;
   premiumInspection: BouquetPremiumInspection;
   activePass: StudioPassRecord | null;
@@ -473,6 +474,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   isOpen,
   isDarkMode,
   triggerAction,
+  initialView = 'plans',
   bouquetCode,
   premiumInspection,
   activePass,
@@ -493,7 +495,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   >(() => cachedCheckoutCapability?.initialGateway ?? 'kofi');
   const [bayadgateMethod, setBayadgateMethod] = useState<BayadgatePaymentMethod>('GCASH');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
-    () => (activePass ? 'pass_card' : 'plans')
+    () => (activePass ? 'pass_card' : initialView === 'redeem' ? 'redeem' : 'plans')
   );
   const [checkoutStep, setCheckoutStep] = useState<'select' | 'qr_confirm'>('select');
   const [pendingCheckout, setPendingCheckout] = useState<{
@@ -521,9 +523,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       clearPendingCheckoutStorage();
       setPendingCheckout(null);
       setCheckoutStep('select');
-      await saveStudioPassToFirestore(issuedPass).catch(() => {});
+      void saveStudioPassToFirestore(issuedPass).catch(() => {});
       onPassActivated(issuedPass, triggerAction);
-      if (issuedPass.tier === 'single') {
+      if (issuedPass.tier === 'single' || triggerAction === 'share' || triggerAction === 'png') {
         onClose();
       } else {
         setActiveView('pass_card');
@@ -565,6 +567,10 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setCheckoutStep('select');
       setPendingCheckout(null);
       setActiveView('pass_card');
+    } else if (initialView === 'redeem') {
+      setCheckoutStep('select');
+      setPendingCheckout(null);
+      setActiveView('redeem');
     } else {
       setActiveView('plans');
       const storedPending = loadPendingCheckoutStorage();
@@ -608,7 +614,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, activePass, triggerAction]);
+  }, [isOpen, activePass, triggerAction, initialView]);
 
   // Auto-poll & re-check immediately when returning from external wallet/SikatPay tab
   useEffect(() => {
@@ -825,10 +831,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setPendingCheckout(null);
       setCheckoutStep('select');
       const verifiedPass = data.pass as StudioPassRecord;
-      await saveStudioPassToFirestore(verifiedPass).catch(() => {});
+      void saveStudioPassToFirestore(verifiedPass).catch(() => {});
       onPassActivated(verifiedPass, triggerAction);
       setRedeemInput('');
-      setActiveView('pass_card');
+      if (verifiedPass.tier !== 'single' && triggerAction !== 'share' && triggerAction !== 'png') {
+        setActiveView('pass_card');
+      }
     } catch {
       setErrorMessage('We couldn’t verify your Pass Key right now. Please check your connection and try again.');
     } finally {

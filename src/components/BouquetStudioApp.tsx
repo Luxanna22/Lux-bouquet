@@ -385,6 +385,8 @@ export default function App() {
   const [checkoutTriggerAction, setCheckoutTriggerAction] = useState<
     'share' | 'png' | 'pass_menu'
   >('pass_menu');
+  const [checkoutInitialView, setCheckoutInitialView] = useState<'plans' | 'redeem'>('plans');
+  const lastSealSyncPromiseRef = useRef<Promise<unknown> | null>(null);
 
   const currentPremiumInspection = useMemo(
     () =>
@@ -1611,13 +1613,13 @@ export default function App() {
       );
 
       // Persist directly to Firebase Firestore with 3-tier retention metadata (30d free, 90d paid extended, Eternal keepsake)
-      saveSharedBouquetToFirestore(code, hashPayload, snap, {
+      const firestoreSavePromise = saveSharedBouquetToFirestore(code, hashPayload, snap, {
         isPremium: policy.isPremiumEternal,
         retentionDays: policy.retentionDays,
-      }).catch(() => {});
+      }).catch(() => false);
 
       const previousSessionCode = currentSessionVaultCodeRef.current;
-      const shouldPinToGarland = Boolean(pinToShowcaseChecked && (lock?.mode || 'none') === 'none');
+      const shouldPinToGarland = Boolean(pinToShowcaseChecked);
 
       // Save to local account-free Bouquet Vault
       const vaultEntry = {
@@ -1641,12 +1643,12 @@ export default function App() {
         vaultEntry,
         previousSessionCode
       );
-      if (shouldPinToGarland) {
-        publishBouquetToGlobalGarlandFeed(
-          vaultEntry,
-          previousSessionCode
-        ).catch(() => {});
-      }
+      const garlandPublishPromise = shouldPinToGarland
+        ? publishBouquetToGlobalGarlandFeed(
+            vaultEntry,
+            previousSessionCode
+          ).catch(() => false)
+        : Promise.resolve(true);
       currentSessionVaultCodeRef.current = code;
       setVaultCount(updatedVault.length);
 
@@ -1657,7 +1659,7 @@ export default function App() {
 
       // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key
       // and also syncs shared Garland entries to Firestore REST as a guaranteed backup!)
-      fetch('/api/shorten', {
+      const shortenApiPromise = fetch('/api/shorten', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1681,7 +1683,13 @@ export default function App() {
               }
             : null,
         })
-      }).catch(() => {});
+      }).catch(() => null);
+
+      lastSealSyncPromiseRef.current = Promise.allSettled([
+        firestoreSavePromise,
+        garlandPublishPromise,
+        shortenApiPromise,
+      ]);
 
       return firstPartyUrl;
     },
@@ -1837,13 +1845,14 @@ export default function App() {
     if (currentPremiumInspection.isPremiumBouquet && (!passVerify.valid || !effectivePass)) {
       setIsShareModalOpen(false);
       setCheckoutTriggerAction('share');
+      setCheckoutInitialView('plans');
       setIsCheckoutModalOpen(true);
       return;
     }
 
+    setIsShorteningUrl(true);
     let verifiedPaidPass: StudioPassRecord | null = null;
     if (passVerify.valid && effectivePass) {
-      setIsShorteningUrl(true);
       const serverVerify = await verifyStudioPassOnServer({
         pass: effectivePass,
         bouquetCode: currentBouquetShortCode,
@@ -1863,6 +1872,7 @@ export default function App() {
           );
           setIsShareModalOpen(false);
           setCheckoutTriggerAction('share');
+          setCheckoutInitialView('redeem');
           setIsCheckoutModalOpen(true);
           return;
         }
@@ -1877,6 +1887,12 @@ export default function App() {
       true,
       verifiedPaidPass
     );
+    if (lastSealSyncPromiseRef.current) {
+      await Promise.race([
+        lastSealSyncPromiseRef.current,
+        new Promise((resolve) => setTimeout(resolve, 2200)),
+      ]);
+    }
     setShortShareUrl(firstPartyUrl);
     setSealedGiftUrl(firstPartyUrl);
     setSealedBouquetCode(hasPaidUnlockForSeal ? currentBouquetShortCode : null);
@@ -6437,6 +6453,7 @@ export default function App() {
                           onClick={() => {
                             setIsShareModalOpen(false);
                             setCheckoutTriggerAction('share');
+                            setCheckoutInitialView('plans');
                             setIsCheckoutModalOpen(true);
                           }}
                           className="text-[10.5px] font-medium text-[#B4846C] hover:underline cursor-pointer"
@@ -6468,9 +6485,11 @@ export default function App() {
                       </span>
                       <button
                         type="button"
+                        data-testid="share-have-a-key-btn"
                         onClick={() => {
                           setIsShareModalOpen(false);
                           setCheckoutTriggerAction('share');
+                          setCheckoutInitialView('redeem');
                           setIsCheckoutModalOpen(true);
                         }}
                         className="text-[11px] font-semibold text-[#B4846C] hover:underline shrink-0 cursor-pointer"
@@ -6509,11 +6528,29 @@ export default function App() {
                   </div>
                 </div>
 
+                {isShorteningUrl && (
+                  <div
+                    data-testid="share-sealing-progress-banner"
+                    className={`px-3.5 py-2.5 rounded-xl border border-dashed flex items-center gap-2.5 text-xs font-medium animate-in fade-in duration-150 ${
+                      isDarkMode
+                        ? 'bg-[#352C29] border-[#E6B89C]/50 text-[#F0C8B0]'
+                        : 'bg-[#FFFDF9] border-[#D8BFA8] text-[#6E4434]'
+                    }`}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>Sealing your bouquet &amp; preparing your gift link…</span>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={isShorteningUrl}
                     onClick={() => setShareStep('lock')}
-                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition disabled:opacity-50 cursor-pointer ${
                       isDarkMode
                         ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
                         : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
@@ -6530,18 +6567,27 @@ export default function App() {
                       if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
                         setIsShareModalOpen(false);
                         setCheckoutTriggerAction('share');
+                        setCheckoutInitialView('plans');
                         setIsCheckoutModalOpen(true);
                         return;
                       }
                       handleShareLink(true);
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition disabled:opacity-50 cursor-pointer ${
+                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition disabled:opacity-60 cursor-pointer ${
                       isDarkMode
                         ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
                         : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
                     }`}
                   >
-                    {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass ? (
+                    {isShorteningUrl ? (
+                      <>
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span>Sealing Gift…</span>
+                      </>
+                    ) : currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass ? (
                       <>
                         <CoutureBloomSeal className="w-3.5 h-3.5" />
                         <span>Unlock &amp; Seal Gift</span>
@@ -6965,10 +7011,14 @@ export default function App() {
         isOpen={isCheckoutModalOpen}
         isDarkMode={isDarkMode}
         triggerAction={checkoutTriggerAction}
+        initialView={checkoutInitialView}
         bouquetCode={currentBouquetShortCode}
         premiumInspection={currentPremiumInspection}
         activePass={activeStudioPass}
-        onClose={() => setIsCheckoutModalOpen(false)}
+        onClose={() => {
+          setIsCheckoutModalOpen(false);
+          setCheckoutInitialView('plans');
+        }}
         onStealthGateTriggered={(gatePath, gateSlug) => {
           try {
             window.history.pushState({}, '', gatePath);
@@ -6984,9 +7034,14 @@ export default function App() {
           setActiveStudioPass(newPass);
           if (resumeAction === 'share') {
             setIsCheckoutModalOpen(false);
+            setCheckoutInitialView('plans');
+            setShareStep('seal');
+            setIsShareModalOpen(true);
+            setIsShorteningUrl(true);
             await handleShareLink(true, newPass);
           } else if (resumeAction === 'png') {
             setIsCheckoutModalOpen(false);
+            setCheckoutInitialView('plans');
             const pngVerify = await verifyStudioPassOnServer({
               pass: newPass,
               bouquetCode: currentBouquetShortCode,
@@ -7007,6 +7062,7 @@ export default function App() {
             await performSvgPngDownload();
           } else if (newPass.tier === 'single') {
             setIsCheckoutModalOpen(false);
+            setCheckoutInitialView('plans');
             triggerToast('Single Bouquet Unlock activated — ready to share or export!');
           } else {
             triggerToast('Bloom Pass Activated!');
