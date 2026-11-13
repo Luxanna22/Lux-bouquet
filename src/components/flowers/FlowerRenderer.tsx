@@ -30,6 +30,8 @@ import {
   LovelyCatsSVG,
   CrescentMoonSVG,
   RadiantSunSVG,
+  GildedSunburstSVG,
+  SunbeamSuncatcherSVG,
   CelestialStarSVG,
   DreamyCloudsSVG,
   ChocolateBoxSVG,
@@ -1827,6 +1829,10 @@ export const FlowerRenderer: React.FC<{ type: FlowerType } & FlowerSVGProps> = (
       return <CrescentMoonSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'sun':
       return <RadiantSunSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'gildedSunburst':
+      return <GildedSunburstSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
+    case 'sunbeamSuncatcher':
+      return <SunbeamSuncatcherSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'star':
       return <CelestialStarSVG petalColor={petalColor} centerColor={centerColor} hideStem={hideStem} />;
     case 'clouds':

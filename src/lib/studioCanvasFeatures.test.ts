@@ -14,9 +14,11 @@ import {
   FLOWER_CATALOG,
   WRAPPER_CATALOG,
   RIBBON_STYLE_CATALOG,
+  VOICE_KEEPSAKE_CATALOG,
   DEFAULT_BOUQUET_POSE,
   getEffectiveItemPlane,
   FlowerType,
+  VoiceKeepsakeStyle,
 } from '../types/bouquet';
 import {
   getActiveSeasonalEvent,
@@ -28,31 +30,60 @@ import {
   isWrapPremium,
   isRibbonPremium,
   isEnvironmentPremium,
+  isVoiceStylePremium,
 } from './monetization';
 // @ts-expect-error Shared ESM API security guard module
 import { checkRateLimit, resetRateLimitStoreForTests, sanitizeJsonValue, isSuspiciousBotRequest, readSafeJsonBody } from '../../api/_lib/securityGuard.js';
 
-test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (14), and FLOWER_CATALOG (81) provide unique designs with Free-first ordering and 18 Others attachments', () => {
+test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (14), VOICE_KEEPSAKE_CATALOG (10), and FLOWER_CATALOG (83) provide unique designs with Free-first ordering and 20 Others attachments', () => {
   assert.equal(PHOTO_FRAME_CATALOG.length, 6);
   assert.equal(ENVIRONMENT_CATALOG.length, 14);
-  assert.equal(FLOWER_CATALOG.length, 81);
+  assert.equal(VOICE_KEEPSAKE_CATALOG.length, 10);
+  assert.equal(FLOWER_CATALOG.length, 83);
   const photoIds = new Set(PHOTO_FRAME_CATALOG.map((p) => p.id));
   const envIds = new Set(ENVIRONMENT_CATALOG.map((e) => e.id));
+  const voiceIds = new Set(VOICE_KEEPSAKE_CATALOG.map((v) => v.id));
   const flowerIds = new Set(FLOWER_CATALOG.map((f) => f.type));
   assert.equal(photoIds.size, 6);
   assert.equal(envIds.size, 14);
-  assert.equal(flowerIds.size, 81);
+  assert.equal(voiceIds.size, 10);
+  assert.equal(flowerIds.size, 83);
+
+  const expectedVoiceStyles: VoiceKeepsakeStyle[] = [
+    'mixtape',
+    'vinyl',
+    'plushie',
+    'musicbox',
+    'locket',
+    'shell',
+    'birdcage',
+    'bottle',
+    'harp',
+    'globe',
+  ];
+  for (const vs of expectedVoiceStyles) {
+    assert.equal(voiceIds.has(vs), true, `Missing voice style '${vs}'`);
+    assert.equal(isVoiceStylePremium(vs), true, `Expected voice style '${vs}' to be Couture`);
+  }
 
   const others = FLOWER_CATALOG.filter((f) => Boolean(f.isOther));
   const seasonals = FLOWER_CATALOG.filter((f) => Boolean(f.isSeasonal));
-  assert.equal(others.length, 18);
+  assert.equal(others.length, 20);
   assert.equal(seasonals.length, 12);
+
+  // Verify 'sun' is prominently placed in the first 3 Free Others items, and new Couture sun assets exist
+  assert.equal(others[2].type, 'sun');
+  assert.equal(isFlowerPremium('sun'), false);
+  assert.equal(isFlowerPremium('gildedSunburst'), true);
+  assert.equal(isFlowerPremium('sunbeamSuncatcher'), true);
 
   const expectedNewOthers: FlowerType[] = [
     'sittingDog',
     'lovelyCats',
     'moon',
     'sun',
+    'gildedSunburst',
+    'sunbeamSuncatcher',
     'star',
     'clouds',
     'chocolates',
@@ -82,13 +113,15 @@ test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (14), and FLOWER_CATALOG (81)
   assert.equal(isFlowerPremium('glassOrnament'), true);
   assert.equal(isFlowerPremium('cinnamonStarAnise'), true);
 
-  // Verify Free-first ordering across Wrappers, Ribbons, Backgrounds, and Seasonal
+  // Verify Free-first ordering across Wrappers, Ribbons, Backgrounds, Others, and Seasonal
   const wrapFlags = WRAPPER_CATALOG.map((w) => isWrapPremium(w.id));
   assert.deepEqual(wrapFlags, [...wrapFlags].sort((a, b) => Number(a) - Number(b)));
   const ribbonFlags = RIBBON_STYLE_CATALOG.map((r) => isRibbonPremium(r.id));
   assert.deepEqual(ribbonFlags, [...ribbonFlags].sort((a, b) => Number(a) - Number(b)));
   const envFlags = ENVIRONMENT_CATALOG.map((e) => isEnvironmentPremium(e.id));
   assert.deepEqual(envFlags, [...envFlags].sort((a, b) => Number(a) - Number(b)));
+  const othersFlags = others.map((o) => isFlowerPremium(o.type));
+  assert.deepEqual(othersFlags, [...othersFlags].sort((a, b) => Number(a) - Number(b)));
   const seasonalFlags = seasonals.map((s) => isFlowerPremium(s.type));
   assert.deepEqual(seasonalFlags, [...seasonalFlags].sort((a, b) => Number(a) - Number(b)));
 
@@ -123,7 +156,7 @@ test('seasonalCalendar only exposes the Seasonal category during active or upcom
   assert.equal(getAvailableSeasonalCatalog(julyDate).length, 0);
 });
 
-test('shareAndExport losslessly encodes and decodes all new flowers, others (sittingDog, lovelyCats, moon, sun, star, clouds, chocolates, ringInABox), seasonal designs, backgrounds, and layerPlane', () => {
+test('shareAndExport losslessly encodes and decodes all new flowers, others (including gildedSunburst & sunbeamSuncatcher), couture voices, seasonal designs, backgrounds, and layerPlane', () => {
   const store = useBouquetStore.getState();
   store.clearBouquet();
   assert.equal(useBouquetStore.getState().wrapStyle, 'chalice');
@@ -135,6 +168,8 @@ test('shareAndExport losslessly encodes and decodes all new flowers, others (sit
   store.addFlower('lovelyCats');
   store.addFlower('moon');
   store.addFlower('sun');
+  store.addFlower('gildedSunburst');
+  store.addFlower('sunbeamSuncatcher');
   store.addFlower('star');
   store.addFlower('clouds');
   store.addFlower('chocolates');
@@ -153,6 +188,7 @@ test('shareAndExport losslessly encodes and decodes all new flowers, others (sit
   store.moveItemLayer(butterfly.id, 'back'); // 'front' -> 'inside'
   store.moveItemLayer(cosmos.id, 'back'); // 'inside' -> 'back'
   store.setEnvironment('midnightNoel');
+  store.updateVoice({ style: 'harp', visibleOnStage: true, title: 'Celestial' });
 
   const state = useBouquetStore.getState();
   const payload = encodeBouquetToCompactPayload(
@@ -175,6 +211,8 @@ test('shareAndExport losslessly encodes and decodes all new flowers, others (sit
   assert.ok(decoded);
   assert.equal(decoded.environment, 'midnightNoel');
   assert.equal(decoded.wrapStyle, 'chalice');
+  assert.equal(decoded.voice?.style, 'harp');
+  assert.equal(decoded.voice?.title, 'Celestial');
   const decButterfly = decoded.items.find((i) => i.type === 'monarchButterfly')!;
   const decCosmos = decoded.items.find((i) => i.type === 'cosmos')!;
   const decBow = decoded.items.find((i) => i.type === 'ribbonBowPick')!;
@@ -182,6 +220,8 @@ test('shareAndExport losslessly encodes and decodes all new flowers, others (sit
   const decCats = decoded.items.find((i) => i.type === 'lovelyCats')!;
   const decMoon = decoded.items.find((i) => i.type === 'moon')!;
   const decSun = decoded.items.find((i) => i.type === 'sun')!;
+  const decGildedSun = decoded.items.find((i) => i.type === 'gildedSunburst')!;
+  const decSuncatcher = decoded.items.find((i) => i.type === 'sunbeamSuncatcher')!;
   const decStar = decoded.items.find((i) => i.type === 'star')!;
   const decClouds = decoded.items.find((i) => i.type === 'clouds')!;
   const decChocolates = decoded.items.find((i) => i.type === 'chocolates')!;
@@ -193,6 +233,8 @@ test('shareAndExport losslessly encodes and decodes all new flowers, others (sit
   assert.equal(getEffectiveItemPlane(decCats), 'front');
   assert.equal(getEffectiveItemPlane(decMoon), 'front');
   assert.equal(getEffectiveItemPlane(decSun), 'front');
+  assert.equal(getEffectiveItemPlane(decGildedSun), 'front');
+  assert.equal(getEffectiveItemPlane(decSuncatcher), 'front');
   assert.equal(getEffectiveItemPlane(decStar), 'front');
   assert.equal(getEffectiveItemPlane(decClouds), 'front');
   assert.equal(getEffectiveItemPlane(decChocolates), 'front');

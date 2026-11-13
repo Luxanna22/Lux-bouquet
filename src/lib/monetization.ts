@@ -65,6 +65,18 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
     'frostedPinecone',
     'glassOrnament',
     'cinnamonStarAnise',
+    // Couture 'Others' Charms, Celestial Sun & Gift Keepsakes (11 items)
+    'gildedSunburst',
+    'sunbeamSuncatcher',
+    'crystalButterfly',
+    'doubleHeartCharm',
+    'lovebirdPerch',
+    'waxSealCrest',
+    'fairyLightGarland',
+    'sittingDog',
+    'lovelyCats',
+    'chocolates',
+    'ringInABox',
   ],
   // Couture Vessels & Architectural Wraps (4 items: Ceramic Vase, Velvet Hatbox, Glass Cloche, Korean Mesh)
   wraps: ['vase', 'hatbox', 'cloche', 'koreanmesh'],
@@ -83,8 +95,19 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
   environments: ['aurora', 'velvetSalon', 'opalMist', 'starlit', 'crystalPalace', 'midnightNoel'],
   // All Photo Uploads & Botanical Photocards are Couture Keepsakes
   photoStyles: ['raw', 'polaroid', 'stamp', 'cameo', 'film', 'pressed', 'arch'],
-  // All 5 Voice Keepsake styles & Voice Recording are Couture Keepsakes
-  voiceStyles: ['mixtape', 'vinyl', 'plushie', 'musicbox', 'locket'],
+  // All 10 Voice Keepsake styles & Voice Recording are Couture Keepsakes
+  voiceStyles: [
+    'mixtape',
+    'vinyl',
+    'plushie',
+    'musicbox',
+    'locket',
+    'shell',
+    'birdcage',
+    'bottle',
+    'harp',
+    'globe',
+  ],
   // Time-Capsule Countdown & Secret Question Locks are Couture keepsakes ('none' is Free)
   lockModes: ['countdown', 'passcode'],
   // Notes longer than 560 characters (up to 1500 characters) are Couture Extended Notes
@@ -210,6 +233,13 @@ const FLOWER_LABELS: Record<string, string> = {
   frostedPinecone: 'Pinecone',
   glassOrnament: 'Glass Bauble',
   cinnamonStarAnise: 'Spice & Anise',
+  gildedSunburst: 'Gilded Sun',
+  sunbeamSuncatcher: 'Sun Suncatcher',
+  crystalButterfly: 'Morpho Butterfly',
+  doubleHeartCharm: 'Twin Hearts',
+  lovebirdPerch: 'Lovebird',
+  waxSealCrest: 'Wax Seal',
+  fairyLightGarland: 'Firefly Lights',
   sittingDog: 'Sitting Dog',
   lovelyCats: 'Lovely Cats',
   moon: 'Crescent Moon',

@@ -89,6 +89,8 @@ const SHARE_FLOWER_TYPES = [
   'clouds',
   'chocolates',
   'ringInABox',
+  'gildedSunburst',
+  'sunbeamSuncatcher',
 ];
 
 const SHARE_WRAP_STYLES = [
@@ -168,6 +170,17 @@ const PREMIUM_FLOWERS = new Set([
   'frostedPinecone',
   'glassOrnament',
   'cinnamonStarAnise',
+  'gildedSunburst',
+  'sunbeamSuncatcher',
+  'crystalButterfly',
+  'doubleHeartCharm',
+  'lovebirdPerch',
+  'waxSealCrest',
+  'fairyLightGarland',
+  'sittingDog',
+  'lovelyCats',
+  'chocolates',
+  'ringInABox',
 ]);
 
 const PREMIUM_WRAPS = new Set(['vase', 'hatbox', 'cloche', 'koreanmesh']);

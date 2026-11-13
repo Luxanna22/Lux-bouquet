@@ -1761,3 +1761,100 @@ export const RingInBoxSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor
   </g>
 );
 
+/** 82. Solstice Gilded Sunburst (Couture 24k baroque sunburst halo with pearl-tipped rays & crescent filigree) */
+export const GildedSunburstSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g transform="translate(0, -8)">
+    {/* Radiant Solar Aura */}
+    <circle cx="0" cy="0" r="46" fill={petalColor} opacity="0.16" />
+    <circle cx="0" cy="0" r="38" fill="none" stroke={centerColor} strokeWidth="0.9" strokeDasharray="3 3" opacity="0.7" />
+    {/* 12 Fine Pearl-Tipped Baroque Spikes */}
+    {Array.from({ length: 12 }, (_, i) => i * 30 + 15).map((deg) => (
+      <g key={`gs-spike-${deg}`} transform={`rotate(${deg})`}>
+        <line x1="0" y1="-20" x2="0" y2="-43" stroke={centerColor} strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="0" cy="-45" r="2.2" fill="#FFFDF9" stroke={centerColor} strokeWidth="0.9" />
+      </g>
+    ))}
+    {/* 12 Flamboyant Curved Flame Rays */}
+    {Array.from({ length: 12 }, (_, i) => i * 30).map((deg, idx) => (
+      <g key={`gs-ray-${deg}`} transform={`rotate(${deg})`}>
+        <path
+          d={
+            idx % 2 === 0
+              ? 'M-4.5,-18 C-7,-30 -2,-38 0,-46 C2,-38 7,-30 4.5,-18 Z'
+              : 'M-3.5,-18 C-6,-26 2,-31 0,-39 C-2,-31 6,-26 3.5,-18 Z'
+          }
+          fill={idx % 2 === 0 ? petalColor : centerColor}
+          stroke="#FFFDF9"
+          strokeWidth="0.8"
+          strokeLinejoin="round"
+        />
+      </g>
+    ))}
+    {/* Beaded Outer Medallion Ring */}
+    <circle cx="0" cy="0" r="21" fill={centerColor} stroke="#FFFDF9" strokeWidth="1.4" />
+    <circle cx="0" cy="0" r="17.5" fill={petalColor} stroke={centerColor} strokeWidth="1.2" />
+    {/* Inner Celestial Eclipse Crescent & Starburst Inlay */}
+    <path
+      d="M5,-13 C-5,-13 -12,-6 -12,3 C-12,11 -5,15 5,13 C-2,11 -6,6 -6,1 C-6,-5 -1,-10 5,-13 Z"
+      fill="#FFFDF9"
+      opacity="0.9"
+    />
+    <path
+      d="M5,-4 L6.5,-0.5 L10,1 L6.5,2.5 L5,6 L3.5,2.5 L0,1 L3.5,-0.5 Z"
+      fill="#FFFDF9"
+    />
+    <circle cx="-3" cy="-2" r="1.4" fill="#FFFDF9" />
+  </g>
+);
+
+/** 83. Crystal Sun Suncatcher (Couture hanging brass sun medallion with faceted prism crystal & rainbow drops) */
+export const SunbeamSuncatcherSVG: React.FC<FlowerSVGProps> = ({ petalColor, centerColor }) => (
+  <g transform="translate(0, -8)">
+    {/* Soft Prismatic Halo */}
+    <circle cx="0" cy="-6" r="42" fill={petalColor} opacity="0.14" />
+    {/* Top Hanging Brass Chain & Celestial Hoop */}
+    <circle cx="0" cy="-45" r="3.5" fill="none" stroke={centerColor} strokeWidth="1.5" />
+    <line x1="0" y1="-41" x2="0" y2="-28" stroke={centerColor} strokeWidth="1.4" strokeDasharray="2 1.5" />
+    {/* Outer Brass Diamond & Crescent Frame */}
+    <polygon
+      points="0,-30 28,-6 0,18 -28,-6"
+      fill="none"
+      stroke={centerColor}
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+    />
+    <circle cx="0" cy="-6" r="22" fill="none" stroke={centerColor} strokeWidth="1.1" strokeDasharray="3 2" />
+    {/* 8 Sunburst Rays Inside Frame */}
+    {Array.from({ length: 8 }, (_, i) => i * 45).map((deg) => (
+      <polygon
+        key={`sc-ray-${deg}`}
+        points="0,-24 -3.2,-11 3.2,-11"
+        fill={petalColor}
+        stroke={centerColor}
+        strokeWidth="0.8"
+        transform={`translate(0, -6) rotate(${deg})`}
+      />
+    ))}
+    {/* Center Faceted Crystal Sun Core */}
+    <circle cx="0" cy="-6" r="11.5" fill={petalColor} stroke="#FFFDF9" strokeWidth="1.4" />
+    <polygon
+      points="0,-15 6.5,-12.5 9,-6 6.5,0.5 0,3 -6.5,0.5 -9,-6 -6.5,-12.5"
+      fill="#E0F2FE"
+      fillOpacity="0.78"
+      stroke={centerColor}
+      strokeWidth="1"
+    />
+    <path d="M0,-12 L1.5,-7.5 L6,-6 L1.5,-4.5 L0,0 L-1.5,-4.5 L-6,-6 L-1.5,-7.5 Z" fill="#FFFFFF" />
+    {/* Dangling Prism Tear & Side Sunbeam Drops */}
+    <line x1="0" y1="18" x2="0" y2="27" stroke={centerColor} strokeWidth="1.3" />
+    <polygon points="0,26 7,35 0,44 -7,35" fill="#E0F2FE" stroke={centerColor} strokeWidth="1.2" />
+    <polygon points="0,28 4,35 0,42" fill="#FFFDF9" opacity="0.85" />
+    {/* Left & Right Dangling Sun Charms */}
+    <line x1="-22" y1="-1" x2="-22" y2="14" stroke={centerColor} strokeWidth="1.1" strokeDasharray="2 1.5" />
+    <circle cx="-22" cy="18" r="4" fill={petalColor} stroke="#FFFDF9" strokeWidth="1" />
+    <line x1="22" y1="-1" x2="22" y2="14" stroke={centerColor} strokeWidth="1.1" strokeDasharray="2 1.5" />
+    <circle cx="22" cy="18" r="4" fill={petalColor} stroke="#FFFDF9" strokeWidth="1" />
+  </g>
+);
+
+

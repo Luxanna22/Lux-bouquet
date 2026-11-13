@@ -115,7 +115,9 @@ const SHARE_FLOWER_TYPES: FlowerType[] = [
   'star',
   'clouds',
   'chocolates',
-  'ringInABox'
+  'ringInABox',
+  'gildedSunburst',
+  'sunbeamSuncatcher'
 ];
 
 const SHARE_WRAP_STYLES: typeWrapStyle[] = [
@@ -164,7 +166,12 @@ const SHARE_VOICE_STYLES: VoiceKeepsakeStyle[] = [
   'vinyl',
   'plushie',
   'musicbox',
-  'locket'
+  'locket',
+  'shell',
+  'birdcage',
+  'bottle',
+  'harp',
+  'globe'
 ];
 
 const SHARE_PHOTO_STYLES: PhotoFrameStyle[] = [

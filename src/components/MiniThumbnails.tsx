@@ -576,27 +576,34 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
   if (styleType === 'vinyl') {
     return (
       <svg viewBox="0 0 64 64" className="w-11 h-11">
-        {/* Vintage Horn Gramophone Vinyl Player */}
-        {/* Curved Brass Horn Support Arm */}
+        {/* Couture Salon Horn Gramophone Vinyl Player */}
+        {/* Ornate Filigree Brass Horn Arm */}
         <path
-          d="M21,36 Q18,22 28,17"
+          d="M19,36 Q15,21 27,16"
           fill="none"
           stroke={accentColor}
           strokeWidth="3.2"
           strokeLinecap="round"
         />
-        {/* Scalloped Antique Brass Morning-Glory Horn */}
+        <circle cx="19" cy="28" r="2.2" fill="#fef08a" stroke="#92400e" strokeWidth="0.8" />
+        {/* Scalloped Morning-Glory Brass Horn with Ribbed Petals */}
         <path
-          d="M26,18 C22,9 32,3 38,8 C44,4 52,11 48,18 C53,23 47,31 39,28 C33,31 25,25 26,18 Z"
+          d="M25,17 C20,8 31,2 38,7 C45,3 54,10 49,18 C55,23 48,32 39,28 C33,32 24,25 25,17 Z"
           fill={accentColor}
           stroke="#92400e"
           strokeWidth="1.2"
         />
-        <circle cx="34" cy="19" r="3.8" fill="#451a03" stroke="#fef08a" strokeWidth="0.9" />
-        {/* Turntable Vinyl Platter */}
-        <ellipse cx="32" cy="37" rx="18" ry="4.5" fill="#18181b" stroke="#52525b" strokeWidth="1" />
-        <ellipse cx="32" cy="37" rx="7" ry="1.8" fill="#ffffff" />
-        {/* Wooden Gramophone Cabinet Base */}
+        <path
+          d="M33,19 L29,9 M33,19 L42,9 M33,19 L47,19 M33,19 L40,26"
+          stroke="#b45309"
+          strokeWidth="0.9"
+          opacity="0.7"
+        />
+        <circle cx="33" cy="19" r="3.8" fill="#451a03" stroke="#fef08a" strokeWidth="1" />
+        {/* Spinning Vinyl Platter with Gold Center Seal */}
+        <ellipse cx="32" cy="37" rx="18.5" ry="4.8" fill="#18181b" stroke="#52525b" strokeWidth="1" />
+        <ellipse cx="32" cy="37" rx="8" ry="2.2" fill={primaryColor} stroke="#fef08a" strokeWidth="0.8" />
+        {/* Marquetry Wooden Gramophone Cabinet */}
         <polygon
           points="14,39 30,42 30,55 14,51"
           fill={primaryColor}
@@ -611,11 +618,12 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
           strokeWidth="1"
           strokeLinejoin="round"
         />
-        {/* Side Rosette Grille & Front Brass Plaque */}
-        <circle cx="22" cy="47" r="4" fill="none" stroke={accentColor} strokeWidth="1.1" />
-        <rect x="34" y="44" width="12" height="6" rx="1" fill={accentColor} />
-        {/* Stepped Base Molding */}
-        <path d="M12,51 L30,56 L52,52" fill="none" stroke={accentColor} strokeWidth="1.8" strokeLinecap="round" />
+        {/* Fretwork Rosette Grille & Brass Emblem */}
+        <circle cx="22" cy="47" r="4.2" fill="#1c1917" stroke={accentColor} strokeWidth="1.1" />
+        <path d="M19,47 L25,47 M22,44 L22,50" stroke={accentColor} strokeWidth="0.8" />
+        <rect x="34" y="44" width="12" height="6" rx="1.2" fill={accentColor} stroke="#92400e" strokeWidth="0.7" />
+        {/* Stepped Gilded Base Molding */}
+        <path d="M12,51 L30,56 L52,52" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" />
       </svg>
     );
   }
@@ -623,24 +631,42 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
   if (styleType === 'plushie') {
     return (
       <svg viewBox="0 0 64 64" className="w-11 h-11">
-        {/* Cute Teddy Plushie holding a Voice Heart */}
-        <circle cx="20" cy="18" r="6.5" fill={primaryColor} />
-        <circle cx="20" cy="18" r="3.5" fill="#fde68a" opacity="0.7" />
-        <circle cx="44" cy="18" r="6.5" fill={primaryColor} />
-        <circle cx="44" cy="18" r="3.5" fill="#fde68a" opacity="0.7" />
-        <ellipse cx="32" cy="44" rx="14" ry="12" fill={primaryColor} />
-        <circle cx="32" cy="27" r="12.5" fill={primaryColor} />
+        {/* Couture Crowned Atelier Bear holding a Velvet Voice Heart */}
+        {/* Round Ears with Quilt Stitching */}
+        <circle cx="20" cy="19" r="6.5" fill={primaryColor} stroke="#ffffff" strokeWidth="0.9" />
+        <circle cx="20" cy="19" r="3.5" fill="#fde68a" opacity="0.8" />
+        <circle cx="44" cy="19" r="6.5" fill={primaryColor} stroke="#ffffff" strokeWidth="0.9" />
+        <circle cx="44" cy="19" r="3.5" fill="#fde68a" opacity="0.8" />
+        {/* Miniature Golden Atelier Crown */}
+        <polygon
+          points="26,15 28,9 32,12 36,9 38,15"
+          fill="#fbbf24"
+          stroke="#b45309"
+          strokeWidth="0.9"
+          strokeLinejoin="round"
+        />
+        {/* Plush Body & Foot Pads */}
+        <ellipse cx="32" cy="44" rx="14.5" ry="12" fill={primaryColor} stroke="#ffffff" strokeWidth="0.9" />
+        <circle cx="22" cy="52" r="4.2" fill="#fffbeb" stroke={primaryColor} strokeWidth="1" />
+        <circle cx="42" cy="52" r="4.2" fill="#fffbeb" stroke={primaryColor} strokeWidth="1" />
+        {/* Bear Head & Snout */}
+        <circle cx="32" cy="27" r="12.5" fill={primaryColor} stroke="#ffffff" strokeWidth="0.9" />
         <ellipse cx="32" cy="30" rx="5.5" ry="4" fill="#fffbeb" />
         <circle cx="27.5" cy="25" r="1.6" fill="#292524" />
         <circle cx="36.5" cy="25" r="1.6" fill="#292524" />
         <ellipse cx="32" cy="28.8" rx="2" ry="1.4" fill="#451a03" />
-        {/* Heart speaker badge */}
+        {/* Satin Neck Ribbon */}
+        <path d="M24,36 Q32,39 40,36" fill="none" stroke="#fbbf24" strokeWidth="1.6" />
+        {/* Quilted Voice Heart Speaker Badge */}
         <path
-          d="M32,40 C28,35 21,38 25,45 L32,51 L39,45 C43,38 36,35 32,40 Z"
+          d="M32,40 C27,34 19,38 24,46 L32,53 L40,46 C45,38 37,34 32,40 Z"
           fill={accentColor}
           stroke="#ffffff"
-          strokeWidth="1.2"
+          strokeWidth="1.3"
         />
+        <line x1="30" y1="44" x2="30" y2="47" stroke="#ffffff" strokeWidth="1.1" strokeLinecap="round" />
+        <line x1="32" y1="42.5" x2="32" y2="48.5" stroke="#ffffff" strokeWidth="1.1" strokeLinecap="round" />
+        <line x1="34" y1="44" x2="34" y2="47" stroke="#ffffff" strokeWidth="1.1" strokeLinecap="round" />
       </svg>
     );
   }
@@ -648,22 +674,21 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
   if (styleType === 'musicbox') {
     return (
       <svg viewBox="0 0 64 64" className="w-11 h-11">
-        {/* Vintage Ballerina Floral Music Box */}
-        {/* Open Hinged Mirror Lid on Top Right */}
+        {/* Couture Ballerina Floral Music Box */}
         <polygon
-          points="33,30 40,10 56,12 49,31"
+          points="33,30 40,9 56,11 49,31"
           fill={primaryColor}
           stroke="#d97706"
           strokeWidth="1.2"
           strokeLinejoin="round"
         />
-        <polygon points="36,28 41.5,13 52.5,14.5 47,29" fill="#fef9c3" />
+        <polygon points="36,28 41.5,12 52.5,13.5 47,29" fill="#fef9c3" />
         {/* Ballerina Figurine & Tutu on Golden Pedestal */}
-        <ellipse cx="29" cy="31" rx="6.5" ry="2" fill="#f59e0b" stroke="#b45309" strokeWidth="0.8" />
-        <line x1="29" y1="22" x2="29" y2="30" stroke="#fdba74" strokeWidth="1.8" strokeLinecap="round" />
-        <ellipse cx="29" cy="24" rx="6" ry="2.4" fill={primaryColor} stroke="#ffffff" strokeWidth="0.7" />
-        <circle cx="29" cy="16.5" r="2.5" fill="#fde68a" />
-        <path d="M29,19 C25,16 25,12 28,11 M29,19 L35,21" fill="none" stroke="#fdba74" strokeWidth="1.3" strokeLinecap="round" />
+        <ellipse cx="28" cy="31" rx="7" ry="2.2" fill="#f59e0b" stroke="#b45309" strokeWidth="0.8" />
+        <line x1="28" y1="21" x2="28" y2="30" stroke="#fdba74" strokeWidth="1.8" strokeLinecap="round" />
+        <ellipse cx="28" cy="23.5" rx="6.5" ry="2.5" fill={primaryColor} stroke="#ffffff" strokeWidth="0.8" />
+        <circle cx="28" cy="16" r="2.6" fill="#fde68a" />
+        <path d="M28,18.5 C24,15.5 24,11.5 27,10.5 M28,18.5 L34,20.5" fill="none" stroke="#fdba74" strokeWidth="1.3" strokeLinecap="round" />
         {/* Rococo Music Box Cabinet & Floral Panels */}
         <polygon
           points="10,33 32,37 32,53 10,48"
@@ -681,16 +706,15 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
         />
         <polygon points="13,36 29,39 29,49 13,45" fill="#fffbeb" />
         <polygon points="35,39 49,36 49,45 35,49" fill="#fffbeb" />
-        {/* Tiny Painted Pink Roses on Panels */}
-        <circle cx="20" cy="42" r="2.2" fill="#fb7185" />
-        <circle cx="23" cy="44" r="1.8" fill="#f43f5e" />
-        <circle cx="42" cy="42" r="2.2" fill="#fb7185" />
+        <circle cx="20" cy="42" r="2.3" fill="#fb7185" />
+        <circle cx="23.5" cy="44" r="1.9" fill="#f43f5e" />
+        <circle cx="42" cy="42" r="2.3" fill="#fb7185" />
         {/* Cabriole Scalloped Gold Base */}
         <path
           d="M9,48 Q20,52 32,56 Q43,52 53,48"
           fill="none"
           stroke={accentColor}
-          strokeWidth="2"
+          strokeWidth="2.2"
           strokeLinecap="round"
         />
       </svg>
@@ -700,35 +724,219 @@ export const MiniVoiceKeepsakeSVG: React.FC<{
   if (styleType === 'locket') {
     return (
       <svg viewBox="0 0 64 64" className="w-11 h-11">
-        {/* Golden Heart Voice Locket */}
-        <path d="M24,10 Q32,20 40,10" fill="none" stroke="#d97706" strokeWidth="1.8" strokeDasharray="2 1.5" />
-        <circle cx="32" cy="17" r="3" fill="none" stroke="#d97706" strokeWidth="1.8" />
+        {/* Couture Guilloché Enamel Heart Voice Locket with Pearl Halo & Crown Bail */}
+        <path d="M22,9 Q32,19 42,9" fill="none" stroke="#d97706" strokeWidth="1.6" strokeDasharray="2 1.5" />
+        {/* Crown Bail */}
+        <polygon points="28,18 29.5,13 32,15 34.5,13 36,18" fill="#fbbf24" stroke="#b45309" strokeWidth="0.9" />
+        {/* Outer Pearl-Studded Gold Heart */}
         <path
-          d="M32,25 C22,14 9,23 17,37 L32,51 L47,37 C55,23 42,14 32,25 Z"
+          d="M32,25 C21,13 7,23 16,38 L32,53 L48,38 C57,23 43,13 32,25 Z"
           fill={primaryColor}
-          stroke="#ffffff"
-          strokeWidth="1.4"
+          stroke="#fef08a"
+          strokeWidth="1.8"
         />
         <path
-          d="M32,29 C26,22 18,27 23,36 L32,44 L41,36 C46,27 38,22 32,29 Z"
+          d="M32,27 C23,17 11,25 18,37 L32,50 L46,37 C53,25 41,17 32,27 Z"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="1.3"
+          strokeDasharray="1.5 2.2"
+        />
+        {/* Inner Enamel Heart */}
+        <path
+          d="M32,30 C26,23 18,28 23,37 L32,45 L41,37 C46,28 38,23 32,30 Z"
           fill={accentColor}
         />
-        <line x1="27" y1="35" x2="27" y2="39" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
-        <line x1="32" y1="32" x2="32" y2="41" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
-        <line x1="37" y1="35" x2="37" y2="39" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+        {/* Soundwave & Starburst Keyhole */}
+        <line x1="27.5" y1="35" x2="27.5" y2="39" stroke={primaryColor} strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="32" y1="32" x2="32" y2="41" stroke={primaryColor} strokeWidth="1.6" strokeLinecap="round" />
+        <line x1="36.5" y1="35" x2="36.5" y2="39" stroke={primaryColor} strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     );
   }
 
-  // Default: 'mixtape' (Retro Love Mixtape Cassette)
+  if (styleType === 'shell') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Couture Nacre Pearl Conch Shell with Glowing Acoustic Pearl */}
+        {/* Upper Scalloped Fan Shell Valve */}
+        <path
+          d="M14,34 C10,18 22,10 32,10 C42,10 54,18 50,34 L40,38 L24,38 Z"
+          fill={primaryColor}
+          stroke="#d97706"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        {/* Fluted Shell Ribs */}
+        <path
+          d="M32,36 L20,16 M32,36 L26,13 M32,36 L32,12 M32,36 L38,13 M32,36 L44,16"
+          stroke="#ffffff"
+          strokeWidth="1"
+          opacity="0.75"
+        />
+        {/* Open Nacre Lower Lip */}
+        <ellipse cx="32" cy="43" rx="18" ry="8.5" fill={accentColor} stroke="#d97706" strokeWidth="1.3" />
+        <ellipse cx="32" cy="42" rx="14" ry="5.5" fill="#fffdf9" opacity="0.85" />
+        {/* Luminous Acoustic Pearl & Sound Waves */}
+        <circle cx="32" cy="36" r="6" fill="#ffffff" stroke="#fde68a" strokeWidth="1.2" />
+        <circle cx="30" cy="34" r="1.8" fill="#fdf2f8" />
+        <path d="M21,34 Q18,30 21,26 M43,34 Q46,30 43,26" fill="none" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'birdcage') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Couture Gilded Songbird Automaton Cage */}
+        <circle cx="32" cy="9" r="3" fill="none" stroke="#d97706" strokeWidth="1.5" />
+        {/* Dome Cage Wires */}
+        <path
+          d="M17,45 L17,28 A15,15 0 0,1 47,28 L47,45 Z"
+          fill="#fffdf9"
+          fillOpacity="0.45"
+          stroke={primaryColor}
+          strokeWidth="1.6"
+        />
+        <path d="M24,45 L24,25 A8,13 0 0,1 40,25 L40,45" fill="none" stroke={primaryColor} strokeWidth="1" opacity="0.8" />
+        <line x1="32" y1="13" x2="32" y2="45" stroke={primaryColor} strokeWidth="1" opacity="0.8" />
+        {/* Perch & Singing Porcelain Songbird Inside */}
+        <line x1="21" y1="35" x2="43" y2="35" stroke="#b45309" strokeWidth="1.4" strokeLinecap="round" />
+        <path
+          d="M26,34 C26,28 32,26 36,28 C39,29 39,33 35,35 L23,37 Z"
+          fill={accentColor}
+          stroke="#be185d"
+          strokeWidth="1"
+        />
+        <polygon points="38,29 42,28 38,31" fill="#f59e0b" />
+        <circle cx="35.5" cy="29.5" r="1" fill="#1c1917" />
+        {/* Ornate Pedestal Base with Rose Accents */}
+        <rect x="15" y="45" width="34" height="6.5" rx="2.5" fill={primaryColor} stroke="#92400e" strokeWidth="1.1" />
+        <circle cx="24" cy="48.2" r="2" fill={accentColor} />
+        <circle cx="32" cy="48.2" r="2.2" fill="#f43f5e" />
+        <circle cx="40" cy="48.2" r="2" fill={accentColor} />
+      </svg>
+    );
+  }
+
+  if (styleType === 'bottle') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Couture Message in a Crystal Bottle */}
+        {/* Natural Cork Stopper */}
+        <polygon points="28,8 36,8 35,15 29,15" fill="#b45309" stroke="#78350f" strokeWidth="1" />
+        {/* Bottle Neck & Gold Collar */}
+        <rect x="27" y="14" width="10" height="6" rx="1.5" fill={primaryColor} stroke="#0284c7" strokeWidth="1.1" />
+        <line x1="26" y1="19" x2="38" y2="19" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
+        {/* Fluted Crystal Bottle Body */}
+        <path
+          d="M27,20 L18,28 C16,31 16,49 20,53 L44,53 C48,49 48,31 46,28 L37,20 Z"
+          fill={primaryColor}
+          fillOpacity="0.82"
+          stroke="#0284c7"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        {/* Rolled Parchment Scroll & Wax Seal Inside */}
+        <rect x="27" y="27" width="10" height="19" rx="2" fill={accentColor} stroke="#d97706" strokeWidth="1" transform="rotate(-8 32 36)" />
+        <circle cx="32" cy="36" r="3" fill="#e11d48" stroke="#fef08a" strokeWidth="0.8" />
+        {/* Shimmering Sea Wave & Gold Dust at Bottom */}
+        <path d="M18,47 Q25,44 32,47 T46,47 L44,52 L20,52 Z" fill="#38bdf8" opacity="0.45" />
+        <path d="M21,30 L21,44" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" opacity="0.75" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'harp') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Couture Celestial Golden Lyre Harp */}
+        {/* Left & Right Swan-Neck Lyre Arms */}
+        <path
+          d="M22,47 C13,38 13,18 22,13 C25,11 27,15 24,18"
+          fill="none"
+          stroke={primaryColor}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M42,47 C51,38 51,18 42,13 C39,11 37,15 40,18"
+          fill="none"
+          stroke={primaryColor}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+        />
+        {/* Top Yoke Bar with Star Finial */}
+        <line x1="19" y1="16" x2="45" y2="16" stroke={primaryColor} strokeWidth="2.6" strokeLinecap="round" />
+        <polygon points="32,8 33.5,12 37.5,13.5 33.5,15 32,19 30.5,15 26.5,13.5 30.5,12" fill={accentColor} stroke="#b45309" strokeWidth="0.7" />
+        {/* Golden Harp Strings */}
+        <g stroke={accentColor} strokeWidth="1.1">
+          <line x1="25" y1="17" x2="27" y2="46" />
+          <line x1="29.5" y1="17" x2="30" y2="46" />
+          <line x1="34.5" y1="17" x2="34" y2="46" />
+          <line x1="39" y1="17" x2="37" y2="46" />
+        </g>
+        {/* Sculpted Soundbox Cradle Base */}
+        <path
+          d="M19,45 Q32,51 45,45 L41,54 Q32,57 23,54 Z"
+          fill={primaryColor}
+          stroke="#92400e"
+          strokeWidth="1.2"
+          strokeLinejoin="round"
+        />
+        <circle cx="32" cy="50" r="2.5" fill="#f43f5e" stroke="#ffffff" strokeWidth="0.7" />
+      </svg>
+    );
+  }
+
+  if (styleType === 'globe') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        {/* Couture Enchanted Rose Crystal Dome Globe */}
+        {/* Top Crystal Finial */}
+        <circle cx="32" cy="10" r="2.8" fill={accentColor} stroke="#b45309" strokeWidth="1" />
+        {/* Blown Glass Cloche Dome */}
+        <path
+          d="M17,45 L17,27 A15,15 0 0,1 47,27 L47,45 Z"
+          fill={accentColor}
+          fillOpacity="0.55"
+          stroke="#d97706"
+          strokeWidth="1.4"
+        />
+        {/* Specular Glass Highlight */}
+        <path d="M21,26 A11,11 0 0,1 29,16" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" opacity="0.85" />
+        {/* Eternal Rose Inside Dome */}
+        <line x1="32" y1="30" x2="32" y2="44" stroke="#15803d" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M32,38 L27,35 M32,40 L37,37" stroke="#16a34a" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="32" cy="27" r="6" fill={primaryColor} stroke="#ffffff" strokeWidth="0.9" />
+        <path d="M29,26 Q32,23 35,26 Q32,30 29,26 Z" fill="#fef08a" opacity="0.75" />
+        {/* Floating Gold Dust */}
+        <circle cx="23" cy="31" r="1.2" fill="#fbbf24" />
+        <circle cx="40" cy="24" r="1.3" fill="#fbbf24" />
+        {/* Gilded Pedestal Base with Wind-up Key */}
+        <rect x="14" y="45" width="36" height="8" rx="3" fill="#b45309" stroke="#fef08a" strokeWidth="1.1" />
+        <rect x="24" y="47.5" width="16" height="3" rx="1" fill={accentColor} />
+      </svg>
+    );
+  }
+
+  // Default: 'mixtape' (Couture Retro Love Mixtape Cassette with Gilded Filigree Corners & Winged Heart Crest)
   return (
     <svg viewBox="0 0 64 64" className="w-11 h-11">
-      <rect x="8" y="16" width="48" height="32" rx="5" fill={primaryColor} stroke="#ffffff" strokeWidth="1.2" />
-      <rect x="13" y="20" width="38" height="17" rx="2.5" fill={accentColor} />
-      <rect x="18" y="24" width="28" height="9" rx="4.5" fill="#1e293b" />
-      <circle cx="23.5" cy="28.5" r="3" fill="#f8fafc" />
-      <circle cx="40.5" cy="28.5" r="3" fill="#f8fafc" />
-      <path d="M18,48 L22,41 L42,41 L46,48 Z" fill="#0f172a" opacity="0.35" />
+      <rect x="7" y="15" width="50" height="34" rx="5.5" fill={primaryColor} stroke="#fef08a" strokeWidth="1.4" />
+      {/* Gold Corner Studs */}
+      <circle cx="11" cy="19" r="1.2" fill="#fef08a" />
+      <circle cx="53" cy="19" r="1.2" fill="#fef08a" />
+      {/* Cream & Gold Label */}
+      <rect x="12" y="19.5" width="40" height="18" rx="2.5" fill={accentColor} stroke="#d97706" strokeWidth="0.8" />
+      {/* Center Tape Window & Reels */}
+      <rect x="17" y="24" width="30" height="9.5" rx="4.7" fill="#1e293b" stroke="#fbbf24" strokeWidth="0.8" />
+      <circle cx="23" cy="28.7" r="3.1" fill="#f8fafc" />
+      <circle cx="41" cy="28.7" r="3.1" fill="#f8fafc" />
+      {/* Tiny Heart Emblem Between Reels */}
+      <path d="M32,27.5 C30.5,25.5 28,27 30,29.5 L32,31.2 L34,29.5 C36,27 33.5,25.5 32,27.5 Z" fill={primaryColor} />
+      {/* Lower Bridge */}
+      <path d="M17,49 L21,41 L43,41 L47,49 Z" fill="#0f172a" opacity="0.35" />
     </svg>
   );
 };
