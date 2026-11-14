@@ -779,12 +779,14 @@ export const DEFAULT_VOICE_KEEPSAKE: VoiceKeepsakeData = {
 };
 
 export type BouquetLockMode = 'none' | 'countdown' | 'passcode';
+export type BouquetPasscodeType = 'pin' | 'word';
 
 export interface BouquetLockConfig {
   mode: BouquetLockMode;
   unlockAtIso?: string;
   questionPrompt?: string;
   passcodeAnswer?: string;
+  passcodeType?: BouquetPasscodeType;
 }
 
 export const DEFAULT_BOUQUET_LOCK: BouquetLockConfig = {

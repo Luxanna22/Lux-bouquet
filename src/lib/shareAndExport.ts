@@ -476,7 +476,9 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
     const unlockAtB64 = snapshot.lock.unlockAtIso ? toBase64Url(snapshot.lock.unlockAtIso) : '';
     const qB64 = snapshot.lock.questionPrompt ? toBase64Url(snapshot.lock.questionPrompt) : '';
     const aB64 = snapshot.lock.passcodeAnswer ? toBase64Url(snapshot.lock.passcodeAnswer) : '';
-    lockSuffix = `&l=${modeCode}~${unlockAtB64}~${qB64}~${aB64}`.replace(/~+$/, '');
+    const ptCode =
+      snapshot.lock.passcodeType === 'pin' ? 'n' : snapshot.lock.passcodeType === 'word' ? 'w' : '';
+    lockSuffix = `&l=${modeCode}~${unlockAtB64}~${qB64}~${aB64}~${ptCode}`.replace(/~+$/, '');
   }
   let envSuffix = '';
   if (snapshot.environment && snapshot.environment !== 'studio') {
@@ -628,14 +630,21 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       let lock: BouquetLockConfig = { ...DEFAULT_BOUQUET_LOCK };
       const lSegment = querySegments.find((seg) => seg.startsWith('l='));
       if (lSegment) {
-        const [modeCode = 'n', unlockAtB64 = '', qB64 = '', aB64 = ''] = lSegment.slice(2).split('~');
+        const [modeCode = 'n', unlockAtB64 = '', qB64 = '', aB64 = '', ptCode = ''] = lSegment
+          .slice(2)
+          .split('~');
         const mode: BouquetLockMode =
           modeCode === 'c' ? 'countdown' : modeCode === 'p' ? 'passcode' : 'none';
         lock = {
           mode,
           unlockAtIso: unlockAtB64 ? fromBase64Url(unlockAtB64) : '',
           questionPrompt: qB64 ? fromBase64Url(qB64) : DEFAULT_BOUQUET_LOCK.questionPrompt,
-          passcodeAnswer: aB64 ? fromBase64Url(aB64) : ''
+          passcodeAnswer: aB64 ? fromBase64Url(aB64) : '',
+          ...(ptCode === 'n'
+            ? { passcodeType: 'pin' as const }
+            : ptCode === 'w'
+            ? { passcodeType: 'word' as const }
+            : {}),
         };
       }
 

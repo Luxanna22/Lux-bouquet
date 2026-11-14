@@ -66,6 +66,7 @@ import {
   GreetingCardData,
   BouquetSnapshot,
   BouquetLockMode,
+  BouquetPasscodeType,
   PhotoFrameStyle,
   CanvasEnvironment,
   DEFAULT_BOUQUET_LOCK,
@@ -99,6 +100,15 @@ import {
   compressUploadedPhotoToDataUrl,
   musicBox,
 } from '../lib/shareAndExport';
+import {
+  DEFAULT_PIN_HINT,
+  DEFAULT_WORD_HINT,
+  isSecretAnswerMatch,
+  resolveEffectivePasscodeType,
+  sanitizeSecretPinInput,
+  sanitizeSecretWordInput,
+  validateBouquetLockConfig,
+} from '../lib/lockUtils';
 import {
   saveSharedBouquetToFirestore,
   fetchSharedBouquetFromFirestore,
@@ -302,6 +312,14 @@ export default function App() {
   const [isPasscodeUnlocked, setIsPasscodeUnlocked] = useState(false);
   const [passcodeAttempt, setPasscodeAttempt] = useState('');
   const [passcodeError, setPasscodeError] = useState<string | null>(null);
+  const [passcodeFeedback, setPasscodeFeedback] = useState<'idle' | 'error' | 'success'>('idle');
+  const [passcodeShakeKey, setPasscodeShakeKey] = useState<number>(0);
+  const [isPinFocused, setIsPinFocused] = useState<boolean>(false);
+  const [isWordFocused, setIsWordFocused] = useState<boolean>(false);
+  const passcodeUnlockTimerRef = useRef<number | null>(null);
+  const pinErrorClearTimerRef = useRef<number | null>(null);
+  const pinInputRef = useRef<HTMLInputElement | null>(null);
+  const [shareLockError, setShareLockError] = useState<string | null>(null);
   const [isReactionPopoverOpen, setIsReactionPopoverOpen] = useState(false);
   const [selectedReactionId, setSelectedReactionId] = useState<string>('');
   const [recipientReplyText, setRecipientReplyText] = useState<string>('');
@@ -826,6 +844,8 @@ export default function App() {
   const isCountdownLocked =
     lock?.mode === 'countdown' && countdownTargetMs !== null && countdownRemainingMs > 0;
 
+  const effectivePasscodeType: BouquetPasscodeType = resolveEffectivePasscodeType(lock);
+
   const isPasscodeLocked =
     lock?.mode === 'passcode' &&
     Boolean(lock.passcodeAnswer && lock.passcodeAnswer.trim().length > 0) &&
@@ -944,10 +964,24 @@ export default function App() {
     }
     selectItem(null);
     setMobilePopover(null);
+    if (passcodeUnlockTimerRef.current !== null) {
+      window.clearTimeout(passcodeUnlockTimerRef.current);
+      passcodeUnlockTimerRef.current = null;
+    }
+    if (pinErrorClearTimerRef.current !== null) {
+      window.clearTimeout(pinErrorClearTimerRef.current);
+      pinErrorClearTimerRef.current = null;
+    }
+    if (entranceSlideRafRef.current !== null) {
+      cancelAnimationFrame(entranceSlideRafRef.current);
+      entranceSlideRafRef.current = null;
+    }
     setNowMs(Date.now());
     setIsPasscodeUnlocked(false);
     setPasscodeAttempt('');
     setPasscodeError(null);
+    setPasscodeFeedback('idle');
+    setPasscodeShakeKey(0);
     setIsReactionPopoverOpen(false);
     setIsPreviewMode(fromEditorPreview);
     setIsGiftView(true);
@@ -999,8 +1033,8 @@ export default function App() {
 
   // Smoothly glides the slider to 100% so the background flower blooms open before transitioning
   const handleGlideSlideToOpen = useCallback(
-    (startFrom = entranceSlideProgress) => {
-      if (isGiftCurrentlyLocked || isEntranceUnfurling) return;
+    (startFrom = entranceSlideProgress, forceBypassLock = false) => {
+      if ((!forceBypassLock && isGiftCurrentlyLocked) || isEntranceUnfurling) return;
       if (entranceSlideRafRef.current !== null) {
         cancelAnimationFrame(entranceSlideRafRef.current);
       }
@@ -1018,7 +1052,7 @@ export default function App() {
           entranceSlideRafRef.current = requestAnimationFrame(tick);
         } else {
           entranceSlideRafRef.current = null;
-          handleUnwrapGiftEntrance();
+          handleUnwrapGiftEntrance(forceBypassLock);
         }
       };
       entranceSlideRafRef.current = requestAnimationFrame(tick);
@@ -1058,20 +1092,89 @@ export default function App() {
     handleUnwrapGiftEntrance,
   ]);
 
+  useEffect(() => {
+    return () => {
+      if (passcodeUnlockTimerRef.current !== null) {
+        window.clearTimeout(passcodeUnlockTimerRef.current);
+        passcodeUnlockTimerRef.current = null;
+      }
+      if (pinErrorClearTimerRef.current !== null) {
+        window.clearTimeout(pinErrorClearTimerRef.current);
+        pinErrorClearTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const triggerPasscodeVerification = useCallback(
+    (candidateAnswer: string) => {
+      if (passcodeFeedback === 'success') return;
+      if (passcodeUnlockTimerRef.current !== null) {
+        window.clearTimeout(passcodeUnlockTimerRef.current);
+        passcodeUnlockTimerRef.current = null;
+      }
+      if (pinErrorClearTimerRef.current !== null) {
+        window.clearTimeout(pinErrorClearTimerRef.current);
+        pinErrorClearTimerRef.current = null;
+      }
+      if (isSecretAnswerMatch(lock?.passcodeAnswer, candidateAnswer, lock?.passcodeType)) {
+        setPasscodeError(null);
+        setPasscodeFeedback('success');
+        // 100% match Slide-to-Unlock's petal-by-petal bloom glide -> unfurl -> stem bloom animation
+        handleGlideSlideToOpen(0, true);
+      } else {
+        setPasscodeFeedback('error');
+        setPasscodeShakeKey((k) => k + 1);
+        setPasscodeError(
+          effectivePasscodeType === 'pin'
+            ? 'That 4-digit PIN doesn’t match yet — try again ♥'
+            : 'That secret word doesn’t match yet — try again ♥'
+        );
+        if (effectivePasscodeType === 'pin') {
+          pinErrorClearTimerRef.current = window.setTimeout(() => {
+            pinErrorClearTimerRef.current = null;
+            setPasscodeAttempt('');
+            setPasscodeFeedback('idle');
+            setIsPinFocused(true);
+            if (pinInputRef.current) {
+              pinInputRef.current.focus();
+              try {
+                pinInputRef.current.setSelectionRange(0, 0);
+              } catch {
+                // Ignore selection errors
+              }
+            }
+          }, 440);
+        }
+      }
+    },
+    [
+      passcodeFeedback,
+      lock?.passcodeAnswer,
+      lock?.passcodeType,
+      effectivePasscodeType,
+      handleGlideSlideToOpen,
+    ]
+  );
+
   const handleAttemptPasscodeUnlock = useCallback(
     (e?: React.FormEvent) => {
       if (e) e.preventDefault();
-      const expected = (lock?.passcodeAnswer || '').trim().toLowerCase();
-      const actual = passcodeAttempt.trim().toLowerCase();
-      if (!expected || actual === expected) {
-        setIsPasscodeUnlocked(true);
-        setPasscodeError(null);
-        handleUnwrapGiftEntrance(true);
-      } else {
-        setPasscodeError('That answer doesn’t match yet — try again ♥');
+      if (passcodeFeedback === 'success') return;
+      if (effectivePasscodeType === 'pin' && passcodeAttempt.length < 4) {
+        setPasscodeFeedback('error');
+        setPasscodeShakeKey((k) => k + 1);
+        setPasscodeError('Enter all 4 digits to unlock ♥');
+        pinInputRef.current?.focus();
+        return;
       }
+      triggerPasscodeVerification(passcodeAttempt);
     },
-    [lock?.passcodeAnswer, passcodeAttempt, handleUnwrapGiftEntrance]
+    [
+      passcodeFeedback,
+      effectivePasscodeType,
+      passcodeAttempt,
+      triggerPasscodeVerification,
+    ]
   );
 
   const handleSubmitRecipientReaction = useCallback(async () => {
@@ -3024,29 +3127,34 @@ export default function App() {
                     ? '-translate-x-1/2 -translate-y-[50%] scale-[1.42] opacity-0'
                     : '-translate-x-1/2 -translate-y-[50%] scale-100'
                 }`}
-                style={{ opacity: isEntranceUnfurling ? 0 : isDarkMode ? 0.8 : 0.95 }}
+                style={{ opacity: isEntranceUnfurling ? 0 : isDarkMode ? 0.72 : 0.88 }}
               >
                 <svg viewBox="0 0 520 340" className="w-full h-full overflow-visible">
                   <defs>
                     <radialGradient id="rg-wc-petal-blush" cx="50%" cy="35%" r="65%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.36' : '0.72'} />
-                      <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.24' : '0.44'} />
+                      <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
+                      <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
                       <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
                     </radialGradient>
                     <radialGradient id="rg-wc-petal-peach" cx="50%" cy="30%" r="65%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.38' : '0.74'} />
-                      <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.22' : '0.46'} />
+                      <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.32' : '0.66'} />
+                      <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.18' : '0.38'} />
                       <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
                     </radialGradient>
                     <radialGradient id="rg-wc-leaf-sage" cx="50%" cy="50%" r="60%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.30' : '0.66'} />
-                      <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.16' : '0.34'} />
+                      <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.58'} />
+                      <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.28'} />
                       <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
                     </radialGradient>
                     <radialGradient id="rg-wc-center-gold" cx="50%" cy="50%" r="55%">
-                      <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.48' : '0.78'} />
-                      <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.20' : '0.28'} />
+                      <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.38' : '0.62'} />
+                      <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.14' : '0.20'} />
                       <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                    </radialGradient>
+                    <radialGradient id="rg-wc-text-readability-veil" cx="50%" cy="54%" r="52%">
+                      <stop offset="0%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.68' : '0.72'} />
+                      <stop offset="58%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.36' : '0.42'} />
+                      <stop offset="100%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity="0" />
                     </radialGradient>
                   </defs>
 
@@ -3216,6 +3324,15 @@ export default function App() {
                       strokeOpacity="0.68"
                     />
                   </g>
+
+                  {/* 5. Soft Readability Veil Over Inner Corolla & Lower Petal Zone (Matches Hero Section) */}
+                  <ellipse
+                    cx="260"
+                    cy="205"
+                    rx="235"
+                    ry="125"
+                    fill="url(#rg-wc-text-readability-veil)"
+                  />
                 </svg>
               </div>
 
@@ -3378,12 +3495,15 @@ export default function App() {
                         </button>
                       )}
                     </div>
-                  ) : isPasscodeLocked ? (
-                    /* MODE 2: SECRET HINT LOCK (Minimal Inline Pill Input + Wax Seal Submit) */
+                  ) : isPasscodeLocked ||
+                    (lock?.mode === 'passcode' &&
+                      Boolean(lock.passcodeAnswer && lock.passcodeAnswer.trim().length > 0) &&
+                      isEntranceUnfurling) ? (
+                    /* MODE 2: SECRET HINT LOCK (4 Animated PIN Squares OR Micro-Animated Secret Word Pill) */
                     <form
                       onSubmit={handleAttemptPasscodeUnlock}
                       onClick={(e) => e.stopPropagation()}
-                      className="mt-6 sm:mt-7 w-full max-w-xs flex flex-col items-center space-y-2.5"
+                      className="mt-6 sm:mt-7 w-full max-w-xs flex flex-col items-center space-y-3"
                     >
                       <p
                         className={`text-lg sm:text-xl italic font-normal leading-snug px-2 ${
@@ -3391,45 +3511,239 @@ export default function App() {
                         }`}
                         style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                       >
-                        “{lock?.questionPrompt || 'Our special secret'}”
+                        “{lock?.questionPrompt || (effectivePasscodeType === 'pin' ? DEFAULT_PIN_HINT : DEFAULT_WORD_HINT)}”
                       </p>
 
-                      <div
-                        className={`w-full flex items-center p-1 rounded-full border border-dashed shadow-[0_10px_28px_rgba(35,28,24,0.07)] backdrop-blur-md ${
-                          isDarkMode
-                            ? 'bg-[#352C29]/92 border-[#66554F]'
-                            : 'bg-[#FFFDF9]/92 border-[#D8C3B0]'
+                      <p
+                        data-testid="recipient-passcode-format-hint"
+                        className={`text-[11px] tracking-wide ${
+                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
                         }`}
                       >
-                        <input
-                          type="text"
-                          value={passcodeAttempt}
-                          onChange={(e) => {
-                            setPasscodeAttempt(e.target.value);
-                            if (passcodeError) setPasscodeError(null);
-                          }}
-                          placeholder="Secret answer..."
-                          aria-label="Secret answer to unlock bouquet"
-                          className={`flex-1 min-w-0 bg-transparent px-4 py-2 text-xs sm:text-sm focus:outline-none ${
-                            isDarkMode
-                              ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
-                              : 'text-[#231C18] placeholder:text-[#9A877B]'
-                          }`}
-                        />
-                        <button
-                          type="submit"
-                          className={`px-4 py-2 rounded-full text-xs font-medium shrink-0 transition active:scale-95 cursor-pointer ${
-                            isDarkMode
-                              ? 'bg-[#9A6550] text-white hover:bg-[#875642]'
-                              : 'bg-[#7A4B3A] text-white hover:bg-[#633B2C]'
+                        {effectivePasscodeType === 'pin'
+                          ? '4-digit numerical PIN'
+                          : 'Secret word · case-insensitive'}
+                      </p>
+
+                      {effectivePasscodeType === 'pin' ? (
+                        <div className="w-full flex flex-col items-center space-y-3">
+                          <div
+                            data-testid="recipient-pin-grid"
+                            data-lock-state={passcodeFeedback}
+                            onClick={() => pinInputRef.current?.focus()}
+                            className="relative w-full max-w-[256px]"
+                          >
+                            <input
+                              ref={pinInputRef}
+                              type="text"
+                              data-testid="recipient-passcode-input"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={4}
+                              autoComplete="one-time-code"
+                              readOnly={passcodeFeedback === 'success'}
+                              value={passcodeAttempt}
+                              onFocus={() => setIsPinFocused(true)}
+                              onBlur={() => setIsPinFocused(false)}
+                              onChange={(e) => {
+                                if (passcodeFeedback === 'success') return;
+                                if (pinErrorClearTimerRef.current !== null) {
+                                  window.clearTimeout(pinErrorClearTimerRef.current);
+                                  pinErrorClearTimerRef.current = null;
+                                }
+                                const next = sanitizeSecretPinInput(e.target.value);
+                                setPasscodeAttempt(next);
+                                if (next.length < 4) {
+                                  if (passcodeFeedback !== 'idle') setPasscodeFeedback('idle');
+                                  if (passcodeError) setPasscodeError(null);
+                                } else if (next.length === 4) {
+                                  triggerPasscodeVerification(next);
+                                }
+                              }}
+                              aria-label="4-digit PIN to unlock bouquet"
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                            />
+
+                            <div
+                              key={passcodeFeedback === 'error' ? `pin-shake-${passcodeShakeKey}` : 'pin-idle'}
+                              className={`grid grid-cols-4 gap-2.5 sm:gap-3 ${
+                                passcodeFeedback === 'error'
+                                  ? 'animate-[sab-lock-shake_0.42s_ease-in-out]'
+                                  : passcodeFeedback === 'success'
+                                  ? 'animate-[sab-unlock-glow_0.45s_ease-out]'
+                                  : ''
+                              }`}
+                            >
+                              {[0, 1, 2, 3].map((idx) => {
+                                const char = passcodeAttempt[idx] || '';
+                                const isActiveSquare =
+                                  passcodeFeedback === 'idle' &&
+                                  isPinFocused &&
+                                  idx === Math.min(passcodeAttempt.length, 3);
+                                const isFilled = char.length > 0;
+
+                                const squareStyleClass =
+                                  passcodeFeedback === 'success'
+                                    ? isDarkMode
+                                      ? 'border-solid border-[#E6B89C] bg-[#3E322E]/95 text-[#FBF6F1] shadow-[0_10px_28px_rgba(0,0,0,0.28)] scale-[1.03]'
+                                      : 'border-solid border-[#B4846C] bg-[#FFF8F4]/95 text-[#5C3A2E] shadow-[0_10px_28px_rgba(122,75,58,0.14)] scale-[1.03]'
+                                    : passcodeFeedback === 'error'
+                                    ? isDarkMode
+                                      ? 'border-solid border-rose-400 bg-rose-950/60 text-rose-200 shadow-[0_0_14px_rgba(251,113,133,0.3)]'
+                                      : 'border-solid border-rose-500 bg-rose-50/95 text-rose-700 shadow-[0_0_14px_rgba(244,63,94,0.24)]'
+                                    : isActiveSquare
+                                    ? isDarkMode
+                                      ? 'border-solid border-[#E6B89C] bg-[#3E332F]/95 text-[#FBF6F1] shadow-[0_0_0_3px_rgba(230,184,156,0.22),0_10px_24px_rgba(0,0,0,0.2)] scale-[1.04]'
+                                      : 'border-solid border-[#A86B53] bg-[#FFFDF9]/95 text-[#231C18] shadow-[0_0_0_3px_rgba(168,107,83,0.18),0_10px_24px_rgba(35,28,24,0.08)] scale-[1.04]'
+                                    : isFilled
+                                    ? isDarkMode
+                                      ? 'border-solid border-[#9B8277] bg-[#3A302C]/95 text-[#FBF6F1] shadow-[0_8px_20px_rgba(0,0,0,0.18)]'
+                                      : 'border-solid border-[#C4A690] bg-[#FFFDF9]/95 text-[#231C18] shadow-[0_8px_20px_rgba(35,28,24,0.06)]'
+                                    : isDarkMode
+                                    ? 'border-dashed border-[#66554F] bg-[#352C29]/90 text-[#8C7A70] shadow-[0_8px_20px_rgba(0,0,0,0.14)]'
+                                    : 'border-dashed border-[#D8C3B0] bg-[#FFFDF9]/90 text-[#B8A59B] shadow-[0_8px_20px_rgba(35,28,24,0.05)]';
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    data-testid={`recipient-pin-square-${idx}`}
+                                    className={`relative aspect-square h-14 sm:h-[58px] w-full rounded-2xl border-[1.5px] backdrop-blur-md flex items-center justify-center transition-all duration-200 select-none ${squareStyleClass}`}
+                                  >
+                                    {isFilled ? (
+                                      <span
+                                        key={`pin-digit-${idx}-${char}`}
+                                        className="inline-block text-2xl sm:text-[26px] font-semibold leading-none animate-[sab-pin-pop_0.24s_cubic-bezier(0.22,1,0.36,1)]"
+                                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                                      >
+                                        {char}
+                                      </span>
+                                    ) : isActiveSquare ? (
+                                      <span
+                                        aria-hidden="true"
+                                        className={`w-[2px] h-5 rounded-full animate-[sab-caret-blink_1s_ease-in-out_infinite] ${
+                                          isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#A86B53]'
+                                        }`}
+                                      />
+                                    ) : (
+                                      <span
+                                        aria-hidden="true"
+                                        className="w-1.5 h-1.5 rounded-full bg-current opacity-40"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          key={passcodeFeedback === 'error' ? `word-shake-${passcodeShakeKey}` : 'word-idle'}
+                          data-testid="recipient-word-box"
+                          data-lock-state={passcodeFeedback}
+                          className={`relative w-full ${
+                            passcodeFeedback === 'error'
+                              ? 'animate-[sab-lock-shake_0.42s_ease-in-out]'
+                              : passcodeFeedback === 'success'
+                              ? 'animate-[sab-unlock-glow_0.45s_ease-out]'
+                              : ''
                           }`}
                         >
-                          Unlock
-                        </button>
-                      </div>
+                          <div
+                            className={`relative w-full flex items-center p-1 rounded-full border backdrop-blur-md transition-all duration-200 ${
+                              passcodeFeedback === 'success'
+                                ? isDarkMode
+                                  ? 'border-solid border-[#E6B89C] bg-[#3E322E]/95 shadow-[0_10px_28px_rgba(0,0,0,0.28)]'
+                                  : 'border-solid border-[#B4846C] bg-[#FFF8F4]/95 shadow-[0_10px_28px_rgba(122,75,58,0.14)]'
+                                : passcodeFeedback === 'error'
+                                ? isDarkMode
+                                  ? 'border-solid border-rose-400 bg-rose-950/55 shadow-[0_0_16px_rgba(251,113,133,0.3)]'
+                                  : 'border-solid border-rose-500 bg-rose-50/95 shadow-[0_0_16px_rgba(244,63,94,0.24)]'
+                                : isWordFocused
+                                ? isDarkMode
+                                  ? 'border-solid border-[#E6B89C] bg-[#352C29]/95 shadow-[0_0_0_3px_rgba(230,184,156,0.18),0_10px_28px_rgba(0,0,0,0.22)]'
+                                  : 'border-solid border-[#A86B53] bg-[#FFFDF9]/95 shadow-[0_0_0_3px_rgba(168,107,83,0.15),0_10px_28px_rgba(35,28,24,0.08)]'
+                                : isDarkMode
+                                ? 'border-dashed border-[#66554F] bg-[#352C29]/92 shadow-[0_10px_28px_rgba(35,28,24,0.07)]'
+                                : 'border-dashed border-[#D8C3B0] bg-[#FFFDF9]/92 shadow-[0_10px_28px_rgba(35,28,24,0.07)]'
+                            }`}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`pl-3 pr-1 transition-transform duration-300 ${
+                                passcodeFeedback === 'success'
+                                  ? isDarkMode
+                                    ? 'scale-110 rotate-12 text-[#E6B89C]'
+                                    : 'scale-110 rotate-12 text-[#8A4B38]'
+                                  : passcodeFeedback === 'error'
+                                  ? 'text-rose-500 dark:text-rose-400'
+                                  : passcodeAttempt.length > 0
+                                  ? isDarkMode
+                                    ? 'scale-105 text-[#E6B89C]'
+                                    : 'scale-105 text-[#A86B53]'
+                                  : isDarkMode
+                                  ? 'text-[#9A877B]'
+                                  : 'text-[#B8A59B]'
+                              }`}
+                            >
+                              <CoutureBloomSeal className="w-3.5 h-3.5" />
+                            </span>
+                            <input
+                              type="text"
+                              data-testid="recipient-passcode-input"
+                              inputMode="text"
+                              maxLength={40}
+                              autoComplete="off"
+                              readOnly={passcodeFeedback === 'success'}
+                              value={passcodeAttempt}
+                              onFocus={() => setIsWordFocused(true)}
+                              onBlur={() => setIsWordFocused(false)}
+                              onChange={(e) => {
+                                if (passcodeFeedback === 'success') return;
+                                const next =
+                                  lock?.passcodeType === 'word'
+                                    ? sanitizeSecretWordInput(e.target.value)
+                                    : e.target.value;
+                                setPasscodeAttempt(next);
+                                if (passcodeFeedback !== 'idle') setPasscodeFeedback('idle');
+                                if (passcodeError) setPasscodeError(null);
+                              }}
+                              placeholder="Secret word..."
+                              aria-label="Secret word to unlock bouquet"
+                              className={`flex-1 min-w-0 bg-transparent px-2.5 py-2 text-xs sm:text-sm focus:outline-none ${
+                                isDarkMode
+                                  ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
+                                  : 'text-[#231C18] placeholder:text-[#9A877B]'
+                              }`}
+                            />
+                            <button
+                              type="submit"
+                              data-testid="recipient-passcode-submit"
+                              disabled={passcodeFeedback === 'success'}
+                              className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium shrink-0 transition-all duration-200 active:scale-95 cursor-pointer ${
+                                isDarkMode
+                                  ? 'bg-[#9A6550] text-white hover:bg-[#875642]'
+                                  : 'bg-[#7A4B3A] text-white hover:bg-[#633B2C]'
+                              }`}
+                            >
+                              {passcodeFeedback === 'success' ? (
+                                <>
+                                  <CoutureBloomSeal className="w-3.5 h-3.5 animate-[sab-bloom-seal-open_0.45s_ease-out]" />
+                                  <span>Blooming...</span>
+                                </>
+                              ) : (
+                                <span>Unlock</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {passcodeError && (
-                        <p className="text-xs text-rose-600 dark:text-rose-300 font-medium">
+                        <p
+                          data-testid="recipient-passcode-error"
+                          className="text-xs text-rose-600 dark:text-rose-300 font-medium"
+                        >
                           {passcodeError}
                         </p>
                       )}
@@ -6445,7 +6759,9 @@ export default function App() {
                         <button
                           key={tab.id}
                           type="button"
+                          data-testid={`share-lock-tab-${tab.id}`}
                           onClick={() => {
+                            setShareLockError(null);
                             if (tab.id === 'countdown' && !lock?.unlockAtIso) {
                               const tomorrow = new Date(Date.now() + 86400000);
                               tomorrow.setMinutes(
@@ -6455,10 +6771,23 @@ export default function App() {
                                 mode: 'countdown',
                                 unlockAtIso: tomorrow.toISOString().slice(0, 16),
                               });
-                            } else if (tab.id === 'passcode' && !lock?.questionPrompt) {
+                            } else if (tab.id === 'passcode') {
+                              const nextType: BouquetPasscodeType = lock?.passcodeType || 'pin';
+                              const hasLegacyDefaultPrompt =
+                                !lock?.questionPrompt ||
+                                lock.questionPrompt === 'The special date we first met';
                               updateLock({
                                 mode: 'passcode',
-                                questionPrompt: 'The special date we first met',
+                                passcodeType: nextType,
+                                questionPrompt: hasLegacyDefaultPrompt
+                                  ? nextType === 'pin'
+                                    ? DEFAULT_PIN_HINT
+                                    : DEFAULT_WORD_HINT
+                                  : lock.questionPrompt,
+                                passcodeAnswer:
+                                  nextType === 'pin'
+                                    ? sanitizeSecretPinInput(lock?.passcodeAnswer || '')
+                                    : sanitizeSecretWordInput(lock?.passcodeAnswer || ''),
                               });
                             } else {
                               updateLock({ mode: tab.id });
@@ -6494,7 +6823,10 @@ export default function App() {
                         type="datetime-local"
                         aria-label="Unlock date and time"
                         value={lock.unlockAtIso ? lock.unlockAtIso.slice(0, 16) : ''}
-                        onChange={(e) => updateLock({ unlockAtIso: e.target.value })}
+                        onChange={(e) => {
+                          setShareLockError(null);
+                          updateLock({ unlockAtIso: e.target.value });
+                        }}
                         className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                           isDarkMode
                             ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
@@ -6505,7 +6837,77 @@ export default function App() {
                   )}
 
                   {lock?.mode === 'passcode' && (
-                    <div className="space-y-2 pt-1 animate-in fade-in duration-150">
+                    <div className="space-y-2.5 pt-1 animate-in fade-in duration-150">
+                      {/* Answer Format Selector: 4-Digit PIN vs. Pure Case-Insensitive Word */}
+                      <div>
+                        <span
+                          className={`block text-[11px] mb-1 ${
+                            isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                          }`}
+                        >
+                          Answer format:
+                        </span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(
+                            [
+                              {
+                                id: 'pin',
+                                label: '4-Digit PIN',
+                                sub: 'Numbers only',
+                              },
+                              {
+                                id: 'word',
+                                label: 'Secret Word',
+                                sub: 'Letters · case-insensitive',
+                              },
+                            ] as const
+                          ).map((opt) => {
+                            const selected = effectivePasscodeType === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                data-testid={`secret-format-${opt.id}`}
+                                onClick={() => {
+                                  setShareLockError(null);
+                                  const isDefaultPrompt =
+                                    !lock.questionPrompt ||
+                                    lock.questionPrompt === 'The special date we first met' ||
+                                    lock.questionPrompt === DEFAULT_PIN_HINT ||
+                                    lock.questionPrompt === DEFAULT_WORD_HINT;
+                                  updateLock({
+                                    passcodeType: opt.id,
+                                    questionPrompt: isDefaultPrompt
+                                      ? opt.id === 'pin'
+                                        ? DEFAULT_PIN_HINT
+                                        : DEFAULT_WORD_HINT
+                                      : lock.questionPrompt,
+                                    passcodeAnswer:
+                                      opt.id === 'pin'
+                                        ? sanitizeSecretPinInput(lock.passcodeAnswer || '')
+                                        : sanitizeSecretWordInput(lock.passcodeAnswer || ''),
+                                  });
+                                }}
+                                className={`py-1.5 px-2.5 rounded-xl border text-left transition cursor-pointer ${
+                                  selected
+                                    ? isDarkMode
+                                      ? 'border-[#E6B89C] bg-[#3E322E] text-[#FBF6F1]'
+                                      : 'border-[#6E4434] bg-[#FFFDF9] text-[#2A201D] ring-1 ring-[#6E4434]/20'
+                                    : isDarkMode
+                                    ? 'border-dashed border-[#544540] bg-[#352C29]/60 text-[#C8B6AC] hover:border-[#6E5B54]'
+                                    : 'border-dashed border-[#DECBB9] bg-[#FAF4EE]/60 text-[#66544A] hover:border-[#C5A892]'
+                                }`}
+                              >
+                                <div className="text-[11.5px] font-medium leading-tight">
+                                  {opt.label}
+                                </div>
+                                <div className="text-[10px] opacity-70 mt-0.5">{opt.sub}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       <div>
                         <label
                           className={`block text-[11px] mb-1 ${
@@ -6516,10 +6918,18 @@ export default function App() {
                         </label>
                         <input
                           type="text"
+                          data-testid="secret-hint-prompt-input"
                           maxLength={80}
-                          placeholder="e.g., The special date we first met"
+                          placeholder={
+                            effectivePasscodeType === 'pin'
+                              ? 'e.g., Our special date (MMDD)'
+                              : 'e.g., Nickname I call you'
+                          }
                           value={lock.questionPrompt || ''}
-                          onChange={(e) => updateLock({ questionPrompt: e.target.value })}
+                          onChange={(e) => {
+                            setShareLockError(null);
+                            updateLock({ questionPrompt: e.target.value });
+                          }}
                           className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
                             isDarkMode
                               ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
@@ -6527,35 +6937,83 @@ export default function App() {
                           }`}
                         />
                       </div>
+
                       <div>
-                        <label
-                          className={`block text-[11px] mb-1 ${
+                        <div className="flex items-center justify-between mb-1">
+                          <label
+                            className={`text-[11px] ${
+                              isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                            }`}
+                          >
+                            {effectivePasscodeType === 'pin'
+                              ? '4-digit PIN (numbers only):'
+                              : 'Secret word (case-insensitive):'}
+                          </label>
+                          {effectivePasscodeType === 'pin' && (
+                            <span className="text-[10.5px] opacity-70 tabular-nums">
+                              {(lock.passcodeAnswer || '').length}/4
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          data-testid="secret-hint-answer-input"
+                          inputMode={effectivePasscodeType === 'pin' ? 'numeric' : 'text'}
+                          pattern={effectivePasscodeType === 'pin' ? '[0-9]*' : undefined}
+                          maxLength={effectivePasscodeType === 'pin' ? 4 : 40}
+                          placeholder={
+                            effectivePasscodeType === 'pin' ? 'e.g., 1014' : 'e.g., Mochi'
+                          }
+                          value={lock.passcodeAnswer || ''}
+                          onChange={(e) => {
+                            setShareLockError(null);
+                            const sanitized =
+                              effectivePasscodeType === 'pin'
+                                ? sanitizeSecretPinInput(e.target.value)
+                                : sanitizeSecretWordInput(e.target.value);
+                            updateLock({ passcodeAnswer: sanitized });
+                          }}
+                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
+                            effectivePasscodeType === 'pin'
+                              ? 'font-mono tracking-[0.25em]'
+                              : ''
+                          } ${
+                            isDarkMode
+                              ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          }`}
+                        />
+                        <p
+                          className={`text-[10px] mt-1 opacity-75 ${
                             isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
                           }`}
                         >
-                          Answer:
-                        </label>
-                        <input
-                          type="text"
-                          maxLength={40}
-                          placeholder="e.g., October 14"
-                          value={lock.passcodeAnswer || ''}
-                          onChange={(e) => updateLock({ passcodeAnswer: e.target.value })}
-                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                            isDarkMode
-                              ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                          }`}
-                        />
+                          {effectivePasscodeType === 'pin'
+                            ? 'Great for dates like MMDD (1014) or meaningful numbers — prevents format mismatch.'
+                            : 'Letters only so capitalization or extra spaces never block your recipient.'}
+                        </p>
                       </div>
                     </div>
+                  )}
+
+                  {shareLockError && (
+                    <p
+                      role="alert"
+                      data-testid="share-lock-error"
+                      className="text-[11px] font-medium text-rose-600 dark:text-rose-300"
+                    >
+                      {shareLockError}
+                    </p>
                   )}
                 </div>
 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setShareStep('dedication')}
+                    onClick={() => {
+                      setShareLockError(null);
+                      setShareStep('dedication');
+                    }}
                     className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
                       isDarkMode
                         ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
@@ -6567,7 +7025,15 @@ export default function App() {
                   <button
                     type="button"
                     data-testid="share-step-next-btn"
-                    onClick={() => setShareStep('seal')}
+                    onClick={() => {
+                      const check = validateBouquetLockConfig(lock);
+                      if (!check.valid) {
+                        setShareLockError(check.error || 'Please complete your lock details.');
+                        return;
+                      }
+                      setShareLockError(null);
+                      setShareStep('seal');
+                    }}
                     className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
                       isDarkMode
                         ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'

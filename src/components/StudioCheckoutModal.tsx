@@ -871,7 +871,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       compactName: '7-Day Pass',
       allowance: 'Unlimited · 7 days',
       galleryNote: '90-day gallery',
-      badge: 'Popular',
+      badge: 'Best Value',
     },
     pass_30d: {
       compactName: '30-Day Pass',
