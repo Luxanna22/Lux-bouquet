@@ -1,13 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { useBouquetStore } from '../store/useBouquetStore';
 import {
   encodeBouquetToCompactPayload,
   decodeBouquetFromHash,
+  getShortCodeFromPathname,
   MAX_UPLOAD_IMAGE_BYTES,
   detectImageMagicBytes,
   validateUploadedImageFile,
 } from './shareAndExport';
+import {
+  getLiveStudioCatalogCounts,
+  buildLiveSchemaJsonLd,
+  detectInitialSeoRoute,
+} from './seoMeta';
 import {
   PHOTO_FRAME_CATALOG,
   ENVIRONMENT_CATALOG,
@@ -510,4 +518,55 @@ test('API securityGuard enforces sliding-window IP rate limiting, prototype-poll
   assert.equal(bodyCheck.ok, false);
   assert.equal(bodyCheck.status, 413);
 });
+
+test('getLiveStudioCatalogCounts, buildLiveSchemaJsonLd sitelinks, and static SEO files stay synchronized with FLOWER_CATALOG', () => {
+  const counts = getLiveStudioCatalogCounts();
+  assert.equal(counts.focalBloomCount, 33);
+  assert.equal(counts.fillerStemCount, 18);
+  assert.equal(counts.botanicalStemCount, 51);
+  assert.equal(counts.otherAccentCount, 20);
+  assert.equal(counts.seasonalCount, 12);
+  assert.equal(counts.totalCatalogCount, 83);
+  assert.equal(counts.wrapperCount, 12);
+  assert.equal(counts.ribbonCount, 12);
+  assert.equal(counts.voiceKeepsakeCount, 10);
+  assert.equal(counts.photoFrameCount, 6);
+  assert.equal(counts.environmentCount, 14);
+
+  // Verify Sitelinks routes & short-code reservation
+  assert.equal(detectInitialSeoRoute('/studio'), 'studio');
+  assert.equal(detectInitialSeoRoute('/create'), 'studio');
+  assert.equal(detectInitialSeoRoute('/create-bouquet'), 'studio');
+  assert.equal(detectInitialSeoRoute('/garland'), 'garland');
+  assert.equal(detectInitialSeoRoute('/creations'), 'garland');
+  assert.equal(getShortCodeFromPathname('/studio'), null);
+  assert.equal(getShortCodeFromPathname('/create'), null);
+  assert.equal(getShortCodeFromPathname('/create-bouquet'), null);
+  assert.equal(getShortCodeFromPathname('/garland'), null);
+
+  // Verify Schema.org JSON-LD includes SiteNavigationElement sitelinks and live stem count
+  const schema = buildLiveSchemaJsonLd(counts);
+  const sitelinks = schema['@graph'].filter(
+    (node: { '@type'?: string }) => node['@type'] === 'SiteNavigationElement'
+  );
+  assert.equal(sitelinks.length, 4);
+  assert.equal(sitelinks[0].name, 'Create a Bouquet');
+  assert.equal(sitelinks[0].url, 'https://www.sendabouquet.online/studio');
+  assert.equal(sitelinks[1].name, 'Shared Creations');
+  assert.equal(sitelinks[1].url, 'https://www.sendabouquet.online/garland');
+
+  // Verify static SEO files reflect the live botanicalStemCount (51) and have no stale 36/31 stem copy
+  const rootDir = process.cwd();
+  const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const sitemapXml = fs.readFileSync(path.join(rootDir, 'public/sitemap.xml'), 'utf8');
+  const webmanifest = fs.readFileSync(path.join(rootDir, 'public/site.webmanifest'), 'utf8');
+  const llmsTxt = fs.readFileSync(path.join(rootDir, 'public/llms.txt'), 'utf8');
+
+  assert.ok(indexHtml.includes(`Arrange ${counts.botanicalStemCount} botanical stems`));
+  assert.ok(!indexHtml.includes('36 botanical'));
+  assert.ok(sitemapXml.includes(`Arrange ${counts.botanicalStemCount} botanical stems`));
+  assert.ok(webmanifest.includes(`${counts.botanicalStemCount} botanical stems`));
+  assert.ok(llmsTxt.includes(`${counts.botanicalStemCount} Botanical Stems`));
+});
+
 

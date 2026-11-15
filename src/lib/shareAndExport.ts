@@ -288,6 +288,8 @@ export function computeShortCode(payload: string): string {
 
 const RESERVED_ROUTE_SLUGS = new Set([
   'studio',
+  'create',
+  'create-bouquet',
   'garland',
   'creations',
   'showcase',

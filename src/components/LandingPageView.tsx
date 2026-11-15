@@ -41,6 +41,7 @@ import {
   submitContactNote,
   type ContactTopicId,
 } from '../lib/contactService';
+import { getLiveStudioCatalogCounts } from '../lib/seoMeta';
 
 interface LandingPageViewProps {
   onStartCrafting: () => void;
@@ -770,6 +771,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 }) => {
   const [openFaqIdx, setOpenFaqIdx] = useState<number | null>(0);
   const [activePresetIdx, setActivePresetIdx] = useState<number>(0);
+  const liveCatalogCounts = getLiveStudioCatalogCounts();
 
   // Minimal Contact, Mobile Nav & Legal modal state
   const [contactTopic, setContactTopic] = useState<ContactTopicId>('flower_wish');
@@ -998,6 +1000,41 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     }
   };
 
+  // Support direct Google Sitelink / jump-to anchor hashes (#how-it-works, #showcase, #faq, #contact)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleHashJump = () => {
+      const rawHash = window.location.hash.replace(/^#/, '').trim().toLowerCase();
+      if (
+        rawHash === 'how-it-works' ||
+        rawHash === 'showcase' ||
+        rawHash === 'faq' ||
+        rawHash === 'contact'
+      ) {
+        const el = document.getElementById(rawHash);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    };
+    const timer = window.setTimeout(handleHashJump, 120);
+    window.addEventListener('hashchange', handleHashJump);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('hashchange', handleHashJump);
+    };
+  }, []);
+
+  const handleAnchorAction = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    action: () => void
+  ) => {
+    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+      e.preventDefault();
+      action();
+    }
+  };
+
   const preset = SHOWCASE_PRESETS[activePresetIdx] || SHOWCASE_PRESETS[0];
 
   // Selecting a preset card updates the preview AND loads that preset into the studio store
@@ -1164,10 +1201,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             }`}
         >
           {/* Zone 1: Brand Wordmark & Official Logo */}
-          <button
-            type="button"
-            onClick={onStartCrafting}
-            className="flex items-center gap-2 text-left cursor-pointer group min-w-0 justify-self-start"
+          <a
+            href="/"
+            onClick={(e) => handleAnchorAction(e, onStartCrafting)}
+            className="flex items-center gap-2 text-left cursor-pointer group min-w-0 justify-self-start no-underline"
           >
             <BrandLogoMark
               className="w-6.5 h-6.5 sm:w-7 sm:h-7 md:w-7.5 md:h-7.5 group-hover:scale-105 transition-transform duration-300 shrink-0"
@@ -1179,7 +1216,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             >
               Send A Bouquet
             </span>
-          </button>
+          </a>
 
           {/* Zone 2: Center Editorial Navigation Links — Mathematically Centered on Tablet (md: 768px+) & Desktop */}
           <nav
@@ -1192,11 +1229,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               { id: 'faq', label: 'FAQ' },
               { id: 'contact', label: 'Contact' },
             ].map((item) => (
-              <button
+              <a
                 key={item.id}
-                type="button"
-                onClick={() => scrollToSection(item.id)}
-                className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 ${isDarkMode
+                href={`#${item.id}`}
+                onClick={(e) => handleAnchorAction(e, () => scrollToSection(item.id))}
+                className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 no-underline ${isDarkMode
                   ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
                   : 'text-[#5A463B] hover:text-[#7A4B3A]'
                   }`}
@@ -1207,7 +1244,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   className={`pointer-events-none absolute left-1/2 -bottom-0.5 h-[1.5px] w-0 -translate-x-1/2 rounded-full transition-all duration-300 group-hover:w-4/5 ${isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#7A4B3A]'
                     }`}
                 />
-              </button>
+              </a>
             ))}
           </nav>
 
@@ -1309,11 +1346,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 { id: 'faq', num: '03', title: 'FAQ', sub: 'Voice notes, locks & gift links' },
                 { id: 'contact', num: '04', title: 'Get in Touch', sub: 'Write a note or flower wish' },
               ].map((item) => (
-                <button
+                <a
                   key={item.id}
-                  type="button"
-                  onClick={() => scrollToSection(item.id)}
-                  className={`w-full py-2.5 px-2.5 flex items-center justify-between gap-3 text-left rounded-xl transition-colors cursor-pointer ${isDarkMode ? 'hover:bg-[#433834]/80' : 'hover:bg-[#FAF3EB]'
+                  href={`#${item.id}`}
+                  onClick={(e) => handleAnchorAction(e, () => scrollToSection(item.id))}
+                  className={`w-full py-2.5 px-2.5 flex items-center justify-between gap-3 text-left rounded-xl transition-colors cursor-pointer no-underline ${isDarkMode ? 'hover:bg-[#433834]/80' : 'hover:bg-[#FAF3EB]'
                     }`}
                 >
                   <div className="flex items-baseline gap-2.5 min-w-0">
@@ -1346,7 +1383,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   >
                     →
                   </span>
-                </button>
+                </a>
               ))}
             </div>
 
@@ -1367,19 +1404,21 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   <span className="font-semibold tabular-nums">({vaultCount})</span>
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMobileNavOpen(false);
-                  onStartCrafting();
-                }}
-                className={`flex-1 py-2.5 px-3 rounded-full text-white text-xs font-medium transition cursor-pointer ${isDarkMode
+              <a
+                href="/studio"
+                onClick={(e) =>
+                  handleAnchorAction(e, () => {
+                    setIsMobileNavOpen(false);
+                    onStartCrafting();
+                  })
+                }
+                className={`flex-1 py-2.5 px-3 rounded-full text-white text-xs font-medium text-center transition cursor-pointer no-underline ${isDarkMode
                   ? 'bg-[#9A6550] hover:bg-[#875642]'
                   : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
                   }`}
               >
                 Craft a Bouquet
-              </button>
+              </a>
             </div>
           </nav>
         )}
@@ -1827,10 +1866,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
             {/* 3. Action Hierarchy — Unmistakable Primary Studio Button + Lighter Secondary Pill */}
             <div className="mt-7 sm:mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-3.5">
-              <button
-                type="button"
-                onClick={onStartCrafting}
-                className={`group px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-[#FFFDF9] text-[13px] sm:text-[14px] font-medium inline-flex items-center gap-2 ring-1 ring-inset ring-[#FFFDF9]/25 shadow-[0_12px_28px_rgba(110,68,52,0.24)] hover:shadow-[0_16px_34px_rgba(110,68,52,0.32)] transition-all duration-300 hover:-translate-y-0.5 active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+              <a
+                href="/studio"
+                data-testid="hero-craft-bouquet-link"
+                onClick={(e) => handleAnchorAction(e, onStartCrafting)}
+                className={`group px-7 sm:px-9 py-3.5 sm:py-4 rounded-full text-[#FFFDF9] text-[13px] sm:text-[14px] font-medium inline-flex items-center gap-2 ring-1 ring-inset ring-[#FFFDF9]/25 shadow-[0_12px_28px_rgba(110,68,52,0.24)] hover:shadow-[0_16px_34px_rgba(110,68,52,0.32)] transition-all duration-300 hover:-translate-y-0.5 active:scale-95 cursor-pointer whitespace-nowrap no-underline ${isDarkMode
                   ? 'bg-[#9A6550] hover:bg-[#875642]'
                   : 'bg-[#6E4434] hover:bg-[#5B3729]'
                   }`}
@@ -1842,18 +1882,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 >
                   →
                 </span>
-              </button>
+              </a>
 
-              <button
-                type="button"
-                onClick={() => scrollToSection('how-it-works')}
-                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium backdrop-blur-xs transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+              <a
+                href="#how-it-works"
+                onClick={(e) => handleAnchorAction(e, () => scrollToSection('how-it-works'))}
+                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium backdrop-blur-xs transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap no-underline ${isDarkMode
                   ? 'bg-[#352C29]/80 border-[#66554F] text-[#DFCFC6] hover:text-[#FBF6F1] hover:bg-[#423734]'
                   : 'bg-[#FFFDF9]/85 border-[#D8C4B4] text-[#5C483E] hover:text-[#231C18] hover:bg-[#FAF4EE]'
                   }`}
               >
                 See How It Works
-              </button>
+              </a>
             </div>
           </div>
         </section>
@@ -1912,10 +1952,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   Pick &amp; Wrap
                 </h3>
                 <p
+                  data-testid="how-it-works-stem-count-copy"
                   className={`text-[13px] sm:text-[13.5px] mt-1 leading-relaxed ${isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]'
                     }`}
                 >
-                  Arrange 31 blooms into couture wraps, velvet hatboxes &amp; lace bows.
+                  Arrange {liveCatalogCounts.botanicalStemCount} botanical stems into couture wraps, velvet hatboxes &amp; lace bows.
                 </p>
               </div>
             </div>
@@ -2139,16 +2180,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               A thoughtful flower gesture that stays fresh forever in their pocket.
             </p>
 
-            <button
-              type="button"
-              onClick={onStartCrafting}
-              className={`mt-5 sm:mt-6 w-full sm:w-auto px-8 py-3.5 rounded-full text-white text-xs sm:text-sm font-medium shadow-sm hover:shadow-md transition-all duration-300 active:scale-95 cursor-pointer ${isDarkMode
+            <a
+              href="/studio"
+              onClick={(e) => handleAnchorAction(e, onStartCrafting)}
+              className={`mt-5 sm:mt-6 w-full sm:w-auto inline-block px-8 py-3.5 rounded-full text-white text-xs sm:text-sm font-medium shadow-sm hover:shadow-md transition-all duration-300 active:scale-95 cursor-pointer no-underline ${isDarkMode
                 ? 'bg-[#9A6550] hover:bg-[#875642]'
                 : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
                 }`}
             >
               Start Crafting Your Bouquet
-            </button>
+            </a>
           </div>
         </section>
 
@@ -2737,22 +2778,22 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   </div>
                   <ul className="space-y-2 text-xs">
                     <li>
-                      <button
-                        type="button"
-                        onClick={onStartCrafting}
+                      <a
+                        href="/studio"
+                        onClick={(e) => handleAnchorAction(e, onStartCrafting)}
                         className="hover:underline cursor-pointer"
                       >
-                        Craft a Bouquet
-                      </button>
+                        Create a Bouquet
+                      </a>
                     </li>
                     <li>
-                      <button
-                        type="button"
-                        onClick={handleCustomizePresetInStudio}
+                      <a
+                        href="/studio"
+                        onClick={(e) => handleAnchorAction(e, handleCustomizePresetInStudio)}
                         className="hover:underline cursor-pointer"
                       >
                         Couture Wraps
-                      </button>
+                      </a>
                     </li>
                     <li>
                       <button
@@ -2775,31 +2816,40 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   </div>
                   <ul className="space-y-2 text-xs">
                     <li>
-                      <button
-                        type="button"
-                        onClick={() => scrollToSection('how-it-works')}
+                      <a
+                        href="/garland"
+                        onClick={(e) => handleAnchorAction(e, () => setIsCreationsPageOpen(true))}
+                        className="hover:underline cursor-pointer"
+                      >
+                        Shared Creations
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="#how-it-works"
+                        onClick={(e) => handleAnchorAction(e, () => scrollToSection('how-it-works'))}
                         className="hover:underline cursor-pointer"
                       >
                         How It Works
-                      </button>
+                      </a>
                     </li>
                     <li>
-                      <button
-                        type="button"
-                        onClick={() => scrollToSection('faq')}
+                      <a
+                        href="#faq"
+                        onClick={(e) => handleAnchorAction(e, () => scrollToSection('faq'))}
                         className="hover:underline cursor-pointer"
                       >
                         FAQ
-                      </button>
+                      </a>
                     </li>
                     <li>
-                      <button
-                        type="button"
-                        onClick={() => scrollToSection('contact')}
+                      <a
+                        href="#contact"
+                        onClick={(e) => handleAnchorAction(e, () => scrollToSection('contact'))}
                         className="hover:underline cursor-pointer"
                       >
                         Contact
-                      </button>
+                      </a>
                     </li>
                   </ul>
                 </div>

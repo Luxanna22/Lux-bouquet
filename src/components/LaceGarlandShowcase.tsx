@@ -738,11 +738,16 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
           <ChevronLeft className="w-4 h-4" />
         </button>
 
-        <button
-          type="button"
-          onClick={onExploreAllCreations}
+        <a
+          href="/garland"
+          onClick={(e) => {
+            if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+              e.preventDefault();
+              onExploreAllCreations();
+            }
+          }}
           data-testid="explore-all-creations-btn"
-          className={`px-6 sm:px-7 py-2.5 sm:py-3 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-2 transition-all duration-300 active:scale-95 cursor-pointer shadow-[0_8px_24px_rgba(122,75,58,0.05)] ${
+          className={`px-6 sm:px-7 py-2.5 sm:py-3 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-2 transition-all duration-300 active:scale-95 cursor-pointer no-underline shadow-[0_8px_24px_rgba(122,75,58,0.05)] ${
             isDarkMode
               ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
               : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
@@ -750,7 +755,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
         >
           <span>Explore All Creations</span>
           <span aria-hidden="true" className="opacity-70">→</span>
-        </button>
+        </a>
 
         <button
           type="button"

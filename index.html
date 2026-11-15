@@ -18,7 +18,7 @@
     <title>Send A Bouquet — Craft &amp; Send a Custom Digital Flower Bouquet Online</title>
     <meta
       name="description"
-      content="Craft and send a custom digital flower bouquet online for free. Arrange 36 botanical stems, couture wraps, ribbons, photo frames, a handwritten greeting card, and a recorded voice keepsake—sealed into a shareable gift link or QR code."
+      content="Craft and send a custom digital flower bouquet online for free. Arrange 51 botanical stems, couture wraps, ribbons, photo frames, a handwritten greeting card, and a recorded voice keepsake—sealed into a shareable gift link or QR code."
     />
     <meta
       name="keywords"
@@ -48,13 +48,13 @@
     <meta name="twitter:title" content="Send A Bouquet — Send Love in Every Bloom" />
     <meta
       name="twitter:description"
-      content="Craft a custom digital flower bouquet with 36 botanical stems, couture wraps, photo frames, a handwritten letter, and a voice keepsake."
+      content="Craft a custom digital flower bouquet with 51 botanical stems, couture wraps, photo frames, a handwritten letter, and a voice keepsake."
     />
     <meta name="twitter:image" content="https://www.sendabouquet.online/og-preview.svg" />
     <meta name="twitter:image:alt" content="Send A Bouquet — Craft &amp; send a custom digital flower bouquet online" />
 
-    <!-- Schema.org Structured Data (WebSite, WebApplication, HowTo, FAQPage, BreadcrumbList) -->
-    <script type="application/ld+json">
+    <!-- Schema.org Structured Data (WebSite, SiteNavigationElement Sitelinks, WebApplication, HowTo, FAQPage, BreadcrumbList) -->
+    <script id="schema-json-ld" type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@graph": [
@@ -68,16 +68,61 @@
               "Digital Flower Bouquet Studio",
               "Virtual Flower Bouquet Maker"
             ],
-            "description": "Craft and send a custom digital flower bouquet online with 36 botanical stems, couture wraps, ribbons, photo frames, a handwritten letter, and a recorded voice keepsake.",
+            "description": "Craft and send a custom digital flower bouquet online with 51 botanical stems, couture wraps, ribbons, photo frames, a handwritten letter, and a recorded voice keepsake.",
             "inLanguage": "en",
-            "potentialAction": {
-              "@type": "SearchAction",
-              "target": {
-                "@type": "EntryPoint",
-                "urlTemplate": "https://www.sendabouquet.online/garland?q={search_term_string}"
+            "hasPart": [
+              { "@id": "https://www.sendabouquet.online/studio#sitelink" },
+              { "@id": "https://www.sendabouquet.online/garland#sitelink" },
+              { "@id": "https://www.sendabouquet.online/#how-it-works-sitelink" },
+              { "@id": "https://www.sendabouquet.online/#faq-sitelink" }
+            ],
+            "potentialAction": [
+              {
+                "@type": "CreateAction",
+                "name": "Create a Bouquet",
+                "target": "https://www.sendabouquet.online/studio"
               },
-              "query-input": "required name=search_term_string"
-            }
+              {
+                "@type": "SearchAction",
+                "target": {
+                  "@type": "EntryPoint",
+                  "urlTemplate": "https://www.sendabouquet.online/garland?q={search_term_string}"
+                },
+                "query-input": "required name=search_term_string"
+              }
+            ]
+          },
+          {
+            "@type": "SiteNavigationElement",
+            "@id": "https://www.sendabouquet.online/studio#sitelink",
+            "position": 1,
+            "name": "Create a Bouquet",
+            "description": "Arrange 51 botanical stems, couture wraps, ribbons, photo frames, a handwritten letter, and a voice keepsake.",
+            "url": "https://www.sendabouquet.online/studio"
+          },
+          {
+            "@type": "SiteNavigationElement",
+            "@id": "https://www.sendabouquet.online/garland#sitelink",
+            "position": 2,
+            "name": "Shared Creations",
+            "description": "Explore custom digital flower bouquets and floral keepsakes on the Lace Garland.",
+            "url": "https://www.sendabouquet.online/garland"
+          },
+          {
+            "@type": "SiteNavigationElement",
+            "@id": "https://www.sendabouquet.online/#how-it-works-sitelink",
+            "position": 3,
+            "name": "How It Works",
+            "description": "Pick & wrap 51 botanical stems, record a voice keepsake, and send an instant gift link or QR code.",
+            "url": "https://www.sendabouquet.online/#how-it-works"
+          },
+          {
+            "@type": "SiteNavigationElement",
+            "@id": "https://www.sendabouquet.online/#faq-sitelink",
+            "position": 4,
+            "name": "FAQ",
+            "description": "Frequently asked questions about free bouquets, Couture passes, voice notes, and secret locks.",
+            "url": "https://www.sendabouquet.online/#faq"
           },
           {
             "@type": "WebApplication",
@@ -92,12 +137,12 @@
             "image": "https://www.sendabouquet.online/og-preview.svg",
             "description": "Interactive digital flower studio where anyone can arrange custom botanical bouquets, wrap them in kraft parchment or velvet hatboxes, attach Polaroid photo frames, write a handwritten card note, and record a voice keepsake to share via gift link or QR code.",
             "featureList": [
-              "36 customizable botanical flower stems and foliage fillers",
+              "51 customizable botanical flower stems and foliage fillers (83 total studio items including keepsake picks and seasonal designs)",
               "12 couture wrapping styles including Kraft Paper, Velvet Hatbox, Glass Cloche, and Korean Cloud Mesh",
               "12 bespoke ribbon styles including Satin Bow, Eyelet Lace, Akoya Pearl, and Gold Chain",
               "Handwritten letterpress greeting card with wax seal unwrapping",
-              "Recorded voice keepsakes in Mixtape, Vinyl Record, Plushie, Music Box, and Heart Locket styles",
-              "Personal photo frames in Polaroid, Postage Stamp, Cameo, 35mm Film, and Herbarium styles",
+              "10 recorded voice keepsakes including Mixtape, Vinyl Record, Plushie, Music Box, and Heart Locket",
+              "6 personal photo frames including Polaroid, Postage Stamp, Cameo, 35mm Film, and Herbarium",
               "Time-Capsule Countdown Lock and Secret Question Lock for surprise reveals",
               "Shareable gift links and custom botanical QR codes"
             ],
@@ -130,7 +175,7 @@
                 "@type": "HowToStep",
                 "position": 1,
                 "name": "Arrange Your Stems",
-                "text": "Pick from 36 signature and couture blooms, recolor petals, and position each flower on the interactive botanical stage."
+                "text": "Pick from 51 signature and couture botanical stems, recolor petals, and position each flower on the interactive botanical stage."
               },
               {
                 "@type": "HowToStep",
@@ -205,13 +250,13 @@
               {
                 "@type": "ListItem",
                 "position": 2,
-                "name": "Craft a Bouquet Studio",
+                "name": "Create a Bouquet",
                 "item": "https://www.sendabouquet.online/studio"
               },
               {
                 "@type": "ListItem",
                 "position": 3,
-                "name": "On the Lace Garland Showcase",
+                "name": "Shared Creations",
                 "item": "https://www.sendabouquet.online/garland"
               }
             ]
@@ -241,18 +286,20 @@
       <main class="sr-only">
         <h1>Send A Bouquet — Send Love in Every Bloom</h1>
         <p>
-          Craft and send a custom digital flower bouquet online for free. Pick from 36 botanical flower stems, wrap with kraft paper, silk tissue, velvet hatboxes, or glass bell cloches, and attach a handwritten greeting card, Polaroid photo frames, and a recorded voice keepsake.
+          Craft and send a custom digital flower bouquet online for free. Pick from 51 botanical flower stems, wrap with kraft paper, silk tissue, velvet hatboxes, or glass bell cloches, and attach a handwritten greeting card, Polaroid photo frames, and a recorded voice keepsake.
         </p>
         <h2>How It Works</h2>
         <ol>
-          <li>Arrange Your Stems: Choose roses, peonies, tulips, lilies, sunflowers, ranunculus, orchids, and botanical fillers.</li>
+          <li>Arrange Your Stems: Choose from 51 botanical stems including roses, peonies, tulips, lilies, sunflowers, ranunculus, orchids, and botanical fillers.</li>
           <li>Wrap &amp; Record a Keepsake: Customize wrappers, ribbons, handwritten letters, photo cards, and voice recordings.</li>
           <li>Seal &amp; Send the Surprise: Share via a custom gift link or botanical QR code with optional countdown or secret question locks.</li>
         </ol>
         <nav aria-label="Primary Navigation">
           <a href="https://www.sendabouquet.online/">Send A Bouquet Home</a>
-          <a href="https://www.sendabouquet.online/studio">Craft a Bouquet Online</a>
-          <a href="https://www.sendabouquet.online/garland">On the Lace Garland — Shared Bouquets</a>
+          <a href="https://www.sendabouquet.online/studio">Create a Bouquet</a>
+          <a href="https://www.sendabouquet.online/garland">Shared Creations</a>
+          <a href="https://www.sendabouquet.online/#how-it-works">How It Works</a>
+          <a href="https://www.sendabouquet.online/#faq">FAQ</a>
         </nav>
       </main>
     </div>
