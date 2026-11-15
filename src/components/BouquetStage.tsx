@@ -3200,6 +3200,7 @@ export interface BouquetStageProps {
   onVoiceKeepsakeClick?: () => void;
   onCardSelect?: () => void;
   onVoiceSelect?: () => void;
+  onItemSelect?: (itemId: string) => void;
   onWrapperClick?: () => void;
   onRibbonClick?: () => void;
   onPhotoCardUploadClick?: (itemId: string) => void;
@@ -3220,6 +3221,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   onVoiceKeepsakeClick,
   onCardSelect,
   onVoiceSelect,
+  onItemSelect,
   onWrapperClick,
   onRibbonClick,
   onPhotoCardUploadClick,
@@ -3278,11 +3280,33 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const hasDraggedSpecialRef = useRef(false);
   const wasSpecialAlreadyActiveRef = useRef(false);
 
+  const prevVoiceStyleRef = useRef(voice?.style);
+  const prevVoiceVisibleRef = useRef(voice?.visibleOnStage);
+  const prevCardThemeRef = useRef(card.theme);
+
   useEffect(() => {
     if (selectedId) {
       setActiveSpecialObject(null);
     }
   }, [selectedId]);
+
+  useEffect(() => {
+    const styleChanged = prevVoiceStyleRef.current !== voice?.style;
+    const becameVisible = !prevVoiceVisibleRef.current && Boolean(voice?.visibleOnStage);
+    prevVoiceStyleRef.current = voice?.style;
+    prevVoiceVisibleRef.current = voice?.visibleOnStage;
+    if (!isPreviewMode && voice?.visibleOnStage && (styleChanged || becameVisible)) {
+      setActiveSpecialObject('voice');
+    }
+  }, [voice?.style, voice?.visibleOnStage, isPreviewMode]);
+
+  useEffect(() => {
+    const themeChanged = prevCardThemeRef.current !== card.theme;
+    prevCardThemeRef.current = card.theme;
+    if (!isPreviewMode && card.visibleOnStage && themeChanged) {
+      setActiveSpecialObject('card');
+    }
+  }, [card.theme, card.visibleOnStage, isPreviewMode]);
 
   // Convert client pointer coordinates to SVG viewBox (-24..624 x 0..680, 648x680) coordinates
   const clientToSvgCoords = useCallback(
@@ -3339,6 +3363,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     e.stopPropagation();
     setActiveSpecialObject(null);
     selectItem(item.id);
+    onItemSelect?.(item.id);
     if (item.locked) return;
     captureSvgPointer(e);
     hasCommittedDragHistoryRef.current = false;
@@ -3499,6 +3524,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const handleGizmoPointerDown = (e: React.PointerEvent, item: BouquetItem) => {
     if (isPreviewMode || item.locked || item.hidden) return;
     e.stopPropagation();
+    onItemSelect?.(item.id);
     captureSvgPointer(e);
     hasCommittedDragHistoryRef.current = false;
 
@@ -3970,6 +3996,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 key={`back-${item.id}`}
+                data-drawer-trigger={isPreviewMode ? undefined : 'true'}
                 transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                   item.flipX ? -disp.scale : disp.scale
                 }, ${disp.scale})`}
@@ -4420,6 +4447,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 key={item.id}
+                data-drawer-trigger={isPreviewMode ? undefined : 'true'}
                 transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                   item.flipX ? -disp.scale : disp.scale
                 }, ${disp.scale})`}
@@ -5057,6 +5085,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 key={`front-${item.id}`}
+                data-drawer-trigger={isPreviewMode ? undefined : 'true'}
                 transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                   item.flipX ? -disp.scale : disp.scale
                 }, ${disp.scale})`}
@@ -5264,6 +5293,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               {/* Inner Rotated & Scaled Card Group centered around (0, 0) */}
               <g transform={`rotate(${cardRotation}) scale(${cardScale})`}>
                 <g
+                  data-drawer-trigger={isPreviewMode ? undefined : 'true'}
                   aria-label={isPreviewMode ? 'Open greeting card letter' : 'Drag, resize, rotate, or edit greeting card'}
                   onPointerDown={isPreviewMode ? undefined : handleCardPointerDown}
                   onClick={(e) => {
@@ -5437,6 +5467,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             >
               <g transform={`rotate(${voiceRotation}) scale(${voiceScale})`}>
                 <g
+                  data-drawer-trigger={isPreviewMode ? undefined : 'true'}
                   aria-label={
                     isPreviewMode
                       ? isVoicePlaying
@@ -5560,6 +5591,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 data-export-ignore="true"
+                data-drawer-trigger="true"
                 transform={`translate(${cardX}, ${cardY})`}
               >
                 {/* TOP-LEFT HANDLE (-135°): Straighten / Reset Tilt to 0° */}
@@ -5700,6 +5732,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 data-export-ignore="true"
+                data-drawer-trigger="true"
                 transform={`translate(${voiceX}, ${voiceY})`}
               >
                 {/* TOP-LEFT HANDLE (-135°): Straighten / Reset Tilt to 0° */}
@@ -5828,7 +5861,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
         {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE (Inside Bouquet Transform Space) */}
         {!isPreviewMode && selectedItem && selectedDisplay && !selectedItem.hidden && (
-          <g data-export-ignore="true" transform={bouquetTransform}>
+          <g data-export-ignore="true" data-drawer-trigger="true" transform={bouquetTransform}>
           <g
             transform={`translate(${selectedDisplay.x}, ${selectedDisplay.y})`}
           >

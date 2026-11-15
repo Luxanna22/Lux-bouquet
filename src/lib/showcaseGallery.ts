@@ -8,6 +8,7 @@ import {
   typeWrapStyle,
   VoiceKeepsakeStyle,
 } from '../types/bouquet';
+import { inspectBouquetPremiumUsage } from './monetization';
 
 export const SHOWCASE_EXPIRY_DAYS = 30;
 export const SHOWCASE_EXTENDED_EXPIRY_DAYS = 90;
@@ -72,6 +73,14 @@ export interface ShowcaseFreshnessInfo {
   sharedAgoLabel: string;
   isExpiringSoon: boolean;
   isExtendedPaid?: boolean;
+}
+
+export type ShowcaseFrameTier = 'standard' | 'couture' | 'eternal';
+
+export interface ShowcaseFrameTierInfo {
+  tier: ShowcaseFrameTier;
+  isHighlighted: boolean;
+  editorialLabel: string | null;
 }
 
 export interface GarlandCurveItemTransform {
@@ -637,6 +646,57 @@ export function buildSnapshotFromShowcaseEntry(entry: ShowcaseBouquetEntry): Bou
           visibleOnStage: false,
           durationSec: 0,
         },
+  };
+}
+
+/**
+ * Classifies a Showcase / Garland card frame tier so paid/supporter & Couture creations
+ * stand out cleanly from standard free 30-day cards:
+ * - `'eternal'`: 30-Day Eternal Pass (`isPremium: true` or `retentionDays > 90`)
+ * - `'couture'`: Single Bouquet / 7-Day Pass (`retentionDays > 30`) or uses Couture blooms/wraps/keepsakes
+ * - `'standard'`: Free 30-day botanical creation
+ */
+export function getShowcaseFrameTier(entry: ShowcaseBouquetEntry): ShowcaseFrameTierInfo {
+  const isEternal =
+    entry.isPremium === true ||
+    (typeof entry.retentionDays === 'number' && entry.retentionDays > SHOWCASE_EXTENDED_EXPIRY_DAYS);
+
+  if (isEternal) {
+    return {
+      tier: 'eternal',
+      isHighlighted: true,
+      editorialLabel: 'Eternal Keepsake',
+    };
+  }
+
+  const hasExtendedPaidRetention =
+    typeof entry.retentionDays === 'number' && entry.retentionDays > SHOWCASE_EXPIRY_DAYS;
+
+  if (hasExtendedPaidRetention) {
+    return {
+      tier: 'couture',
+      isHighlighted: true,
+      editorialLabel: 'Couture Keepsake',
+    };
+  }
+
+  try {
+    const snap = buildSnapshotFromShowcaseEntry(entry);
+    if (inspectBouquetPremiumUsage(snap).isPremiumBouquet) {
+      return {
+        tier: 'couture',
+        isHighlighted: true,
+        editorialLabel: 'Couture Keepsake',
+      };
+    }
+  } catch {
+    // Fallback gracefully if an older snapshot cannot be inspected
+  }
+
+  return {
+    tier: 'standard',
+    isHighlighted: false,
+    editorialLabel: null,
   };
 }
 

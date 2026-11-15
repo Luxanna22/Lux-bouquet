@@ -704,6 +704,16 @@ export default function App() {
     setToast(msg);
   }, []);
 
+  const openDesktopToolPopover = useCallback(
+    (mode: 'color' | 'stem' | 'layers' | 'card' | 'voice') => {
+      if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+        setIsMobileToolsExpanded(true);
+        setMobilePopover(mode);
+      }
+    },
+    []
+  );
+
   const triggerPhotoFilePicker = useCallback(
     (targetItemId?: string | null, defaultStyle: PhotoFrameStyle = 'raw') => {
       pendingPhotoTargetItemIdRef.current = targetItemId || null;
@@ -727,11 +737,13 @@ export default function App() {
         if (targetId && targetExists) {
           updateItem(targetId, { photoDataUrl: compressedDataUrl });
           selectItem(targetId);
+          openDesktopToolPopover('stem');
           triggerToast('Photo updated!');
         } else {
           const nextStyle = pendingPhotoStyleRef.current || 'raw';
           addPhotoCard(nextStyle, compressedDataUrl);
           setActiveColorTarget('petal');
+          openDesktopToolPopover('stem');
           triggerToast(nextStyle === 'raw' ? 'Photo added!' : 'Photocard added!');
         }
       } catch (err) {
@@ -745,7 +757,7 @@ export default function App() {
         e.target.value = '';
       }
     },
-    [items, updateItem, selectItem, addPhotoCard, triggerToast]
+    [items, updateItem, selectItem, addPhotoCard, openDesktopToolPopover, triggerToast]
   );
 
   useEffect(() => {
@@ -4069,6 +4081,11 @@ export default function App() {
               bloomedCount={isGiftView ? bloomedCount : undefined}
               showCardInGiftView={isGiftView ? showGiftCardReveal : true}
               isVoicePlaying={isVoicePlaying}
+              onItemSelect={() => {
+                if (isPreviewMode || isGiftView) return;
+                setActiveColorTarget('petal');
+                openDesktopToolPopover('stem');
+              }}
               onWrapperClick={() => {
                 if (isPreviewMode || isGiftView) return;
                 selectItem(null);
@@ -4085,6 +4102,7 @@ export default function App() {
                 setActiveColorTarget('card');
                 setMobileCategory('card');
                 setActiveTab('card');
+                openDesktopToolPopover('card');
               }}
               onCardTagClick={() => {
                 if (isPreviewMode || isGiftView) {
@@ -4105,6 +4123,7 @@ export default function App() {
                 selectItem(null);
                 setActiveColorTarget('voicePrimary');
                 setMobileCategory('voice');
+                openDesktopToolPopover('voice');
               }}
               onVoiceKeepsakeClick={() => {
                 if (isPreviewMode || isGiftView) {
@@ -4914,6 +4933,7 @@ export default function App() {
                       key={cat.id}
                       type="button"
                       role="tab"
+                      data-drawer-trigger="true"
                       aria-selected={isActive}
                       onClick={(e) => {
                         e.currentTarget.scrollIntoView({
@@ -5153,9 +5173,11 @@ export default function App() {
                     <button
                       key={entry.type}
                       type="button"
+                      data-drawer-trigger="true"
                       onClick={() => {
                         addFlower(entry.type);
                         setActiveColorTarget('petal');
+                        openDesktopToolPopover('stem');
                         triggerToast(`Added ${entry.name}`);
                       }}
                       className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
@@ -5198,9 +5220,11 @@ export default function App() {
                     <button
                       key={entry.type}
                       type="button"
+                      data-drawer-trigger="true"
                       onClick={() => {
                         addFlower(entry.type);
                         setActiveColorTarget('petal');
+                        openDesktopToolPopover('stem');
                         triggerToast(`Added ${entry.name}`);
                       }}
                       className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
@@ -5243,9 +5267,11 @@ export default function App() {
                     <button
                       key={entry.type}
                       type="button"
+                      data-drawer-trigger="true"
                       onClick={() => {
                         addFlower(entry.type);
                         setActiveColorTarget('petal');
+                        openDesktopToolPopover('stem');
                         triggerToast(`Added ${entry.name}`);
                       }}
                       className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
@@ -5288,9 +5314,11 @@ export default function App() {
                     <button
                       key={entry.type}
                       type="button"
+                      data-drawer-trigger="true"
                       onClick={() => {
                         addFlower(entry.type);
                         setActiveColorTarget('petal');
+                        openDesktopToolPopover('stem');
                         triggerToast(`Added ${entry.name}`);
                       }}
                       className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
@@ -5332,6 +5360,7 @@ export default function App() {
                   <button
                     type="button"
                     data-testid="dock-upload-photo-btn"
+                    data-drawer-trigger="true"
                     onClick={() => {
                       const activeRawPhoto =
                         selectedItem?.photoStyle === 'raw' ? selectedItem : null;
@@ -5368,14 +5397,17 @@ export default function App() {
                       <button
                         key={pf.id}
                         type="button"
+                        data-drawer-trigger="true"
                         onClick={() => {
                           if (selectedItem?.photoStyle) {
                             updateItem(selectedItem.id, { photoStyle: pf.id });
                             setActiveColorTarget('petal');
+                            openDesktopToolPopover('stem');
                             triggerToast(`Frame: ${pf.label}`);
                           } else {
                             addPhotoCard(pf.id);
                             setActiveColorTarget('petal');
+                            openDesktopToolPopover('stem');
                             triggerToast(`Added ${pf.label}`);
                           }
                         }}
@@ -5537,6 +5569,7 @@ export default function App() {
                       <button
                         key={th.id}
                         type="button"
+                        data-drawer-trigger="true"
                         onClick={() => {
                           selectItem(null);
                           updateCard({
@@ -5544,6 +5577,7 @@ export default function App() {
                             visibleOnStage: true,
                           });
                           setActiveColorTarget('card');
+                          openDesktopToolPopover('card');
                         }}
                         className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                       >
@@ -5640,6 +5674,7 @@ export default function App() {
                       <button
                         key={vk.id}
                         type="button"
+                        data-drawer-trigger="true"
                         onClick={() => {
                           selectItem(null);
                           const isSwitchingStyle = voice.style !== vk.id;
@@ -5650,6 +5685,7 @@ export default function App() {
                             visibleOnStage: true,
                           });
                           setActiveColorTarget('voicePrimary');
+                          openDesktopToolPopover('voice');
                           triggerToast(`Selected ${vk.label}`);
                         }}
                         className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"

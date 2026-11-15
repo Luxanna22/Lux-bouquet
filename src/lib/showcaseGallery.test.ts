@@ -9,6 +9,7 @@ import {
   evaluateCatenaryCurveY,
   filterEligiblePublicGarlandEntries,
   filterShowcaseBouquets,
+  getShowcaseFrameTier,
   getShowcaseFreshnessInfo,
   isEligibleGarlandFeedEntry,
   isShowcaseBouquetActive,
@@ -420,4 +421,138 @@ test('Garland feed strictly excludes saved drafts, unshared bouquets, legacy ent
   assert.equal(eligible.length, 1);
   assert.equal(eligible[0].code, 'pub1234');
 });
+
+test('getShowcaseFrameTier separates standard free cards from Couture/paid-90d and Eternal 30d keepsakes', () => {
+  const freeEntry = convertVaultBouquetToShowcaseEntry(
+    {
+      code: 'free01',
+      to: 'Faye',
+      from: 'Allen',
+      createdAt: new Date(FIXED_NOW).toISOString(),
+      shareUrl: 'https://sendabouquet.online/free01',
+      isPremium: false,
+      retentionDays: 30,
+    },
+    {
+      items: [
+        {
+          id: 'rose-1',
+          type: 'rose',
+          x: 300,
+          y: 250,
+          scale: 1,
+          rotation: 0,
+          flipX: false,
+          petalColor: '#E11D48',
+          centerColor: '#FDE047',
+          stemLength: 1,
+        },
+      ],
+      wrapStyle: 'tissue',
+      wrapColor: '#FFD6E0',
+      ribbonStyle: 'lace',
+      ribbonColor: '#E11D48',
+      environment: 'studio',
+      card: {
+        to: 'Faye',
+        from: 'Allen',
+        message: 'Thinking of you.',
+        theme: 'sealed',
+        visibleOnStage: true,
+      },
+    },
+    0
+  );
+  assert.deepEqual(getShowcaseFrameTier(freeEntry), {
+    tier: 'standard',
+    isHighlighted: false,
+    editorialLabel: null,
+  });
+
+  const singleOr7dPaidEntry = convertVaultBouquetToShowcaseEntry(
+    {
+      code: 'paid90',
+      to: 'Camille',
+      from: 'Lucas',
+      createdAt: new Date(FIXED_NOW).toISOString(),
+      shareUrl: 'https://sendabouquet.online/paid90',
+      isPremium: false,
+      retentionDays: 90,
+    },
+    null,
+    1
+  );
+  assert.deepEqual(getShowcaseFrameTier(singleOr7dPaidEntry), {
+    tier: 'couture',
+    isHighlighted: true,
+    editorialLabel: 'Couture Keepsake',
+  });
+
+  const coutureAssetEntry = convertVaultBouquetToShowcaseEntry(
+    {
+      code: 'couture01',
+      to: 'Mimiyuuuh',
+      from: 'Mama Mama',
+      createdAt: new Date(FIXED_NOW).toISOString(),
+      shareUrl: 'https://sendabouquet.online/couture01',
+      isPremium: false,
+      retentionDays: 30,
+    },
+    {
+      items: [
+        {
+          id: 'photo-1',
+          type: 'rose',
+          x: 340,
+          y: 220,
+          scale: 1,
+          rotation: 4,
+          flipX: false,
+          petalColor: '#FFFDF9',
+          centerColor: '#E11D48',
+          stemLength: 1,
+          photoStyle: 'polaroid',
+        },
+      ],
+      wrapStyle: 'tissue',
+      wrapColor: '#FFFDF9',
+      ribbonStyle: 'lace',
+      ribbonColor: '#F472B6',
+      environment: 'studio',
+      card: {
+        to: 'Mimiyuuuh',
+        from: 'Mama Mama',
+        message: 'With love.',
+        theme: 'sealed',
+        visibleOnStage: true,
+      },
+    },
+    2
+  );
+  assert.deepEqual(getShowcaseFrameTier(coutureAssetEntry), {
+    tier: 'couture',
+    isHighlighted: true,
+    editorialLabel: 'Couture Keepsake',
+  });
+
+  const eternalPassEntry = convertVaultBouquetToShowcaseEntry(
+    {
+      code: 'eternal01',
+      to: 'Claire',
+      from: 'Theo',
+      createdAt: new Date(FIXED_NOW).toISOString(),
+      shareUrl: 'https://sendabouquet.online/eternal01',
+      isPremium: true,
+      retentionDays: 36500,
+    },
+    null,
+    3
+  );
+  assert.deepEqual(getShowcaseFrameTier(eternalPassEntry), {
+    tier: 'eternal',
+    isHighlighted: true,
+    editorialLabel: 'Eternal Keepsake',
+  });
+});
+
 

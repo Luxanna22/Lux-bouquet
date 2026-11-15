@@ -12,8 +12,10 @@ import {
   evaluateCatenaryCurveY,
   filterEligiblePublicGarlandEntries,
   filterShowcaseBouquets,
+  getShowcaseFrameTier,
   isEligibleGarlandFeedEntry,
   ShowcaseBouquetEntry,
+  ShowcaseFrameTier,
 } from '../lib/showcaseGallery';
 import {
   fetchGlobalGarlandFeedFromFirestore,
@@ -161,7 +163,21 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       } catch {
         // Ignore decode errors
       }
-      userEntries.push(convertVaultBouquetToShowcaseEntry(v, decodedSnap, userEntries.length));
+      userEntries.push(
+        convertVaultBouquetToShowcaseEntry(
+          firestoreRecord
+            ? {
+                ...v,
+                isPremium: Boolean(v.isPremium || firestoreRecord.isPremium),
+                retentionDays:
+                  Math.max(v.retentionDays ?? 0, firestoreRecord.retentionDays ?? 0) ||
+                  undefined,
+              }
+            : v,
+          decodedSnap,
+          userEntries.length
+        )
+      );
       if (userEntries.length >= 16) break;
     }
 
@@ -206,14 +222,39 @@ export const LaceHangerClipSVG: React.FC<{
   stringLengthPx: number;
   isDarkMode: boolean;
   accentColor: string;
-}> = React.memo(({ isDarkMode, accentColor }) => {
-  const cordColor = isDarkMode ? '#A38B7E' : '#B48E78';
-  const laceStroke = isDarkMode ? '#D8C2B5' : '#C9AE9B';
-  const brassBody = isDarkMode ? '#D4A373' : '#C89666';
-  const brassHighlight = isDarkMode ? '#FDE68A' : '#FEF3C7';
+  frameTier?: ShowcaseFrameTier;
+}> = React.memo(({ isDarkMode, accentColor, frameTier = 'standard' }) => {
+  const isSpecial = frameTier !== 'standard';
+  const isEternal = frameTier === 'eternal';
+  const cordColor = isSpecial
+    ? isDarkMode
+      ? '#ECA99B'
+      : '#B86656'
+    : isDarkMode
+    ? '#A38B7E'
+    : '#B48E78';
+  const laceStroke = isSpecial
+    ? isDarkMode
+      ? '#FAD6CE'
+      : '#F2C2B6'
+    : isDarkMode
+    ? '#D8C2B5'
+    : '#C9AE9B';
+  const brassBody = isSpecial
+    ? isDarkMode
+      ? '#EBA89A'
+      : '#CE7A69'
+    : isDarkMode
+    ? '#D4A373'
+    : '#C89666';
+  const brassHighlight = isSpecial
+    ? '#FFFDFB'
+    : isDarkMode
+    ? '#FDE68A'
+    : '#FEF3C7';
 
-  // Uniform braided cord drop so cards at symmetric catenary positions hang at identical heights
-  const dropCordPx = 10;
+  // Double-length braided cord drop so cards hang gracefully below the catenary lace line
+  const dropCordPx = 22;
 
   return (
     <div
@@ -221,9 +262,9 @@ export const LaceHangerClipSVG: React.FC<{
       aria-hidden="true"
     >
       <svg
-        width="44"
+        width="48"
         height={dropCordPx + 16}
-        viewBox={`0 -4 44 ${dropCordPx + 16}`}
+        viewBox={`-2 -4 48 ${dropCordPx + 16}`}
         className="overflow-visible"
       >
         {/* Vertical Braided Lace Thread Dropping Down from the Overhead Catenary Lace Line */}
@@ -233,7 +274,7 @@ export const LaceHangerClipSVG: React.FC<{
           x2="22"
           y2={dropCordPx + 5}
           stroke={cordColor}
-          strokeWidth="1.6"
+          strokeWidth={isSpecial ? '1.85' : '1.6'}
           strokeLinecap="round"
         />
         <line
@@ -242,43 +283,116 @@ export const LaceHangerClipSVG: React.FC<{
           x2="22"
           y2={dropCordPx + 5}
           stroke={laceStroke}
-          strokeWidth="1.1"
-          strokeDasharray="2 2"
+          strokeWidth="1.15"
+          strokeDasharray="2.2 2.2"
           strokeLinecap="round"
         />
 
-        {/* Top Knot Tied Directly onto the Overhead Lace Cord */}
-        <circle cx="22" cy="-1" r="3" fill={cordColor} />
-        <circle cx="22" cy="-1" r="1.3" fill={brassHighlight} />
+        {/* Dainty Pearl Bead Accents Along the Double-Length Cord for Couture / Eternal Cards */}
+        {isSpecial && (
+          <g>
+            <circle
+              cx="22"
+              cy={Math.round(dropCordPx * 0.36)}
+              r="1.5"
+              fill="#FFFDFB"
+              stroke={cordColor}
+              strokeWidth="0.65"
+            />
+            <circle
+              cx="22"
+              cy={Math.round(dropCordPx * 0.7)}
+              r="1.8"
+              fill="#FFFDFB"
+              stroke={cordColor}
+              strokeWidth="0.7"
+            />
+          </g>
+        )}
+
+        {/* Top Knot Tied Directly onto the Overhead Lace Cord (Pearl-set Rose-Gold Knot for Couture/Eternal) */}
+        {isSpecial ? (
+          <g transform="translate(22, -1)">
+            <circle
+              cx="0"
+              cy="0"
+              r={isEternal ? '3.8' : '3.5'}
+              fill={brassBody}
+              stroke={cordColor}
+              strokeWidth="0.85"
+            />
+            <circle cx="0" cy="0" r="1.55" fill="#FFFDF9" />
+          </g>
+        ) : (
+          <>
+            <circle cx="22" cy="-1" r="3" fill={cordColor} />
+            <circle cx="22" cy="-1" r="1.3" fill={brassHighlight} />
+          </>
+        )}
 
         {/* Delicate Scalloped Lace Bow & Florist Clasp at the Card Rim */}
         <g transform={`translate(22, ${dropCordPx + 4})`}>
-          <path
-            d="M 0,0 C -9,-6 -13,2 -1.5,1.5 M 0,0 C 9,-6 13,2 1.5,1.5"
-            fill="none"
-            stroke={accentColor}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-          <path
-            d="M -1.2,1.5 Q -4.5,6 -6.5,9.5 M 1.2,1.5 Q 4.5,6 6.5,9.5"
-            fill="none"
-            stroke={accentColor}
-            strokeWidth="1.2"
-            strokeLinecap="round"
-          />
-          {/* Sculpted Brass / Wooden Florist Clothespin */}
+          {isSpecial ? (
+            /* Sculpted Rose-Gold Satin Ribbon Bow on Couture / Eternal Clasp */
+            <>
+              <path
+                d="M 0,0.5 C -10,-6.5 -15,2.5 -1.5,2 M 0,0.5 C 10,-6.5 15,2.5 1.5,2"
+                fill={isDarkMode ? '#E59F90' : '#DF9585'}
+                fillOpacity="0.45"
+                stroke={isDarkMode ? '#F5C4B8' : '#B86454'}
+                strokeWidth="1.55"
+                strokeLinecap="round"
+              />
+              <path
+                d="M -1.4,1.8 Q -5.5,6.5 -8,10.2 M 1.4,1.8 Q 5.5,6.5 8,10.2"
+                fill="none"
+                stroke={isDarkMode ? '#F5C4B8' : '#B86454'}
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+            </>
+          ) : (
+            <>
+              <path
+                d="M 0,0 C -9,-6 -13,2 -1.5,1.5 M 0,0 C 9,-6 13,2 1.5,1.5"
+                fill="none"
+                stroke={accentColor}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M -1.2,1.5 Q -4.5,6 -6.5,9.5 M 1.2,1.5 Q 4.5,6 6.5,9.5"
+                fill="none"
+                stroke={accentColor}
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </>
+          )}
+          {/* Sculpted Brass / Brushed Rose-Gold Florist Clothespin */}
           <rect
-            x="-3.5"
+            x="-3.8"
             y="-3.5"
-            width="7"
+            width="7.6"
             height="11.5"
-            rx="2.4"
+            rx="2.5"
             fill={brassBody}
             stroke={cordColor}
-            strokeWidth="0.9"
+            strokeWidth="0.95"
           />
-          <line x1="-2.2" y1="1" x2="2.2" y2="1" stroke={brassHighlight} strokeWidth="0.9" />
+          {isSpecial ? (
+            /* Mother-of-Pearl Cabochon Jewel Set into the Rose-Gold Clasp */
+            <circle
+              cx="0"
+              cy="1.1"
+              r="1.75"
+              fill="#FFFDF9"
+              stroke={cordColor}
+              strokeWidth="0.7"
+            />
+          ) : (
+            <line x1="-2.2" y1="1" x2="2.2" y2="1" stroke={brassHighlight} strokeWidth="0.95" />
+          )}
           {/* Punched Card Eyelet Ring */}
           <circle
             cx="0"
@@ -296,8 +410,10 @@ export const LaceHangerClipSVG: React.FC<{
 
 /**
  * Pure PNG-Style Hanging Bouquet Keepsake Frame (View-Only / Unwrap-Only):
- * Uses a SINGLE primary dashed border (zero double borders) and displays the crafted bouquet,
- * wax-sealed envelope asset, optional voice keepsake asset, and a quiet For/From dedication tag.
+ * - Standard free creations use the classic dashed warm cardstock frame.
+ * - Couture & Supporter Pass creations stand out with a rich Rose-Gold & Blush-Champagne
+ *   metallic gallery mat (single outer border — zero triple-border clutter) and four
+ *   mother-of-pearl corner studs on the mat.
  */
 const HangingCreationCard: React.FC<{
   entry: ShowcaseBouquetEntry;
@@ -305,58 +421,138 @@ const HangingCreationCard: React.FC<{
   onUnwrap: (entry: ShowcaseBouquetEntry) => void;
   disableStaticTilt?: boolean;
 }> = React.memo(({ entry, isDarkMode, onUnwrap, disableStaticTilt }) => {
+  const tierInfo = useMemo(() => getShowcaseFrameTier(entry), [entry]);
+  const isCouture = tierInfo.tier === 'couture';
+  const isEternal = tierInfo.tier === 'eternal';
+  const isHighlighted = tierInfo.isHighlighted;
+
+  const cardSurfaceClass = isEternal
+    ? isDarkMode
+      ? 'bg-[linear-gradient(140deg,#633A34_0%,#4A2925_48%,#351D1A_100%)] border-[1.5px] border-solid border-[#F0B0A1] shadow-[inset_0_1px_0_rgba(255,235,230,0.38),0_16px_34px_-6px_rgba(232,158,142,0.32)] group-hover:border-[#FAD0C6]'
+      : 'bg-[linear-gradient(140deg,#F7D1C5_0%,#E9A896_48%,#D88975_100%)] border-[1.5px] border-solid border-[#B86352] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_16px_32px_-6px_rgba(184,99,82,0.30)] group-hover:border-[#9E4F3F]'
+    : isCouture
+    ? isDarkMode
+      ? 'bg-[linear-gradient(140deg,#593530_0%,#422623_50%,#301B19_100%)] border-[1.5px] border-solid border-[#E6A293] shadow-[inset_0_1px_0_rgba(255,232,226,0.32),0_14px_30px_-6px_rgba(224,152,136,0.26)] group-hover:border-[#F4C2B7]'
+      : 'bg-[linear-gradient(140deg,#F9DBD2_0%,#EDB7A8_50%,#DF9B89_100%)] border-[1.5px] border-solid border-[#C27160] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_14px_28px_-6px_rgba(190,106,88,0.25)] group-hover:border-[#AA5C4C]'
+    : isDarkMode
+    ? 'bg-[#28211F] border border-dashed border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_10px_24px_rgba(15,11,9,0.28)]'
+    : 'bg-[#F7F1E8] border border-dashed border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_10px_22px_rgba(122,75,58,0.06)]';
+
+  // Single-border discipline: Couture/Eternal inner window & plate sit cleanly inside the rich rose-gold mat
+  // without dark concentric inner line borders (eliminates the "triple border" look).
+  const windowClass = isHighlighted
+    ? isDarkMode
+      ? 'bg-[#211716] shadow-[0_2px_10px_rgba(0,0,0,0.35)]'
+      : 'bg-[#FFFDFB] shadow-[0_2px_10px_rgba(148,74,60,0.14)]'
+    : isDarkMode
+    ? 'border border-[#4A3C37]/85 bg-[#221B19]'
+    : 'border border-[#E5D5C5]/80 bg-[#FDF9F5]';
+
+  const plateClass = isHighlighted
+    ? isDarkMode
+      ? 'bg-[#231817]/95 text-[#FBF6F1] shadow-[0_2px_8px_rgba(0,0,0,0.32)]'
+      : 'bg-[#FFFDFB]/96 text-[#1F1713] shadow-[0_2px_8px_rgba(148,74,60,0.12)]'
+    : isDarkMode
+    ? 'bg-[#221B18] border border-dashed border-[#5A4943] text-[#FBF6F1]'
+    : 'bg-[#FFFDF9] border border-dashed border-[#D8C4B2] text-[#1F1713] shadow-2xs';
+
   return (
     <div className="w-full flex flex-col items-center group">
       <LaceHangerClipSVG
         stringLengthPx={entry.stringLengthPx}
         isDarkMode={isDarkMode}
         accentColor={entry.ribbonColor}
+        frameTier={tierInfo.tier}
       />
 
       <button
         type="button"
         onClick={() => onUnwrap(entry)}
+        data-frame-tier={tierInfo.tier}
         aria-label={`Open bouquet for ${entry.to} from ${entry.from} (view-only)`}
         style={disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }}
-        className={`w-full aspect-[12/15.8] sm:aspect-[12/15.6] rounded-[20px] sm:rounded-[24px] border border-dashed p-1.5 sm:p-2 relative flex flex-col items-stretch justify-between overflow-hidden transition-transform duration-300 ease-out group-hover:rotate-0 group-hover:-translate-y-1 cursor-pointer focus:outline-none ${
-          isDarkMode
-            ? 'bg-[#28211F] border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_10px_24px_rgba(15,11,9,0.28)]'
-            : 'bg-[#F7F1E8] border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_10px_22px_rgba(122,75,58,0.06)]'
-        }`}
+        className={`w-full aspect-[12/15.8] sm:aspect-[12/15.6] rounded-[20px] sm:rounded-[24px] ${
+          isHighlighted ? 'p-2 sm:p-2.5' : 'p-1.5 sm:p-2'
+        } relative flex flex-col items-stretch justify-between overflow-hidden transition-transform duration-300 ease-out group-hover:rotate-0 group-hover:-translate-y-1 cursor-pointer focus:outline-none ${cardSurfaceClass}`}
       >
-        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Uncropped Full Creation Window — 100% Edge-to-Edge Fill) */}
+        {/* Subtle Diagonal Rose-Gold Silk Sheen + 4 Dainty Mother-of-Pearl Corner Cabochons on the Outer Mat */}
+        {isHighlighted && (
+          <>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: isDarkMode
+                  ? 'linear-gradient(125deg, rgba(255,228,220,0.12) 0%, rgba(255,228,220,0) 38%, rgba(255,210,198,0.08) 72%, rgba(0,0,0,0) 100%)'
+                  : 'linear-gradient(125deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 38%, rgba(255,245,240,0.35) 70%, rgba(255,255,255,0) 100%)',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute top-1.5 left-1.5 w-1.5 h-1.5 rounded-full ${
+                isDarkMode
+                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
+                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
+              }`}
+            />
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
+                isDarkMode
+                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
+                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
+              }`}
+            />
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute bottom-1.5 left-1.5 w-1.5 h-1.5 rounded-full ${
+                isDarkMode
+                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
+                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
+              }`}
+            />
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute bottom-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
+                isDarkMode
+                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
+                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
+              }`}
+            />
+          </>
+        )}
+
+        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Uncropped Full Creation Window — Clean Single-Mat Framing) */}
         <div
-          className={`w-full flex-1 min-h-0 rounded-[14px] sm:rounded-[18px] overflow-hidden relative border p-0 ${
-            isDarkMode
-              ? 'border-[#4A3C37]/85 bg-[#221B19]'
-              : 'border-[#E5D5C5]/80 bg-[#FDF9F5]'
-          }`}
+          className={`w-full flex-1 min-h-0 rounded-[14px] sm:rounded-[16px] overflow-hidden relative p-0 ${windowClass}`}
         >
           <div className="w-full h-full">
             <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
           </div>
         </div>
 
-        {/* High-Contrast 2-Line Editorial Dedication Plate at Base of Portrait Card */}
+        {/* High-Contrast Editorial Dedication Plate at Base of Portrait Card */}
         <div
-          className={`pointer-events-none mt-1.5 py-1 sm:py-1.5 px-2 sm:px-2.5 rounded-[12px] sm:rounded-[14px] text-center shrink-0 transition-all duration-300 border border-dashed ${
-            isDarkMode
-              ? 'bg-[#221B18] border-[#5A4943] text-[#FBF6F1]'
-              : 'bg-[#FFFDF9] border-[#D8C4B2] text-[#1F1713] shadow-2xs'
-          }`}
+          className={`pointer-events-none mt-1.5 py-1 sm:py-1.5 px-2 sm:px-2.5 rounded-[12px] sm:rounded-[14px] text-center shrink-0 transition-all duration-300 relative ${plateClass}`}
           style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
         >
-          <div className="text-[14.5px] sm:text-[16px] lg:text-[17px] leading-[1.12] tracking-[-0.01em] truncate">
+          <div className="text-[14px] sm:text-[15.5px] lg:text-[16.5px] leading-[1.1] tracking-[-0.01em] truncate">
             <span
               className={`italic font-medium ${
-                isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
+                isHighlighted
+                  ? isDarkMode
+                    ? 'text-[#F2B5A7]'
+                    : 'text-[#B05848]'
+                  : isDarkMode
+                  ? 'text-[#E6B89C]'
+                  : 'text-[#8A4B38]'
               }`}
             >
               For{' '}
             </span>
             <span className="font-bold">{entry.to}</span>
           </div>
-          <div className="text-[12px] sm:text-[13px] lg:text-[13.5px] leading-[1.15] truncate mt-0.5">
+          <div className="text-[11.5px] sm:text-[12.5px] lg:text-[13px] leading-[1.12] truncate mt-0.5">
             <span
               className={`italic ${
                 isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E584D]'
@@ -636,7 +832,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
 
       {/* UNIFIED SINGLE-LACE RIGHT-TO-LEFT CAROUSEL PREVIEW ACROSS MOBILE, TABLET & DESKTOP */}
       <div
-        className="relative w-full h-[328px] sm:h-[404px] lg:h-[456px] touch-pan-y"
+        className="relative w-full h-[340px] sm:h-[416px] lg:h-[468px] touch-pan-y"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return;
           dragStartXRef.current = e.clientX;
@@ -1318,7 +1514,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                     .map((rowEntries, rowIdx) => (
                       <div
                         key={`mobile-lace-row-${rowIdx}-${activeCarouselStep}`}
-                        className="relative w-full h-[246px] min-[390px]:h-[260px] shrink-0"
+                        className="relative w-full h-[256px] min-[390px]:h-[270px] shrink-0"
                       >
                         <div className="absolute top-0 inset-x-0 z-0">
                           <SweepingCatenaryLaceLineSVG
@@ -1407,7 +1603,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
               <>
                 <div
                   data-testid="single-lace-carousel-track"
-                  className="relative w-full h-[364px] lg:h-[420px] shrink-0"
+                  className="relative w-full h-[376px] lg:h-[432px] shrink-0"
                 >
                   {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
                   <div className="absolute top-0 inset-x-0 z-0">

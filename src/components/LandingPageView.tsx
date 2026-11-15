@@ -1189,7 +1189,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <header
           data-testid="landing-navbar"
           data-nav-mode={isNavScrolled ? 'pill' : 'integrated'}
-          className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[1fr_auto_1fr] items-center justify-between gap-2 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
+          className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[auto_1fr_auto] items-center justify-between gap-2 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
             ? `max-w-5xl h-12 sm:h-13 md:h-14 px-3 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${isDarkMode
               ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
               : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
@@ -1204,14 +1204,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <a
             href="/"
             onClick={(e) => handleAnchorAction(e, onStartCrafting)}
-            className="flex items-center gap-2 text-left cursor-pointer group min-w-0 justify-self-start no-underline"
+            className="flex items-center gap-2 text-left cursor-pointer group shrink-0 justify-self-start no-underline"
           >
             <BrandLogoMark
               className="w-6.5 h-6.5 sm:w-7 sm:h-7 md:w-7.5 md:h-7.5 group-hover:scale-105 transition-transform duration-300 shrink-0"
               isDarkMode={isDarkMode}
             />
             <span
-              className="text-[18px] min-[380px]:text-[19px] sm:text-xl md:text-[22px] font-semibold tracking-tight whitespace-nowrap truncate"
+              className="text-[18px] min-[380px]:text-[19px] sm:text-xl md:text-[22px] font-semibold tracking-tight whitespace-nowrap shrink-0"
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             >
               Send A Bouquet
@@ -2689,9 +2689,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     }`}
                 >
                   <a
-                    href="https://instagram.com"
+                    href="https://www.instagram.com/sendabouquet.online/"
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
+                    aria-label="Instagram @sendabouquet.online"
+                    title="@sendabouquet.online on Instagram"
+                    data-testid="social-instagram-link"
                     className={`transition-colors hover:underline underline-offset-4 ${isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
                       }`}
                   >
@@ -2699,23 +2702,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   </a>
                   <span aria-hidden="true" className="opacity-40">·</span>
                   <a
-                    href="https://x.com"
+                    href="https://www.facebook.com/Lux.SG.22"
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
+                    aria-label="Facebook /Lux.SG.22"
+                    title="/Lux.SG.22 on Facebook"
+                    data-testid="social-facebook-link"
                     className={`transition-colors hover:underline underline-offset-4 ${isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
                       }`}
                   >
-                    X
-                  </a>
-                  <span aria-hidden="true" className="opacity-40">·</span>
-                  <a
-                    href="https://github.com/Luxanna22"
-                    target="_blank"
-                    rel="noreferrer"
-                    className={`transition-colors hover:underline underline-offset-4 ${isDarkMode ? 'hover:text-[#FBF6F1]' : 'hover:text-[#231C18]'
-                      }`}
-                  >
-                    GitHub
+                    Facebook
                   </a>
                 </div>
               </div>
