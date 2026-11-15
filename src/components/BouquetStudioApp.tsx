@@ -1434,20 +1434,13 @@ export default function App() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok || !data?.pass) {
-        setRecipientGiftClaimError(
-          data?.message ||
-            (res.status === 403
-              ? 'We couldn’t finish unlocking this gift in this browser session (403). Try tapping Claim Free Bouquet again, or open the link in Chrome or Safari.'
-              : 'We couldn’t unlock this gift right now. Please try tapping Claim Free Bouquet again in a moment.')
-        );
-        if (
-          data?.status === 'BOUQUET_GIFT_ALREADY_CLAIMED' ||
-          data?.status === 'DEVICE_ALREADY_CLAIMED' ||
-          data?.status === 'GLOBAL_CAP_REACHED' ||
-          data?.code === 'ALREADY_CLAIMED_BOUQUET' ||
-          data?.code === 'ALREADY_CLAIMED_DEVICE'
-        ) {
+        if (res.status >= 400 && res.status < 500) {
+          setRecipientGiftClaimError('This gift offer is no longer available.');
           setIsRecipientGiftBoxVisible(false);
+        } else {
+          setRecipientGiftClaimError(
+            "Couldn't verify right now—please wait a few seconds and tap Verify again."
+          );
         }
         return;
       }
@@ -1464,7 +1457,9 @@ export default function App() {
       handleCreateOwnFromShared();
       triggerToast('Founding Launch Gift applied — 1 free Couture Bouquet unlocked!');
     } catch {
-      setRecipientGiftClaimError('Connection error. Please try again in a moment.');
+      setRecipientGiftClaimError(
+        "Couldn't verify right now—please wait a few seconds and tap Verify again."
+      );
     } finally {
       setIsClaimingRecipientGift(false);
     }
@@ -1506,14 +1501,11 @@ export default function App() {
             setActiveStudioPass(data.pass);
             triggerToast('Tester Voucher activated — Couture unlocked on this device!');
           } else {
-            triggerToast(
-              data.message ||
-                'This complimentary Tester Pass is already active on another device.'
-            );
+            triggerToast('Invalid or expired pass key.');
           }
         })
         .catch(() => {
-          triggerToast('We couldn’t verify your Tester Pass link right now. Please try again.');
+          triggerToast("Couldn't verify right now—please wait a few seconds and tap Verify again.");
         });
     }
 

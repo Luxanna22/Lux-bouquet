@@ -744,7 +744,9 @@ test('server-side Bloom Key & Couture enforcement rejects client forgeries, omit
     });
     const redeemSpoofRes = makeRes();
     await paymentLib.handlePaymentEndpoint(redeemSpoofReq, redeemSpoofRes, '/api/payments/redeem-pass');
-    assert.equal(redeemSpoofRes.statusCode, 404);
+    assert.equal(redeemSpoofRes.statusCode, 403);
+    assert.equal(redeemSpoofRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(redeemSpoofRes.json().message, 'Invalid or expired pass key.');
 
     // Even if an attacker manages to write a doc directly to Firestore/store without PASS_SIGNING_SECRET HMAC
     paymentLib.SERVER_PASS_STORE.set(forgedPass.passKey, forgedPass);
@@ -760,7 +762,8 @@ test('server-side Bloom Key & Couture enforcement rejects client forgeries, omit
         '/api/payments/redeem-pass'
       );
       assert.equal(redeemDocTamperRes.statusCode, 403);
-      assert.equal(redeemDocTamperRes.json().status, 'TAMPERED_SIGNATURE');
+      assert.equal(redeemDocTamperRes.json().status, 'INVALID_OR_EXPIRED');
+      assert.equal(redeemDocTamperRes.json().message, 'Invalid or expired pass key.');
 
       const verifyDocTamperReq = makeReq('/api/payments/verify-action', {
         action: 'verify_pass',
@@ -1240,7 +1243,9 @@ test('BayadGate PH integration: MD5 signing, form-urlencoded checkout, webhook c
       redeemSlotRes,
       '/api/payments/redeem-pass'
     );
-    assert.equal(redeemSlotRes.statusCode, 400);
+    assert.equal(redeemSlotRes.statusCode, 403);
+    assert.equal(redeemSlotRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(redeemSlotRes.json().message, 'Invalid or expired pass key.');
 
     const shortenSlotCheck = await coutureGuard.verifyShortenCouturePermission({
       code: 'c_test99',
@@ -1650,7 +1655,9 @@ test('SikatPay PH flow: create-checkout, HMAC-SHA256 webhook, amount/livemode gu
       redeemSlotRes,
       '/api/payments/redeem-pass'
     );
-    assert.equal(redeemSlotRes.statusCode, 400);
+    assert.equal(redeemSlotRes.statusCode, 403);
+    assert.equal(redeemSlotRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(redeemSlotRes.json().message, 'Invalid or expired pass key.');
 
     const shortenSlotCheck = await coutureGuard.verifyShortenCouturePermission({
       code: 'c_sptest1',
@@ -1925,6 +1932,8 @@ test('SikatPay PH flow: create-checkout, HMAC-SHA256 webhook, amount/livemode gu
       '/api/payments/redeem-pass'
     );
     assert.equal(orderRecoveryWrongDeviceRes.statusCode, 403);
+    assert.equal(orderRecoveryWrongDeviceRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(orderRecoveryWrongDeviceRes.json().message, 'Invalid or expired pass key.');
 
     paymentLib.SERVER_PASS_STORE.delete(slotKey2);
     paymentLib.SERVER_PASS_STORE.delete(issued2.pass.passKey);
@@ -2386,7 +2395,8 @@ test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent
       '/api/payments/redeem-pass'
     );
     assert.equal(reuseOrderAfterSendRes.statusCode, 403);
-    assert.equal(reuseOrderAfterSendRes.json().status, 'SINGLE_BOUQUET_ALREADY_USED');
+    assert.equal(reuseOrderAfterSendRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(reuseOrderAfterSendRes.json().message, 'Invalid or expired pass key.');
 
     // 4. Reusing the Pass Key (BLOOM-...) AFTER bouquet was sent MUST FAIL (403)
     const reuseKeyAfterSendRes = makeRes();
@@ -2405,7 +2415,8 @@ test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent
       '/api/payments/redeem-pass'
     );
     assert.equal(reuseKeyAfterSendRes.statusCode, 403);
-    assert.equal(reuseKeyAfterSendRes.json().status, 'SINGLE_BOUQUET_ALREADY_USED');
+    assert.equal(reuseKeyAfterSendRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(reuseKeyAfterSendRes.json().message, 'Invalid or expired pass key.');
 
     // 5. Replaying /api/payments/verify-and-issue AFTER bouquet was sent MUST FAIL (403)
     const replayVerifyAfterSendRes = makeRes();
@@ -2504,7 +2515,8 @@ test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent
       '/api/payments/redeem-pass'
     );
     assert.equal(expiredOrderRedeemRes.statusCode, 403);
-    assert.equal(expiredOrderRedeemRes.json().status, 'EXPIRED');
+    assert.equal(expiredOrderRedeemRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(expiredOrderRedeemRes.json().message, 'Invalid or expired pass key.');
 
     // 7. Expired verify-and-issue replay MUST FAIL (403 EXPIRED)
     const expiredVerifyReplayRes = makeRes();
@@ -2554,7 +2566,8 @@ test('SikatPay Order ID & Pass Key cannot be reused after Single Bouquet is sent
       '/api/payments/redeem-pass'
     );
     assert.equal(expiredSlotRedeemRes.statusCode, 403);
-    assert.equal(expiredSlotRedeemRes.json().status, 'EXPIRED');
+    assert.equal(expiredSlotRedeemRes.json().status, 'INVALID_OR_EXPIRED');
+    assert.equal(expiredSlotRedeemRes.json().message, 'Invalid or expired pass key.');
   } finally {
     for (const k of createdKeysToClean) {
       paymentLib.SERVER_PASS_STORE.delete(k);
@@ -3201,7 +3214,7 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
     assert.equal(shorten0Res.statusCode, 200);
     assert.equal(shorten0Res.json().recipientGiftSpawned, true);
 
-    // Anti-farming: Creator (senderDev) checking their own bouquet gets eligible = false (CREATOR_SELF_CLAIM_BLOCKED)
+    // Anti-farming: Creator (senderDev) checking their own bouquet gets eligible = false with zero enumeration metadata
     const selfCheckRes = makeRes();
     await paymentLib.handlePaymentEndpoint(
       makeReq(
@@ -3216,10 +3229,24 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
       selfCheckRes,
       '/api/payments/verify-action'
     );
-    assert.equal(selfCheckRes.json().eligible, false);
-    assert.equal(selfCheckRes.json().reason, 'CREATOR_SELF_CLAIM_BLOCKED');
+    assert.deepEqual(selfCheckRes.json(), { ok: true, eligible: false });
+    assert.equal(selfCheckRes.json().reason, undefined);
+    assert.equal(selfCheckRes.json().remainingGlobal, undefined);
 
-    // Recipient 1 (hop 1) checks and claims the gift box
+    // Public GET /api/shorten?c=<code> must never leak creatorDeviceHash, buyer emails, or internal pass hashes
+    const publicGetRes = makeRes();
+    await shortenMod.default(
+      makeReq('GET', `/api/shorten?c=${encodeURIComponent(codeHop0)}`),
+      publicGetRes
+    );
+    assert.equal(publicGetRes.statusCode, 200);
+    const publicBody = publicGetRes.json();
+    assert.equal(publicBody.creatorDeviceHash, undefined);
+    assert.equal(publicBody.creatorDeviceTokenHash, undefined);
+    assert.equal(publicBody.buyerEmail, undefined);
+    assert.equal(publicBody.passKey, undefined);
+
+    // Recipient 1 (hop 1) checks and claims the gift box (response is strictly boolean only)
     const recipient1Dev = 'dev_recipient_hop1';
     const check1Res = makeRes();
     await paymentLib.handlePaymentEndpoint(
@@ -3235,8 +3262,9 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
       check1Res,
       '/api/payments/verify-action'
     );
-    assert.equal(check1Res.json().eligible, true);
-    assert.equal(check1Res.json().hop, 1);
+    assert.deepEqual(check1Res.json(), { ok: true, eligible: true });
+    assert.equal(check1Res.json().hop, undefined);
+    assert.equal(check1Res.json().remainingGlobal, undefined);
 
     const claim1Res = makeRes();
     await paymentLib.handlePaymentEndpoint(
@@ -3254,10 +3282,12 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
     );
     assert.equal(claim1Res.statusCode, 200);
     const passHop1 = claim1Res.json().pass;
+    assert.equal(claim1Res.json().hop, undefined);
+    assert.equal(claim1Res.json().launchPromo, undefined);
     assert.equal(isSilentRecipientGiftPass(passHop1), true);
     assert.equal(extractPassChainHop(passHop1), 1);
 
-    // Second person trying to claim the same bouquet's gift box is rejected (BOUQUET_GIFT_ALREADY_CLAIMED)
+    // Second person trying to claim the same bouquet's gift box gets unified 403 without enumeration
     const secondClaimSameBouquetRes = makeRes();
     await paymentLib.handlePaymentEndpoint(
       makeReq(
@@ -3273,7 +3303,10 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
       '/api/payments/verify-action'
     );
     assert.equal(secondClaimSameBouquetRes.statusCode, 403);
-    assert.equal(secondClaimSameBouquetRes.json().status, 'BOUQUET_GIFT_ALREADY_CLAIMED');
+    assert.deepEqual(secondClaimSameBouquetRes.json(), {
+      ok: false,
+      message: 'This gift offer is no longer available.',
+    });
 
     // Hop 1 -> Hop 2 -> Hop 3 chain progression, and Hop 3 cannot spawn Hop 4
     const snapHop1 = makeValidSnap('Sending this forward to my dearest friend Maya!', 3);
@@ -3297,7 +3330,7 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
     );
     assert.equal(shorten1Res.json().recipientGiftSpawned, true);
 
-    // Recipient 1 trying to claim Hop 1's gift box on another bouquet is blocked (DEVICE_ALREADY_CLAIMED)
+    // Recipient 1 trying to claim Hop 1's gift box on another bouquet gets the exact same unified 403
     const repeatDeviceClaimRes = makeRes();
     await paymentLib.handlePaymentEndpoint(
       makeReq(
@@ -3313,7 +3346,10 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
       '/api/payments/verify-action'
     );
     assert.equal(repeatDeviceClaimRes.statusCode, 403);
-    assert.equal(repeatDeviceClaimRes.json().status, 'DEVICE_ALREADY_CLAIMED');
+    assert.deepEqual(repeatDeviceClaimRes.json(), {
+      ok: false,
+      message: 'This gift offer is no longer available.',
+    });
 
     // Recipient 2 claims Hop 2
     const recipient2Dev = 'dev_recipient_hop2';
@@ -3414,7 +3450,7 @@ test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forwar
   }
 });
 
-test('Founding Launch verification 403/402 error messages guide the user gently without blame', async () => {
+test('Anti-enumeration & concise 1-sentence error copy across Ko-fi verification and Pass Key redemption', async () => {
   const { EventEmitter } = await import('node:events');
   // @ts-expect-error Dynamically importing JS module
   const paymentLib = await import('../../api/_lib/paymentHandler.js');
@@ -3447,7 +3483,16 @@ test('Founding Launch verification 403/402 error messages guide the user gently 
     };
   };
 
+  const prevSingleCode = process.env.KOFI_SHOP_SINGLE_CODE;
+  const prev7dCode = process.env.KOFI_SHOP_7D_CODE;
+  const prevToken = process.env.KOFI_VERIFICATION_TOKEN;
+  const createdKeys: string[] = [];
+
   try {
+    process.env.KOFI_SHOP_SINGLE_CODE = 'enum1singl';
+    process.env.KOFI_SHOP_7D_CODE = 'enum2seven';
+    process.env.KOFI_VERIFICATION_TOKEN = 'kofi_enum_test_tok';
+
     paymentLib.updateFoundingLaunchPromoConfigServer({
       kofiLaunchEnabled: true,
       kofiLaunchMaxLimit: 30,
@@ -3468,7 +3513,7 @@ test('Founding Launch verification 403/402 error messages guide the user gently 
           provider: 'kofi',
           deviceTokenHash: devA,
           claimFreeLaunchStarter: true,
-          shopCodes: { single: 'guide12345' },
+          shopCodes: { single: 'enum1singl', pass_7d: 'enum2seven' },
         })
       ),
       chkRes,
@@ -3477,7 +3522,7 @@ test('Founding Launch verification 403/402 error messages guide the user gently 
     assert.equal(chkRes.statusCode, 200);
     const chk = chkRes.json();
 
-    // 1. Device mismatch 403 guides to Switch plan cleanly
+    // 1. Device mismatch 403 returns concise 1-sentence copy with NO raw "(403)" or checklist
     const mismatchRes = makeRes();
     await paymentLib.handlePaymentEndpoint(
       makeReq(
@@ -3494,11 +3539,56 @@ test('Founding Launch verification 403/402 error messages guide the user gently 
       '/api/payments/verify-and-issue'
     );
     assert.equal(mismatchRes.statusCode, 403);
-    assert.match(mismatchRes.json().message, /Switch plan/i);
-    assert.doesNotMatch(mismatchRes.json().message, /Device mismatch/i);
+    assert.equal(
+      mismatchRes.json().message,
+      "Couldn't verify right now—please wait a few seconds and tap Verify again."
+    );
+    assert.doesNotMatch(mismatchRes.json().message, /\(403\)|\(1\)|friend@example\.com/i);
 
-    // 2. Unconfirmed Ko-fi $0 claim (402) shows warm checklist without saying "bought"
-    const pendingRes = makeRes();
+    // Seed a Ko-fi 7-Day Pass receipt for wrongtier@example.com
+    const wh7dRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          verification_token: 'kofi_enum_test_tok',
+          type: 'Shop Order',
+          email: 'wrongtier@example.com',
+          amount: '3.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_enum_wrongtier_1',
+          shop_items: [{ direct_link_code: 'enum2seven' }],
+        })
+      ),
+      wh7dRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(wh7dRes.statusCode, 200);
+    createdKeys.push(wh7dRes.json().emailTierSlotKey);
+
+    // Seed a claimed Single receipt for claimed@example.com
+    const whSingleClaimedRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          verification_token: 'kofi_enum_test_tok',
+          type: 'Shop Order',
+          email: 'claimed@example.com',
+          amount: '0.00',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_enum_claimed_1',
+          shop_items: [{ direct_link_code: 'enum1singl' }],
+        })
+      ),
+      whSingleClaimedRes,
+      '/api/webhooks/kofi'
+    );
+    createdKeys.push(whSingleClaimedRes.json().emailTierSlotKey);
+
+    const claimFirstRes = makeRes();
     await paymentLib.handlePaymentEndpoint(
       makeReq(
         'POST',
@@ -3507,19 +3597,130 @@ test('Founding Launch verification 403/402 error messages guide the user gently 
           checkoutId: chk.checkoutId,
           checkoutToken: chk.checkoutToken,
           deviceTokenHash: devA,
-          buyerEmail: 'friend@example.com',
+          buyerEmail: 'claimed@example.com',
         })
       ),
-      pendingRes,
+      claimFirstRes,
       '/api/payments/verify-and-issue'
     );
-    assert.equal(pendingRes.statusCode, 402);
-    assert.match(pendingRes.json().message, /\$0 checkout/i);
-    assert.doesNotMatch(pendingRes.json().message, /bought/i);
+    assert.equal(claimFirstRes.statusCode, 200);
+    createdKeys.push(claimFirstRes.json().pass.passKey);
+
+    // Seed an unclaimed $0 Single receipt for secondemail@example.com (to test deviceAlreadyClaimedLaunchStarter)
+    const whSecondFreeRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          verification_token: 'kofi_enum_test_tok',
+          type: 'Shop Order',
+          email: 'secondemail@example.com',
+          amount: '0.00',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_enum_free_2',
+          shop_items: [{ direct_link_code: 'enum1singl' }],
+        })
+      ),
+      whSecondFreeRes,
+      '/api/webhooks/kofi'
+    );
+    createdKeys.push(whSecondFreeRes.json().emailTierSlotKey);
+
+    // 2. Anti-enumeration equality across missing, wrong-tier, already-claimed, and already-claimed-device Ko-fi verification
+    const probeEmails = [
+      'notfound@example.com',
+      'wrongtier@example.com',
+      'claimed@example.com',
+      'secondemail@example.com',
+    ];
+    for (const email of probeEmails) {
+      const probeRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-and-issue',
+          JSON.stringify({
+            checkoutId: chk.checkoutId,
+            checkoutToken: chk.checkoutToken,
+            deviceTokenHash: devA,
+            buyerEmail: email,
+          })
+        ),
+        probeRes,
+        '/api/payments/verify-and-issue'
+      );
+      assert.equal(probeRes.statusCode, 402);
+      assert.deepEqual(probeRes.json(), {
+        ok: false,
+        status: 'NO_MATCHING_ORDER',
+        message:
+          'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.',
+      });
+    }
+
+    // 3. Anti-enumeration equality across Pass Key redemption (unknown vs invalid format vs revoked vs expired)
+    const revokedPass = paymentLib.createSignedStudioPassServer({
+      tier: 'pass_7d',
+      region: 'INTL',
+      deviceTokenHash: devA,
+      paymentProvider: 'kofi',
+    });
+    revokedPass.secondaryDeviceHash = paymentLib.REVOKED_PASS_SENTINEL;
+    paymentLib.SERVER_PASS_STORE.set(revokedPass.passKey, revokedPass);
+    createdKeys.push(revokedPass.passKey);
+
+    const expiredPass = paymentLib.createSignedStudioPassServer({
+      tier: 'pass_7d',
+      region: 'INTL',
+      createdAt: new Date(Date.now() - 20 * 86400_000).toISOString(),
+      expiresAt: new Date(Date.now() - 86400_000).toISOString(),
+      deviceTokenHash: devA,
+      paymentProvider: 'kofi',
+    });
+    paymentLib.SERVER_PASS_STORE.set(expiredPass.passKey, expiredPass);
+    createdKeys.push(expiredPass.passKey);
+
+    for (const candidateKey of ['NOT-A-KEY', 'BLOOM-ZZZZ-9999', revokedPass.passKey, expiredPass.passKey]) {
+      const redeemRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/redeem-pass',
+          JSON.stringify({
+            passKey: candidateKey,
+            deviceTokenHash: devA,
+          })
+        ),
+        redeemRes,
+        '/api/payments/redeem-pass'
+      );
+      assert.equal(redeemRes.statusCode, 403);
+      assert.deepEqual(redeemRes.json(), {
+        ok: false,
+        status: 'INVALID_OR_EXPIRED',
+        message: 'Invalid or expired pass key.',
+      });
+    }
   } finally {
+    for (const k of createdKeys) {
+      if (k) paymentLib.SERVER_PASS_STORE.delete(k);
+    }
+    if (prevSingleCode !== undefined) process.env.KOFI_SHOP_SINGLE_CODE = prevSingleCode;
+    else delete process.env.KOFI_SHOP_SINGLE_CODE;
+    if (prev7dCode !== undefined) process.env.KOFI_SHOP_7D_CODE = prev7dCode;
+    else delete process.env.KOFI_SHOP_7D_CODE;
+    if (prevToken !== undefined) process.env.KOFI_VERIFICATION_TOKEN = prevToken;
+    else delete process.env.KOFI_VERIFICATION_TOKEN;
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
     globalThis.fetch = originalFetch;
   }
 });
+
 
 
 

@@ -539,12 +539,21 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   } | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [verifyCooldownSec, setVerifyCooldownSec] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
   const [redeemInput, setRedeemInput] = useState('');
   const [copiedPassKey, setCopiedPassKey] = useState(false);
   const autoVerifyInFlightRef = useRef(false);
   const shopConfig = getStoredKofiShopConfig();
+
+  useEffect(() => {
+    if (verifyCooldownSec <= 0) return;
+    const timerId = window.setInterval(() => {
+      setVerifyCooldownSec((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timerId);
+  }, [verifyCooldownSec]);
 
   const activateVerifiedPass = useCallback(
     async (issuedPass: StudioPassRecord) => {
@@ -553,6 +562,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         setLocalDeviceClaimedKofi(true);
         invalidateCheckoutCapabilityCache();
       }
+      setVerifyCooldownSec(0);
       clearPendingCheckoutStorage();
       setPendingCheckout(null);
       setCheckoutStep('select');
@@ -596,6 +606,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setErrorMessage(null);
+    setVerifyCooldownSec(0);
     setLocalDeviceClaimedKofi(hasDeviceClaimedKofiStarter());
     if (activePass) {
       setCheckoutStep('select');
@@ -776,46 +787,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     }
   };
 
-  const buildFriendlyVerificationFallbackMessage = (
-    status: number,
-    resOk: boolean,
-    checkout: NonNullable<typeof pendingCheckout>
-  ): string => {
-    if (!resOk) {
-      if (status === 403) {
-        if (checkout.provider === 'kofi') {
-          return 'Verification was paused by a browser or network security check (403). Here’s what to try: (1) tap Verify again in a few seconds, or (2) open this page in Chrome or Safari (outside an in-app browser or VPN), tap Switch plan below to restart your claim, and verify using your Ko-fi email.';
-        }
-        return 'Verification was paused by a browser or network security check (403). Please try tapping Verify again, or open this page in Chrome or Safari and tap Switch plan or enter your Order ID under Have a Key?.';
-      }
-      if (status === 401) {
-        return 'Your verification session needs a quick refresh. Please tap Switch plan below to restart your claim — your bouquet stays safe on the canvas.';
-      }
-      if (status === 404) {
-        return 'This checkout window timed out before verification finished. Tap Switch plan below to start a fresh claim — your bouquet is still saved.';
-      }
-      if (status === 429) {
-        return 'Too many verification checks in a row — please wait about a minute, then tap Verify again.';
-      }
-      if (status >= 500) {
-        return 'Our verification server is taking a brief breather. Please wait a few seconds and tap Verify again — your bouquet stays saved.';
-      }
-      return 'We couldn’t finish verifying just yet. Please wait a moment and tap Verify again, or tap Switch plan below to refresh your checkout.';
-    }
-    if (checkout.provider === 'kofi' && checkout.isKofiLaunchStarter) {
-      return 'We’re still waiting for Ko-fi to confirm your $0 claim. Make sure you finished checkout on Ko-fi above, check your email spelling, wait 5–10 seconds, and tap Verify again.';
-    }
-    return 'Your order is still being confirmed. Please finish checkout above, wait a few seconds, and tap Verify again.';
-  };
-
   const handleCompleteVerification = async () => {
-    if (!pendingCheckout) return;
+    if (!pendingCheckout || isProcessing || verifyCooldownSec > 0) return;
     if (pendingCheckout.provider === 'kofi' && pendingCheckout.liveGatewayConfigured) {
       const trimmedEmail = buyerEmail.trim();
       if (!trimmedEmail || !trimmedEmail.includes('@')) {
-        setErrorMessage(
-          'Please enter the email address you used on your Ko-fi order (for example, you@example.com) so we can match your claim.'
-        );
+        setErrorMessage('Please enter the email address you used on Ko-fi.');
         return;
       }
     }
@@ -842,18 +819,21 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           invalidateCheckoutCapabilityCache();
           handleDiscardPendingCheckout();
         }
-        setErrorMessage(
-          data?.message ||
-            buildFriendlyVerificationFallbackMessage(res.status, res.ok, pendingCheckout)
-        );
+        setVerifyCooldownSec(3);
+        const fallbackMsg =
+          data && typeof data.message === 'string' && data.message.trim()
+            ? data.message
+            : res.status === 402
+            ? 'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.'
+            : "Couldn't verify right now—please wait a few seconds and tap Verify again.";
+        setErrorMessage(fallbackMsg);
         return;
       }
 
       await activateVerifiedPass(data.pass as StudioPassRecord);
     } catch {
-      setErrorMessage(
-        'We had trouble reaching the verification server. Please check your internet connection and tap Verify again in a moment — your bouquet stays saved.'
-      );
+      setVerifyCooldownSec(3);
+      setErrorMessage("Couldn't verify right now—please wait a few seconds and tap Verify again.");
     } finally {
       setIsProcessing(false);
     }
@@ -863,6 +843,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     clearPendingCheckoutStorage();
     setPendingCheckout(null);
     setCheckoutStep('select');
+    setVerifyCooldownSec(0);
     setErrorMessage(null);
   };
 
@@ -891,9 +872,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           onStealthGateTriggered?.(data.gatePath, data.gateSlug);
           return;
         }
-        setErrorMessage('Could not open private link.');
+        setErrorMessage('Invalid or expired pass key.');
       } catch {
-        setErrorMessage('Connection error. Please try again.');
+        setErrorMessage("Couldn't verify right now—please wait a few seconds and tap Verify again.");
       } finally {
         setIsProcessing(false);
       }
@@ -904,7 +885,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     const isOrderIdLookup = /^(SB-[A-F0-9]{8,16}|BG[A-F0-9]{8,20})$/.test(upperTrimmed);
     const cleanedKey = isOrderIdLookup ? upperTrimmed : normalizePassKey(redeemInput);
     if (!cleanedKey) {
-      setErrorMessage('Please enter your BLOOM-XXXX-XXXX Pass Key or SB-... Order ID.');
+      setErrorMessage('Please enter your pass key.');
       return;
     }
 
@@ -921,12 +902,13 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           bouquetCode: bouquetCode || null,
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok || !data.pass) {
-        setErrorMessage(
-          data.message ||
-            'We couldn’t activate that key. Please double-check your code or choose a Studio Pass in the Passes tab.'
-        );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok || !data?.pass) {
+        if (res.status === 402 && typeof data?.message === 'string' && data.message.trim()) {
+          setErrorMessage(data.message);
+        } else {
+          setErrorMessage('Invalid or expired pass key.');
+        }
         return;
       }
 
@@ -946,7 +928,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         setActiveView('pass_card');
       }
     } catch {
-      setErrorMessage('We couldn’t verify your Pass Key right now. Please check your connection and try again.');
+      setErrorMessage("Couldn't verify right now—please wait a few seconds and tap Verify again.");
     } finally {
       setIsProcessing(false);
     }
@@ -1564,7 +1546,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       value={buyerEmail}
                       onChange={(e) => setBuyerEmail(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isProcessing) {
+                        if (e.key === 'Enter' && !isProcessing && verifyCooldownSec === 0) {
                           e.preventDefault();
                           void handleCompleteVerification();
                         }
@@ -1623,7 +1605,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               <button
                 type="button"
                 data-testid="confirm-checkout-verify-btn"
-                disabled={isProcessing}
+                disabled={isProcessing || verifyCooldownSec > 0}
                 onClick={handleCompleteVerification}
                 className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer disabled:opacity-50 ${
                   isDarkMode
@@ -1633,6 +1615,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               >
                 {isProcessing
                   ? 'Verifying...'
+                  : verifyCooldownSec > 0
+                  ? `Wait ${verifyCooldownSec}s...`
                   : pendingCheckout.isKofiLaunchStarter
                   ? 'Verify Email & Claim Free Unlock'
                   : pendingCheckout.provider === 'kofi' ||

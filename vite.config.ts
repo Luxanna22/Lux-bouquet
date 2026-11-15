@@ -156,12 +156,28 @@ function handlePaymentsMiddleware(
   res: ServerResponse,
   next: () => void
 ) {
+  if (
+    !req.url ||
+    (!req.url.startsWith('/api/payments/') && !req.url.startsWith('/api/webhooks/'))
+  ) {
+    next();
+    return;
+  }
   handlePaymentApiMiddleware(req, res)
     .then((handled) => {
       if (!handled) next();
     })
     .catch(() => {
-      next();
+      if (!res.writableEnded) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(
+          JSON.stringify({
+            ok: false,
+            message: "Couldn't verify right now—please wait a few seconds and tap Verify again.",
+          })
+        );
+      }
     });
 }
 
@@ -276,10 +292,12 @@ export default defineConfig({
   server: {
     port: 3000,
     host: '0.0.0.0',
+    allowedHosts: true,
   },
   preview: {
     port: 3000,
     host: '0.0.0.0',
+    allowedHosts: true,
   },
 });
 

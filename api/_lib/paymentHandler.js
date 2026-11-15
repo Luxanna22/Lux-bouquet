@@ -3950,10 +3950,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       if (!pending) {
-        sendJson(res, 404, {
+        sendJson(res, 402, {
           ok: false,
+          status: 'NO_MATCHING_ORDER',
           message:
-            'This checkout window expired before it finished verifying. Tap Switch plan below to start a fresh claim — your bouquet is still saved.',
+            'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.',
         });
         return true;
       }
@@ -3961,8 +3962,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (!decodedToken && !timingSafeMatch(pending.checkoutToken, checkoutToken)) {
         sendJson(res, 403, {
           ok: false,
-          message:
-            'This checkout session needs a quick refresh. Tap Switch plan below to start a fresh claim — your bouquet is still saved.',
+          message: "Couldn't verify right now—please wait a few seconds and tap Verify again.",
         });
         return true;
       }
@@ -3970,8 +3970,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (pending.deviceTokenHash !== deviceTokenHash) {
         sendJson(res, 403, {
           ok: false,
-          message:
-            'It looks like this claim was started in a different browser, tab, or incognito window. Tap Switch plan below to start a fresh claim right here.',
+          message: "Couldn't verify right now—please wait a few seconds and tap Verify again.",
         });
         return true;
       }
@@ -4356,12 +4355,14 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           Boolean(buyerEmail));
 
       if (isKofiLiveRequired && pending.status !== 'paid') {
+        const UNIFIED_KOFI_NO_MATCH_MESSAGE =
+          'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.';
+
         if (!buyerEmail || !buyerEmail.includes('@')) {
           sendJson(res, 400, {
             ok: false,
             status: 'EMAIL_REQUIRED',
-            message:
-              'Please enter the email address you typed on Ko-fi checkout so we can match your confirmation.',
+            message: 'Please enter the email address you used on Ko-fi.',
           });
           return true;
         }
@@ -4397,70 +4398,37 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         };
 
+        await hydratePersistentOwnerVaultServer();
+
         const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, pending.tier);
         const receiptSlot =
           SERVER_PASS_STORE.get(emailTierSlotKey) ||
           (await fetchStudioPassFromFirestoreRest(emailTierSlotKey));
 
-        // If no valid receipt exists for the requested tier, check if the buyer ordered a different tier
-        if (!receiptSlot || !doesReceiptMatchTierCode(receiptSlot, pending.tier)) {
-          const otherTiers = ['single', 'pass_7d', 'pass_30d'].filter((t) => t !== pending.tier);
-          for (const otherTier of otherTiers) {
-            const otherSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, otherTier);
-            const candidate =
-              SERVER_PASS_STORE.get(otherSlotKey) ||
-              (await fetchStudioPassFromFirestoreRest(otherSlotKey));
-            if (
-              candidate &&
-              candidate.secondaryDeviceHash !== 'CLAIMED' &&
-              doesReceiptMatchTierCode(candidate, otherTier)
-            ) {
-              const otherPlanName = PRICING_CATALOG.INTL[otherTier]?.name || otherTier;
-              sendJson(res, 403, {
-                ok: false,
-                status: 'TIER_MISMATCH',
-                message: `We found your Ko-fi order for "${otherPlanName}"! Tap Switch plan below, select "${otherPlanName}", and verify your email there to unlock it.`,
-              });
-              return true;
-            }
-          }
+        const isReceiptFreeLaunch = Boolean(
+          pending.tier === 'single' &&
+            receiptSlot &&
+            (Boolean(pending.isKofiLaunchStarter) ||
+              String(receiptSlot.paymentReference || '').startsWith('kfl_'))
+        );
+        const deviceAlreadyClaimedLaunchStarter = Boolean(
+          (deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(deviceTokenHash)) ||
+            (pending.deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(pending.deviceTokenHash))
+        );
 
-          if (receiptSlot && !doesReceiptMatchTierCode(receiptSlot, pending.tier)) {
-            sendJson(res, 403, {
-              ok: false,
-              status: 'SHOP_ITEM_CODE_MISMATCH',
-              message: `We found a Ko-fi order for ${buyerEmail}, but it’s for a different shop item than "${pending.plan?.name || pending.tier}". Tap Switch plan below and choose the matching pass to unlock it.`,
-            });
-            return true;
-          }
-
+        // Unified anti-enumeration response for: not found, wrong tier, wrong item code,
+        // already claimed order, or already claimed $0 Founding Launch starter on this device.
+        if (
+          !receiptSlot ||
+          receiptSlot.tier !== pending.tier ||
+          !doesReceiptMatchTierCode(receiptSlot, pending.tier) ||
+          receiptSlot.secondaryDeviceHash === 'CLAIMED' ||
+          (isReceiptFreeLaunch && deviceAlreadyClaimedLaunchStarter)
+        ) {
           sendJson(res, 402, {
             ok: false,
-            status: 'PENDING_PAYMENT',
-            message: pending.isKofiLaunchStarter
-              ? `We haven’t received Ko-fi’s confirmation for ${buyerEmail} yet. Quick checklist: (1) tap "Claim $0 Single Bouquet on Ko-fi Shop" above and finish the $0 checkout, (2) check that this email matches your Ko-fi receipt email, and (3) wait 5–10 seconds for Ko-fi to notify us, then tap Verify again.`
-              : `We haven’t received Ko-fi’s confirmation for ${buyerEmail} (${pending.plan?.name || pending.tier}) yet. Please finish the Ko-fi Shop checkout above with that same email, wait 5–10 seconds for Ko-fi’s confirmation, and tap Verify again.`,
-          });
-          return true;
-        }
-
-        // Verify the Shop Order receipt matches the requested tier
-        if (receiptSlot.tier !== pending.tier) {
-          const matchedName = PRICING_CATALOG.INTL[receiptSlot.tier]?.name || receiptSlot.tier;
-          sendJson(res, 403, {
-            ok: false,
-            status: 'TIER_MISMATCH',
-            message: `We found your Ko-fi order for "${matchedName}". Tap Switch plan below and select "${matchedName}" to unlock it.`,
-          });
-          return true;
-        }
-
-        if (receiptSlot.secondaryDeviceHash === 'CLAIMED') {
-          sendJson(res, 403, {
-            ok: false,
-            status: 'ORDER_ALREADY_CLAIMED',
-            message:
-              'This Ko-fi order has already been unlocked! If you saved your BLOOM-XXXX-XXXX key, enter it under "Have a Key?" at the top — or tap Switch plan to choose another pass.',
+            status: 'NO_MATCHING_ORDER',
+            message: UNIFIED_KOFI_NO_MATCH_MESSAGE,
           });
           return true;
         }
@@ -4476,11 +4444,6 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         await saveStudioPassToFirestoreRest(claimedSlot);
 
         // Issue the buyer's device-bound Pass Key (`BLOOM-XXXX-XXXX`)
-        await hydratePersistentOwnerVaultServer();
-        const isReceiptFreeLaunch =
-          pending.tier === 'single' &&
-          (Boolean(pending.isKofiLaunchStarter) ||
-            String(receiptSlot.paymentReference || '').startsWith('kfl_'));
         const rawSlotRef = String(receiptSlot.paymentReference || 'kofi_shop');
         const slotRefPrefix = rawSlotRef.includes('_')
           ? rawSlotRef.slice(0, rawSlotRef.lastIndexOf('_'))
@@ -4633,11 +4596,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
 
         if (!orderSlot || !verifyServerPaymentReference(orderSlot)) {
-          sendJson(res, 404, {
+          sendJson(res, 403, {
             ok: false,
-            status: 'ORDER_NOT_FOUND',
-            message:
-              'We couldn’t find that Order ID yet. Please check the code, or open this page in the same browser where you started checkout.',
+            status: 'INVALID_OR_EXPIRED',
+            message: 'Invalid or expired pass key.',
           });
           return true;
         }
@@ -4645,9 +4607,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         if (orderSlot.primaryDeviceHash !== deviceTokenHash) {
           sendJson(res, 403, {
             ok: false,
-            status: 'DEVICE_MISMATCH',
-            message:
-              'For your security, Order IDs can only be activated on the same browser where checkout was started. Please enter your BLOOM-XXXX-XXXX Pass Key instead, or return to your original browser.',
+            status: 'INVALID_OR_EXPIRED',
+            message: 'Invalid or expired pass key.',
           });
           return true;
         }
@@ -4656,9 +4617,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         if (!Number.isFinite(slotExpMs) || Date.now() > slotExpMs) {
           sendJson(res, 403, {
             ok: false,
-            status: 'EXPIRED',
-            message:
-              'This pass has reached the end of its access window. Switch to the Passes tab anytime to unlock a fresh Studio Pass.',
+            status: 'INVALID_OR_EXPIRED',
+            message: 'Invalid or expired pass key.',
           });
           return true;
         }
@@ -4678,9 +4638,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         ) {
           sendJson(res, 403, {
             ok: false,
-            status: 'REVOKED',
-            message:
-              'This pass or order is no longer active. Please choose a Studio Pass in the Passes tab to unlock your bouquet.',
+            status: 'INVALID_OR_EXPIRED',
+            message: 'Invalid or expired pass key.',
           });
           return true;
         }
@@ -4703,8 +4662,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           if (!check.valid || !check.updatedPass) {
             sendJson(res, 403, {
               ok: false,
-              status: check.status,
-              message: check.message,
+              status: 'INVALID_OR_EXPIRED',
+              message: 'Invalid or expired pass key.',
             });
             return true;
           }
@@ -4730,9 +4689,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         if (orderSlot.tier === 'single' && Number(ledgerEntry?.bouquetsCreated || 0) >= 1) {
           sendJson(res, 403, {
             ok: false,
-            status: 'SINGLE_BOUQUET_ALREADY_USED',
-            message:
-              'This Single-Bouquet pass has already been used to seal a gift. To craft and send another Couture bouquet, choose a new Single Unlock or a 7-Day Pass in the Passes tab.',
+            status: 'INVALID_OR_EXPIRED',
+            message: 'Invalid or expired pass key.',
           });
           return true;
         }
@@ -4844,10 +4802,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         passKey.startsWith('BLOOM-SP') ||
         passKey === 'BLOOM-KCFG-SHOP'
       ) {
-        sendJson(res, 400, {
+        sendJson(res, 403, {
           ok: false,
-          status: 'INVALID_FORMAT',
-          message: 'Please enter a valid Pass Key (BLOOM-XXXX-XXXX) or Order ID (SB-...).',
+          status: 'INVALID_OR_EXPIRED',
+          message: 'Invalid or expired pass key.',
         });
         return true;
       }
@@ -4857,11 +4815,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const existingRecord = await resolveCanonicalStudioPassServer(passKey);
 
       if (!existingRecord) {
-        sendJson(res, 404, {
+        sendJson(res, 403, {
           ok: false,
-          status: 'NOT_FOUND',
-          message:
-            'We couldn’t find that Pass Key yet. Please check for typos, or switch to the Passes tab if you still need to complete checkout.',
+          status: 'INVALID_OR_EXPIRED',
+          message: 'Invalid or expired pass key.',
         });
         return true;
       }
@@ -4894,8 +4851,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
         sendJson(res, 403, {
           ok: false,
-          status: result.status,
-          message: result.message,
+          status: 'INVALID_OR_EXPIRED',
+          message: 'Invalid or expired pass key.',
         });
         return true;
       }
@@ -5515,7 +5472,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      // 4G-3. Check Recipient Pay-It-Forward Gift Box Eligibility
+      // 4G-3. Check Recipient Pay-It-Forward Gift Box Eligibility (Strict Boolean Only — No Anti-Abuse Enumeration)
       if (actionType === 'check_recipient_gift_offer') {
         const check = await checkRecipientGiftOfferServer({
           bouquetCode: parsed.bouquetCode,
@@ -5526,7 +5483,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
           isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
         });
-        sendJson(res, 200, check);
+        sendJson(res, 200, {
+          ok: Boolean(check.ok),
+          eligible: Boolean(check.eligible),
+        });
         return true;
       }
 
@@ -5535,10 +5495,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const safeCode = String(parsed.bouquetCode || '').replace(/[^0-9A-Za-z_-]/g, '');
         const cleanDevice = String(deviceTokenHash || '').trim();
         if (!safeCode || !cleanDevice || cleanDevice.length < 8) {
-          sendJson(res, 400, {
+          sendJson(res, 403, {
             ok: false,
-            status: 'INVALID_REQUEST',
-            message: 'Could not verify your gift session. Please refresh and try again.',
+            message: 'This gift offer is no longer available.',
           });
           return true;
         }
@@ -5556,15 +5515,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         if (!check.eligible) {
           sendJson(res, 403, {
             ok: false,
-            status: check.reason || 'INELIGIBLE',
-            message:
-              check.reason === 'BOUQUET_GIFT_ALREADY_CLAIMED'
-                ? 'Another friend has already unwrapped this bouquet’s gift! You can still craft a free bouquet anytime, or open Passes if you’d like Couture unlocks.'
-                : check.reason === 'DEVICE_ALREADY_CLAIMED'
-                ? 'You’ve already claimed a Founding Launch gift on this device! Enjoy crafting, or open Passes anytime if you’d like another Couture unlock.'
-                : check.reason === 'GLOBAL_CAP_REACHED'
-                ? 'All Founding Launch recipient gifts have been claimed — thank you for celebrating with us! You can still craft a free bouquet anytime.'
-                : 'This gift offer has ended, but you can still craft and send a free bouquet anytime.',
+            message: 'This gift offer is no longer available.',
           });
           return true;
         }
@@ -5626,9 +5577,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
         sendJson(res, 200, {
           ok: true,
-          hop,
           pass: silentPass,
-          launchPromo: getFoundingLaunchPromoStatusServer(cleanDevice),
         });
         return true;
       }

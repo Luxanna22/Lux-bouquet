@@ -1317,7 +1317,7 @@ export async function verifyStudioPassOnServer(params: {
     return {
       valid: false,
       status: 'TAMPERED_SIGNATURE',
-      message: 'Could not verify your Studio Pass right now. Please check your connection and try again.',
+      message: "Couldn't verify right now—please wait a few seconds and tap Verify again.",
     };
   }
 }
