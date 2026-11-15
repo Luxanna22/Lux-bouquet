@@ -1417,6 +1417,7 @@ export interface PendingCheckoutStorageRecord {
   passKeyPreview?: string | null;
   plan?: PricingTierPlan | null;
   liveGatewayConfigured?: boolean;
+  isKofiLaunchStarter?: boolean;
   bouquetCode?: string | null;
   resumeAction: 'share' | 'png' | 'pass_menu';
   createdAtMs: number;
@@ -1464,5 +1465,310 @@ export function clearPendingCheckoutStorage(): void {
     // Ignore storage errors
   }
 }
+
+// ============================================================================
+// 7. FOUNDING LAUNCH PROMO (15-LIMIT KO-FI STARTER + PAY-IT-FORWARD GIFT BOX)
+// ============================================================================
+
+export const FOUNDING_KOFI_STARTER_DEFAULT_LIMIT = 30;
+export const FOUNDING_RECIPIENT_GIFT_DEFAULT_LIMIT = 150;
+export const FOUNDING_RECIPIENT_GIFT_MAX_HOPS = 3;
+export const FOUNDING_RECIPIENT_GIFT_MIN_STEMS = 3;
+export const FOUNDING_RECIPIENT_GIFT_MIN_NOTE_CHARS = 15;
+
+export const KOFI_STARTER_CLAIMED_STORAGE_KEY = 'sab_kofi_launch_starter_claimed_v1';
+export const RECIPIENT_GIFT_CLAIMED_STORAGE_KEY = 'sab_recipient_pif_gift_claimed_v1';
+
+export interface FoundingLaunchPromoStatus {
+  kofiLaunchEnabled: boolean;
+  kofiLaunchMaxLimit: number;
+  kofiLaunchClaimedCount: number;
+  kofiLaunchRemaining: number;
+  deviceClaimedKofiStarter: boolean;
+  isKofiFreeStarterAvailable: boolean;
+  recipientGiftEnabled: boolean;
+  recipientGiftMaxLimit: number;
+  recipientGiftClaimedCount: number;
+  recipientGiftRemaining: number;
+}
+
+export function hasDeviceClaimedKofiStarter(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(KOFI_STARTER_CLAIMED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markDeviceClaimedKofiStarter(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(KOFI_STARTER_CLAIMED_STORAGE_KEY, '1');
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function hasDeviceClaimedRecipientGift(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(RECIPIENT_GIFT_CLAIMED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markDeviceClaimedRecipientGift(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(RECIPIENT_GIFT_CLAIMED_STORAGE_KEY, '1');
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function isKofiLaunchStarterPass(
+  pass?: Pick<StudioPassRecord, 'paymentReference'> | null
+): boolean {
+  if (!pass || typeof pass.paymentReference !== 'string') return false;
+  return pass.paymentReference.trim().toLowerCase().startsWith('kfl_');
+}
+
+export function isSilentRecipientGiftPass(
+  pass?: Pick<StudioPassRecord, 'paymentReference'> | null
+): boolean {
+  if (!pass || typeof pass.paymentReference !== 'string') return false;
+  return pass.paymentReference.trim().toLowerCase().startsWith('pif_');
+}
+
+export function isFoundingPromoFreePass(
+  pass?: Pick<StudioPassRecord, 'paymentReference'> | null
+): boolean {
+  return isKofiLaunchStarterPass(pass) || isSilentRecipientGiftPass(pass);
+}
+
+/**
+ * Returns the viral chain hop depth of a pass:
+ * - `0` for Owner/Tester seed passes, Paid passes, or Ko-fi Launch Starter passes (`kfl_`)
+ * - `1..3` for Pay-It-Forward Recipient Gift passes (`pif_h1_...`, `pif_h2_...`, `pif_h3_...`)
+ * - `null` if no valid pass was used
+ */
+export function extractPassChainHop(
+  pass?: Pick<
+    StudioPassRecord,
+    'passKey' | 'paymentProvider' | 'secondaryDeviceHash' | 'paymentReference'
+  > | null
+): number | null {
+  if (!pass || !isValidPassKeyFormat(pass.passKey)) return null;
+  const ref = String(pass.paymentReference || '').trim().toLowerCase();
+  if (ref.startsWith('pif_')) {
+    const match = ref.match(/^pif_h(\d+)/);
+    if (match && match[1]) {
+      const parsed = Number.parseInt(match[1], 10);
+      if (Number.isFinite(parsed) && parsed >= 1) {
+        return parsed;
+      }
+    }
+    return 1;
+  }
+  return 0;
+}
+
+export function evaluateKofiStarterAvailability(params: {
+  enabled?: boolean;
+  claimedCount?: number;
+  maxLimit?: number;
+  deviceAlreadyClaimed?: boolean;
+}): {
+  available: boolean;
+  remaining: number;
+  claimedCount: number;
+  maxLimit: number;
+  reason: 'ELIGIBLE' | 'PROMO_DISABLED' | 'DEVICE_ALREADY_CLAIMED' | 'STOCK_DEPLETED';
+} {
+  const enabled = params.enabled !== false;
+  const maxLimit =
+    typeof params.maxLimit === 'number' && Number.isFinite(params.maxLimit) && params.maxLimit >= 0
+      ? Math.round(params.maxLimit)
+      : FOUNDING_KOFI_STARTER_DEFAULT_LIMIT;
+  const claimedCount =
+    typeof params.claimedCount === 'number' &&
+    Number.isFinite(params.claimedCount) &&
+    params.claimedCount >= 0
+      ? Math.round(params.claimedCount)
+      : 0;
+  const remaining = Math.max(0, maxLimit - claimedCount);
+  const reason = !enabled
+    ? 'PROMO_DISABLED'
+    : params.deviceAlreadyClaimed
+    ? 'DEVICE_ALREADY_CLAIMED'
+    : remaining <= 0
+    ? 'STOCK_DEPLETED'
+    : 'ELIGIBLE';
+  const available = reason === 'ELIGIBLE';
+  return {
+    available,
+    remaining,
+    claimedCount,
+    maxLimit,
+    reason,
+  };
+}
+
+export function evaluateBouquetRecipientGiftEligibility(params: {
+  snapshot?: Partial<Pick<BouquetSnapshot, 'items' | 'card'>> | null;
+  pass?: Pick<
+    StudioPassRecord,
+    'passKey' | 'paymentProvider' | 'secondaryDeviceHash' | 'paymentReference'
+  > | null;
+  isCuratedSeedBouquet?: boolean;
+  maxChainHops?: number;
+  minVisibleStems?: number;
+  minNoteChars?: number;
+}): {
+  eligibleToSpawnOffer: boolean;
+  nextHop: number;
+  visibleStemCount: number;
+  noteCharCount: number;
+  reason: string;
+} {
+  const maxHops = params.maxChainHops ?? FOUNDING_RECIPIENT_GIFT_MAX_HOPS;
+  const minStems = params.minVisibleStems ?? FOUNDING_RECIPIENT_GIFT_MIN_STEMS;
+  const minNote = params.minNoteChars ?? FOUNDING_RECIPIENT_GIFT_MIN_NOTE_CHARS;
+
+  const visibleItems = Array.isArray(params.snapshot?.items)
+    ? params.snapshot!.items!.filter((item) => item && !item.hidden)
+    : [];
+  const visibleStemCount = visibleItems.length;
+  const rawMessage = String(params.snapshot?.card?.message || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const noteCharCount = rawMessage.length;
+
+  if (visibleStemCount < minStems) {
+    return {
+      eligibleToSpawnOffer: false,
+      nextHop: 0,
+      visibleStemCount,
+      noteCharCount,
+      reason: 'INSUFFICIENT_STEMS',
+    };
+  }
+
+  if (noteCharCount < minNote) {
+    return {
+      eligibleToSpawnOffer: false,
+      nextHop: 0,
+      visibleStemCount,
+      noteCharCount,
+      reason: 'NOTE_TOO_SHORT',
+    };
+  }
+
+  const sourceHop = params.isCuratedSeedBouquet ? 0 : extractPassChainHop(params.pass);
+  if (sourceHop === null) {
+    return {
+      eligibleToSpawnOffer: false,
+      nextHop: 0,
+      visibleStemCount,
+      noteCharCount,
+      reason: 'NO_ELIGIBLE_SEED_PASS',
+    };
+  }
+
+  if (sourceHop >= maxHops) {
+    return {
+      eligibleToSpawnOffer: false,
+      nextHop: sourceHop + 1,
+      visibleStemCount,
+      noteCharCount,
+      reason: 'MAX_CHAIN_HOPS_REACHED',
+    };
+  }
+
+  return {
+    eligibleToSpawnOffer: true,
+    nextHop: sourceHop + 1,
+    visibleStemCount,
+    noteCharCount,
+    reason: 'ELIGIBLE',
+  };
+}
+
+export function evaluateRecipientGiftClaimGuard(params: {
+  recipientGiftEnabled?: boolean;
+  globalClaimedCount?: number;
+  globalMaxLimit?: number;
+  slotStatus?: 'OPEN' | 'CLAIMED' | null;
+  slotHop?: number;
+  maxChainHops?: number;
+  creatorDeviceHash?: string | null;
+  viewerDeviceHash?: string | null;
+  viewerCreatedBouquetLocally?: boolean;
+  viewerAlreadyClaimedRecipientGift?: boolean;
+  isPreviewMode?: boolean;
+}): {
+  canShowAndClaim: boolean;
+  reason: string;
+  remainingGlobal: number;
+} {
+  const maxLimit =
+    typeof params.globalMaxLimit === 'number' &&
+    Number.isFinite(params.globalMaxLimit) &&
+    params.globalMaxLimit >= 0
+      ? Math.round(params.globalMaxLimit)
+      : FOUNDING_RECIPIENT_GIFT_DEFAULT_LIMIT;
+  const claimedCount =
+    typeof params.globalClaimedCount === 'number' &&
+    Number.isFinite(params.globalClaimedCount) &&
+    params.globalClaimedCount >= 0
+      ? Math.round(params.globalClaimedCount)
+      : 0;
+  const remainingGlobal = Math.max(0, maxLimit - claimedCount);
+
+  if (params.isPreviewMode) {
+    return { canShowAndClaim: false, reason: 'PREVIEW_MODE', remainingGlobal };
+  }
+  if (params.recipientGiftEnabled === false) {
+    return { canShowAndClaim: false, reason: 'PROMO_DISABLED', remainingGlobal };
+  }
+  if (remainingGlobal <= 0) {
+    return { canShowAndClaim: false, reason: 'GLOBAL_CAP_REACHED', remainingGlobal: 0 };
+  }
+  if (params.slotStatus !== 'OPEN') {
+    return {
+      canShowAndClaim: false,
+      reason: params.slotStatus === 'CLAIMED' ? 'BOUQUET_GIFT_ALREADY_CLAIMED' : 'NO_GIFT_SLOT',
+      remainingGlobal,
+    };
+  }
+  const maxHops = params.maxChainHops ?? FOUNDING_RECIPIENT_GIFT_MAX_HOPS;
+  const hop = params.slotHop ?? 1;
+  if (hop < 1 || hop > maxHops) {
+    return { canShowAndClaim: false, reason: 'CHAIN_HOP_EXCEEDED', remainingGlobal };
+  }
+  if (params.viewerCreatedBouquetLocally) {
+    return { canShowAndClaim: false, reason: 'CREATOR_SELF_CLAIM_BLOCKED', remainingGlobal };
+  }
+  if (
+    params.creatorDeviceHash &&
+    params.viewerDeviceHash &&
+    params.creatorDeviceHash.trim() !== '' &&
+    params.creatorDeviceHash.trim() === params.viewerDeviceHash.trim()
+  ) {
+    return { canShowAndClaim: false, reason: 'CREATOR_DEVICE_MATCH', remainingGlobal };
+  }
+  if (params.viewerAlreadyClaimedRecipientGift) {
+    return { canShowAndClaim: false, reason: 'DEVICE_ALREADY_CLAIMED', remainingGlobal };
+  }
+
+  return {
+    canShowAndClaim: true,
+    reason: 'ELIGIBLE',
+    remainingGlobal,
+  };
+}
+
 
 

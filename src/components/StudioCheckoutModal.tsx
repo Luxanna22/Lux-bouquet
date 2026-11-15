@@ -5,12 +5,19 @@ import {
   BouquetPremiumInspection,
   clearPendingCheckoutStorage,
   detectPricingRegion,
-  formatPassRemainingTime,
+  evaluateKofiStarterAvailability,
+   formatPassRemainingTime,
+  FOUNDING_KOFI_STARTER_DEFAULT_LIMIT,
+  FoundingLaunchPromoStatus,
   getOrCreateDeviceTokenHash,
   getPricingCatalog,
   getStoredKofiShopConfig,
+  hasDeviceClaimedKofiStarter,
+  isKofiLaunchStarterPass,
+  isSilentRecipientGiftPass,
   isTesterVoucherPass,
   loadPendingCheckoutStorage,
+  markDeviceClaimedKofiStarter,
   normalizePassKey,
   parseTesterVoucherMeta,
   PremiumAssetConfig,
@@ -378,6 +385,7 @@ export interface CheckoutCapabilityState {
   defaultRegion: PricingRegion;
   phGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
   initialGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
+  launchPromo?: FoundingLaunchPromoStatus | null;
 }
 
 let cachedCheckoutCapability: CheckoutCapabilityState | null = null;
@@ -393,6 +401,7 @@ function resolveInitialGatewayFromConfig(cfg: {
   phDisabled?: boolean;
   defaultRegion?: PricingRegion;
   phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
+  launchPromo?: FoundingLaunchPromoStatus | null;
 }): CheckoutCapabilityState {
   if (cfg.phDisabled) {
     return {
@@ -401,6 +410,7 @@ function resolveInitialGatewayFromConfig(cfg: {
       defaultRegion: 'INTL',
       phGateway: null,
       initialGateway: 'kofi',
+      launchPromo: cfg.launchPromo || null,
     };
   }
   const eligible = Boolean(cfg.isPhEligible && cfg.phGateway);
@@ -422,6 +432,7 @@ function resolveInitialGatewayFromConfig(cfg: {
     defaultRegion: cfg.defaultRegion === 'PH' ? 'PH' : 'INTL',
     phGateway: phGw,
     initialGateway,
+    launchPromo: cfg.launchPromo || null,
   };
 }
 
@@ -432,7 +443,14 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
   if (inFlightCapabilityPromise) {
     return inFlightCapabilityPromise;
   }
-  inFlightCapabilityPromise = fetch('/api/payments/create-checkout', { method: 'GET' })
+  const deviceTokenHash =
+    typeof window !== 'undefined' ? getOrCreateDeviceTokenHash() : '';
+  const querySuffix = deviceTokenHash
+    ? `?deviceTokenHash=${encodeURIComponent(deviceTokenHash)}`
+    : '';
+  inFlightCapabilityPromise = fetch(`/api/payments/create-checkout${querySuffix}`, {
+    method: 'GET',
+  })
     .then(async (res) => {
       if (!res.ok) return null;
       return (await res.json().catch(() => null)) as {
@@ -441,6 +459,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
         phDisabled?: boolean;
         defaultRegion?: PricingRegion;
         phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
+        launchPromo?: FoundingLaunchPromoStatus | null;
       } | null;
     })
     .then((cfg) => {
@@ -453,6 +472,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
               defaultRegion: 'INTL' as PricingRegion,
               phGateway: null,
               initialGateway: 'kofi' as const,
+              launchPromo: null,
             };
       cachedCheckoutCapability = resolved;
       return resolved;
@@ -463,6 +483,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
       defaultRegion: 'INTL' as PricingRegion,
       phGateway: null,
       initialGateway: 'kofi' as const,
+      launchPromo: null,
     }))
     .finally(() => {
       inFlightCapabilityPromise = null;
@@ -493,6 +514,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const [paymentGateway, setPaymentGateway] = useState<
     'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi'
   >(() => cachedCheckoutCapability?.initialGateway ?? 'kofi');
+  const [launchPromo, setLaunchPromo] = useState<FoundingLaunchPromoStatus | null>(
+    () => cachedCheckoutCapability?.launchPromo ?? null
+  );
+  const [localDeviceClaimedKofi, setLocalDeviceClaimedKofi] = useState<boolean>(() =>
+    hasDeviceClaimedKofiStarter()
+  );
   const [bayadgateMethod, setBayadgateMethod] = useState<BayadgatePaymentMethod>('GCASH');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : initialView === 'redeem' ? 'redeem' : 'plans')
@@ -508,6 +535,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     paymentMethod?: BayadgatePaymentMethod | null;
     checkoutUrl: string | null;
     liveGatewayConfigured: boolean;
+    isKofiLaunchStarter?: boolean;
   } | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -520,6 +548,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 
   const activateVerifiedPass = useCallback(
     async (issuedPass: StudioPassRecord) => {
+      if (isKofiLaunchStarterPass(issuedPass) || pendingCheckout?.isKofiLaunchStarter) {
+        markDeviceClaimedKofiStarter();
+        setLocalDeviceClaimedKofi(true);
+        invalidateCheckoutCapabilityCache();
+      }
       clearPendingCheckoutStorage();
       setPendingCheckout(null);
       setCheckoutStep('select');
@@ -531,7 +564,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         setActiveView('pass_card');
       }
     },
-    [onPassActivated, onClose, triggerAction]
+    [onPassActivated, onClose, triggerAction, pendingCheckout]
   );
 
   const trySilentPendingVerification = useCallback(async () => {
@@ -563,6 +596,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setErrorMessage(null);
+    setLocalDeviceClaimedKofi(hasDeviceClaimedKofiStarter());
     if (activePass) {
       setCheckoutStep('select');
       setPendingCheckout(null);
@@ -587,6 +621,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           paymentMethod: storedPending.paymentMethod || null,
           checkoutUrl: storedPending.checkoutUrl || null,
           liveGatewayConfigured: Boolean(storedPending.liveGatewayConfigured ?? true),
+          isKofiLaunchStarter: Boolean(storedPending.isKofiLaunchStarter),
         });
         setCheckoutStep('qr_confirm');
       } else {
@@ -598,6 +633,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     if (cachedCheckoutCapability) {
       setIsPhEligible(cachedCheckoutCapability.isPhEligible);
       setPaymentGateway(cachedCheckoutCapability.initialGateway);
+      setLaunchPromo(cachedCheckoutCapability.launchPromo ?? null);
       setIsResolvingRegion(false);
       return;
     }
@@ -608,6 +644,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       if (cancelled) return;
       setIsPhEligible(resolved.isPhEligible);
       setPaymentGateway(resolved.initialGateway);
+      setLaunchPromo(resolved.launchPromo ?? null);
       setIsResolvingRegion(false);
     });
 
@@ -657,27 +694,48 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const plans = getPricingCatalog(region);
   const currentPlan = plans.find((p) => p.tier === selectedTier) || plans[1];
 
+  const kofiStarterEval = evaluateKofiStarterAvailability({
+    enabled: launchPromo ? launchPromo.kofiLaunchEnabled : true,
+    claimedCount: launchPromo?.kofiLaunchClaimedCount ?? 0,
+    maxLimit: launchPromo?.kofiLaunchMaxLimit ?? FOUNDING_KOFI_STARTER_DEFAULT_LIMIT,
+    deviceAlreadyClaimed: Boolean(
+      localDeviceClaimedKofi || launchPromo?.deviceClaimedKofiStarter
+    ),
+  });
+  const isSingleFreeLaunchActive = kofiStarterEval.available;
+
   const handleStartCheckout = async () => {
     setErrorMessage(null);
     setIsProcessing(true);
     try {
       const deviceTokenHash = getOrCreateDeviceTokenHash();
+      const claimingFreeLaunchStarter =
+        selectedTier === 'single' && isSingleFreeLaunchActive;
+      const effectiveProvider = claimingFreeLaunchStarter ? 'kofi' : paymentGateway;
       const res = await fetch('/api/payments/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tier: selectedTier,
-          region,
-          provider: paymentGateway,
-          paymentMethod: paymentGateway === 'bayadgate' ? bayadgateMethod : undefined,
+          region: claimingFreeLaunchStarter ? 'INTL' : region,
+          provider: effectiveProvider,
+          paymentMethod:
+            effectiveProvider === 'bayadgate' ? bayadgateMethod : undefined,
           deviceTokenHash,
           bouquetCode,
           shopCodes: shopConfig,
+          claimFreeLaunchStarter: claimingFreeLaunchStarter,
           origin: typeof window !== 'undefined' ? window.location.origin : '',
         }),
       });
       const data = await res.json();
+      if (data?.launchPromo) {
+        setLaunchPromo(data.launchPromo as FoundingLaunchPromoStatus);
+      }
       if (!res.ok || !data.ok) {
+        if (data?.code === 'LAUNCH_PROMO_UNAVAILABLE') {
+          invalidateCheckoutCapabilityCache();
+        }
         setErrorMessage(data.message || 'Could not start checkout.');
         return;
       }
@@ -692,6 +750,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         paymentMethod: (data.paymentMethod || null) as BayadgatePaymentMethod | null,
         checkoutUrl: data.checkoutUrl || null,
         liveGatewayConfigured: Boolean(data.liveGatewayConfigured),
+        isKofiLaunchStarter: Boolean(data.isKofiLaunchStarter),
       };
       setPendingCheckout(nextPending);
       savePendingCheckoutStorage({
@@ -704,6 +763,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         passKeyPreview: nextPending.passKeyPreview,
         plan: nextPending.plan,
         liveGatewayConfigured: nextPending.liveGatewayConfigured,
+        isKofiLaunchStarter: nextPending.isKofiLaunchStarter,
         bouquetCode: bouquetCode || null,
         resumeAction: triggerAction,
         createdAtMs: Date.now(),
@@ -716,12 +776,46 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     }
   };
 
+  const buildFriendlyVerificationFallbackMessage = (
+    status: number,
+    resOk: boolean,
+    checkout: NonNullable<typeof pendingCheckout>
+  ): string => {
+    if (!resOk) {
+      if (status === 403) {
+        if (checkout.provider === 'kofi') {
+          return 'Verification was paused by a browser or network security check (403). Here’s what to try: (1) tap Verify again in a few seconds, or (2) open this page in Chrome or Safari (outside an in-app browser or VPN), tap Switch plan below to restart your claim, and verify using your Ko-fi email.';
+        }
+        return 'Verification was paused by a browser or network security check (403). Please try tapping Verify again, or open this page in Chrome or Safari and tap Switch plan or enter your Order ID under Have a Key?.';
+      }
+      if (status === 401) {
+        return 'Your verification session needs a quick refresh. Please tap Switch plan below to restart your claim — your bouquet stays safe on the canvas.';
+      }
+      if (status === 404) {
+        return 'This checkout window timed out before verification finished. Tap Switch plan below to start a fresh claim — your bouquet is still saved.';
+      }
+      if (status === 429) {
+        return 'Too many verification checks in a row — please wait about a minute, then tap Verify again.';
+      }
+      if (status >= 500) {
+        return 'Our verification server is taking a brief breather. Please wait a few seconds and tap Verify again — your bouquet stays saved.';
+      }
+      return 'We couldn’t finish verifying just yet. Please wait a moment and tap Verify again, or tap Switch plan below to refresh your checkout.';
+    }
+    if (checkout.provider === 'kofi' && checkout.isKofiLaunchStarter) {
+      return 'We’re still waiting for Ko-fi to confirm your $0 claim. Make sure you finished checkout on Ko-fi above, check your email spelling, wait 5–10 seconds, and tap Verify again.';
+    }
+    return 'Your order is still being confirmed. Please finish checkout above, wait a few seconds, and tap Verify again.';
+  };
+
   const handleCompleteVerification = async () => {
     if (!pendingCheckout) return;
     if (pendingCheckout.provider === 'kofi' && pendingCheckout.liveGatewayConfigured) {
       const trimmedEmail = buyerEmail.trim();
       if (!trimmedEmail || !trimmedEmail.includes('@')) {
-        setErrorMessage('Enter the email address you typed on Ko-fi checkout (not your name).');
+        setErrorMessage(
+          'Please enter the email address you used on your Ko-fi order (for example, you@example.com) so we can match your claim.'
+        );
         return;
       }
     }
@@ -739,18 +833,27 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           buyerEmail: buyerEmail.trim().toLowerCase(),
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok || !data.pass) {
+      const data = await res.json().catch(() => null);
+      if (data?.launchPromo) {
+        setLaunchPromo(data.launchPromo as FoundingLaunchPromoStatus);
+      }
+      if (!res.ok || !data?.ok || !data?.pass) {
+        if (data?.code === 'LAUNCH_PROMO_DEPLETED') {
+          invalidateCheckoutCapabilityCache();
+          handleDiscardPendingCheckout();
+        }
         setErrorMessage(
-          data.message ||
-            'Your payment is still being confirmed. Please complete payment and tap Verify Order again in a moment.'
+          data?.message ||
+            buildFriendlyVerificationFallbackMessage(res.status, res.ok, pendingCheckout)
         );
         return;
       }
 
       await activateVerifiedPass(data.pass as StudioPassRecord);
     } catch {
-      setErrorMessage('We couldn’t reach the verification server right now. Please try again in a moment.');
+      setErrorMessage(
+        'We had trouble reaching the verification server. Please check your internet connection and tap Verify again in a moment — your bouquet stays saved.'
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -831,6 +934,11 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setPendingCheckout(null);
       setCheckoutStep('select');
       const verifiedPass = data.pass as StudioPassRecord;
+      if (isKofiLaunchStarterPass(verifiedPass)) {
+        markDeviceClaimedKofiStarter();
+        setLocalDeviceClaimedKofi(true);
+        invalidateCheckoutCapabilityCache();
+      }
       void saveStudioPassToFirestore(verifiedPass).catch(() => {});
       onPassActivated(verifiedPass, triggerAction);
       setRedeemInput('');
@@ -866,6 +974,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       compactName: 'Single Bouquet',
       allowance: '1 premium bouquet',
       galleryNote: '90-day gallery',
+      badge: isSingleFreeLaunchActive ? 'Launch Gift' : undefined,
     },
     pass_7d: {
       compactName: '7-Day Pass',
@@ -1009,7 +1118,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         {errorMessage && (
           <div
             role="alert"
-            className="mt-3 px-3 py-2 rounded-xl border border-dashed border-rose-400/60 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-200"
+            data-testid="checkout-error-alert"
+            className="mt-3 px-3.5 py-2.5 rounded-xl border border-dashed border-rose-400/60 bg-rose-500/10 text-xs leading-relaxed text-rose-700 dark:text-rose-200"
           >
             {errorMessage}
           </div>
@@ -1025,6 +1135,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               {plans.map((plan) => {
                 const isSelected = selectedTier === plan.tier;
                 const meta = planMeta[plan.tier];
+                const isFreeSingleCard =
+                  plan.tier === 'single' && isSingleFreeLaunchActive;
                 return (
                   <button
                     key={plan.tier}
@@ -1052,7 +1164,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                         <div className="min-h-[14px] flex items-center justify-center">
                           {meta.badge ? (
                             <span
-                              className={`text-[9.5px] uppercase tracking-[0.1em] font-semibold ${
+                              className={`text-[9px] sm:text-[9.5px] uppercase tracking-[0.06em] font-semibold leading-none whitespace-nowrap ${
                                 isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A5A44]'
                               }`}
                             >
@@ -1090,6 +1202,22 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                             isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
                           }`}
                         />
+                      ) : isFreeSingleCard ? (
+                        <span
+                          data-testid="single-launch-free-price"
+                          className="inline-flex items-baseline justify-center gap-1.5"
+                        >
+                          <span className="text-xs sm:text-sm line-through opacity-50 font-normal">
+                            {plan.displayPrice}
+                          </span>
+                          <span
+                            className={
+                              isDarkMode ? 'text-[#E8B4A6]' : 'text-[#9E5B4B]'
+                            }
+                          >
+                            FREE
+                          </span>
+                        </span>
                       ) : (
                         plan.displayPrice
                       )}
@@ -1145,6 +1273,27 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
                   }`}
                 />
+              </div>
+            ) : selectedTier === 'single' && isSingleFreeLaunchActive ? (
+              <div
+                data-testid="gateway-kofi-launch-free"
+                className={`py-2.5 px-3.5 rounded-xl border border-dashed flex items-center justify-between ${
+                  isDarkMode
+                    ? 'border-[#E6B89C] bg-[#3B302C]'
+                    : 'border-[#B47866] bg-[#FCF5F1]'
+                }`}
+              >
+                <div>
+                  <div className="text-xs font-semibold">
+                    Ko-fi Founding Launch · $0.00 Claim
+                  </div>
+                  <div className="text-[10px] opacity-75">
+                    Enter your email on my Ko-fi shop item
+                  </div>
+                </div>
+                <div className="text-[10.5px] font-medium text-[#B47866] dark:text-[#E8B4A6]">
+                  1 per device
+                </div>
               </div>
             ) : isPhEligible && paymentGateway === 'sikatpay' ? (
               <div
@@ -1235,6 +1384,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 ? 'Loading local pricing...'
                 : isProcessing
                 ? 'Preparing...'
+                : selectedTier === 'single' && isSingleFreeLaunchActive
+                ? `Claim Free Launch Bouquet · ${currentPlan.displayPrice} → FREE`
                 : `Continue · ${currentPlan.displayPrice}`}
             </button>
 
@@ -1269,7 +1420,19 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     className="text-xl font-medium"
                     style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                   >
-                    {pendingCheckout.plan.name} · {pendingCheckout.plan.displayPrice}
+                    {pendingCheckout.plan.name} ·{' '}
+                    {pendingCheckout.isKofiLaunchStarter ? (
+                      <>
+                        <span className="line-through opacity-55 text-base mr-1">
+                          $1.99
+                        </span>
+                        <span className="font-semibold text-[#9E5B4B] dark:text-[#E8B4A6]">
+                          FREE
+                        </span>
+                      </>
+                    ) : (
+                      pendingCheckout.plan.displayPrice
+                    )}
                   </div>
                   <div className="text-[11px] opacity-75">
                     {pendingCheckout.provider === 'sikatpay'
@@ -1284,6 +1447,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                         } · BayadGate PH`
                       : pendingCheckout.provider === 'paymongo'
                       ? 'QR Ph · GCash · Maya'
+                      : pendingCheckout.isKofiLaunchStarter
+                      ? 'Founding Launch · Limited Free Ko-fi Claim'
                       : 'Ko-fi Shop Order'}
                   </div>
                 </div>
@@ -1368,10 +1533,16 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       }`}
                     >
                       <CoutureBloomSeal className="w-4 h-4 shrink-0" />
-                      <span>Open {pendingCheckout.plan.name} on Ko-fi Shop ↗</span>
+                      <span>
+                        {pendingCheckout.isKofiLaunchStarter
+                          ? 'Claim $0 Single Bouquet on Ko-fi Shop ↗'
+                          : `Open ${pendingCheckout.plan.name} on Ko-fi Shop ↗`}
+                      </span>
                     </a>
                     <p className="text-[10.5px] opacity-70">
-                      1. Complete your order on Ko-fi, then verify your checkout email below
+                      {pendingCheckout.isKofiLaunchStarter
+                        ? '1. Claim the $0 Single Bouquet on Ko-fi, then enter the email you used below'
+                        : '1. Complete your order on Ko-fi, then verify your checkout email below'}
                     </p>
                   </div>
 
@@ -1384,7 +1555,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       htmlFor="kofi-buyer-email"
                       className="block text-[11px] font-medium opacity-85 text-center"
                     >
-                      2. Email typed on Ko-fi checkout (not your name)
+                      2. Email address used on Ko-fi checkout
                     </label>
                     <input
                       id="kofi-buyer-email"
@@ -1392,6 +1563,12 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       data-testid="kofi-buyer-email-input"
                       value={buyerEmail}
                       onChange={(e) => setBuyerEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isProcessing) {
+                          e.preventDefault();
+                          void handleCompleteVerification();
+                        }
+                      }}
                       placeholder="you@example.com"
                       className={`w-full px-3.5 py-2.5 rounded-xl border border-dashed text-xs text-center focus:outline-none focus:border-[#B4846C] ${
                         isDarkMode
@@ -1456,6 +1633,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
               >
                 {isProcessing
                   ? 'Verifying...'
+                  : pendingCheckout.isKofiLaunchStarter
+                  ? 'Verify Email & Claim Free Unlock'
                   : pendingCheckout.provider === 'kofi' ||
                     pendingCheckout.provider === 'bayadgate' ||
                     pendingCheckout.provider === 'sikatpay'
@@ -1541,6 +1720,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                         ? `Couture Tester Pass (${
                             parseTesterVoucherMeta(activePass).label
                           })`
+                        : isSilentRecipientGiftPass(activePass)
+                        ? 'Founding Launch Gift Unlock'
                         : activePass.tier === 'pass_30d'
                         ? '30-Day Pass'
                         : activePass.tier === 'pass_7d'
@@ -1554,6 +1735,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                   <p className="text-[11px] opacity-75 mt-0.5">
                     {isTesterVoucherPass(activePass)
                       ? `1-device Tester Voucher · ${activePass.retentionDays}-day gallery · Permanent gift links`
+                      : isSilentRecipientGiftPass(activePass)
+                      ? `1 free Couture Bouquet on this device · ${activePass.retentionDays}-day gallery · Permanent gift links`
                       : activePass.isEternalKeepsake
                       ? 'Unlimited for 30 days · Eternal gallery showcase · Permanent gift links'
                       : `All Couture pieces · ${activePass.retentionDays}-day gallery · Permanent gift links`}
@@ -1561,42 +1744,56 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 </div>
               </div>
 
-              <div
-                className={`px-3.5 py-2.5 rounded-xl border border-dashed flex items-center justify-between gap-2 ${
-                  isDarkMode
-                    ? 'bg-[#352C29] border-[#5E4E49]'
-                    : 'bg-[#FFFDF9] border-[#DECBB9]'
-                }`}
-              >
-                <span
-                  data-testid="active-pass-key-code"
-                  className="font-mono text-sm sm:text-base font-semibold tracking-wider"
-                >
-                  {activePass.passKey}
-                </span>
-                <button
-                  type="button"
-                  data-testid="copy-pass-key-btn"
-                  onClick={() => handleCopyPassKey(activePass.passKey)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border border-dashed transition cursor-pointer ${
+              {isSilentRecipientGiftPass(activePass) ? (
+                <div
+                  data-testid="silent-recipient-gift-session-badge"
+                  className={`px-3.5 py-2.5 rounded-xl border border-dashed flex items-center justify-center gap-2 text-xs font-medium ${
                     isDarkMode
-                      ? 'border-[#66554F] hover:bg-[#463A36]'
-                      : 'border-[#D8C4B4] hover:bg-[#F3E9DF]'
+                      ? 'bg-[#352C29] border-[#E8B4A6]/45 text-[#E8B4A6]'
+                      : 'bg-[#FFFDF9] border-[#C68B77]/50 text-[#8A5240]'
                   }`}
                 >
-                  {copiedPassKey ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-500" />
-                      <span>Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-              </div>
+                  <CoutureBloomSeal className="w-3.5 h-3.5 shrink-0" />
+                  <span>Founding Launch Gift · Active for 1 Couture Bouquet on this device</span>
+                </div>
+              ) : (
+                <div
+                  className={`px-3.5 py-2.5 rounded-xl border border-dashed flex items-center justify-between gap-2 ${
+                    isDarkMode
+                      ? 'bg-[#352C29] border-[#5E4E49]'
+                      : 'bg-[#FFFDF9] border-[#DECBB9]'
+                  }`}
+                >
+                  <span
+                    data-testid="active-pass-key-code"
+                    className="font-mono text-sm sm:text-base font-semibold tracking-wider"
+                  >
+                    {activePass.passKey}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="copy-pass-key-btn"
+                    onClick={() => handleCopyPassKey(activePass.passKey)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border border-dashed transition cursor-pointer ${
+                      isDarkMode
+                        ? 'border-[#66554F] hover:bg-[#463A36]'
+                        : 'border-[#D8C4B4] hover:bg-[#F3E9DF]'
+                    }`}
+                  >
+                    {copiedPassKey ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-500" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* Humble Solo-Dev Thank-You Note */}
               <div

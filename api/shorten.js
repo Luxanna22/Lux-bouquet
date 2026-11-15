@@ -9,6 +9,7 @@ import {
   readSafeJsonBody,
 } from './_lib/securityGuard.js';
 import { verifyShortenCouturePermission } from './_lib/coutureGuard.js';
+import { registerSharedBouquetGiftOfferServer } from './_lib/paymentHandler.js';
 
 const shortCodeMemory = new Map();
 
@@ -521,6 +522,16 @@ export default async function handler(req, res) {
       // 1. Persist full bouquet & voice recording to Firebase Firestore
       await saveToFirestoreRest(code, payload, extra);
 
+      // 1a. Register 1-time Pay-It-Forward Recipient Gift Box slot if sealed with an eligible pass (hop < 3) + 3+ stems + 15+ char note
+      const giftSlot = await registerSharedBouquetGiftOfferServer({
+        code,
+        pass: coutureCheck.pass || null,
+        deviceTokenHash:
+          typeof bodyObj.deviceTokenHash === 'string' ? bodyObj.deviceTokenHash.trim() : '',
+        visibleStemCount: coutureCheck.visibleStemCount || 0,
+        noteCharCount: coutureCheck.noteCharCount || 0,
+      }).catch(() => null);
+
       // 1b. If the user ticked "Pin to Lace Garland", also persist to `shared_bouquets/sab_garland_feed_v1`
       // on the server so shared creations (including resumed & sealed drafts) are guaranteed to appear for all users.
       if (
@@ -555,7 +566,13 @@ export default async function handler(req, res) {
       const shortUrl = origin ? `${origin}/${code}` : `/${code}`;
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ code, shortUrl }));
+      res.end(
+        JSON.stringify({
+          code,
+          shortUrl,
+          recipientGiftSpawned: Boolean(giftSlot && giftSlot.status === 'OPEN'),
+        })
+      );
       return;
     } catch {
       res.statusCode = 500;

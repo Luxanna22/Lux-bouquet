@@ -16,9 +16,18 @@ interface OwnerOverviewSectionProps {
   isTogglingIncomePause?: boolean;
   isTogglingPhDisabled?: boolean;
   isResettingIncome?: boolean;
+  isUpdatingLaunchPromo?: boolean;
   onToggleIncomePause?: (nextPaused: boolean) => void;
   onTogglePhDisabled?: (nextDisabled: boolean) => void;
   onResetIncome?: (purgeTestAndRevoked: boolean) => void;
+  onUpdateLaunchPromoConfig?: (patch: {
+    kofiStarterEnabled?: boolean;
+    kofiStarterMaxLimit?: number;
+    resetKofiClaimed?: boolean;
+    recipientGiftEnabled?: boolean;
+    recipientGiftMaxLimit?: number;
+    resetRecipientClaimed?: boolean;
+  }) => void;
 }
 
 type ChartSeriesMode = 'traffic' | 'revenue';
@@ -43,13 +52,21 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   isTogglingIncomePause = false,
   isTogglingPhDisabled = false,
   isResettingIncome = false,
+  isUpdatingLaunchPromo = false,
   onToggleIncomePause,
   onTogglePhDisabled,
   onResetIncome,
+  onUpdateLaunchPromoConfig,
 }) => {
   const [chartMode, setChartMode] = useState<ChartSeriesMode>('traffic');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [kofiLimitInput, setKofiLimitInput] = useState<string>(() =>
+    String(analytics.kofiLaunchMaxLimit ?? 30)
+  );
+  const [recipientLimitInput, setRecipientLimitInput] = useState<string>(() =>
+    String(analytics.recipientGiftMaxLimit ?? 150)
+  );
 
   // Interactive Growth / Buyer Scale Simulator (Projection Sandbox — separate from recorded actuals)
   const [simDailyVisitors, setSimDailyVisitors] = useState<number>(500);
@@ -357,6 +374,180 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
             <div className="text-[11px] opacity-65 mt-2 tabular-nums">
               {analytics.bouquetsCreated.toLocaleString()} sealed · {metrics.paywallToPaidPct}% paywall conv.
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Founding Launch Promo Controls (15-Limit Ko-fi Starter + 150-Limit Pay-It-Forward Recipient Gift Box) */}
+      <section
+        data-testid="founding-launch-promo-controls"
+        className={`rounded-xl border p-4 sm:p-5 space-y-4 ${panelClass}`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2
+              style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              className="text-xl font-medium"
+            >
+              Founding Launch Promo Controls
+            </h2>
+            <p className="text-xs opacity-65 mt-0.5">
+              Manage the 30-limit Free Ko-fi Starter and the 150-limit Pay-It-Forward Recipient Gift Box (max 3 hops · 3+ stems · 15+ char note).
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 1. Ko-fi Starter Limit Control */}
+          <div className={`rounded-lg border p-3.5 space-y-3 ${hairlineBorder}`}>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold">
+                  1. Ko-fi Starter Single Bouquet ($1.99 → FREE)
+                </div>
+                <div className="text-[11px] opacity-65 tabular-nums mt-0.5">
+                  Claimed:{' '}
+                  <span className="font-mono font-semibold">
+                    {analytics.kofiLaunchClaimedCount ?? 0} / {analytics.kofiLaunchMaxLimit ?? 30}
+                  </span>{' '}
+                  ({Math.max(0, (analytics.kofiLaunchMaxLimit ?? 30) - (analytics.kofiLaunchClaimedCount ?? 0))} remaining)
+                </div>
+              </div>
+              {onUpdateLaunchPromoConfig && (
+                <button
+                  type="button"
+                  data-testid="toggle-kofi-launch-btn"
+                  disabled={isUpdatingLaunchPromo}
+                  onClick={() =>
+                    onUpdateLaunchPromoConfig({
+                      kofiStarterEnabled: !(analytics.kofiLaunchEnabled ?? true),
+                    })
+                  }
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 ${
+                    analytics.kofiLaunchEnabled ?? true
+                      ? isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434]'
+                      : `${hairlineBorder} opacity-75`
+                  }`}
+                >
+                  {(analytics.kofiLaunchEnabled ?? true) ? 'Active' : 'Paused'}
+                </button>
+              )}
+            </div>
+
+            {onUpdateLaunchPromoConfig && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <label className="text-[11px] opacity-75">Stock Cap:</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  data-testid="kofi-launch-limit-input"
+                  value={kofiLimitInput}
+                  onChange={(e) => setKofiLimitInput(e.target.value)}
+                  className={`w-20 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums ${hairlineBorder} bg-transparent`}
+                />
+                <button
+                  type="button"
+                  data-testid="save-kofi-launch-limit-btn"
+                  disabled={isUpdatingLaunchPromo}
+                  onClick={() => {
+                    const parsed = Math.max(0, Math.min(10000, Math.round(Number(kofiLimitInput) || 0)));
+                    setKofiLimitInput(String(parsed));
+                    onUpdateLaunchPromoConfig({ kofiStarterMaxLimit: parsed });
+                  }}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-medium cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+                >
+                  Save Cap
+                </button>
+                <button
+                  type="button"
+                  data-testid="reset-kofi-launch-claimed-btn"
+                  disabled={isUpdatingLaunchPromo}
+                  onClick={() => onUpdateLaunchPromoConfig({ resetKofiClaimed: true })}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] opacity-75 hover:opacity-100 cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+                >
+                  Reset 0/{analytics.kofiLaunchMaxLimit ?? 30}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Pay-It-Forward Recipient Gift Box Control */}
+          <div className={`rounded-lg border p-3.5 space-y-3 ${hairlineBorder}`}>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold">
+                  2. Recipient Shaking Gift Box (Pay-It-Forward)
+                </div>
+                <div className="text-[11px] opacity-65 tabular-nums mt-0.5">
+                  Claimed:{' '}
+                  <span className="font-mono font-semibold">
+                    {analytics.recipientGiftClaimedCount ?? 0} / {analytics.recipientGiftMaxLimit ?? 150}
+                  </span>{' '}
+                  ({Math.max(0, (analytics.recipientGiftMaxLimit ?? 150) - (analytics.recipientGiftClaimedCount ?? 0))} remaining)
+                </div>
+              </div>
+              {onUpdateLaunchPromoConfig && (
+                <button
+                  type="button"
+                  data-testid="toggle-recipient-gift-btn"
+                  disabled={isUpdatingLaunchPromo}
+                  onClick={() =>
+                    onUpdateLaunchPromoConfig({
+                      recipientGiftEnabled: !(analytics.recipientGiftEnabled ?? true),
+                    })
+                  }
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 ${
+                    analytics.recipientGiftEnabled ?? true
+                      ? isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434]'
+                      : `${hairlineBorder} opacity-75`
+                  }`}
+                >
+                  {(analytics.recipientGiftEnabled ?? true) ? 'Active' : 'Paused'}
+                </button>
+              )}
+            </div>
+
+            {onUpdateLaunchPromoConfig && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <label className="text-[11px] opacity-75">Global Cap:</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50000}
+                  data-testid="recipient-gift-limit-input"
+                  value={recipientLimitInput}
+                  onChange={(e) => setRecipientLimitInput(e.target.value)}
+                  className={`w-20 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums ${hairlineBorder} bg-transparent`}
+                />
+                <button
+                  type="button"
+                  data-testid="save-recipient-gift-limit-btn"
+                  disabled={isUpdatingLaunchPromo}
+                  onClick={() => {
+                    const parsed = Math.max(0, Math.min(50000, Math.round(Number(recipientLimitInput) || 0)));
+                    setRecipientLimitInput(String(parsed));
+                    onUpdateLaunchPromoConfig({ recipientGiftMaxLimit: parsed });
+                  }}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-medium cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+                >
+                  Save Cap
+                </button>
+                <button
+                  type="button"
+                  data-testid="reset-recipient-gift-claimed-btn"
+                  disabled={isUpdatingLaunchPromo}
+                  onClick={() => onUpdateLaunchPromoConfig({ resetRecipientClaimed: true })}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] opacity-75 hover:opacity-100 cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+                >
+                  Reset 0/{analytics.recipientGiftMaxLimit ?? 150}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>

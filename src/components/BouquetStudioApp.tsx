@@ -144,19 +144,24 @@ import { sendBouquetSurpriseEmail } from '../lib/contactService';
 import {
   clearPendingCheckoutStorage,
   formatPassRemainingTime,
+  FOUNDING_RECIPIENT_GIFT_MIN_NOTE_CHARS,
+  FOUNDING_RECIPIENT_GIFT_MIN_STEMS,
   FREE_CARD_NOTE_MAX_CHARS,
   getActivePremiumAssetConfig,
   getOrCreateDeviceTokenHash,
   getRetentionPolicyForPassTier,
   getStoredStudioPass,
+  hasDeviceClaimedRecipientGift,
   inspectBouquetPremiumUsage,
   isEnvironmentPremium,
   isFlowerPremium,
+  isFoundingPromoFreePass,
   isPhotoStylePremium,
   isRibbonPremium,
   isVoiceStylePremium,
   isWrapPremium,
   loadPendingCheckoutStorage,
+  markDeviceClaimedRecipientGift,
   PREMIUM_CARD_NOTE_MAX_CHARS,
   PremiumAssetConfig,
   saveStoredStudioPass,
@@ -339,6 +344,11 @@ export default function App() {
     initialGiftMode ? 0 : undefined
   );
   const [showGiftCardReveal, setShowGiftCardReveal] = useState<boolean>(!initialGiftMode);
+  const [isGiftBloomFinished, setIsGiftBloomFinished] = useState<boolean>(false);
+  const [isRecipientGiftBoxVisible, setIsRecipientGiftBoxVisible] = useState<boolean>(false);
+  const [isRecipientGiftModalOpen, setIsRecipientGiftModalOpen] = useState<boolean>(false);
+  const [isClaimingRecipientGift, setIsClaimingRecipientGift] = useState<boolean>(false);
+  const [recipientGiftClaimError, setRecipientGiftClaimError] = useState<string | null>(null);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
   const [letterTypedChars, setLetterTypedChars] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -950,7 +960,13 @@ export default function App() {
       bloomIntervalRef.current = null;
     }
     setShowGiftCardReveal(false);
+    setIsGiftBloomFinished(false);
     setBloomedCount(0);
+    if (totalItems <= 0) {
+      setShowGiftCardReveal(true);
+      setIsGiftBloomFinished(true);
+      return;
+    }
     let current = 0;
     const cardRevealThreshold = Math.max(1, Math.ceil(totalItems * 0.5));
     bloomIntervalRef.current = window.setInterval(() => {
@@ -965,6 +981,7 @@ export default function App() {
           bloomIntervalRef.current = null;
         }
         setShowGiftCardReveal(true);
+        setIsGiftBloomFinished(true);
       }
     }, 130);
   }, []);
@@ -1002,6 +1019,10 @@ export default function App() {
     setIsDraggingEntranceSlider(false);
     setIsGiftEntranceOpen(true);
     setShowGiftCardReveal(false);
+    setIsGiftBloomFinished(false);
+    setIsRecipientGiftBoxVisible(false);
+    setIsRecipientGiftModalOpen(false);
+    setRecipientGiftClaimError(null);
     setBloomedCount(0);
     // Ensure music autoplays when entering shared gift view or preview bloom
     musicBox.start();
@@ -1306,6 +1327,8 @@ export default function App() {
     handleStopVoice();
     setIsVoiceModalOpen(false);
     setIsReactionPopoverOpen(false);
+    setIsRecipientGiftBoxVisible(false);
+    setIsRecipientGiftModalOpen(false);
     try {
       window.history.replaceState(null, '', '/');
     } catch {
@@ -1321,6 +1344,131 @@ export default function App() {
     setShowGiftCardReveal(true);
     setShowLandingPage(true);
   }, [resetStudioCanvasSession, selectItem, handleStopVoice]);
+
+  // Pay-It-Forward Recipient Gift Box: Wait ~3 seconds after bloom reveal finishes, then verify offer eligibility
+  useEffect(() => {
+    if (
+      !isGiftView ||
+      isPreviewMode ||
+      isGiftEntranceOpen ||
+      !isGiftBloomFinished ||
+      !activeShortCode
+    ) {
+      return;
+    }
+    if (hasDeviceClaimedRecipientGift()) {
+      return;
+    }
+    // Block self-claim if this bouquet exists in the local device's created vault
+    const localVault = getSavedVaultBouquets();
+    if (localVault.some((v) => !v.isDraft && v.code === activeShortCode)) {
+      return;
+    }
+    // Require at least 3 visible stems and 15+ note characters
+    const visibleStemCount = items.filter((it) => !it.hidden && !it.photoDataUrl).length;
+    const noteCharCount = String(card?.message || '').replace(/\s+/g, ' ').trim().length;
+    if (
+      visibleStemCount < FOUNDING_RECIPIENT_GIFT_MIN_STEMS ||
+      noteCharCount < FOUNDING_RECIPIENT_GIFT_MIN_NOTE_CHARS
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const timerId = window.setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        const deviceTokenHash = getOrCreateDeviceTokenHash();
+        const res = await fetch('/api/payments/verify-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'check_recipient_gift_offer',
+            bouquetCode: activeShortCode,
+            deviceTokenHash,
+            visibleStemCount,
+            noteCharCount,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!cancelled && res.ok && data?.ok && data?.eligible) {
+          setIsRecipientGiftBoxVisible(true);
+        }
+      } catch {
+        // Ignore network errors silently
+      }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [
+    isGiftView,
+    isPreviewMode,
+    isGiftEntranceOpen,
+    isGiftBloomFinished,
+    activeShortCode,
+    items,
+    card?.message,
+  ]);
+
+  const handleClaimRecipientGiftOffer = useCallback(async () => {
+    if (!activeShortCode || isClaimingRecipientGift) return;
+    setIsClaimingRecipientGift(true);
+    setRecipientGiftClaimError(null);
+    try {
+      const deviceTokenHash = getOrCreateDeviceTokenHash();
+      const visibleStemCount = items.filter((it) => !it.hidden && !it.photoDataUrl).length;
+      const noteCharCount = String(card?.message || '').replace(/\s+/g, ' ').trim().length;
+      const res = await fetch('/api/payments/verify-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: activeShortCode,
+          deviceTokenHash,
+          visibleStemCount,
+          noteCharCount,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok || !data?.pass) {
+        setRecipientGiftClaimError(
+          data?.message ||
+            (res.status === 403
+              ? 'We couldn’t finish unlocking this gift in this browser session (403). Try tapping Claim Free Bouquet again, or open the link in Chrome or Safari.'
+              : 'We couldn’t unlock this gift right now. Please try tapping Claim Free Bouquet again in a moment.')
+        );
+        if (
+          data?.status === 'BOUQUET_GIFT_ALREADY_CLAIMED' ||
+          data?.status === 'DEVICE_ALREADY_CLAIMED' ||
+          data?.status === 'GLOBAL_CAP_REACHED' ||
+          data?.code === 'ALREADY_CLAIMED_BOUQUET' ||
+          data?.code === 'ALREADY_CLAIMED_DEVICE'
+        ) {
+          setIsRecipientGiftBoxVisible(false);
+        }
+        return;
+      }
+
+      const claimedPass = data.pass as StudioPassRecord;
+      markDeviceClaimedRecipientGift();
+      lastServerVerifiedPassSigRef.current = claimedPass.signature;
+      saveStoredStudioPass(claimedPass);
+      setActiveStudioPass(claimedPass);
+      // Default "Include in Shared Creations" to ON for free promo claims so the Lace Garland fills with rose-gold frames
+      setPinToShowcaseChecked(true);
+      setIsRecipientGiftModalOpen(false);
+      setIsRecipientGiftBoxVisible(false);
+      handleCreateOwnFromShared();
+      triggerToast('Founding Launch Gift applied — 1 free Couture Bouquet unlocked!');
+    } catch {
+      setRecipientGiftClaimError('Connection error. Please try again in a moment.');
+    } finally {
+      setIsClaimingRecipientGift(false);
+    }
+  }, [activeShortCode, isClaimingRecipientGift, items, card?.message, handleCreateOwnFromShared, triggerToast]);
 
   // Vercel Web Analytics + First-Party Telemetry + Auto-Unlock Tester Voucher Magic Links (`?voucher=BLOOM-...`)
   useEffect(() => {
@@ -4884,6 +5032,206 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* ===================================================================
+              PAY-IT-FORWARD SHAKING ROSE-GOLD GIFT BOX FOR RECIPIENTS
+              Appears ~3 seconds after bloom reveal finishes in a non-invasive
+              responsive corner (`bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6`).
+              =================================================================== */}
+          {isGiftView && !isPreviewMode && !isGiftEntranceOpen && isRecipientGiftBoxVisible && (
+            <div className="absolute bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6 z-30 pointer-events-auto animate-in fade-in zoom-in-95 duration-300">
+              <button
+                type="button"
+                data-testid="recipient-shaking-gift-box"
+                aria-label="Open your Founding Launch gift"
+                onClick={() => {
+                  setRecipientGiftClaimError(null);
+                  setIsRecipientGiftModalOpen(true);
+                }}
+                style={{
+                  animation: 'sab-rosegold-gift-shake 2.8s ease-in-out infinite',
+                }}
+                className={`group relative flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-2xl border border-dashed shadow-[0_12px_32px_rgba(180,120,102,0.28)] transition cursor-pointer ${
+                  isDarkMode
+                    ? 'bg-[#3A2D2A]/95 border-[#E8B4A6] text-[#FBF6F1] hover:bg-[#463632]'
+                    : 'bg-[#FFFDF9]/95 border-[#C68B77] text-[#3B2820] hover:bg-[#FCF5F1]'
+                }`}
+              >
+                {/* Rose-Gold Keepsake Gift Box SVG */}
+                <span className="relative w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center shrink-0">
+                  <svg
+                    viewBox="0 0 36 36"
+                    fill="none"
+                    aria-hidden="true"
+                    className="w-full h-full overflow-visible"
+                  >
+                    {/* Box base */}
+                    <rect
+                      x="6"
+                      y="15"
+                      width="24"
+                      height="16"
+                      rx="3"
+                      fill={isDarkMode ? '#4A3833' : '#FDF4EE'}
+                      stroke="#C68B77"
+                      strokeWidth="1.4"
+                    />
+                    {/* Box lid */}
+                    <rect
+                      x="4.5"
+                      y="10.5"
+                      width="27"
+                      height="5.5"
+                      rx="2"
+                      fill={isDarkMode ? '#5A433D' : '#F8E6DC'}
+                      stroke="#C68B77"
+                      strokeWidth="1.4"
+                    />
+                    {/* Vertical & horizontal rose-gold satin ribbon */}
+                    <path
+                      d="M18 10.5V31M6 22.5H30"
+                      stroke="#B8735E"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                    />
+                    {/* Rose-gold bow loops */}
+                    <path
+                      d="M18 10.5C14.2 6.2 10 8.5 13.5 10.8C15.2 11.8 17 11 18 10.5Z"
+                      fill="#E8B4A6"
+                      fillOpacity="0.45"
+                      stroke="#B8735E"
+                      strokeWidth="1.35"
+                    />
+                    <path
+                      d="M18 10.5C21.8 6.2 26 8.5 22.5 10.8C20.8 11.8 19 11 18 10.5Z"
+                      fill="#E8B4A6"
+                      fillOpacity="0.45"
+                      stroke="#B8735E"
+                      strokeWidth="1.35"
+                    />
+                    <circle cx="18" cy="10.5" r="1.6" fill="#B8735E" />
+                  </svg>
+                  <span
+                    aria-hidden="true"
+                    className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#D48C78] ring-2 ring-[#FFFDF9] dark:ring-[#3A2D2A]"
+                  />
+                </span>
+
+                <span className="text-left leading-tight">
+                  <span
+                    className="block text-xs sm:text-[13px] font-semibold tracking-tight"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    A gift for you
+                  </span>
+                  <span className="block text-[9.5px] opacity-75">
+                    Tap to unwrap
+                  </span>
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* ===================================================================
+              RECIPIENT GIFT OFFER STATIONERY MINI-MODAL
+              =================================================================== */}
+          {isRecipientGiftModalOpen && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="A little something for you too"
+              data-testid="recipient-gift-offer-modal"
+              onClick={() => setIsRecipientGiftModalOpen(false)}
+              className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`w-full max-w-sm rounded-[26px] p-5 sm:p-6 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.24)] relative text-center space-y-3.5 ${
+                  isDarkMode
+                    ? 'bg-[#352C29] border-[#E8B4A6]/65 text-[#FBF6F1]'
+                    : 'bg-[#FFFDF9] border-[#C68B77] text-[#231C18]'
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-label="Close gift offer"
+                  onClick={() => setIsRecipientGiftModalOpen(false)}
+                  className={`absolute top-3.5 right-3.5 w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
+                    isDarkMode
+                      ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                      : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#F5EDE4]'
+                  }`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {/* Rose-Gold Seal & Parcel Illustration */}
+                <div className="mx-auto w-14 h-14 rounded-2xl border border-dashed border-[#C68B77]/60 bg-[#FAF1EC] dark:bg-[#423430] flex items-center justify-center">
+                  <CoutureBloomSeal className="w-6 h-6 text-[#B8735E] dark:text-[#E8B4A6]" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3
+                    className="text-2xl sm:text-[26px] font-semibold leading-tight tracking-tight"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    A little something for you too
+                  </h3>
+                  <p className="text-xs sm:text-[13px] opacity-85 leading-relaxed">
+                    Since someone sent you a Founding Launch keepsake, your first Couture Bouquet is on us!
+                  </p>
+                </div>
+
+                {/* Price Callout Pill ($1.99 -> FREE) */}
+                <div
+                  className={`py-2.5 px-4 rounded-2xl border border-dashed flex items-center justify-center gap-2.5 ${
+                    isDarkMode
+                      ? 'bg-[#2B2321] border-[#E8B4A6]/45'
+                      : 'bg-[#FCF5F1] border-[#D8A896]'
+                  }`}
+                >
+                  <span className="text-xs font-medium opacity-75">Single Couture Bouquet</span>
+                  <span className="text-sm line-through opacity-55">$1.99</span>
+                  <span aria-hidden="true" className="text-xs opacity-60">→</span>
+                  <span
+                    className="text-base sm:text-lg font-bold tracking-wide text-[#9E5B4B] dark:text-[#E8B4A6]"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    FREE
+                  </span>
+                </div>
+
+                {recipientGiftClaimError && (
+                  <div
+                    role="alert"
+                    className="px-3 py-2 rounded-xl border border-dashed border-rose-400/60 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-200"
+                  >
+                    {recipientGiftClaimError}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  data-testid="claim-recipient-gift-btn"
+                  disabled={isClaimingRecipientGift}
+                  onClick={handleClaimRecipientGiftOffer}
+                  className={`w-full py-2.5 px-5 rounded-full text-xs sm:text-sm font-medium transition active:scale-99 cursor-pointer disabled:opacity-50 ${
+                    isDarkMode
+                      ? 'bg-[#E8B4A6] text-[#231C18] hover:bg-[#F2C4B8]'
+                      : 'bg-[#8A5240] text-[#FFFDF9] hover:bg-[#734232]'
+                  }`}
+                >
+                  {isClaimingRecipientGift
+                    ? 'Unlocking Studio...'
+                    : 'Craft Your Free Couture Bouquet →'}
+                </button>
+
+                <p className="text-[10px] opacity-65">
+                  Applied automatically to your session · 1 free Couture Bouquet
+                </p>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* ===================================================================
@@ -7705,6 +8053,9 @@ export default function App() {
           lastServerVerifiedPassSigRef.current = newPass.signature;
           saveStoredStudioPass(newPass);
           setActiveStudioPass(newPass);
+          if (isFoundingPromoFreePass(newPass)) {
+            setPinToShowcaseChecked(true);
+          }
           if (resumeAction === 'share') {
             setIsCheckoutModalOpen(false);
             setCheckoutInitialView('plans');

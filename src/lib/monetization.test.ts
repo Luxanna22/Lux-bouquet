@@ -3,9 +3,16 @@ import assert from 'node:assert/strict';
 import {
   createSignedStudioPass,
   detectPricingRegion,
+  evaluateBouquetRecipientGiftEligibility,
+  evaluateKofiStarterAvailability,
+  evaluateRecipientGiftClaimGuard,
+  extractPassChainHop,
   getPricingCatalog,
   getRetentionPolicyForPassTier,
   inspectBouquetPremiumUsage,
+  isFoundingPromoFreePass,
+  isKofiLaunchStarterPass,
+  isSilentRecipientGiftPass,
   isValidPassKeyFormat,
   normalizePassKey,
   validateAndBindPassRedemption,
@@ -2798,6 +2805,723 @@ test('Admin-minted Tester Voucher and Paid Pass succeed through Have-a-Key redee
     }
   }
 });
+
+test('Founding Launch pure rules: 30-limit Ko-fi starter, 3-hop chain cap, completeness, and anti-farming guards', () => {
+  // 1. Ko-fi starter availability
+  const availFresh = evaluateKofiStarterAvailability({
+    enabled: true,
+    claimedCount: 4,
+    maxLimit: 30,
+    deviceAlreadyClaimed: false,
+  });
+  assert.equal(availFresh.available, true);
+  assert.equal(availFresh.remaining, 26);
+
+  const availSameDevice = evaluateKofiStarterAvailability({
+    enabled: true,
+    claimedCount: 4,
+    maxLimit: 30,
+    deviceAlreadyClaimed: true,
+  });
+  assert.equal(availSameDevice.available, false);
+  assert.equal(availSameDevice.reason, 'DEVICE_ALREADY_CLAIMED');
+
+  const availDepleted = evaluateKofiStarterAvailability({
+    enabled: true,
+    claimedCount: 30,
+    maxLimit: 30,
+    deviceAlreadyClaimed: false,
+  });
+  assert.equal(availDepleted.available, false);
+  assert.equal(availDepleted.remaining, 0);
+  assert.equal(availDepleted.reason, 'STOCK_DEPLETED');
+
+  const makeMockSnap = (stemCount: number, message: string) => ({
+    items: Array.from({ length: stemCount }).map((_, i) => ({
+      id: `s_${i}`,
+      type: 'celestialRose' as const,
+      x: 200,
+      y: 200,
+      scale: 1,
+      rotation: 0,
+      flipX: false,
+      petalColor: '#e11d48',
+      centerColor: '#881337',
+    })),
+    card: {
+      visibleOnStage: true,
+      theme: 'cream' as const,
+      to: 'Maya',
+      from: 'Alex',
+      message,
+    },
+  });
+
+  const seedPass = {
+    passKey: 'BLOOM-ABCD-2345',
+    paymentProvider: 'kofi' as const,
+    secondaryDeviceHash: null,
+    paymentReference: 'kfl_test123',
+  };
+
+  // 2. Bouquet completeness & chain hop eligibility
+  const incompleteStems = evaluateBouquetRecipientGiftEligibility({
+    snapshot: makeMockSnap(2, 'Happy birthday my dearest friend!'),
+    pass: seedPass,
+  });
+  assert.equal(incompleteStems.eligibleToSpawnOffer, false);
+  assert.equal(incompleteStems.reason, 'INSUFFICIENT_STEMS');
+
+  const incompleteNote = evaluateBouquetRecipientGiftEligibility({
+    snapshot: makeMockSnap(4, 'Too short'),
+    pass: seedPass,
+  });
+  assert.equal(incompleteNote.eligibleToSpawnOffer, false);
+  assert.equal(incompleteNote.reason, 'NOTE_TOO_SHORT');
+
+  const hop0Spawn = evaluateBouquetRecipientGiftEligibility({
+    snapshot: makeMockSnap(3, 'Happy birthday my dearest friend!'),
+    pass: seedPass,
+  });
+  assert.equal(hop0Spawn.eligibleToSpawnOffer, true);
+  assert.equal(hop0Spawn.nextHop, 1);
+
+  const hop2Spawn = evaluateBouquetRecipientGiftEligibility({
+    snapshot: makeMockSnap(5, 'Wishing you the brightest day ever!'),
+    pass: {
+      ...seedPass,
+      paymentReference: 'pif_h2_abcdef1234567890abcd',
+    },
+  });
+  assert.equal(hop2Spawn.eligibleToSpawnOffer, true);
+  assert.equal(hop2Spawn.nextHop, 3);
+
+  const hop3Blocked = evaluateBouquetRecipientGiftEligibility({
+    snapshot: makeMockSnap(5, 'Wishing you the brightest day ever!'),
+    pass: {
+      ...seedPass,
+      paymentReference: 'pif_h3_abcdef1234567890abcd',
+    },
+  });
+  assert.equal(hop3Blocked.eligibleToSpawnOffer, false);
+  assert.equal(hop3Blocked.reason, 'MAX_CHAIN_HOPS_REACHED');
+
+  // 3. Recipient claim guard
+  assert.equal(
+    evaluateRecipientGiftClaimGuard({
+      recipientGiftEnabled: true,
+      globalClaimedCount: 150,
+      globalMaxLimit: 150,
+      slotStatus: 'OPEN',
+      slotHop: 1,
+      creatorDeviceHash: 'dev_sender',
+      viewerDeviceHash: 'dev_recipient',
+      viewerAlreadyClaimedRecipientGift: false,
+    }).canShowAndClaim,
+    false
+  );
+  assert.equal(
+    evaluateRecipientGiftClaimGuard({
+      recipientGiftEnabled: true,
+      globalClaimedCount: 10,
+      globalMaxLimit: 150,
+      slotStatus: 'OPEN',
+      slotHop: 1,
+      creatorDeviceHash: 'dev_same',
+      viewerDeviceHash: 'dev_same',
+      viewerAlreadyClaimedRecipientGift: false,
+    }).reason,
+    'CREATOR_DEVICE_MATCH'
+  );
+});
+
+test('Founding Launch server integration: 30-limit Ko-fi starter + Pay-It-Forward recipient gift box + anti-farming', async () => {
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error ESM server module
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  // @ts-expect-error ESM server module
+  const shortenMod = await import('../../api/shorten.js');
+  const { encodeBouquetToCompactPayload, computeShortCode } = await import('./shareAndExport');
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch;
+
+  const makeReq = (
+    method: string,
+    url: string,
+    bodyStr?: string,
+    headers: Record<string, string> = {}
+  ) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: {
+        host: 'www.sendabouquet.online',
+        'content-type': 'application/json',
+        ...headers,
+      },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    const state: { statusCode: number; body: string } = { statusCode: 200, body: '' };
+    return {
+      set statusCode(v: number) {
+        state.statusCode = v;
+      },
+      get statusCode() {
+        return state.statusCode;
+      },
+      setHeader() {},
+      end(str = '') {
+        state.body = str;
+      },
+      json() {
+        return state.body ? JSON.parse(state.body) : {};
+      },
+    };
+  };
+
+  try {
+    // Reset Founding Launch promo config to clean defaults (limit 2 for Ko-fi test, 150 for recipient gift)
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 2,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
+    });
+
+    const senderDev = 'dev_founding_sender_01';
+    const sender3Dev = 'dev_founding_sender_03';
+
+    // 1. GET /api/payments/create-checkout returns launchPromo with isKofiFreeStarterAvailable = true
+    const capRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', `/api/payments/create-checkout?deviceTokenHash=${senderDev}`),
+      capRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capRes.statusCode, 200);
+    assert.equal(capRes.json().launchPromo.isKofiFreeStarterAvailable, true);
+    assert.equal(capRes.json().launchPromo.kofiLaunchMaxLimit, 2);
+
+    // 2. Sender 1 starts Free Launch Ko-fi Checkout ($1.99 -> FREE)
+    const start1Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: senderDev,
+          claimFreeLaunchStarter: true,
+          shopCodes: { single: 'a1b2c3d4e5' },
+        })
+      ),
+      start1Res,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(start1Res.statusCode, 200);
+    const start1Data = start1Res.json();
+    assert.equal(start1Data.isKofiLaunchStarter, true);
+
+    // 3. Ko-fi webhook arrives for $0.00 Single Bouquet item
+    const wh1Res = makeRes();
+    const wh1Payload = {
+      message_id: 'kofi_launch_msg_001',
+      kofi_transaction_id: 'kofi_tx_launch_001',
+      type: 'Shop Order',
+      email: 'sender1@example.com',
+      amount: '0.00',
+      currency: 'USD',
+      shop_items: [{ direct_link_code: 'a1b2c3d4e5', quantity: 1 }],
+    };
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/kofi', JSON.stringify(wh1Payload)),
+      wh1Res,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(wh1Res.statusCode, 200);
+    assert.equal(wh1Res.json().isKofiLaunchStarter, true);
+
+    // 4. Sender 1 verifies email and receives `kfl_` Single Bouquet pass; same device is now locked out of another free Ko-fi claim
+    const verify1Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: start1Data.checkoutId,
+          checkoutToken: start1Data.checkoutToken,
+          deviceTokenHash: senderDev,
+          buyerEmail: 'sender1@example.com',
+        })
+      ),
+      verify1Res,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verify1Res.statusCode, 200);
+    const verify1Data = verify1Res.json();
+    const sender1Pass = verify1Data.pass;
+    assert.equal(isKofiLaunchStarterPass(sender1Pass), true);
+    assert.equal(isFoundingPromoFreePass(sender1Pass), true);
+    assert.equal(extractPassChainHop(sender1Pass), 0);
+    assert.equal(verify1Data.launchPromo.kofiLaunchClaimedCount, 1);
+    assert.equal(verify1Data.launchPromo.deviceClaimedKofiStarter, true);
+    assert.equal(verify1Data.launchPromo.isKofiFreeStarterAvailable, false);
+
+    // Same device trying to start another checkout automatically gets isKofiLaunchStarter = false (regular $1.99)
+    const repeatSameDevRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: senderDev,
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      repeatSameDevRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(repeatSameDevRes.statusCode, 200);
+    assert.equal(repeatSameDevRes.json().isKofiLaunchStarter, false);
+
+    // 5. Sender 2 claims the 2nd (final) stock; Sender 3 then sees stock depleted (0 left)
+    const wh2Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          message_id: 'kofi_launch_msg_002',
+          kofi_transaction_id: 'kofi_tx_launch_002',
+          type: 'Shop Order',
+          email: 'sender2@example.com',
+          amount: '0.00',
+          currency: 'USD',
+          shop_items: [{ direct_link_code: 'a1b2c3d4e5', quantity: 1 }],
+        })
+      ),
+      wh2Res,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(wh2Res.statusCode, 200);
+
+    const capDepletedRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('GET', `/api/payments/create-checkout?deviceTokenHash=${sender3Dev}`),
+      capDepletedRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(capDepletedRes.json().launchPromo.kofiLaunchClaimedCount, 2);
+    assert.equal(capDepletedRes.json().launchPromo.isKofiFreeStarterAvailable, false);
+
+    // 6. Now test Pay-It-Forward Recipient Gift Box & 3-Hop Viral Chain!
+    const makeValidSnap = (noteText: string, stemCount = 3) => ({
+      items: Array.from({ length: stemCount }).map((_, idx) => ({
+        id: `s_${idx}`,
+        type: 'celestialRose' as const,
+        x: 260 + idx * 30,
+        y: 250,
+        scale: 1,
+        rotation: 0,
+        flipX: false,
+        petalColor: '#e11d48',
+        centerColor: '#881337',
+      })),
+      wrapStyle: 'vase' as const,
+      wrapColor: '#d4b483',
+      ribbonColor: '#e11d48',
+      ribbonStyle: 'satin' as const,
+      environment: 'studio' as const,
+      bouquetPose: { x: 300, y: 386, scale: 0.86, rotation: 0 },
+      card: {
+        visibleOnStage: true,
+        theme: 'cream' as const,
+        to: 'Recipient',
+        from: 'Sender',
+        message: noteText,
+      },
+      voice: {
+        visibleOnStage: false,
+        style: 'mixtape' as const,
+        title: 'Side A',
+        primaryColor: '#F472B6',
+        accentColor: '#FFF1F2',
+        audioDataUrl: null,
+        durationSec: 0,
+      },
+      lock: { mode: 'none' as const },
+    });
+
+    // Seal Hop 0 bouquet by Sender 1 (3 stems, 25+ char note)
+    const snapHop0 = makeValidSnap('Wishing you the happiest birthday full of blooms!', 3);
+    const payloadHop0 = encodeBouquetToCompactPayload(snapHop0, true);
+    const codeHop0 = computeShortCode(payloadHop0);
+
+    const shorten0Res = makeRes();
+    await shortenMod.default(
+      makeReq(
+        'POST',
+        '/api/shorten',
+        JSON.stringify({
+          code: codeHop0,
+          payload: payloadHop0,
+          origin: 'https://www.sendabouquet.online',
+          isPremium: false,
+          retentionDays: 90,
+          passKey: sender1Pass.passKey,
+          deviceTokenHash: senderDev,
+          activeSessionNonce: sender1Pass.activeSessionNonce,
+          pass: sender1Pass,
+        })
+      ),
+      shorten0Res
+    );
+    assert.equal(shorten0Res.statusCode, 200);
+    assert.equal(shorten0Res.json().recipientGiftSpawned, true);
+
+    // Anti-farming: Creator (senderDev) checking their own bouquet gets eligible = false (CREATOR_SELF_CLAIM_BLOCKED)
+    const selfCheckRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'check_recipient_gift_offer',
+          bouquetCode: codeHop0,
+          deviceTokenHash: senderDev,
+        })
+      ),
+      selfCheckRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(selfCheckRes.json().eligible, false);
+    assert.equal(selfCheckRes.json().reason, 'CREATOR_SELF_CLAIM_BLOCKED');
+
+    // Recipient 1 (hop 1) checks and claims the gift box
+    const recipient1Dev = 'dev_recipient_hop1';
+    const check1Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'check_recipient_gift_offer',
+          bouquetCode: codeHop0,
+          deviceTokenHash: recipient1Dev,
+        })
+      ),
+      check1Res,
+      '/api/payments/verify-action'
+    );
+    assert.equal(check1Res.json().eligible, true);
+    assert.equal(check1Res.json().hop, 1);
+
+    const claim1Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: codeHop0,
+          deviceTokenHash: recipient1Dev,
+        })
+      ),
+      claim1Res,
+      '/api/payments/verify-action'
+    );
+    assert.equal(claim1Res.statusCode, 200);
+    const passHop1 = claim1Res.json().pass;
+    assert.equal(isSilentRecipientGiftPass(passHop1), true);
+    assert.equal(extractPassChainHop(passHop1), 1);
+
+    // Second person trying to claim the same bouquet's gift box is rejected (BOUQUET_GIFT_ALREADY_CLAIMED)
+    const secondClaimSameBouquetRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: codeHop0,
+          deviceTokenHash: 'dev_stranger_late_01',
+        })
+      ),
+      secondClaimSameBouquetRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(secondClaimSameBouquetRes.statusCode, 403);
+    assert.equal(secondClaimSameBouquetRes.json().status, 'BOUQUET_GIFT_ALREADY_CLAIMED');
+
+    // Hop 1 -> Hop 2 -> Hop 3 chain progression, and Hop 3 cannot spawn Hop 4
+    const snapHop1 = makeValidSnap('Sending this forward to my dearest friend Maya!', 3);
+    const payloadHop1 = encodeBouquetToCompactPayload(snapHop1, true);
+    const codeHop1 = computeShortCode(payloadHop1);
+    const shorten1Res = makeRes();
+    await shortenMod.default(
+      makeReq(
+        'POST',
+        '/api/shorten',
+        JSON.stringify({
+          code: codeHop1,
+          payload: payloadHop1,
+          passKey: passHop1.passKey,
+          deviceTokenHash: recipient1Dev,
+          activeSessionNonce: passHop1.activeSessionNonce,
+          pass: passHop1,
+        })
+      ),
+      shorten1Res
+    );
+    assert.equal(shorten1Res.json().recipientGiftSpawned, true);
+
+    // Recipient 1 trying to claim Hop 1's gift box on another bouquet is blocked (DEVICE_ALREADY_CLAIMED)
+    const repeatDeviceClaimRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: codeHop1,
+          deviceTokenHash: recipient1Dev,
+        })
+      ),
+      repeatDeviceClaimRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(repeatDeviceClaimRes.statusCode, 403);
+    assert.equal(repeatDeviceClaimRes.json().status, 'DEVICE_ALREADY_CLAIMED');
+
+    // Recipient 2 claims Hop 2
+    const recipient2Dev = 'dev_recipient_hop2';
+    const claim2Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: codeHop1,
+          deviceTokenHash: recipient2Dev,
+        })
+      ),
+      claim2Res,
+      '/api/payments/verify-action'
+    );
+    assert.equal(claim2Res.statusCode, 200);
+    const passHop2 = claim2Res.json().pass;
+    assert.equal(extractPassChainHop(passHop2), 2);
+
+    // Recipient 2 seals bouquet -> spawns Hop 3
+    const snapHop2 = makeValidSnap('Paying it forward again with love and gratitude!', 3);
+    const payloadHop2 = encodeBouquetToCompactPayload(snapHop2, true);
+    const codeHop2 = computeShortCode(payloadHop2);
+    const shorten2Res = makeRes();
+    await shortenMod.default(
+      makeReq(
+        'POST',
+        '/api/shorten',
+        JSON.stringify({
+          code: codeHop2,
+          payload: payloadHop2,
+          passKey: passHop2.passKey,
+          deviceTokenHash: recipient2Dev,
+          activeSessionNonce: passHop2.activeSessionNonce,
+          pass: passHop2,
+        })
+      ),
+      shorten2Res
+    );
+    assert.equal(shorten2Res.json().recipientGiftSpawned, true);
+
+    // Recipient 3 claims Hop 3
+    const recipient3Dev = 'dev_recipient_hop3';
+    const claim3Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: codeHop2,
+          deviceTokenHash: recipient3Dev,
+        })
+      ),
+      claim3Res,
+      '/api/payments/verify-action'
+    );
+    assert.equal(claim3Res.statusCode, 200);
+    const passHop3 = claim3Res.json().pass;
+    assert.equal(extractPassChainHop(passHop3), 3);
+
+    // Recipient 3 seals bouquet -> Hop 3 CANNOT spawn Hop 4! (recipientGiftSpawned === false)
+    const snapHop3 = makeValidSnap('Final hop bouquet with plenty of love and flowers!', 3);
+    const payloadHop3 = encodeBouquetToCompactPayload(snapHop3, true);
+    const codeHop3 = computeShortCode(payloadHop3);
+    const shorten3Res = makeRes();
+    await shortenMod.default(
+      makeReq(
+        'POST',
+        '/api/shorten',
+        JSON.stringify({
+          code: codeHop3,
+          payload: payloadHop3,
+          passKey: passHop3.passKey,
+          deviceTokenHash: recipient3Dev,
+          activeSessionNonce: passHop3.activeSessionNonce,
+          pass: passHop3,
+        })
+      ),
+      shorten3Res
+    );
+    assert.equal(shorten3Res.statusCode, 200);
+    assert.equal(shorten3Res.json().recipientGiftSpawned, false);
+
+    // Restore default 30 / 150 limits after test
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Founding Launch verification 403/402 error messages guide the user gently without blame', async () => {
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error Dynamically importing JS module
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({ ok: false, status: 404, json: async () => ({}) })) as unknown as typeof fetch;
+
+  const makeReq = (method: string, url: string, bodyStr?: string) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: { host: 'localhost:3000', 'content-type': 'application/json' },
+      body: bodyStr,
+    });
+    return req;
+  };
+  const makeRes = () => {
+    let raw = '';
+    return {
+      statusCode: 200,
+      headers: {} as Record<string, string>,
+      setHeader(k: string, v: string) {
+        this.headers[k.toLowerCase()] = v;
+      },
+      end(chunk?: string) {
+        if (chunk) raw += chunk;
+      },
+      json() {
+        return JSON.parse(raw || '{}');
+      },
+    };
+  };
+
+  try {
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
+
+    const devA = 'dev_guide_test_a_1234';
+    const devB = 'dev_guide_test_b_5678';
+
+    const chkRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: devA,
+          claimFreeLaunchStarter: true,
+          shopCodes: { single: 'guide12345' },
+        })
+      ),
+      chkRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(chkRes.statusCode, 200);
+    const chk = chkRes.json();
+
+    // 1. Device mismatch 403 guides to Switch plan cleanly
+    const mismatchRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk.checkoutId,
+          checkoutToken: chk.checkoutToken,
+          deviceTokenHash: devB,
+          buyerEmail: 'friend@example.com',
+        })
+      ),
+      mismatchRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(mismatchRes.statusCode, 403);
+    assert.match(mismatchRes.json().message, /Switch plan/i);
+    assert.doesNotMatch(mismatchRes.json().message, /Device mismatch/i);
+
+    // 2. Unconfirmed Ko-fi $0 claim (402) shows warm checklist without saying "bought"
+    const pendingRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk.checkoutId,
+          checkoutToken: chk.checkoutToken,
+          deviceTokenHash: devA,
+          buyerEmail: 'friend@example.com',
+        })
+      ),
+      pendingRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(pendingRes.statusCode, 402);
+    assert.match(pendingRes.json().message, /\$0 checkout/i);
+    assert.doesNotMatch(pendingRes.json().message, /bought/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
 
 
 

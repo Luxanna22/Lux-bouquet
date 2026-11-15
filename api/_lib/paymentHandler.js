@@ -394,6 +394,28 @@ export function deriveSikatpayOrderSlotKey(orderId) {
   return `BLOOM-${p1}-${p2}`;
 }
 
+/**
+ * Derives a deterministic, Firestore-valid `BLOOM-SPXX-XXXX` slot key for a shared bouquet's
+ * 1-time Pay-It-Forward Recipient Gift Box offer so claim status persists across serverless instances.
+ */
+export function deriveRecipientGiftSlotKey(bouquetCode) {
+  const cleanCode = String(bouquetCode || '').replace(/[^0-9A-Za-z_-]/g, '');
+  const digest = crypto
+    .createHash('sha256')
+    .update(`sab_recipient_pif_gift_slot_v1:${cleanCode}`)
+    .digest();
+
+  let p1 = 'SP';
+  for (let i = 0; i < 2; i++) {
+    p1 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  let p2 = '';
+  for (let i = 2; i < 6; i++) {
+    p2 += PASS_ALPHABET[digest[i] % PASS_ALPHABET.length];
+  }
+  return `BLOOM-${p1}-${p2}`;
+}
+
 export function getSikatpayConfig() {
   const apiKey = (process.env.SIKATPAY_API_KEY || '').trim();
   const webhookSecret = (process.env.SIKATPAY_WEBHOOK_SECRET || '').trim();
@@ -1223,6 +1245,12 @@ export const OWNER_ANALYTICS_STATE = {
   phPaymentsDisabled: false,
   incomeResetAtMs: 0,
   incomeResetEpoch: 0,
+  kofiLaunchEnabled: true,
+  kofiLaunchMaxLimit: 30,
+  kofiLaunchClaimedCount: 0,
+  recipientGiftEnabled: true,
+  recipientGiftMaxLimit: 150,
+  recipientGiftClaimedCount: 0,
   blockedShareAttempts: 0,
   blockedPinAttempts: 0,
   shareChannels: {
@@ -1272,11 +1300,16 @@ export const OWNER_ANALYTICS_STATE = {
 
 let incomePauseUpdatedAtMs = 0;
 let phDisabledUpdatedAtMs = 0;
+let launchPromoConfigUpdatedAtMs = 0;
 let lastCheckoutFlagHydrateMs = 0;
 
 export const TESTER_VOUCHER_LEDGER = new Map();
 export const PAID_PASS_LEDGER = new Map();
 export const ISSUED_PASS_KEYS = new Set();
+export const KOFI_LAUNCH_CLAIMED_DEVICES = new Set();
+export const KOFI_LAUNCH_TX_IDS = new Set();
+export const RECIPIENT_GIFT_CLAIMED_DEVICES = new Set();
+export const RECIPIENT_GIFT_SLOTS = new Map();
 
 export function mergeRemoteOwnerVaultIntoMemory(remote) {
   if (!remote || typeof remote !== 'object') return;
@@ -1304,6 +1337,98 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     );
   } else if (phDisabledUpdatedAtMs === 0 && remote.analytics?.phPaymentsDisabled !== undefined) {
     OWNER_ANALYTICS_STATE.phPaymentsDisabled = Boolean(remote.analytics.phPaymentsDisabled);
+  }
+
+  const remoteLaunchTs = Number(remote.launchPromoConfigUpdatedAtMs || 0);
+  if (remoteLaunchTs > launchPromoConfigUpdatedAtMs) {
+    launchPromoConfigUpdatedAtMs = remoteLaunchTs;
+    if (remote.kofiLaunchEnabled !== undefined || remote.analytics?.kofiLaunchEnabled !== undefined) {
+      OWNER_ANALYTICS_STATE.kofiLaunchEnabled = Boolean(
+        remote.kofiLaunchEnabled ?? remote.analytics?.kofiLaunchEnabled
+      );
+    }
+    if (
+      typeof (remote.kofiLaunchMaxLimit ?? remote.analytics?.kofiLaunchMaxLimit) === 'number'
+    ) {
+      OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit = Math.max(
+        0,
+        Math.round(Number(remote.kofiLaunchMaxLimit ?? remote.analytics?.kofiLaunchMaxLimit))
+      );
+    }
+    if (
+      typeof (remote.recipientGiftEnabled ?? remote.analytics?.recipientGiftEnabled) === 'boolean'
+    ) {
+      OWNER_ANALYTICS_STATE.recipientGiftEnabled = Boolean(
+        remote.recipientGiftEnabled ?? remote.analytics?.recipientGiftEnabled
+      );
+    }
+    if (
+      typeof (remote.recipientGiftMaxLimit ?? remote.analytics?.recipientGiftMaxLimit) === 'number'
+    ) {
+      OWNER_ANALYTICS_STATE.recipientGiftMaxLimit = Math.max(
+        0,
+        Math.round(Number(remote.recipientGiftMaxLimit ?? remote.analytics?.recipientGiftMaxLimit))
+      );
+    }
+    if (typeof remote.kofiLaunchClaimedCount === 'number') {
+      OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
+        0,
+        Math.round(remote.kofiLaunchClaimedCount)
+      );
+    }
+    if (typeof remote.recipientGiftClaimedCount === 'number') {
+      OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
+        0,
+        Math.round(remote.recipientGiftClaimedCount)
+      );
+    }
+  } else {
+    OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
+      Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
+      Number(remote.kofiLaunchClaimedCount ?? remote.analytics?.kofiLaunchClaimedCount ?? 0)
+    );
+    OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
+      Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
+      Number(remote.recipientGiftClaimedCount ?? remote.analytics?.recipientGiftClaimedCount ?? 0)
+    );
+  }
+
+  if (Array.isArray(remote.kofiLaunchClaimedDevices)) {
+    for (const d of remote.kofiLaunchClaimedDevices) {
+      if (d && typeof d === 'string') KOFI_LAUNCH_CLAIMED_DEVICES.add(d.trim());
+    }
+  }
+  if (Array.isArray(remote.kofiLaunchTxIds)) {
+    for (const tx of remote.kofiLaunchTxIds) {
+      if (tx && typeof tx === 'string') KOFI_LAUNCH_TX_IDS.add(tx.trim());
+    }
+  }
+  if (Array.isArray(remote.recipientGiftClaimedDevices)) {
+    for (const d of remote.recipientGiftClaimedDevices) {
+      if (d && typeof d === 'string') RECIPIENT_GIFT_CLAIMED_DEVICES.add(d.trim());
+    }
+  }
+  if (Array.isArray(remote.recipientGiftSlots)) {
+    for (const entry of remote.recipientGiftSlots) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const [code, slot] = entry;
+      if (!code || !slot || typeof slot !== 'object') continue;
+      const existing = RECIPIENT_GIFT_SLOTS.get(code);
+      if (!existing || slot.status === 'CLAIMED') {
+        RECIPIENT_GIFT_SLOTS.set(String(code), {
+          status:
+            slot.status === 'CLAIMED'
+              ? 'CLAIMED'
+              : slot.status === 'INELIGIBLE'
+              ? 'INELIGIBLE'
+              : 'OPEN',
+          hop: Number(slot.hop || 1),
+          creatorDeviceHash: String(slot.creatorDeviceHash || ''),
+          claimedDeviceHash: String(slot.claimedDeviceHash || ''),
+          updatedAt: String(slot.updatedAt || new Date().toISOString()),
+        });
+      }
+    }
   }
 
   if (remoteHasNewerReset) {
@@ -1676,6 +1801,17 @@ export async function savePersistentOwnerVaultServer() {
       incomePauseUpdatedAtMs,
       phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
       phDisabledUpdatedAtMs,
+      launchPromoConfigUpdatedAtMs,
+      kofiLaunchEnabled: Boolean(OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false),
+      kofiLaunchMaxLimit: Number(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit ?? 30),
+      kofiLaunchClaimedCount: Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
+      recipientGiftEnabled: Boolean(OWNER_ANALYTICS_STATE.recipientGiftEnabled !== false),
+      recipientGiftMaxLimit: Number(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit ?? 150),
+      recipientGiftClaimedCount: Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
+      kofiLaunchClaimedDevices: Array.from(KOFI_LAUNCH_CLAIMED_DEVICES).slice(-500),
+      kofiLaunchTxIds: Array.from(KOFI_LAUNCH_TX_IDS).slice(-500),
+      recipientGiftClaimedDevices: Array.from(RECIPIENT_GIFT_CLAIMED_DEVICES).slice(-600),
+      recipientGiftSlots: Array.from(RECIPIENT_GIFT_SLOTS.entries()).slice(-600),
       customOwnerPin: cachedCustomOwnerPin || '',
       revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
       issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
@@ -1751,10 +1887,15 @@ export function isPaidPassCountableForRevenue(normKey, ledgerItem, passRecord) {
   ) {
     return false;
   }
+  const refStr = String(passRecord?.paymentReference || '');
   if (
     ledgerItem?.isTest === true ||
+    ledgerItem?.isFreePromo === true ||
+    ledgerItem?.amountMinor === 0 ||
     ledgerItem?.channel === 'sikatpay_test' ||
-    String(passRecord?.paymentReference || '').startsWith('sptest_')
+    refStr.startsWith('sptest_') ||
+    refStr.startsWith('kfl_') ||
+    refStr.startsWith('pif_')
   ) {
     return false;
   }
@@ -1975,11 +2116,16 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
 
   ISSUED_PASS_KEYS.add(normKey);
   const { tier, region, currency, amountMinor } = resolvePaidPassCatalogMeta(pass.tier, pass.region);
+  const refStr = String(pass.paymentReference || '');
+  const isFreePromo = Boolean(
+    options.isFreePromo || refStr.startsWith('kfl_') || refStr.startsWith('pif_')
+  );
   const isTestIssuance = Boolean(
     options.isTest ||
       OWNER_ANALYTICS_STATE.incomePausedForTesting ||
-      String(pass.paymentReference || '').startsWith('sptest_')
+      refStr.startsWith('sptest_')
   );
+  const finalAmountMinor = isFreePromo ? 0 : amountMinor;
 
   if (!PAID_PASS_LEDGER.has(normKey)) {
     const channel =
@@ -1999,7 +2145,11 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
         .replace(/[|:]/g, ' ')
         .trim()
         .slice(0, 32) ||
-      (pass.paymentProvider === 'owner_manual'
+      (isFreePromo
+        ? refStr.startsWith('pif_')
+          ? 'Recipient Gift Free'
+          : 'Ko-fi Launch Free'
+        : pass.paymentProvider === 'owner_manual'
         ? 'Direct Buyer'
         : isTestIssuance
         ? `${pass.paymentProvider || 'checkout'} Test`
@@ -2010,7 +2160,7 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
       tier,
       region,
       channel,
-      amountMinor,
+      amountMinor: finalAmountMinor,
       currency,
       retentionDays: pass.retentionDays || (tier === 'pass_30d' ? 36500 : 90),
       isEternalKeepsake: Boolean(pass.isEternalKeepsake),
@@ -2022,21 +2172,380 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
       blockedAttempts: 0,
       boundBouquetCode: pass.boundBouquetCode || null,
       isTest: isTestIssuance,
+      isFreePromo,
       passRecord: pass,
     });
   }
 
   recomputePaidRevenueFromLedgerServer();
 
-  const priceDisplay =
-    currency === 'PHP' ? `₱${(amountMinor / 100).toFixed(0)}` : `$${(amountMinor / 100).toFixed(2)}`;
+  const priceDisplay = isFreePromo
+    ? 'FREE Launch Promo'
+    : currency === 'PHP'
+    ? `₱${(finalAmountMinor / 100).toFixed(0)}`
+    : `$${(finalAmountMinor / 100).toFixed(2)}`;
   const eventSummary =
     options.summary ||
-    (isTestIssuance
+    (isFreePromo
+      ? `Issued Founding Launch Free ${tier} Pass (${priceDisplay})`
+      : isTestIssuance
       ? `[TEST] Issued ${tier} Studio Pass (${region} ${priceDisplay} excluded from live income)`
       : `Issued ${tier} Studio Pass (${region} ${priceDisplay})`);
   pushAnalyticsEventServer('monetization', 'pass_issued', eventSummary, 'mobile', region);
   return true;
+}
+
+export function getFoundingLaunchPromoStatusServer(deviceTokenHash = '') {
+  const cleanDevice = String(deviceTokenHash || '').trim();
+  const kofiEnabled = OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false;
+  const kofiMax =
+    typeof OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit === 'number' &&
+    Number.isFinite(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit) &&
+    OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit >= 0
+      ? Math.round(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit)
+      : 30;
+  const kofiClaimed = Math.max(
+    0,
+    Math.round(Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0)),
+    KOFI_LAUNCH_TX_IDS.size
+  );
+  OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = kofiClaimed;
+  const kofiRemaining = Math.max(0, kofiMax - kofiClaimed);
+  const deviceClaimedKofi = Boolean(
+    cleanDevice && KOFI_LAUNCH_CLAIMED_DEVICES.has(cleanDevice)
+  );
+  const isKofiFreeStarterAvailable = Boolean(
+    kofiEnabled && kofiRemaining > 0 && !deviceClaimedKofi
+  );
+
+  const rgEnabled = OWNER_ANALYTICS_STATE.recipientGiftEnabled !== false;
+  const rgMax =
+    typeof OWNER_ANALYTICS_STATE.recipientGiftMaxLimit === 'number' &&
+    Number.isFinite(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit) &&
+    OWNER_ANALYTICS_STATE.recipientGiftMaxLimit >= 0
+      ? Math.round(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit)
+      : 150;
+  const rgClaimed = Math.max(
+    0,
+    Math.round(Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0)),
+    RECIPIENT_GIFT_CLAIMED_DEVICES.size
+  );
+  OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = rgClaimed;
+  const rgRemaining = Math.max(0, rgMax - rgClaimed);
+
+  return {
+    kofiLaunchEnabled: kofiEnabled,
+    kofiLaunchMaxLimit: kofiMax,
+    kofiLaunchClaimedCount: kofiClaimed,
+    kofiLaunchRemaining: kofiRemaining,
+    deviceClaimedKofiStarter: deviceClaimedKofi,
+    isKofiFreeStarterAvailable,
+    recipientGiftEnabled: rgEnabled,
+    recipientGiftMaxLimit: rgMax,
+    recipientGiftClaimedCount: rgClaimed,
+    recipientGiftRemaining: rgRemaining,
+  };
+}
+
+export function updateFoundingLaunchPromoConfigServer(config = {}, nowMs = Date.now()) {
+  if (typeof config.kofiLaunchEnabled === 'boolean') {
+    OWNER_ANALYTICS_STATE.kofiLaunchEnabled = config.kofiLaunchEnabled;
+  }
+  if (
+    typeof config.kofiLaunchMaxLimit === 'number' &&
+    Number.isFinite(config.kofiLaunchMaxLimit) &&
+    config.kofiLaunchMaxLimit >= 0 &&
+    config.kofiLaunchMaxLimit <= 100000
+  ) {
+    OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit = Math.round(config.kofiLaunchMaxLimit);
+  }
+  if (config.resetKofiLaunchClaims === true) {
+    KOFI_LAUNCH_TX_IDS.clear();
+    KOFI_LAUNCH_CLAIMED_DEVICES.clear();
+    OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = 0;
+  } else if (
+    typeof config.kofiLaunchClaimedCount === 'number' &&
+    Number.isFinite(config.kofiLaunchClaimedCount) &&
+    config.kofiLaunchClaimedCount >= 0
+  ) {
+    const targetKofiCount = Math.round(config.kofiLaunchClaimedCount);
+    if (targetKofiCount < KOFI_LAUNCH_TX_IDS.size) {
+      KOFI_LAUNCH_TX_IDS.clear();
+    }
+    OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = targetKofiCount;
+  }
+
+  if (typeof config.recipientGiftEnabled === 'boolean') {
+    OWNER_ANALYTICS_STATE.recipientGiftEnabled = config.recipientGiftEnabled;
+  }
+  if (
+    typeof config.recipientGiftMaxLimit === 'number' &&
+    Number.isFinite(config.recipientGiftMaxLimit) &&
+    config.recipientGiftMaxLimit >= 0 &&
+    config.recipientGiftMaxLimit <= 100000
+  ) {
+    OWNER_ANALYTICS_STATE.recipientGiftMaxLimit = Math.round(config.recipientGiftMaxLimit);
+  }
+  if (config.resetRecipientGiftClaims === true) {
+    RECIPIENT_GIFT_CLAIMED_DEVICES.clear();
+    OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = 0;
+  } else if (
+    typeof config.recipientGiftClaimedCount === 'number' &&
+    Number.isFinite(config.recipientGiftClaimedCount) &&
+    config.recipientGiftClaimedCount >= 0
+  ) {
+    const targetRgCount = Math.round(config.recipientGiftClaimedCount);
+    if (targetRgCount < RECIPIENT_GIFT_CLAIMED_DEVICES.size) {
+      RECIPIENT_GIFT_CLAIMED_DEVICES.clear();
+    }
+    OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = targetRgCount;
+  }
+
+  launchPromoConfigUpdatedAtMs = Math.max(nowMs, launchPromoConfigUpdatedAtMs + 1);
+  lastCheckoutFlagHydrateMs = Date.now();
+  pushAnalyticsEventServer(
+    'monetization',
+    'launch_promo_updated',
+    `Owner updated Founding Launch limits (Ko-fi Starter: ${OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount}/${OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit}, Gift Box: ${OWNER_ANALYTICS_STATE.recipientGiftClaimedCount}/${OWNER_ANALYTICS_STATE.recipientGiftMaxLimit})`,
+    'desktop',
+    'INTL'
+  );
+  return getFoundingLaunchPromoStatusServer();
+}
+
+export function extractPassChainHopServer(pass) {
+  if (!pass || !isValidPassKeyFormat(pass.passKey)) return null;
+  const ref = String(pass.paymentReference || '').trim().toLowerCase();
+  if (ref.startsWith('pif_')) {
+    const m = ref.match(/^pif_h(\d+)/);
+    if (m && m[1]) {
+      const parsed = Number.parseInt(m[1], 10);
+      if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+    }
+    return 1;
+  }
+  return 0;
+}
+
+export async function registerSharedBouquetGiftOfferServer({
+  code,
+  pass,
+  deviceTokenHash,
+  visibleStemCount = 0,
+  noteCharCount = 0,
+  isCuratedSeedBouquet = false,
+} = {}) {
+  const safeCode = String(code || '').replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || safeCode.startsWith('draft_')) return null;
+
+  const existingMem = RECIPIENT_GIFT_SLOTS.get(safeCode);
+  if (existingMem && existingMem.status === 'CLAIMED') {
+    return existingMem;
+  }
+
+  const slotKey = deriveRecipientGiftSlotKey(safeCode);
+  const existingPassSlot =
+    SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+  if (existingPassSlot && existingPassSlot.secondaryDeviceHash === 'CLAIMED') {
+    const claimedEntry = {
+      status: 'CLAIMED',
+      hop: 1,
+      creatorDeviceHash: existingPassSlot.primaryDeviceHash || String(deviceTokenHash || ''),
+      claimedDeviceHash: 'CLAIMED',
+      updatedAt: new Date().toISOString(),
+    };
+    RECIPIENT_GIFT_SLOTS.set(safeCode, claimedEntry);
+    return claimedEntry;
+  }
+
+  const hasEnoughStems = Number(visibleStemCount || 0) >= 3;
+  const hasEnoughNote = Number(noteCharCount || 0) >= 15;
+  const sourceHop = isCuratedSeedBouquet ? 0 : extractPassChainHopServer(pass);
+
+  const eligible =
+    hasEnoughStems && hasEnoughNote && sourceHop !== null && sourceHop >= 0 && sourceHop < 3;
+  const nextHop = eligible ? sourceHop + 1 : sourceHop !== null ? sourceHop + 1 : 0;
+  const status = eligible ? 'OPEN' : 'INELIGIBLE';
+  const cleanCreator = String(deviceTokenHash || pass?.primaryDeviceHash || '').trim();
+
+  const slotRecord = {
+    status,
+    hop: nextHop,
+    creatorDeviceHash: cleanCreator,
+    claimedDeviceHash: '',
+    updatedAt: new Date().toISOString(),
+  };
+  RECIPIENT_GIFT_SLOTS.set(safeCode, slotRecord);
+
+  const passSlotDoc = createSignedStudioPassServer({
+    passKey: slotKey,
+    tier: 'single',
+    region: 'INTL',
+    deviceTokenHash: cleanCreator,
+    secondaryDeviceHash: status === 'OPEN' ? null : status,
+    boundBouquetCode: `RG:${nextHop}:${status}:${safeCode.slice(0, 16)}`,
+    paymentProvider: 'verified_checkout',
+    paymentReference: `rgs_h${nextHop}`,
+  });
+  SERVER_PASS_STORE.set(slotKey, passSlotDoc);
+  await saveStudioPassToFirestoreRest(passSlotDoc);
+  await savePersistentOwnerVaultServer();
+
+  return slotRecord;
+}
+
+async function resolveBouquetGiftSlotServer({
+  bouquetCode,
+  visibleStemCount,
+  noteCharCount,
+  isCoutureOrSeed,
+}) {
+  const safeCode = String(bouquetCode || '').replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || safeCode.startsWith('draft_')) return null;
+
+  const memSlot = RECIPIENT_GIFT_SLOTS.get(safeCode);
+  const slotKey = deriveRecipientGiftSlotKey(safeCode);
+  const passSlot =
+    SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+
+  if (passSlot) {
+    const rawBound = String(passSlot.boundBouquetCode || '');
+    const parts = rawBound.split(':');
+    const parsedHop = Number.parseInt(parts[1] || '1', 10);
+    const hop = Number.isFinite(parsedHop) ? parsedHop : 1;
+    const status =
+      passSlot.secondaryDeviceHash === 'CLAIMED' ||
+      parts[2] === 'CLAIMED' ||
+      memSlot?.status === 'CLAIMED'
+        ? 'CLAIMED'
+        : passSlot.secondaryDeviceHash === 'INELIGIBLE' ||
+          parts[2] === 'INELIGIBLE' ||
+          memSlot?.status === 'INELIGIBLE'
+        ? 'INELIGIBLE'
+        : 'OPEN';
+    const merged = {
+      status,
+      hop,
+      creatorDeviceHash: passSlot.primaryDeviceHash || memSlot?.creatorDeviceHash || '',
+      claimedDeviceHash: status === 'CLAIMED' ? 'CLAIMED' : '',
+      updatedAt: passSlot.createdAt || new Date().toISOString(),
+    };
+    RECIPIENT_GIFT_SLOTS.set(safeCode, merged);
+    return merged;
+  }
+
+  if (memSlot) {
+    return memSlot;
+  }
+
+  // Allow curated showcase seed bouquets (`sc_*`) or pre-existing Couture bouquets that meet 3+ stems & 15+ char note
+  if (
+    (safeCode.startsWith('sc_') || isCoutureOrSeed === true) &&
+    Number(visibleStemCount || 0) >= 3 &&
+    Number(noteCharCount || 0) >= 15
+  ) {
+    const seedSlot = {
+      status: 'OPEN',
+      hop: 1,
+      creatorDeviceHash: '',
+      claimedDeviceHash: '',
+      updatedAt: new Date().toISOString(),
+    };
+    RECIPIENT_GIFT_SLOTS.set(safeCode, seedSlot);
+    return seedSlot;
+  }
+
+  return null;
+}
+
+export async function checkRecipientGiftOfferServer({
+  bouquetCode,
+  deviceTokenHash,
+  visibleStemCount,
+  noteCharCount,
+  isCoutureOrSeed,
+} = {}) {
+  await hydratePersistentOwnerVaultServer();
+  const cleanDevice = String(deviceTokenHash || '').trim();
+  const promo = getFoundingLaunchPromoStatusServer(cleanDevice);
+
+  if (!promo.recipientGiftEnabled) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'PROMO_DISABLED',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
+  if (promo.recipientGiftRemaining <= 0) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'GLOBAL_CAP_REACHED',
+      remainingGlobal: 0,
+    };
+  }
+  if (cleanDevice && RECIPIENT_GIFT_CLAIMED_DEVICES.has(cleanDevice)) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'DEVICE_ALREADY_CLAIMED',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
+  if (
+    (typeof visibleStemCount === 'number' && visibleStemCount < 3) ||
+    (typeof noteCharCount === 'number' && noteCharCount < 15)
+  ) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'INCOMPLETE_BOUQUET',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
+
+  const slot = await resolveBouquetGiftSlotServer({
+    bouquetCode,
+    visibleStemCount,
+    noteCharCount,
+    isCoutureOrSeed,
+  });
+
+  if (!slot || slot.status !== 'OPEN') {
+    return {
+      ok: true,
+      eligible: false,
+      reason: slot?.status === 'CLAIMED' ? 'BOUQUET_GIFT_ALREADY_CLAIMED' : 'NO_GIFT_SLOT',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
+
+  if (slot.hop < 1 || slot.hop > 3) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'MAX_CHAIN_HOPS_REACHED',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
+
+  if (slot.creatorDeviceHash && cleanDevice && slot.creatorDeviceHash === cleanDevice) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'CREATOR_SELF_CLAIM_BLOCKED',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
+
+  return {
+    ok: true,
+    eligible: true,
+    hop: slot.hop,
+    remainingGlobal: promo.recipientGiftRemaining,
+    reason: 'ELIGIBLE',
+  };
 }
 
 async function syncRealAnalyticsSnapshotServer() {
@@ -3024,6 +3533,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
     // 0. GET /api/payments/create-checkout — Server-authoritative gateway & regional capability check
     if (pathname === '/api/payments/create-checkout' && req.method === 'GET') {
       await ensureCheckoutFlagsHydratedServer();
+      const reqDeviceHash = String(urlObj.searchParams.get('deviceTokenHash') || '').trim();
+      const launchPromo = getFoundingLaunchPromoStatusServer(reqDeviceHash);
       const phDisabled = isPhPaymentsDisabledServer();
       const sikatpay = getSikatpayConfig();
       const bayadgate = getBayadgateConfig();
@@ -3059,6 +3570,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             ? BAYADGATE_PAYMENT_METHODS
             : [],
         availableProviders,
+        launchPromo,
       });
       return true;
     }
@@ -3097,9 +3609,20 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           tierDirectLinkCode
       );
 
-      const { region, provider } = resolveCheckoutRegionAndProvider({
+      const deviceTokenHash =
+        typeof parsed.deviceTokenHash === 'string' && parsed.deviceTokenHash.length >= 8
+          ? parsed.deviceTokenHash.slice(0, 64)
+          : 'anonymous_device_hash';
+      const launchPromo = getFoundingLaunchPromoStatusServer(deviceTokenHash);
+      const isKofiLaunchStarter = Boolean(
+        tier === 'single' &&
+          launchPromo.isKofiFreeStarterAvailable &&
+          (parsed.provider === 'kofi' || parsed.claimFreeLaunchStarter === true)
+      );
+
+      const resolvedCheckout = resolveCheckoutRegionAndProvider({
         requestedRegion: parsed.region,
-        requestedProvider: parsed.provider,
+        requestedProvider: isKofiLaunchStarter ? 'kofi' : parsed.provider,
         sikatpayApiKey: sikatpay.apiKey,
         paymongoSecret,
         bayadgateMerchantId: bayadgate.merchantId,
@@ -3107,11 +3630,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         vercelCountry,
         phDisabled: isPhPaymentsDisabledServer(),
       });
+      const region = resolvedCheckout.region;
+      const provider = isKofiLaunchStarter ? 'kofi' : resolvedCheckout.provider;
 
-      const deviceTokenHash =
-        typeof parsed.deviceTokenHash === 'string' && parsed.deviceTokenHash.length >= 8
-          ? parsed.deviceTokenHash.slice(0, 64)
-          : 'anonymous_device_hash';
       const boundBouquetCode = null;
 
       const plan = PRICING_CATALOG[region][tier];
@@ -3342,6 +3863,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         spOid: sikatpayOrderId || null,
         bgOid: bayadgateOrderId || null,
         bgMethod: bayadgatePaymentMethod || null,
+        lfl: isKofiLaunchStarter ? 1 : 0,
         live: liveGatewayConfigured,
         ts: Date.now(),
       });
@@ -3364,6 +3886,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         bayadgatePaymentMethod,
         checkoutUrl,
         liveGatewayConfigured,
+        isKofiLaunchStarter,
         status: 'pending',
         createdAtMs: Date.now(),
       });
@@ -3381,6 +3904,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         checkoutUrl,
         directLinkCode: tierDirectLinkCode || null,
         liveGatewayConfigured,
+        isKofiLaunchStarter,
+        launchPromo,
       });
       return true;
     }
@@ -3417,6 +3942,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sikatpayOrderId: decodedToken.spOid || null,
           bayadgateOrderId: decodedToken.bgOid || null,
           bayadgatePaymentMethod: decodedToken.bgMethod || null,
+          isKofiLaunchStarter: Boolean(decodedToken.lfl === 1),
           liveGatewayConfigured: Boolean(decodedToken.live),
           status: 'pending',
           createdAtMs: decodedToken.ts || Date.now(),
@@ -3426,7 +3952,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (!pending) {
         sendJson(res, 404, {
           ok: false,
-          message: 'Checkout session expired. Please start checkout again.',
+          message:
+            'This checkout window expired before it finished verifying. Tap Switch plan below to start a fresh claim — your bouquet is still saved.',
         });
         return true;
       }
@@ -3434,7 +3961,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (!decodedToken && !timingSafeMatch(pending.checkoutToken, checkoutToken)) {
         sendJson(res, 403, {
           ok: false,
-          message: 'Invalid checkout verification token.',
+          message:
+            'This checkout session needs a quick refresh. Tap Switch plan below to start a fresh claim — your bouquet is still saved.',
         });
         return true;
       }
@@ -3442,7 +3970,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (pending.deviceTokenHash !== deviceTokenHash) {
         sendJson(res, 403, {
           ok: false,
-          message: 'Device mismatch during checkout verification.',
+          message:
+            'It looks like this claim was started in a different browser, tab, or incognito window. Tap Switch plan below to start a fresh claim right here.',
         });
         return true;
       }
@@ -3831,11 +4360,22 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sendJson(res, 400, {
             ok: false,
             status: 'EMAIL_REQUIRED',
-            message: 'Please enter the same email address you used on Ko-fi Shop.',
+            message:
+              'Please enter the email address you typed on Ko-fi checkout so we can match your confirmation.',
           });
           return true;
         }
 
+        if (
+          !process.env.KOFI_SHOP_SINGLE_CODE &&
+          !process.env.KOFI_SHOP_7D_CODE &&
+          !process.env.KOFI_SHOP_30D_CODE &&
+          !cachedOwnerShopCodes.single &&
+          !cachedOwnerShopCodes.pass_7d &&
+          !cachedOwnerShopCodes.pass_30d
+        ) {
+          await syncOwnerShopCodesWithFirestore();
+        }
         const activeShopCodes = getActiveKofiShopCodes();
         const doesReceiptMatchTierCode = (slot, targetTier) => {
           if (!slot || slot.tier !== targetTier) return false;
@@ -3875,10 +4415,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               candidate.secondaryDeviceHash !== 'CLAIMED' &&
               doesReceiptMatchTierCode(candidate, otherTier)
             ) {
+              const otherPlanName = PRICING_CATALOG.INTL[otherTier]?.name || otherTier;
               sendJson(res, 403, {
                 ok: false,
                 status: 'TIER_MISMATCH',
-                message: `Your Ko-fi Shop order was for "${PRICING_CATALOG.INTL[otherTier]?.name || otherTier}", which does not match "${pending.plan?.name || pending.tier}". Please select "${PRICING_CATALOG.INTL[otherTier]?.name || otherTier}" to unlock your order.`,
+                message: `We found your Ko-fi order for "${otherPlanName}"! Tap Switch plan below, select "${otherPlanName}", and verify your email there to unlock it.`,
               });
               return true;
             }
@@ -3888,7 +4429,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             sendJson(res, 403, {
               ok: false,
               status: 'SHOP_ITEM_CODE_MISMATCH',
-              message: `The purchased Ko-fi Shop item does not match "${pending.plan?.name || pending.tier}". Please select the exact plan you ordered on Ko-fi Shop.`,
+              message: `We found a Ko-fi order for ${buyerEmail}, but it’s for a different shop item than "${pending.plan?.name || pending.tier}". Tap Switch plan below and choose the matching pass to unlock it.`,
             });
             return true;
           }
@@ -3896,17 +4437,20 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           sendJson(res, 402, {
             ok: false,
             status: 'PENDING_PAYMENT',
-            message: `No confirmed Ko-fi Shop order for "${pending.plan?.name || pending.tier}" found for ${buyerEmail} yet. Make sure you bought the exact ${pending.plan?.name || pending.tier} item on Ko-fi Shop.`,
+            message: pending.isKofiLaunchStarter
+              ? `We haven’t received Ko-fi’s confirmation for ${buyerEmail} yet. Quick checklist: (1) tap "Claim $0 Single Bouquet on Ko-fi Shop" above and finish the $0 checkout, (2) check that this email matches your Ko-fi receipt email, and (3) wait 5–10 seconds for Ko-fi to notify us, then tap Verify again.`
+              : `We haven’t received Ko-fi’s confirmation for ${buyerEmail} (${pending.plan?.name || pending.tier}) yet. Please finish the Ko-fi Shop checkout above with that same email, wait 5–10 seconds for Ko-fi’s confirmation, and tap Verify again.`,
           });
           return true;
         }
 
         // Verify the Shop Order receipt matches the requested tier
         if (receiptSlot.tier !== pending.tier) {
+          const matchedName = PRICING_CATALOG.INTL[receiptSlot.tier]?.name || receiptSlot.tier;
           sendJson(res, 403, {
             ok: false,
             status: 'TIER_MISMATCH',
-            message: `Your Ko-fi Shop order was for "${receiptSlot.tier}", which does not match "${pending.tier}". Please select the matching tier.`,
+            message: `We found your Ko-fi order for "${matchedName}". Tap Switch plan below and select "${matchedName}" to unlock it.`,
           });
           return true;
         }
@@ -3916,7 +4460,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             ok: false,
             status: 'ORDER_ALREADY_CLAIMED',
             message:
-              'This Ko-fi Shop order has already been activated. Enter your saved BLOOM-XXXX-XXXX key under "Have a Key?", or start a fresh order in the Passes tab.',
+              'This Ko-fi order has already been unlocked! If you saved your BLOOM-XXXX-XXXX key, enter it under "Have a Key?" at the top — or tap Switch plan to choose another pass.',
           });
           return true;
         }
@@ -3932,6 +4476,21 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         await saveStudioPassToFirestoreRest(claimedSlot);
 
         // Issue the buyer's device-bound Pass Key (`BLOOM-XXXX-XXXX`)
+        await hydratePersistentOwnerVaultServer();
+        const isReceiptFreeLaunch =
+          pending.tier === 'single' &&
+          (Boolean(pending.isKofiLaunchStarter) ||
+            String(receiptSlot.paymentReference || '').startsWith('kfl_'));
+        const rawSlotRef = String(receiptSlot.paymentReference || 'kofi_shop');
+        const slotRefPrefix = rawSlotRef.includes('_')
+          ? rawSlotRef.slice(0, rawSlotRef.lastIndexOf('_'))
+          : rawSlotRef;
+        const boundRefPrefix = isReceiptFreeLaunch
+          ? slotRefPrefix.startsWith('kfl_')
+            ? slotRefPrefix
+            : `kfl_${slotRefPrefix.replace(/^kfs_/, '').slice(0, 12)}`
+          : slotRefPrefix;
+
         const boundPass = createSignedStudioPassServer({
           passKey: pending.passKey,
           tier: pending.tier,
@@ -3939,23 +4498,40 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           deviceTokenHash: pending.deviceTokenHash,
           boundBouquetCode: pending.boundBouquetCode,
           paymentProvider: 'kofi',
-          paymentReference: receiptSlot.paymentReference || 'kofi_shop',
+          paymentReference: boundRefPrefix,
         });
+
+        if (isReceiptFreeLaunch) {
+          if (deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(deviceTokenHash);
+          if (pending.deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(pending.deviceTokenHash);
+        }
 
         SERVER_PASS_STORE.set(boundPass.passKey, boundPass);
         await saveStudioPassToFirestoreRest(boundPass);
-        await hydratePersistentOwnerVaultServer();
-        recordPaidPassIssuanceServer(boundPass);
+        recordPaidPassIssuanceServer(boundPass, {
+          isFreePromo: isReceiptFreeLaunch,
+          label: isReceiptFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+        });
         await savePersistentOwnerVaultServer();
         sendJson(res, 200, {
           ok: true,
           pass: boundPass,
+          isKofiLaunchStarter: isReceiptFreeLaunch,
+          launchPromo: getFoundingLaunchPromoStatusServer(deviceTokenHash),
         });
         return true;
       }
 
       // Case C: Local Sandbox Preview / Confirmed PayMongo Session
       await hydratePersistentOwnerVaultServer();
+      const promoCheck = getFoundingLaunchPromoStatusServer(deviceTokenHash);
+      const isSandboxFreeLaunch = Boolean(
+        pending.tier === 'single' &&
+          pending.provider === 'kofi' &&
+          pending.isKofiLaunchStarter &&
+          promoCheck.isKofiFreeStarterAvailable
+      );
+
       let passRecord =
         SERVER_PASS_STORE.get(pending.passKey) ||
         (await fetchStudioPassFromFirestoreRest(pending.passKey));
@@ -3984,18 +4560,36 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           deviceTokenHash: pending.deviceTokenHash,
           boundBouquetCode: pending.boundBouquetCode,
           paymentProvider: pending.provider,
-          paymentReference: pending.checkoutId,
+          paymentReference: isSandboxFreeLaunch
+            ? `kfl_${pending.checkoutId.replace(/^chk_/, '').slice(0, 12)}`
+            : pending.checkoutId,
         });
         SERVER_PASS_STORE.set(passRecord.passKey, passRecord);
       }
+
+      if (isSandboxFreeLaunch) {
+        if (deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(deviceTokenHash);
+        if (pending.deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(pending.deviceTokenHash);
+        if (!KOFI_LAUNCH_TX_IDS.has(pending.checkoutId)) {
+          KOFI_LAUNCH_TX_IDS.add(pending.checkoutId);
+          OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount =
+            Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0) + 1;
+        }
+      }
+
       pending.status = 'paid';
       await saveStudioPassToFirestoreRest(passRecord);
-      recordPaidPassIssuanceServer(passRecord);
+      recordPaidPassIssuanceServer(passRecord, {
+        isFreePromo: isSandboxFreeLaunch,
+        label: isSandboxFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+      });
       await savePersistentOwnerVaultServer();
 
       sendJson(res, 200, {
         ok: true,
         pass: passRecord,
+        isKofiLaunchStarter: isSandboxFreeLaunch,
+        launchPromo: getFoundingLaunchPromoStatusServer(deviceTokenHash),
       });
       return true;
     }
@@ -4894,6 +5488,151 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
+      // 4G-2. Update Founding Launch Promo Limits & Status (Owner Admin Console)
+      if (actionType === 'update_launch_promo_config') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        const launchPromo = updateFoundingLaunchPromoConfigServer(parsed);
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          launchPromo,
+          analytics: OWNER_ANALYTICS_STATE,
+          testerVouchers: serializeTesterVoucherList(),
+          paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4G-3. Check Recipient Pay-It-Forward Gift Box Eligibility
+      if (actionType === 'check_recipient_gift_offer') {
+        const check = await checkRecipientGiftOfferServer({
+          bouquetCode: parsed.bouquetCode,
+          deviceTokenHash,
+          visibleStemCount:
+            typeof parsed.visibleStemCount === 'number' ? parsed.visibleStemCount : undefined,
+          noteCharCount:
+            typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
+          isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
+        });
+        sendJson(res, 200, check);
+        return true;
+      }
+
+      // 4G-4. Claim 1-Time Recipient Pay-It-Forward Gift Box (Silent 1-Use Single Bouquet Unlock)
+      if (actionType === 'claim_recipient_gift_offer') {
+        const safeCode = String(parsed.bouquetCode || '').replace(/[^0-9A-Za-z_-]/g, '');
+        const cleanDevice = String(deviceTokenHash || '').trim();
+        if (!safeCode || !cleanDevice || cleanDevice.length < 8) {
+          sendJson(res, 400, {
+            ok: false,
+            status: 'INVALID_REQUEST',
+            message: 'Could not verify your gift session. Please refresh and try again.',
+          });
+          return true;
+        }
+
+        const check = await checkRecipientGiftOfferServer({
+          bouquetCode: safeCode,
+          deviceTokenHash: cleanDevice,
+          visibleStemCount:
+            typeof parsed.visibleStemCount === 'number' ? parsed.visibleStemCount : undefined,
+          noteCharCount:
+            typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
+          isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
+        });
+
+        if (!check.eligible) {
+          sendJson(res, 403, {
+            ok: false,
+            status: check.reason || 'INELIGIBLE',
+            message:
+              check.reason === 'BOUQUET_GIFT_ALREADY_CLAIMED'
+                ? 'Another friend has already unwrapped this bouquet’s gift! You can still craft a free bouquet anytime, or open Passes if you’d like Couture unlocks.'
+                : check.reason === 'DEVICE_ALREADY_CLAIMED'
+                ? 'You’ve already claimed a Founding Launch gift on this device! Enjoy crafting, or open Passes anytime if you’d like another Couture unlock.'
+                : check.reason === 'GLOBAL_CAP_REACHED'
+                ? 'All Founding Launch recipient gifts have been claimed — thank you for celebrating with us! You can still craft a free bouquet anytime.'
+                : 'This gift offer has ended, but you can still craft and send a free bouquet anytime.',
+          });
+          return true;
+        }
+
+        const hop = Math.max(1, Math.min(3, Number(check.hop || 1)));
+        const slotKey = deriveRecipientGiftSlotKey(safeCode);
+        const existingSlot = RECIPIENT_GIFT_SLOTS.get(safeCode);
+        const creatorHash = existingSlot?.creatorDeviceHash || '';
+
+        const claimedSlotRecord = {
+          status: 'CLAIMED',
+          hop,
+          creatorDeviceHash: creatorHash,
+          claimedDeviceHash: cleanDevice,
+          updatedAt: new Date().toISOString(),
+        };
+        RECIPIENT_GIFT_SLOTS.set(safeCode, claimedSlotRecord);
+
+        const claimedSlotDoc = createSignedStudioPassServer({
+          passKey: slotKey,
+          tier: 'single',
+          region: 'INTL',
+          deviceTokenHash: creatorHash || cleanDevice,
+          secondaryDeviceHash: 'CLAIMED',
+          boundBouquetCode: `RG:${hop}:CLAIMED:${safeCode.slice(0, 16)}`,
+          paymentProvider: 'verified_checkout',
+          paymentReference: `rgs_h${hop}`,
+        });
+        SERVER_PASS_STORE.set(slotKey, claimedSlotDoc);
+        await saveStudioPassToFirestoreRest(claimedSlotDoc);
+
+        RECIPIENT_GIFT_CLAIMED_DEVICES.add(cleanDevice);
+        OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
+          Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0) + 1,
+          RECIPIENT_GIFT_CLAIMED_DEVICES.size
+        );
+
+        // Mint silent 1-device, 1-bouquet Single Unlock pass (primary === secondary === cleanDevice so no 2nd device can ever use it)
+        const silentPass = createSignedStudioPassServer({
+          tier: 'single',
+          region: 'INTL',
+          deviceTokenHash: cleanDevice,
+          secondaryDeviceHash: cleanDevice,
+          boundBouquetCode: null,
+          paymentProvider: 'verified_checkout',
+          paymentReference: `pif_h${hop}`,
+        });
+        SERVER_PASS_STORE.set(silentPass.passKey, silentPass);
+        await saveStudioPassToFirestoreRest(silentPass);
+
+        pushAnalyticsEventServer(
+          'recipient',
+          'recipient_gift_claimed',
+          `Recipient claimed Pay-It-Forward Gift Box (hop ${hop}/3 · ${OWNER_ANALYTICS_STATE.recipientGiftClaimedCount}/${OWNER_ANALYTICS_STATE.recipientGiftMaxLimit})`,
+          'mobile',
+          'INTL'
+        );
+        await savePersistentOwnerVaultServer();
+
+        sendJson(res, 200, {
+          ok: true,
+          hop,
+          pass: silentPass,
+          launchPromo: getFoundingLaunchPromoStatusServer(cleanDevice),
+        });
+        return true;
+      }
+
       // 4H. Standard Studio Pass Verification for Couture Actions (Strict Server-Only Authority)
       const clientPass = parsed.pass && typeof parsed.pass === 'object' ? parsed.pass : null;
       const rawPassKey =
@@ -5111,12 +5850,40 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ? resolution.matchedTiers
           : [tier];
 
+      await hydratePersistentOwnerVaultServer();
+      const parsedAmount = Number.parseFloat(
+        String(parsed.amount ?? '').replace(/,/g, '').trim()
+      );
+      const isZeroPriceOrder = Number.isFinite(parsedAmount) && parsedAmount === 0;
+      const promoState = getFoundingLaunchPromoStatusServer();
+      const isSingleLaunchFreeWebhook =
+        matchedTiers.includes('single') &&
+        (isZeroPriceOrder ||
+          (promoState.kofiLaunchEnabled && promoState.kofiLaunchRemaining > 0));
+
+      if (isSingleLaunchFreeWebhook && !KOFI_LAUNCH_TX_IDS.has(kofiTxId)) {
+        KOFI_LAUNCH_TX_IDS.add(kofiTxId);
+        OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
+          Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0) + 1,
+          KOFI_LAUNCH_TX_IDS.size
+        );
+        pushAnalyticsEventServer(
+          'monetization',
+          'kofi_launch_webhook',
+          `Ko-fi Founding Launch Starter claimed (${OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount}/${OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit})`,
+          'mobile',
+          currency === 'PHP' ? 'PH' : 'INTL'
+        );
+        await savePersistentOwnerVaultServer();
+      }
+
       // Store unclaimed receipt in deterministic `(buyerEmail, matchedTier)` slot(s) `BLOOM-KSXX-XXXX`
       const writtenSlots = [];
       for (const matchedTier of matchedTiers) {
         const tierSpecificCode =
           resolution.matchedCodeByTier?.[matchedTier] || directLinkCode;
         const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);
+        const isThisSlotFreeLaunch = matchedTier === 'single' && isSingleLaunchFreeWebhook;
         const receiptRecord = createSignedStudioPassServer({
           passKey: slotKey,
           tier: matchedTier,
@@ -5125,7 +5892,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
           boundBouquetCode: tierSpecificCode,
           paymentProvider: 'kofi',
-          paymentReference: `kfs_${kofiTxId.slice(0, 12)}`,
+          paymentReference: `${isThisSlotFreeLaunch ? 'kfl' : 'kfs'}_${kofiTxId.slice(0, 12)}`,
         });
 
         SERVER_PASS_STORE.set(slotKey, receiptRecord);
@@ -5141,6 +5908,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         tier,
         matchedTiers,
         directLinkCode,
+        isKofiLaunchStarter: isSingleLaunchFreeWebhook,
+        launchPromo: getFoundingLaunchPromoStatusServer(),
       });
       return true;
     }

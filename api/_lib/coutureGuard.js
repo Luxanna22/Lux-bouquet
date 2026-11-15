@@ -223,6 +223,8 @@ function decodeBase64UrlUtf8(b64url) {
 export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
   const reasons = [];
   const raw = String(payload || '').trim();
+  let visibleStemCount = 0;
+  let noteCharCount = 0;
 
   if (extra?.voiceAudioDataUrl && String(extra.voiceAudioDataUrl).trim().length > 0) {
     reasons.push('Voice Keepsake');
@@ -249,20 +251,26 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
     const [cMetaStr = '1', , , cMsgB64 = '!'] = cardPart.split('~');
     const cMeta = parseInt(cMetaStr, 36) || 0;
     const cardVisible = cMeta % 2 === 1;
-    if (cardVisible && cMsgB64 && cMsgB64 !== '!') {
+    if (cMsgB64 && cMsgB64 !== '!') {
       const msg = decodeBase64UrlUtf8(cMsgB64);
-      if (msg.trim().length > FREE_CARD_NOTE_MAX_CHARS) {
+      const normalizedMsg = msg.replace(/\s+/g, ' ').trim();
+      noteCharCount = normalizedMsg.length;
+      if (cardVisible && msg.trim().length > FREE_CARD_NOTE_MAX_CHARS) {
         reasons.push('Extended Card Note');
       }
     }
 
-    if (!(stemParts.length === 1 && stemParts[0].startsWith('@'))) {
+    if (stemParts.length === 1 && stemParts[0].startsWith('@')) {
+      visibleStemCount = 5;
+    } else {
       for (const sp of stemParts) {
         if (!sp || sp.length < 8) continue;
         const [base, flagsStr = '0', , , , pStyleStr = ''] = sp.split('~');
         const flags = parseInt(flagsStr, 36) || 0;
         const isHidden = Boolean(flags & 4);
         if (isHidden) continue;
+
+        visibleStemCount += 1;
 
         if (pStyleStr !== '') {
           reasons.push('Photo Keepsake');
@@ -308,6 +316,8 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
   return {
     isCouture: reasons.length > 0,
     reasons: Array.from(new Set(reasons)),
+    visibleStemCount,
+    noteCharCount,
   };
 }
 
@@ -327,15 +337,6 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
   const requiresPaidPass =
     inspection.isCouture || requestedPremium || requestedRetention > 30;
 
-  if (!requiresPaidPass) {
-    return {
-      ok: true,
-      isPremium: false,
-      retentionDays: 30,
-      reasons: [],
-    };
-  }
-
   const clientPass = bodyObj.pass && typeof bodyObj.pass === 'object' ? bodyObj.pass : null;
   const rawPassKey =
     typeof bodyObj.passKey === 'string' && bodyObj.passKey
@@ -349,14 +350,26 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
       : clientPass?.activeSessionNonce || '';
 
   const normKey = normalizePassKey(rawPassKey);
-  if (
-    !isValidPassKeyFormat(normKey) ||
-    !deviceTokenHash ||
-    normKey.startsWith('BLOOM-KS') ||
-    normKey.startsWith('BLOOM-BG') ||
-    normKey.startsWith('BLOOM-SP') ||
-    normKey === 'BLOOM-KCFG-SHOP'
-  ) {
+  const hasCandidatePassKey =
+    isValidPassKeyFormat(normKey) &&
+    Boolean(deviceTokenHash) &&
+    !normKey.startsWith('BLOOM-KS') &&
+    !normKey.startsWith('BLOOM-BG') &&
+    !normKey.startsWith('BLOOM-SP') &&
+    normKey !== 'BLOOM-KCFG-SHOP';
+
+  if (!requiresPaidPass && !hasCandidatePassKey) {
+    return {
+      ok: true,
+      isPremium: false,
+      retentionDays: 30,
+      reasons: [],
+      visibleStemCount: inspection.visibleStemCount,
+      noteCharCount: inspection.noteCharCount,
+    };
+  }
+
+  if (!hasCandidatePassKey) {
     return {
       ok: false,
       statusCode: 403,
@@ -370,6 +383,16 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
   const canonicalPass = await resolveCanonicalStudioPassServer(normKey, clientPass);
 
   if (!canonicalPass) {
+    if (!requiresPaidPass) {
+      return {
+        ok: true,
+        isPremium: false,
+        retentionDays: 30,
+        reasons: [],
+        visibleStemCount: inspection.visibleStemCount,
+        noteCharCount: inspection.noteCharCount,
+      };
+    }
     return {
       ok: false,
       statusCode: 403,
@@ -387,6 +410,16 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
   });
 
   if (!check.valid || !check.updatedPass) {
+    if (!requiresPaidPass) {
+      return {
+        ok: true,
+        isPremium: false,
+        retentionDays: 30,
+        reasons: [],
+        visibleStemCount: inspection.visibleStemCount,
+        noteCharCount: inspection.noteCharCount,
+      };
+    }
     return {
       ok: false,
       statusCode: 403,
@@ -403,5 +436,8 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
     retentionDays: isEternal ? 36500 : 90,
     pass: check.updatedPass,
     reasons: inspection.reasons,
+    visibleStemCount: inspection.visibleStemCount,
+    noteCharCount: inspection.noteCharCount,
   };
 }
+

@@ -168,6 +168,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [isTogglingPhDisabled, setIsTogglingPhDisabled] = useState(false);
   const [isResettingIncome, setIsResettingIncome] = useState(false);
   const [isClearingKeys, setIsClearingKeys] = useState(false);
+  const [isUpdatingLaunchPromo, setIsUpdatingLaunchPromo] = useState(false);
 
   // Verify the encrypted per-visit gateSlug with the server on mount; if forged or tampered in F12, exit immediately
   useEffect(() => {
@@ -604,6 +605,42 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       onToast('Network error clearing test & revoked keys.');
     } finally {
       setIsClearingKeys(false);
+    }
+  };
+
+  const handleUpdateLaunchPromoConfig = async (patch: {
+    kofiStarterEnabled?: boolean;
+    kofiStarterMaxLimit?: number;
+    resetKofiClaimed?: boolean;
+    recipientGiftEnabled?: boolean;
+    recipientGiftMaxLimit?: number;
+    resetRecipientClaimed?: boolean;
+  }) => {
+    if (!adminSessionToken) return;
+    setIsUpdatingLaunchPromo(true);
+    try {
+      const res = await fetch('/api/payments/verify-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_launch_promo_config',
+          adminSessionToken,
+          deviceTokenHash,
+          ...patch,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        invalidateCheckoutCapabilityCache();
+        handleSyncKeysResponse(data);
+        onToast('Founding Launch promo settings updated.');
+      } else {
+        onToast(data.message || 'Could not update Founding Launch settings.');
+      }
+    } catch {
+      onToast('Network error updating Founding Launch settings.');
+    } finally {
+      setIsUpdatingLaunchPromo(false);
     }
   };
 
@@ -1271,9 +1308,11 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               isTogglingIncomePause={isTogglingIncomePause}
               isTogglingPhDisabled={isTogglingPhDisabled}
               isResettingIncome={isResettingIncome}
+              isUpdatingLaunchPromo={isUpdatingLaunchPromo}
               onToggleIncomePause={handleToggleIncomePause}
               onTogglePhDisabled={handleTogglePhDisabled}
               onResetIncome={handleResetIncome}
+              onUpdateLaunchPromoConfig={handleUpdateLaunchPromoConfig}
             />
           )}
 

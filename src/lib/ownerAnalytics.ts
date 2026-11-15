@@ -195,6 +195,12 @@ export interface OwnerAnalyticsSummary {
   phPaymentsDisabled?: boolean;
   incomeResetAtMs?: number;
   incomeResetEpoch?: number;
+  kofiLaunchEnabled?: boolean;
+  kofiLaunchMaxLimit?: number;
+  kofiLaunchClaimedCount?: number;
+  recipientGiftEnabled?: boolean;
+  recipientGiftMaxLimit?: number;
+  recipientGiftClaimedCount?: number;
   blockedShareAttempts: number;
   blockedPinAttempts: number;
   shareChannels: {
@@ -276,6 +282,12 @@ export function createInitialAnalyticsSummary(nowMs: number = Date.now()): Owner
     phPaymentsDisabled: false,
     incomeResetAtMs: 0,
     incomeResetEpoch: 0,
+    kofiLaunchEnabled: true,
+    kofiLaunchMaxLimit: 30,
+    kofiLaunchClaimedCount: 0,
+    recipientGiftEnabled: true,
+    recipientGiftMaxLimit: 150,
+    recipientGiftClaimedCount: 0,
     blockedShareAttempts: 0,
     blockedPinAttempts: 0,
     shareChannels: {
