@@ -4807,6 +4807,268 @@ test('Repeat $1.99 Ko-fi Single Bouquet purchase with the SAME email succeeds ev
   }
 });
 
+test('Ko-fi paid Shop Order & diagnostic webhook observability in Admin + paid $1.99 succeeds even with stale isKofiLaunchStarter', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const { EventEmitter } = await import('node:events');
+
+  const makeReq = (method: string, url: string, bodyInput?: string | Record<string, unknown>) => {
+    const req = new EventEmitter() as InstanceType<typeof EventEmitter> & {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+      body?: unknown;
+    };
+    req.method = method;
+    req.url = url;
+    req.headers = { host: 'www.sendabouquet.online', 'content-type': 'application/json' };
+    if (bodyInput && typeof bodyInput === 'object') {
+      req.body = bodyInput;
+    } else {
+      process.nextTick(() => {
+        if (typeof bodyInput === 'string') {
+          req.emit('data', Buffer.from(bodyInput, 'utf8'));
+        }
+        req.emit('end');
+      });
+    }
+    return req;
+  };
+
+  const makeRes = () => ({
+    statusCode: 200,
+    headers: {} as Record<string, string>,
+    body: '',
+    setHeader(k: string, v: string) {
+      this.headers[k] = v;
+    },
+    end(chunk?: string) {
+      if (chunk) this.body += chunk;
+    },
+    json() {
+      return JSON.parse(this.body || '{}');
+    },
+  });
+
+  const prevSingleCode = process.env.KOFI_SHOP_SINGLE_CODE;
+  const prevTestSingleCode = process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+  const prevToken = process.env.KOFI_VERIFICATION_TOKEN;
+  const prevVercel = process.env.VERCEL;
+  const originalFetch = globalThis.fetch;
+
+  process.env.KOFI_SHOP_SINGLE_CODE = 'paid199obs';
+  process.env.KOFI_SHOP_TEST_SINGLE_CODE = 'free0obs01';
+  process.env.KOFI_VERIFICATION_TOKEN = 'obs_tok_123';
+  const createdKeys: string[] = [];
+
+  try {
+    const remotePasses = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+    let remoteVault: { fields: Record<string, unknown>; updateTime: string } | null = null;
+    let failNextPassWrite = false;
+    let revSeq = 1;
+
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/shared_bouquets/')) {
+        if (!init?.method || init.method === 'GET') {
+          if (!remoteVault) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T06:00:0${revSeq++}.000Z`;
+          remoteVault = { fields: bodyObj.fields, updateTime: nextTime };
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+      }
+      if (urlStr.includes('/studio_passes/')) {
+        const after = urlStr.split('/studio_passes/')[1] || '';
+        const [rawDocId] = after.split('?');
+        const docId = decodeURIComponent(rawDocId);
+        const existing = remotePasses.get(docId);
+
+        if (!init?.method || init.method === 'GET') {
+          if (!existing) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(existing), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          if (failNextPassWrite) {
+            return new Response('{}', { status: 503 });
+          }
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T06:00:0${revSeq++}.000Z`;
+          const stored = { fields: bodyObj.fields, updateTime: nextTime };
+          remotePasses.set(docId, stored);
+          return new Response(JSON.stringify(stored), { status: 200 });
+        }
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    paymentLib.resetOwnerVaultMetaForTests();
+    paymentLib.PAID_PASS_LEDGER.clear();
+    paymentLib.ISSUED_PASS_KEYS.clear();
+    paymentLib.OWNER_ANALYTICS_STATE.recentEvents = [];
+    paymentLib.OWNER_ANALYTICS_STATE.revenueUsdCents = 0;
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
+
+    // 1. Unrecognized item code webhook logs a non-PII diagnostic event in Admin recentEvents
+    const badCodeRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/kofi', {
+        data: JSON.stringify({
+          verification_token: 'obs_tok_123',
+          type: 'Shop Order',
+          email: 'hidden@example.com',
+          amount: '1.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_obs_badcode_1',
+          shop_items: [{ direct_link_code: 'wrongcode9' }],
+        }),
+      }),
+      badCodeRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(badCodeRes.statusCode, 200);
+    assert.equal(badCodeRes.json().ignored, true);
+    assert.equal(
+      paymentLib.OWNER_ANALYTICS_STATE.recentEvents.some(
+        (ev: { type: string; summary: string }) =>
+          ev.type === 'kofi_webhook_ignored' &&
+          ev.summary.includes('wrongcode9') &&
+          !ev.summary.includes('hidden@example.com')
+      ),
+      true
+    );
+
+    // 2. Firestore write failure in VERCEL returns 500 so Ko-fi retries
+    process.env.VERCEL = '1';
+    failNextPassWrite = true;
+    const failPersistRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/kofi', {
+        data: JSON.stringify({
+          verification_token: 'obs_tok_123',
+          type: 'Shop Order',
+          email: 'buyerobs@example.com',
+          amount: '1.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_obs_retry_1',
+          shop_items: [{ direct_link_code: 'paid199obs' }],
+        }),
+      }),
+      failPersistRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(failPersistRes.statusCode, 500);
+    failNextPassWrite = false;
+    delete process.env.VERCEL;
+
+    // 3. Valid paid $1.99 webhook (Vercel form-urlencoded `{ data: "..." }`) logs idempotent event without double revenue
+    for (let i = 0; i < 2; i++) {
+      const paidWhRes = makeRes();
+      await paymentLib.handlePaymentEndpoint(
+        makeReq('POST', '/api/webhooks/kofi', {
+          data: JSON.stringify({
+            verification_token: 'obs_tok_123',
+            type: 'Shop Order',
+            email: 'buyerobs@example.com',
+            amount: '1.99',
+            currency: 'USD',
+            kofi_transaction_id: 'tx_obs_paid_001',
+            shop_items: [{ direct_link_code: 'paid199obs' }],
+          }),
+        }),
+        paidWhRes,
+        '/api/webhooks/kofi'
+      );
+      assert.equal(paidWhRes.statusCode, 200);
+      createdKeys.push(paidWhRes.json().emailTierSlotKey);
+    }
+
+    const orderWhEvents = paymentLib.OWNER_ANALYTICS_STATE.recentEvents.filter(
+      (ev: { type: string }) => ev.type === 'kofi_order_webhook'
+    );
+    assert.equal(orderWhEvents.length, 1);
+    assert.match(orderWhEvents[0].summary, /USD 1\.99/);
+    assert.doesNotMatch(orderWhEvents[0].summary, /buyerobs@example\.com/);
+    assert.equal(paymentLib.OWNER_ANALYTICS_STATE.revenueUsdCents, 0);
+
+    // 4. Device claims free starter first, then verifies a PAID $1.99 receipt even if checkout token still carried lfl=1 (stale isKofiLaunchStarter)
+    const devStale = 'dev_stale_free_paid_01';
+    const staleChkRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: devStale,
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      staleChkRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(staleChkRes.statusCode, 200);
+    assert.equal(staleChkRes.json().isKofiLaunchStarter, true);
+
+    // Simulate this device already claimed free launch starter elsewhere
+    paymentLib.KOFI_LAUNCH_CLAIMED_DEVICES.add(devStale);
+
+    const verifyPaidAfterFreeRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: staleChkRes.json().checkoutId,
+          checkoutToken: staleChkRes.json().checkoutToken,
+          deviceTokenHash: devStale,
+          buyerEmail: 'buyerobs@example.com',
+        })
+      ),
+      verifyPaidAfterFreeRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyPaidAfterFreeRes.statusCode, 200);
+    assert.equal(verifyPaidAfterFreeRes.json().isKofiLaunchStarter, false);
+    createdKeys.push(verifyPaidAfterFreeRes.json().pass.passKey);
+    assert.equal(paymentLib.OWNER_ANALYTICS_STATE.revenueUsdCents, 199);
+    assert.equal(paymentLib.OWNER_ANALYTICS_STATE.passesIssued.single, 1);
+  } finally {
+    for (const k of createdKeys) {
+      if (k) {
+        paymentLib.SERVER_PASS_STORE.delete(k);
+        paymentLib.PAID_PASS_LEDGER.delete(k);
+        paymentLib.ISSUED_PASS_KEYS.delete(k);
+      }
+    }
+    if (prevSingleCode !== undefined) process.env.KOFI_SHOP_SINGLE_CODE = prevSingleCode;
+    else delete process.env.KOFI_SHOP_SINGLE_CODE;
+    if (prevTestSingleCode !== undefined) process.env.KOFI_SHOP_TEST_SINGLE_CODE = prevTestSingleCode;
+    else delete process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+    if (prevToken !== undefined) process.env.KOFI_VERIFICATION_TOKEN = prevToken;
+    else delete process.env.KOFI_VERIFICATION_TOKEN;
+    if (prevVercel !== undefined) process.env.VERCEL = prevVercel;
+    else delete process.env.VERCEL;
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
 
 
 

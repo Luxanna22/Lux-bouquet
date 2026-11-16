@@ -2879,6 +2879,38 @@ function pushAnalyticsEventServer(category, type, summary, device = 'mobile', re
   OWNER_ANALYTICS_STATE.updatedAt = nowIso;
 }
 
+function pushAnalyticsEventWithIdServer(
+  eventId,
+  category,
+  type,
+  summary,
+  device = 'mobile',
+  region = 'INTL'
+) {
+  const cleanId = String(eventId || '').trim();
+  if (!cleanId) {
+    pushAnalyticsEventServer(category, type, summary, device, region);
+    return;
+  }
+  if (OWNER_ANALYTICS_STATE.recentEvents.some((ev) => ev && ev.id === cleanId)) {
+    return;
+  }
+  const nowIso = new Date().toISOString();
+  OWNER_ANALYTICS_STATE.recentEvents.unshift({
+    id: cleanId,
+    ts: nowIso,
+    category,
+    type,
+    summary: String(summary || '').slice(0, 140),
+    device: device === 'tablet' || device === 'desktop' ? device : 'mobile',
+    region: region === 'PH' ? 'PH' : 'INTL',
+  });
+  if (OWNER_ANALYTICS_STATE.recentEvents.length > 40) {
+    OWNER_ANALYTICS_STATE.recentEvents = OWNER_ANALYTICS_STATE.recentEvents.slice(0, 40);
+  }
+  OWNER_ANALYTICS_STATE.updatedAt = nowIso;
+}
+
 function getTodayDailyBucketServer() {
   const todayIso = new Date().toISOString().slice(0, 10);
   let bucket = OWNER_ANALYTICS_STATE.dailySeries.find((d) => d.date === todayIso);
@@ -3511,16 +3543,16 @@ async function syncOwnerShopCodesWithFirestore(newCodes) {
     return cachedOwnerShopCodes;
   }
 
-  if (!cachedOwnerShopCodes.single && !cachedOwnerShopCodes.pass_7d && !cachedOwnerShopCodes.pass_30d) {
+  if (!cachedOwnerShopCodes.single || !cachedOwnerShopCodes.pass_7d || !cachedOwnerShopCodes.pass_30d) {
     const remoteCfg =
       SERVER_PASS_STORE.get('BLOOM-KCFG-SHOP') ||
       (await fetchStudioPassFromFirestoreRest('BLOOM-KCFG-SHOP'));
     if (remoteCfg && typeof remoteCfg.boundBouquetCode === 'string' && remoteCfg.boundBouquetCode.includes(':')) {
       const [s, p7, p30] = remoteCfg.boundBouquetCode.split(':');
       cachedOwnerShopCodes = {
-        single: extractKofiShopCode(s),
-        pass_7d: extractKofiShopCode(p7),
-        pass_30d: extractKofiShopCode(p30),
+        single: cachedOwnerShopCodes.single || extractKofiShopCode(s),
+        pass_7d: cachedOwnerShopCodes.pass_7d || extractKofiShopCode(p7),
+        pass_30d: cachedOwnerShopCodes.pass_30d || extractKofiShopCode(p30),
       };
     }
   }
@@ -3594,13 +3626,17 @@ async function readRequestBody(req) {
     if (typeof req.body === 'object') {
       if (typeof req.body.data === 'string' && req.body.data.trim().startsWith('{')) {
         try {
-          return { raw: req.body.data, rawExact: req.body.data, parsed: JSON.parse(req.body.data) };
+          return {
+            raw: req.body.data,
+            rawExact: req.body.data,
+            parsed: sanitizeJsonValue(JSON.parse(req.body.data)),
+          };
         } catch {
           return { raw: req.body.data, rawExact: req.body.data, parsed: {} };
         }
       }
       const rawStr = JSON.stringify(req.body);
-      return { raw: rawStr, rawExact: rawStr, parsed: req.body };
+      return { raw: rawStr, rawExact: rawStr, parsed: sanitizeJsonValue(req.body) };
     }
   }
 
@@ -3937,7 +3973,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const kofiVerificationToken = process.env.KOFI_VERIFICATION_TOKEN?.trim() || '';
       const vercelCountry = extractEdgeCountryCode(req);
 
-      await syncOwnerShopCodesWithFirestore(parsed.shopCodes);
+      await syncOwnerShopCodesWithFirestore();
       const shopCodes = getActiveKofiShopCodes(parsed.shopCodes);
 
       const deviceTokenHash =
@@ -4785,8 +4821,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           const isReceiptFreeLaunch = Boolean(
             pending.tier === 'single' &&
               receiptSlot &&
-              (Boolean(pending.isKofiLaunchStarter) ||
-                String(receiptSlot.paymentReference || '').startsWith('kfl_'))
+              String(receiptSlot.paymentReference || '').startsWith('kfl_')
           );
           const deviceAlreadyClaimedLaunchStarter = Boolean(
             (deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(deviceTokenHash)) ||
@@ -6305,7 +6340,28 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ? parsed.verification_token.replace(/^["']+|["']+$/g, '').trim()
           : '';
 
+      const logKofiDiagnosticEvent = async (eventId, type, summary, reg = 'INTL') => {
+        try {
+          await hydratePersistentOwnerVaultServer();
+          await mutateAndSaveOwnerVaultServer(() => {
+            pushAnalyticsEventWithIdServer(eventId, 'monetization', type, summary, 'desktop', reg);
+          });
+        } catch {
+          // Non-fatal diagnostic log error
+        }
+      };
+
       if (expectedToken && !timingSafeMatch(expectedToken, incomingToken)) {
+        const rejectId = `kofi_wh_rej_${crypto
+          .createHash('sha256')
+          .update(`token:${parsed?.kofi_transaction_id || Date.now()}`)
+          .digest('hex')
+          .slice(0, 12)}`;
+        await logKofiDiagnosticEvent(
+          rejectId,
+          'kofi_webhook_rejected',
+          'Ko-fi webhook rejected (verification token mismatch)'
+        );
         sendJson(res, 401, { ok: false, message: 'Invalid Ko-fi verification token' });
         return true;
       }
@@ -6316,6 +6372,22 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       // Strictly reject non-Shop Orders (e.g. "Donation" / "Subscription" test clicks) or unknown item codes
       if (!resolution.valid) {
+        const rawCodes = Array.isArray(parsed?.shop_items)
+          ? parsed.shop_items
+              .map((it) => extractKofiShopCode(it?.direct_link_code))
+              .filter(Boolean)
+              .join(', ')
+          : '';
+        const ignSummary =
+          resolution.reason === 'UNRECOGNIZED_DIRECT_LINK_CODE' && rawCodes
+            ? `Ko-fi Shop Order ignored (unknown item code: ${rawCodes})`
+            : `Ko-fi webhook ignored (${resolution.reason}: ${String(parsed?.type || 'unknown')})`;
+        const ignId = `kofi_wh_ign_${crypto
+          .createHash('sha256')
+          .update(`${resolution.reason}:${parsed?.kofi_transaction_id || rawCodes || Date.now()}`)
+          .digest('hex')
+          .slice(0, 12)}`;
+        await logKofiDiagnosticEvent(ignId, 'kofi_webhook_ignored', ignSummary);
         sendJson(res, 200, {
           ok: false,
           ignored: true,
@@ -6327,6 +6399,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const buyerEmail = String(parsed.email || '').trim().toLowerCase();
       if (!buyerEmail || !buyerEmail.includes('@')) {
+        await logKofiDiagnosticEvent(
+          `kofi_wh_noemail_${String(parsed?.kofi_transaction_id || Date.now()).slice(0, 16)}`,
+          'kofi_webhook_ignored',
+          'Ko-fi Shop Order ignored (missing buyer email)'
+        );
         sendJson(res, 200, {
           ok: false,
           ignored: true,
@@ -6338,6 +6415,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const currency = String(parsed.currency || 'USD').toUpperCase();
       const kofiTxId = String(parsed.kofi_transaction_id || `kofi_${Date.now()}`);
+      const txDigest = crypto
+        .createHash('sha256')
+        .update(kofiTxId, 'utf8')
+        .digest('hex')
+        .slice(0, 14);
       const tier = resolution.tier;
       const directLinkCode = resolution.directLinkCode || '';
       const matchedTiers =
@@ -6381,7 +6463,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               KOFI_LAUNCH_TX_IDS.size
             );
             reconcileFoundingLaunchFromLedgerServer();
-            pushAnalyticsEventServer(
+            pushAnalyticsEventWithIdServer(
+              `kofi_wh_launch_${txDigest}`,
               'monetization',
               'kofi_launch_webhook',
               `Ko-fi Founding Launch Starter claimed (${OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount}/${OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit})`,
@@ -6402,6 +6485,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         matchedTiers.length === 1 &&
         matchedTiers[0] === 'single'
       ) {
+        await logKofiDiagnosticEvent(
+          `kofi_wh_depleted_${txDigest}`,
+          'kofi_webhook_ignored',
+          'Ko-fi Founding Launch order ignored (promo stock limit reached)',
+          currency === 'PHP' ? 'PH' : 'INTL'
+        );
         sendJson(res, 200, {
           ok: false,
           ignored: true,
@@ -6413,6 +6502,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       // Store unclaimed receipt in deterministic `(buyerEmail, matchedTier)` slot(s) `BLOOM-KSXX-XXXX`
       const writtenSlots = [];
+      let allPersisted = true;
       for (const matchedTier of matchedTiers) {
         if (matchedTier === 'single' && launchSlotRejectedAsDepleted) {
           continue;
@@ -6421,13 +6511,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           resolution.matchedCodeByTier?.[matchedTier] || directLinkCode;
         const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);
         const isThisSlotFreeLaunch = matchedTier === 'single' && isSingleLaunchFreeWebhook;
-        const txDigest = crypto
-          .createHash('sha256')
-          .update(kofiTxId, 'utf8')
-          .digest('hex')
-          .slice(0, 14);
         const incomingTxPrefix = `${isThisSlotFreeLaunch ? 'kfl' : 'kfs'}_${txDigest}`;
-        await withPassKeyLock(slotKey, async () => {
+        const slotWriteOk = await withPassKeyLock(slotKey, async () => {
           const remoteExisting = await fetchStudioPassFromFirestoreRest(slotKey);
           const memExisting = SERVER_PASS_STORE.get(slotKey);
           const existing =
@@ -6441,7 +6526,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             if (existingPrefix && existingPrefix === incomingTxPrefix) {
               // Duplicate webhook retry for an already-claimed transaction: preserve CLAIMED state
               SERVER_PASS_STORE.set(slotKey, existing);
-              return;
+              return true;
             }
           }
 
@@ -6457,9 +6542,45 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           });
 
           SERVER_PASS_STORE.set(slotKey, receiptRecord);
-          await saveStudioPassToFirestoreRest(receiptRecord);
+          return await saveStudioPassToFirestoreRest(receiptRecord);
         });
+        if (!slotWriteOk) {
+          allPersisted = false;
+        }
         writtenSlots.push(slotKey);
+      }
+
+      if (!allPersisted && process.env.VERCEL) {
+        await logKofiDiagnosticEvent(
+          `kofi_wh_fail_${txDigest}`,
+          'kofi_webhook_error',
+          `Ko-fi ${matchedTiers.join('+')} receipt write failed — requesting Ko-fi retry`,
+          currency === 'PHP' ? 'PH' : 'INTL'
+        );
+        sendJson(res, 500, {
+          ok: false,
+          message: 'Failed to persist Ko-fi order receipt.',
+        });
+        return true;
+      }
+
+      const paidWebhookTiers = matchedTiers.filter(
+        (t) => !(t === 'single' && (isSingleLaunchFreeWebhook || launchSlotRejectedAsDepleted))
+      );
+      if (paidWebhookTiers.length > 0) {
+        const amountLabel = Number.isFinite(parsedAmount)
+          ? `${currency} ${parsedAmount.toFixed(2)}`
+          : currency;
+        await mutateAndSaveOwnerVaultServer(() => {
+          pushAnalyticsEventWithIdServer(
+            `kofi_wh_${txDigest}`,
+            'monetization',
+            'kofi_order_webhook',
+            `Ko-fi ${paidWebhookTiers.join('+')} Shop Order received (${amountLabel}) · awaiting buyer verify`,
+            'mobile',
+            currency === 'PHP' ? 'PH' : 'INTL'
+          );
+        });
       }
 
       sendJson(res, 200, {
