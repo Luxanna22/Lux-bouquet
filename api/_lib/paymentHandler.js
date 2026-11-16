@@ -3379,6 +3379,25 @@ export function pickCanonicalPassRecordServer(passA, passB) {
   if (validA && !validB) return passA;
   if (!validA && validB) return passB;
 
+  if (normalizePassKey(passA.passKey).startsWith('BLOOM-KS')) {
+    const extractRefPrefix = (ref) => {
+      const str = String(ref || '').trim();
+      const idx = str.lastIndexOf('_');
+      return idx > 0 ? str.slice(0, idx) : str;
+    };
+    const prefA = extractRefPrefix(passA.paymentReference);
+    const prefB = extractRefPrefix(passB.paymentReference);
+    const tsA = Date.parse(passA.createdAt || '') || 0;
+    const tsB = Date.parse(passB.createdAt || '') || 0;
+    // Different Ko-fi transactions on the same (email, tier) slot: the newer order wins even if the prior order was CLAIMED.
+    if (prefA && prefB && prefA !== prefB) {
+      if (tsA !== tsB) {
+        return tsA > tsB ? passA : passB;
+      }
+      return passB;
+    }
+  }
+
   const isRevoked = (p) =>
     p.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
     p.primaryDeviceHash === REVOKED_PASS_SENTINEL;
@@ -4290,7 +4309,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           ok: false,
           status: 'NO_MATCHING_ORDER',
           message:
-            'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.',
+            'No matching order found yet—complete your checkout or check that your email and selected pass match.',
         });
         return true;
       }
@@ -4698,24 +4717,21 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       if (isKofiLiveRequired && pending.status !== 'paid') {
         const UNIFIED_KOFI_NO_MATCH_MESSAGE =
-          'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.';
+          'No matching order found yet—complete your checkout or check that your email and selected pass match.';
 
         if (!buyerEmail || !buyerEmail.includes('@')) {
           sendJson(res, 400, {
             ok: false,
             status: 'EMAIL_REQUIRED',
-            message: 'Please enter the email address you used on Ko-fi.',
+            message: 'Please enter your checkout email address.',
           });
           return true;
         }
 
         if (
-          !process.env.KOFI_SHOP_SINGLE_CODE &&
-          !process.env.KOFI_SHOP_7D_CODE &&
-          !process.env.KOFI_SHOP_30D_CODE &&
-          !cachedOwnerShopCodes.single &&
-          !cachedOwnerShopCodes.pass_7d &&
-          !cachedOwnerShopCodes.pass_30d
+          (!process.env.KOFI_SHOP_SINGLE_CODE && !cachedOwnerShopCodes.single) ||
+          (!process.env.KOFI_SHOP_7D_CODE && !cachedOwnerShopCodes.pass_7d) ||
+          (!process.env.KOFI_SHOP_30D_CODE && !cachedOwnerShopCodes.pass_30d)
         ) {
           await syncOwnerShopCodesWithFirestore();
         }
@@ -6405,7 +6421,30 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           resolution.matchedCodeByTier?.[matchedTier] || directLinkCode;
         const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);
         const isThisSlotFreeLaunch = matchedTier === 'single' && isSingleLaunchFreeWebhook;
+        const txDigest = crypto
+          .createHash('sha256')
+          .update(kofiTxId, 'utf8')
+          .digest('hex')
+          .slice(0, 14);
+        const incomingTxPrefix = `${isThisSlotFreeLaunch ? 'kfl' : 'kfs'}_${txDigest}`;
         await withPassKeyLock(slotKey, async () => {
+          const remoteExisting = await fetchStudioPassFromFirestoreRest(slotKey);
+          const memExisting = SERVER_PASS_STORE.get(slotKey);
+          const existing =
+            pickCanonicalPassRecordServer(memExisting, remoteExisting) ||
+            remoteExisting ||
+            memExisting;
+          if (existing && existing.secondaryDeviceHash === 'CLAIMED') {
+            const existingRef = String(existing.paymentReference || '').trim();
+            const lastUnderscore = existingRef.lastIndexOf('_');
+            const existingPrefix = lastUnderscore > 0 ? existingRef.slice(0, lastUnderscore) : existingRef;
+            if (existingPrefix && existingPrefix === incomingTxPrefix) {
+              // Duplicate webhook retry for an already-claimed transaction: preserve CLAIMED state
+              SERVER_PASS_STORE.set(slotKey, existing);
+              return;
+            }
+          }
+
           const receiptRecord = createSignedStudioPassServer({
             passKey: slotKey,
             tier: matchedTier,
@@ -6414,7 +6453,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
             boundBouquetCode: tierSpecificCode,
             paymentProvider: 'kofi',
-            paymentReference: `${isThisSlotFreeLaunch ? 'kfl' : 'kfs'}_${kofiTxId.slice(0, 12)}`,
+            paymentReference: incomingTxPrefix,
           });
 
           SERVER_PASS_STORE.set(slotKey, receiptRecord);

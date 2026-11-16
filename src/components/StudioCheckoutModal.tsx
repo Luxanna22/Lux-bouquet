@@ -826,7 +826,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     if (pendingCheckout.provider === 'kofi' && pendingCheckout.liveGatewayConfigured) {
       const trimmedEmail = buyerEmail.trim();
       if (!trimmedEmail || !trimmedEmail.includes('@')) {
-        setErrorMessage('Please enter the email address you used on Ko-fi.');
+        setErrorMessage('Please enter your checkout email address.');
         return;
       }
     }
@@ -858,7 +858,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           data && typeof data.message === 'string' && data.message.trim()
             ? data.message
             : res.status === 402
-            ? 'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.'
+            ? 'No matching order found yet—complete your checkout or check that your email and selected pass match.'
             : "Couldn't verify right now—please wait a few seconds and tap Verify again.";
         setErrorMessage(fallbackMsg);
         return;

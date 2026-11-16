@@ -3655,7 +3655,7 @@ test('Anti-enumeration & concise 1-sentence error copy across Ko-fi verification
         ok: false,
         status: 'NO_MATCHING_ORDER',
         message:
-          'No matching order found yet—complete your checkout on Ko-fi or check that your email and selected pass match.',
+          'No matching order found yet—complete your checkout or check that your email and selected pass match.',
       });
     }
 
@@ -4488,6 +4488,320 @@ test('Dynamic Ko-fi product routing: eligible users route to KOFI_SHOP_TEST_SING
     else delete process.env.KOFI_SHOP_TEST_SINGLE_CODE;
     if (prevLaunchFreeCode !== undefined) process.env.KOFI_SHOP_LAUNCH_FREE_CODE = prevLaunchFreeCode;
     else delete process.env.KOFI_SHOP_LAUNCH_FREE_CODE;
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Repeat $1.99 Ko-fi Single Bouquet purchase with the SAME email succeeds even when serverless RAM holds stale CLAIMED slot, while duplicate webhook retries stay claimed', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const { EventEmitter } = await import('node:events');
+
+  const makeReq = (method: string, url: string, bodyStr?: string) => {
+    const req = new EventEmitter() as InstanceType<typeof EventEmitter> & {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    req.method = method;
+    req.url = url;
+    req.headers = { host: 'www.sendabouquet.online', 'content-type': 'application/json' };
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr, 'utf8'));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => ({
+    statusCode: 200,
+    headers: {} as Record<string, string>,
+    body: '',
+    writableEnded: false,
+    setHeader(k: string, v: string) {
+      this.headers[k] = v;
+    },
+    end(chunk?: string) {
+      if (chunk) this.body += chunk;
+      this.writableEnded = true;
+    },
+    json() {
+      return JSON.parse(this.body || '{}');
+    },
+  });
+
+  const prevSingleCode = process.env.KOFI_SHOP_SINGLE_CODE;
+  const prevTestSingleCode = process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+  const originalFetch = globalThis.fetch;
+
+  process.env.KOFI_SHOP_SINGLE_CODE = 'paid199same';
+  process.env.KOFI_SHOP_TEST_SINGLE_CODE = 'free0same';
+  const createdKeys: string[] = [];
+
+  try {
+    const remotePasses = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+    let remoteVault: { fields: Record<string, unknown>; updateTime: string } | null = null;
+    let revSeq = 1;
+
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/shared_bouquets/')) {
+        if (!init?.method || init.method === 'GET') {
+          if (!remoteVault) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T05:00:0${revSeq++}.000Z`;
+          remoteVault = { fields: bodyObj.fields, updateTime: nextTime };
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+      }
+      if (urlStr.includes('/studio_passes/')) {
+        const after = urlStr.split('/studio_passes/')[1] || '';
+        const [rawDocId, queryStr = ''] = after.split('?');
+        const docId = decodeURIComponent(rawDocId);
+        const params = new URLSearchParams(queryStr);
+        const existing = remotePasses.get(docId);
+
+        if (!init?.method || init.method === 'GET') {
+          if (!existing) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(existing), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const expectedExists = params.get('currentDocument.exists');
+          const expectedUpdateTime = params.get('currentDocument.updateTime');
+          if (expectedExists === 'false' && existing) {
+            return new Response('{}', { status: 409 });
+          }
+          if (expectedUpdateTime && (!existing || existing.updateTime !== expectedUpdateTime)) {
+            return new Response('{}', { status: 412 });
+          }
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T05:00:0${revSeq++}.000Z`;
+          const stored = { fields: bodyObj.fields, updateTime: nextTime };
+          remotePasses.set(docId, stored);
+          return new Response(JSON.stringify(stored), { status: 200 });
+        }
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    paymentLib.resetOwnerVaultMetaForTests();
+    paymentLib.PAID_PASS_LEDGER.clear();
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: false,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
+
+    const buyerEmail = 'repeatbuyer@example.com';
+    const buyerDev = 'dev_repeat_buyer_01';
+
+    // 1. Purchase #1 ($1.99 Single Bouquet)
+    const chk1 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({ tier: 'single', region: 'INTL', provider: 'kofi', deviceTokenHash: buyerDev })
+      ),
+      chk1,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(chk1.statusCode, 200);
+
+    const wh1 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: buyerEmail,
+          amount: '1.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_repeat_order_001',
+          shop_items: [{ direct_link_code: 'paid199same' }],
+        })
+      ),
+      wh1,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(wh1.statusCode, 200);
+    const slotKey = wh1.json().emailTierSlotKey;
+    createdKeys.push(slotKey);
+
+    const verify1 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk1.json().checkoutId,
+          checkoutToken: chk1.json().checkoutToken,
+          deviceTokenHash: buyerDev,
+          buyerEmail,
+        })
+      ),
+      verify1,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verify1.statusCode, 200);
+    const pass1 = verify1.json().pass;
+    createdKeys.push(pass1.passKey);
+
+    // Consume Purchase #1 pass by sealing a bouquet
+    const seal1 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'verify_pass',
+          pass: pass1,
+          deviceTokenHash: buyerDev,
+          bouquetCode: 'RepeatBqt01',
+          incrementUsage: true,
+        })
+      ),
+      seal1,
+      '/api/payments/verify-action'
+    );
+    assert.equal(seal1.statusCode, 200);
+
+    // Snapshot Purchase #1's CLAIMED slot in memory to simulate another warm serverless lambda
+    const staleClaimedMemSlot = { ...paymentLib.SERVER_PASS_STORE.get(slotKey) };
+    assert.equal(staleClaimedMemSlot.secondaryDeviceHash, 'CLAIMED');
+
+    // Advance clock slightly and deliver Purchase #2 webhook (NEW tx_repeat_order_002, SAME email)
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chk2 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({ tier: 'single', region: 'INTL', provider: 'kofi', deviceTokenHash: buyerDev })
+      ),
+      chk2,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(chk2.statusCode, 200);
+
+    const wh2 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: buyerEmail,
+          amount: '1.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_repeat_order_002',
+          shop_items: [{ direct_link_code: 'paid199same' }],
+        })
+      ),
+      wh2,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(wh2.statusCode, 200);
+
+    // Put Purchase #1's stale CLAIMED slot back into SERVER_PASS_STORE (as happens on a warm Vercel instance
+    // that didn't handle the /api/webhooks/kofi invocation) while Firestore already has Purchase #2!
+    paymentLib.SERVER_PASS_STORE.set(slotKey, staleClaimedMemSlot);
+
+    const verify2 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk2.json().checkoutId,
+          checkoutToken: chk2.json().checkoutToken,
+          deviceTokenHash: buyerDev,
+          buyerEmail,
+        })
+      ),
+      verify2,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verify2.statusCode, 200);
+    const pass2 = verify2.json().pass;
+    createdKeys.push(pass2.passKey);
+    assert.notEqual(pass2.passKey, pass1.passKey);
+
+    // Duplicate retry of Purchase #2's webhook (SAME kofi_transaction_id) must NOT un-claim the slot
+    const wh2Retry = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: buyerEmail,
+          amount: '1.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_repeat_order_002',
+          shop_items: [{ direct_link_code: 'paid199same' }],
+        })
+      ),
+      wh2Retry,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(wh2Retry.statusCode, 200);
+
+    const chk3 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({ tier: 'single', region: 'INTL', provider: 'kofi', deviceTokenHash: buyerDev })
+      ),
+      chk3,
+      '/api/payments/create-checkout'
+    );
+    const retryClaim = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk3.json().checkoutId,
+          checkoutToken: chk3.json().checkoutToken,
+          deviceTokenHash: buyerDev,
+          buyerEmail,
+        })
+      ),
+      retryClaim,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(retryClaim.statusCode, 402);
+    assert.equal(
+      retryClaim.json().message,
+      'No matching order found yet—complete your checkout or check that your email and selected pass match.'
+    );
+  } finally {
+    for (const k of createdKeys) {
+      if (k) {
+        paymentLib.SERVER_PASS_STORE.delete(k);
+        paymentLib.PAID_PASS_LEDGER.delete(k);
+        paymentLib.ISSUED_PASS_KEYS.delete(k);
+      }
+    }
+    if (prevSingleCode !== undefined) process.env.KOFI_SHOP_SINGLE_CODE = prevSingleCode;
+    else delete process.env.KOFI_SHOP_SINGLE_CODE;
+    if (prevTestSingleCode !== undefined) process.env.KOFI_SHOP_TEST_SINGLE_CODE = prevTestSingleCode;
+    else delete process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
     paymentLib.resetOwnerVaultMetaForTests();
     globalThis.fetch = originalFetch;
   }
