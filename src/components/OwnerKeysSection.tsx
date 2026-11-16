@@ -1,13 +1,26 @@
-import React, { useState } from 'react';
-import { Sparkles, Copy, Check, Link2, Trash2, KeyRound } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Sparkles, Copy, Check, Link2, Trash2, KeyRound, Search, X } from 'lucide-react';
 import {
   PaidPassChannel,
+  PaidPassFilterStatus,
   PaidPassLedgerItem,
+  TesterVoucherFilterStatus,
   TesterVoucherLedgerItem,
   buildPaidPassClaimUrl,
   buildTesterMagicInviteUrl,
+  classifyPaidPassFilterStatus,
+  classifyTesterVoucherFilterStatus,
+  countPaidPassStatuses,
+  countTesterVoucherStatuses,
+  filterPaidPasses,
+  filterTesterVouchers,
+  getPaidPassDeviceBindingCount,
 } from '../lib/ownerAnalytics';
-import { PricingRegion, StudioPassTier } from '../lib/monetization';
+import {
+  PricingRegion,
+  StudioPassTier,
+  formatPassRemainingTime,
+} from '../lib/monetization';
 
 interface OwnerKeysSectionProps {
   adminSessionToken: string;
@@ -110,6 +123,27 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
   const [isMintingVoucher, setIsMintingVoucher] = useState(false);
   const [newlyMintedVoucher, setNewlyMintedVoucher] = useState<TesterVoucherLedgerItem | null>(
     null
+  );
+
+  // Filter & search state
+  const [paidFilterStatus, setPaidFilterStatus] = useState<PaidPassFilterStatus>('all');
+  const [paidSearch, setPaidSearch] = useState('');
+  const [testerFilterStatus, setTesterFilterStatus] = useState<TesterVoucherFilterStatus>('all');
+  const [testerSearch, setTesterSearch] = useState('');
+
+  const paidStatusCounts = useMemo(() => countPaidPassStatuses(paidPasses), [paidPasses]);
+  const filteredPaidPasses = useMemo(
+    () => filterPaidPasses(paidPasses, { status: paidFilterStatus, search: paidSearch }),
+    [paidPasses, paidFilterStatus, paidSearch]
+  );
+
+  const testerStatusCounts = useMemo(
+    () => countTesterVoucherStatuses(testerVouchers),
+    [testerVouchers]
+  );
+  const filteredTesterVouchers = useMemo(
+    () => filterTesterVouchers(testerVouchers, { status: testerFilterStatus, search: testerSearch }),
+    [testerVouchers, testerFilterStatus, testerSearch]
   );
 
   const panelClass = isDarkMode
@@ -491,7 +525,11 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                 >
                   Issued Paid Keys
                 </h2>
-                <span className="text-xs opacity-60 tabular-nums">{paidPasses.length} keys</span>
+                <span className="text-xs opacity-60 tabular-nums">
+                  {filteredPaidPasses.length === paidPasses.length
+                    ? `${paidPasses.length} keys`
+                    : `${filteredPaidPasses.length} of ${paidPasses.length}`}
+                </span>
               </div>
               {(() => {
                 const clearableCount = paidPasses.filter(
@@ -518,6 +556,63 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               })()}
             </div>
 
+            {paidPasses.length > 0 && (
+              <div className={`pb-3 mb-1 border-b ${hairlineBorder} space-y-2.5`}>
+                <div className="flex flex-wrap gap-1" role="group" aria-label="Filter paid keys by status">
+                  {(
+                    [
+                      { id: 'all', label: 'All' },
+                      { id: 'unclaimed', label: 'Unclaimed' },
+                      { id: 'bound', label: 'Bound' },
+                      { id: 'consumed', label: 'Used' },
+                      { id: 'expired', label: 'Expired' },
+                      { id: 'revoked', label: 'Revoked' },
+                    ] as const
+                  ).map((tab) => {
+                    const active = paidFilterStatus === tab.id;
+                    const count = paidStatusCounts[tab.id];
+                    return (
+                      <button
+                        key={tab.id}
+                        data-testid={`paid-pass-filter-${tab.id}`}
+                        type="button"
+                        onClick={() => setPaidFilterStatus(tab.id)}
+                        className={`px-2.5 py-1 rounded-md border text-[11px] transition-colors cursor-pointer tabular-nums ${
+                          active
+                            ? `${primaryBtnClass} border-transparent font-medium`
+                            : `${hairlineBorder} opacity-75 hover:opacity-100`
+                        }`}
+                      >
+                        {tab.label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 opacity-45 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    data-testid="paid-pass-search-input"
+                    type="text"
+                    value={paidSearch}
+                    onChange={(e) => setPaidSearch(e.target.value)}
+                    placeholder="Search key, buyer label, tier, channel, or bouquet code..."
+                    className={`w-full pl-8 pr-8 py-1.5 rounded-lg border text-xs focus:outline-none ${inputClass}`}
+                  />
+                  {paidSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setPaidSearch('')}
+                      aria-label="Clear paid key search"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-55 hover:opacity-100 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {paidPasses.length === 0 ? (
               <div
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -525,29 +620,62 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               >
                 No paid keys issued yet. Generate one on the left for GCash or direct buyers.
               </div>
+            ) : filteredPaidPasses.length === 0 ? (
+              <div className="py-10 text-center space-y-2">
+                <p
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  className="italic text-base opacity-65"
+                >
+                  No keys match the active filter.
+                </p>
+                <button
+                  data-testid="reset-paid-filters-btn"
+                  type="button"
+                  onClick={() => {
+                    setPaidFilterStatus('all');
+                    setPaidSearch('');
+                  }}
+                  className={`px-3 py-1 rounded-md border text-xs font-medium cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+                >
+                  Reset filters
+                </button>
+              </div>
             ) : (
               <div className={`divide-y ${hairlineDivide} max-h-[460px] overflow-y-auto`}>
-                {paidPasses.map((p) => {
-                  const isRevoked = p.status === 'revoked';
-                  const isExpired =
-                    p.status === 'expired' || new Date(p.expiresAt).getTime() <= Date.now();
+                {filteredPaidPasses.map((p) => {
+                  const derivedStatus = classifyPaidPassFilterStatus(p);
+                  const isRevoked = derivedStatus === 'revoked';
+                  const isExpired = derivedStatus === 'expired';
+                  const isConsumed = derivedStatus === 'consumed';
+                  const isBound = derivedStatus === 'bound';
+                  const deviceCount = getPaidPassDeviceBindingCount(p);
                   const statusLabel = isRevoked
                     ? 'Revoked'
+                    : isConsumed
+                    ? 'Used'
                     : isExpired
                     ? 'Expired'
-                    : p.status === 'claimed'
-                    ? 'Claimed'
+                    : isBound
+                    ? `Bound (${deviceCount}/2 devices)`
                     : 'Unclaimed';
-                  const priceLabel =
-                    p.currency === 'PHP'
-                      ? `₱${(p.amountMinor / 100).toFixed(0)}`
-                      : `$${(p.amountMinor / 100).toFixed(2)}`;
+                  const isFreeLaunch = Boolean(
+                    p.isFreePromo || String(p.passRecord?.paymentReference || '').startsWith('kfl_')
+                  );
+                  const priceLabel = isFreeLaunch
+                    ? 'Free Launch'
+                    : p.currency === 'PHP'
+                    ? `₱${(p.amountMinor / 100).toFixed(0)}`
+                    : `$${(p.amountMinor / 100).toFixed(2)}`;
                   const tierName =
                     p.tier === 'pass_30d'
                       ? '30-Day Pass'
                       : p.tier === 'pass_7d'
                       ? '7-Day Pass'
                       : 'Single';
+                  const remainingLabel =
+                    !isRevoked && !isExpired && !isConsumed && p.tier !== 'single'
+                      ? formatPassRemainingTime(p.expiresAt)
+                      : '';
 
                   return (
                     <div
@@ -564,13 +692,20 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                                 ? 'text-rose-600 dark:text-rose-400'
                                 : isExpired
                                 ? 'opacity-50'
-                                : p.status === 'claimed'
+                                : isConsumed
+                                ? 'text-amber-700 dark:text-amber-300'
+                                : isBound
                                 ? 'text-[#5A7F64] dark:text-[#8AB89A]'
                                 : 'opacity-75'
                             }`}
                           >
                             · {statusLabel}
                           </span>
+                          {isFreeLaunch && (
+                            <span className="text-xs font-medium text-[#8B5E4B] dark:text-[#E6B89C]">
+                              · Launch Promo
+                            </span>
+                          )}
                           {(p.isTest || p.channel === 'sikatpay_test') && (
                             <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
                               · Test
@@ -587,17 +722,29 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                           <span className="font-sans">
                             {CHANNEL_LABELS[p.channel] || p.channel}
                           </span>
+                          {p.boundBouquetCode && (
+                            <>
+                              <span>·</span>
+                              <span className="font-mono">to /{p.boundBouquetCode}</span>
+                            </>
+                          )}
                           {p.bouquetsCreated > 0 && (
                             <>
                               <span>·</span>
                               <span className="font-sans">{p.bouquetsCreated} sealed</span>
                             </>
                           )}
+                          {remainingLabel && remainingLabel !== 'Expired' && (
+                            <>
+                              <span>·</span>
+                              <span className="font-sans">{remainingLabel}</span>
+                            </>
+                          )}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {!isRevoked && !isExpired && (
+                        {!isRevoked && !isExpired && !isConsumed && (
                           <>
                             <button
                               type="button"
@@ -824,8 +971,68 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               >
                 Issued Tester Keys
               </h2>
-              <span className="text-xs opacity-60 tabular-nums">{testerVouchers.length} total</span>
+              <span className="text-xs opacity-60 tabular-nums">
+                {filteredTesterVouchers.length === testerVouchers.length
+                  ? `${testerVouchers.length} total`
+                  : `${filteredTesterVouchers.length} of ${testerVouchers.length}`}
+              </span>
             </div>
+
+            {testerVouchers.length > 0 && (
+              <div className={`pb-3 mb-1 border-b ${hairlineBorder} space-y-2.5`}>
+                <div className="flex flex-wrap gap-1" role="group" aria-label="Filter tester keys by status">
+                  {(
+                    [
+                      { id: 'all', label: 'All' },
+                      { id: 'unclaimed', label: 'Unclaimed' },
+                      { id: 'bound', label: 'Bound' },
+                      { id: 'expired', label: 'Expired' },
+                      { id: 'revoked', label: 'Revoked' },
+                    ] as const
+                  ).map((tab) => {
+                    const active = testerFilterStatus === tab.id;
+                    const count = testerStatusCounts[tab.id];
+                    return (
+                      <button
+                        key={tab.id}
+                        data-testid={`tester-voucher-filter-${tab.id}`}
+                        type="button"
+                        onClick={() => setTesterFilterStatus(tab.id)}
+                        className={`px-2.5 py-1 rounded-md border text-[11px] transition-colors cursor-pointer tabular-nums ${
+                          active
+                            ? `${primaryBtnClass} border-transparent font-medium`
+                            : `${hairlineBorder} opacity-75 hover:opacity-100`
+                        }`}
+                      >
+                        {tab.label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 opacity-45 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    data-testid="tester-voucher-search-input"
+                    type="text"
+                    value={testerSearch}
+                    onChange={(e) => setTesterSearch(e.target.value)}
+                    placeholder="Search key, tester name, or duration..."
+                    className={`w-full pl-8 pr-8 py-1.5 rounded-lg border text-xs focus:outline-none ${inputClass}`}
+                  />
+                  {testerSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTesterSearch('')}
+                      aria-label="Clear tester key search"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-55 hover:opacity-100 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {testerVouchers.length === 0 ? (
               <div
@@ -834,23 +1041,47 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               >
                 No tester keys issued yet.
               </div>
+            ) : filteredTesterVouchers.length === 0 ? (
+              <div className="py-10 text-center space-y-2">
+                <p
+                  style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                  className="italic text-base opacity-65"
+                >
+                  No tester keys match the active filter.
+                </p>
+                <button
+                  data-testid="reset-tester-filters-btn"
+                  type="button"
+                  onClick={() => {
+                    setTesterFilterStatus('all');
+                    setTesterSearch('');
+                  }}
+                  className={`px-3 py-1 rounded-md border text-xs font-medium cursor-pointer ${hairlineBorder} hover:bg-current/5`}
+                >
+                  Reset filters
+                </button>
+              </div>
             ) : (
               <div className={`divide-y ${hairlineDivide} max-h-[420px] overflow-y-auto`}>
-                {testerVouchers.map((v) => {
-                  const isExpired =
-                    v.status === 'expired' || new Date(v.expiresAt).getTime() <= Date.now();
-                  const isRevoked = v.status === 'revoked';
+                {filteredTesterVouchers.map((v) => {
+                  const derivedStatus = classifyTesterVoucherFilterStatus(v);
+                  const isExpired = derivedStatus === 'expired';
+                  const isRevoked = derivedStatus === 'revoked';
+                  const isBound = derivedStatus === 'bound';
                   const statusLabel = isRevoked
                     ? 'Revoked'
                     : isExpired
                     ? 'Expired'
-                    : v.status === 'claimed'
-                    ? 'Device Bound'
+                    : isBound
+                    ? 'Bound (1 device)'
                     : 'Unclaimed';
+                  const remainingLabel =
+                    !isRevoked && !isExpired ? formatPassRemainingTime(v.expiresAt) : '';
 
                   return (
                     <div
                       key={v.passKey}
+                      data-testid={`tester-voucher-row-${v.passKey}`}
                       className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                     >
                       <div className="space-y-0.5 min-w-0">
@@ -862,7 +1093,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                                 ? 'text-rose-600 dark:text-rose-400'
                                 : isExpired
                                 ? 'opacity-50'
-                                : v.status === 'claimed'
+                                : isBound
                                 ? 'text-[#5A7F64] dark:text-[#8AB89A]'
                                 : 'opacity-75'
                             }`}
@@ -878,6 +1109,12 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                           <span className="font-sans">
                             {v.bouquetsCreated}/{v.dailyCap} bouquets
                           </span>
+                          {remainingLabel && remainingLabel !== 'Expired' && (
+                            <>
+                              <span>·</span>
+                              <span className="font-sans">{remainingLabel}</span>
+                            </>
+                          )}
                         </div>
                       </div>
 

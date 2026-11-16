@@ -10,6 +10,15 @@ import {
   applyTelemetryEventToSummary,
   computeFinancialMetrics,
   computeRevenueProjection,
+  classifyPaidPassFilterStatus,
+  classifyTesterVoucherFilterStatus,
+  getPaidPassDeviceBindingCount,
+  countPaidPassStatuses,
+  countTesterVoucherStatuses,
+  filterPaidPasses,
+  filterTesterVouchers,
+  PaidPassLedgerItem,
+  TesterVoucherLedgerItem,
 } from './ownerAnalytics';
 import {
   createSignedStudioPass,
@@ -720,3 +729,256 @@ describe('Admin-Only Gemini Analytics Advisor Security & Quota Protection', () =
     assert.equal(eleventh.statusCode, 429);
   });
 });
+
+describe('Owner Keys & Passes Classification and Filtering Helpers', () => {
+  const nowMs = Date.parse('2026-11-16T02:00:00.000Z');
+  const futureIso = '2026-11-23T02:00:00.000Z';
+  const pastIso = '2026-11-10T02:00:00.000Z';
+
+  const paidFixtures: PaidPassLedgerItem[] = [
+    {
+      passKey: 'BLOOM-DVW3-7KSZ',
+      label: 'Atelier VIP Client',
+      tier: 'pass_7d',
+      region: 'PH',
+      channel: 'manual_gcash',
+      amountMinor: 9900,
+      currency: 'PHP',
+      retentionDays: 90,
+      isEternalKeepsake: false,
+      createdAt: '2026-11-16T00:20:55.950Z',
+      expiresAt: futureIso,
+      status: 'unclaimed',
+      claimedDeviceHash: '',
+      secondaryDeviceHash: null,
+      bouquetsCreated: 0,
+      blockedAttempts: 0,
+    },
+    {
+      passKey: 'BLOOM-MM32-AFBX',
+      label: 'Ko-fi Launch Free',
+      tier: 'single',
+      region: 'INTL',
+      channel: 'kofi',
+      amountMinor: 0,
+      currency: 'USD',
+      retentionDays: 90,
+      isEternalKeepsake: false,
+      createdAt: '2026-11-15T22:26:02.176Z',
+      expiresAt: futureIso,
+      status: 'claimed',
+      claimedDeviceHash: 'bf39a229bd25fb9cea2400f0094f7c64',
+      secondaryDeviceHash: null,
+      bouquetsCreated: 0,
+      blockedAttempts: 0,
+      isFreePromo: true,
+    },
+    {
+      passKey: 'BLOOM-2DEV-PASS',
+      label: 'Clara Dual Device',
+      tier: 'pass_30d',
+      region: 'INTL',
+      channel: 'kofi',
+      amountMinor: 699,
+      currency: 'USD',
+      retentionDays: 36500,
+      isEternalKeepsake: true,
+      createdAt: '2026-11-15T10:00:00.000Z',
+      expiresAt: futureIso,
+      status: 'claimed',
+      claimedDeviceHash: 'dev_primary_clara',
+      secondaryDeviceHash: 'dev_secondary_clara',
+      bouquetsCreated: 3,
+      blockedAttempts: 0,
+    },
+    {
+      passKey: 'BLOOM-USED-SING',
+      label: 'Mateo Single Gift',
+      tier: 'single',
+      region: 'PH',
+      channel: 'sikatpay',
+      amountMinor: 4900,
+      currency: 'PHP',
+      retentionDays: 90,
+      isEternalKeepsake: false,
+      createdAt: '2026-11-14T10:00:00.000Z',
+      expiresAt: pastIso,
+      status: 'claimed',
+      claimedDeviceHash: 'dev_mateo',
+      secondaryDeviceHash: 'SINGLE_CONSUMED',
+      boundBouquetCode: 'Mat3oBqt99',
+      bouquetsCreated: 1,
+      blockedAttempts: 0,
+    },
+    {
+      passKey: 'BLOOM-EXPD-7DAY',
+      label: 'Expired Buyer',
+      tier: 'pass_7d',
+      region: 'INTL',
+      channel: 'kofi',
+      amountMinor: 399,
+      currency: 'USD',
+      retentionDays: 90,
+      isEternalKeepsake: false,
+      createdAt: '2026-11-01T00:00:00.000Z',
+      expiresAt: pastIso,
+      status: 'claimed',
+      claimedDeviceHash: 'dev_exp',
+      secondaryDeviceHash: null,
+      bouquetsCreated: 2,
+      blockedAttempts: 0,
+    },
+    {
+      passKey: 'BLOOM-REVK-KEY1',
+      label: 'Revoked Test Buyer',
+      tier: 'pass_7d',
+      region: 'PH',
+      channel: 'manual_maya',
+      amountMinor: 9900,
+      currency: 'PHP',
+      retentionDays: 90,
+      isEternalKeepsake: false,
+      createdAt: '2026-11-15T00:00:00.000Z',
+      expiresAt: pastIso,
+      status: 'revoked',
+      claimedDeviceHash: '',
+      secondaryDeviceHash: 'REVOKED_BY_OWNER',
+      bouquetsCreated: 0,
+      blockedAttempts: 0,
+    },
+  ];
+
+  const testerFixtures: TesterVoucherLedgerItem[] = [
+    {
+      passKey: 'BLOOM-TST1-UNCL',
+      label: 'Sophia',
+      tier: 'pass_7d',
+      durationHours: 48,
+      retentionDays: 30,
+      dailyCap: 10,
+      createdAt: '2026-11-15T12:00:00.000Z',
+      expiresAt: futureIso,
+      status: 'unclaimed',
+      claimedDeviceHash: '',
+      bouquetsCreated: 0,
+      blockedAttempts: 0,
+    },
+    {
+      passKey: 'BLOOM-TST2-BNDD',
+      label: 'Liam QA',
+      tier: 'pass_7d',
+      durationHours: 72,
+      retentionDays: 90,
+      dailyCap: 20,
+      createdAt: '2026-11-15T12:00:00.000Z',
+      expiresAt: futureIso,
+      status: 'claimed',
+      claimedDeviceHash: 'dev_liam_1',
+      secondaryDeviceHash: 'TESTER_SINGLE_DEVICE_LOCK',
+      bouquetsCreated: 2,
+      blockedAttempts: 1,
+    },
+    {
+      passKey: 'BLOOM-TST3-EXPD',
+      label: 'Old Invite',
+      tier: 'pass_7d',
+      durationHours: 24,
+      retentionDays: 30,
+      dailyCap: 5,
+      createdAt: '2026-11-08T12:00:00.000Z',
+      expiresAt: pastIso,
+      status: 'claimed',
+      claimedDeviceHash: 'dev_old',
+      bouquetsCreated: 1,
+      blockedAttempts: 0,
+    },
+    {
+      passKey: 'BLOOM-TST4-REVK',
+      label: 'Cancelled Invite',
+      tier: 'pass_7d',
+      durationHours: 48,
+      retentionDays: 30,
+      dailyCap: 10,
+      createdAt: '2026-11-15T12:00:00.000Z',
+      expiresAt: futureIso,
+      status: 'revoked',
+      claimedDeviceHash: '',
+      secondaryDeviceHash: 'REVOKED_BY_OWNER',
+      bouquetsCreated: 0,
+      blockedAttempts: 0,
+    },
+  ];
+
+  it('classifies paid keys across unclaimed, bound (1/2 and 2/2), consumed, expired, and revoked', () => {
+    assert.equal(classifyPaidPassFilterStatus(paidFixtures[0], nowMs), 'unclaimed');
+    assert.equal(classifyPaidPassFilterStatus(paidFixtures[1], nowMs), 'bound');
+    assert.equal(classifyPaidPassFilterStatus(paidFixtures[2], nowMs), 'bound');
+    assert.equal(classifyPaidPassFilterStatus(paidFixtures[3], nowMs), 'consumed');
+    assert.equal(classifyPaidPassFilterStatus(paidFixtures[4], nowMs), 'expired');
+    assert.equal(classifyPaidPassFilterStatus(paidFixtures[5], nowMs), 'revoked');
+
+    assert.equal(getPaidPassDeviceBindingCount(paidFixtures[0]), 0);
+    assert.equal(getPaidPassDeviceBindingCount(paidFixtures[1]), 1);
+    assert.equal(getPaidPassDeviceBindingCount(paidFixtures[2]), 2);
+    assert.equal(getPaidPassDeviceBindingCount(paidFixtures[3]), 1); // SINGLE_CONSUMED sentinel ignored
+
+    const counts = countPaidPassStatuses(paidFixtures, nowMs);
+    assert.deepEqual(counts, {
+      all: 6,
+      unclaimed: 1,
+      bound: 2,
+      consumed: 1,
+      expired: 1,
+      revoked: 1,
+    });
+  });
+
+  it('filters paid keys by status and search query (key, hyphenless key, bouquet code, launch promo)', () => {
+    assert.deepEqual(
+      filterPaidPasses(paidFixtures, { status: 'bound', nowMs }).map((p) => p.passKey),
+      ['BLOOM-MM32-AFBX', 'BLOOM-2DEV-PASS']
+    );
+    assert.deepEqual(
+      filterPaidPasses(paidFixtures, { status: 'consumed', nowMs }).map((p) => p.passKey),
+      ['BLOOM-USED-SING']
+    );
+    // Hyphen-insensitive passKey search
+    assert.deepEqual(
+      filterPaidPasses(paidFixtures, { search: 'dvw37ksz', nowMs }).map((p) => p.passKey),
+      ['BLOOM-DVW3-7KSZ']
+    );
+    // Bouquet short code search
+    assert.deepEqual(
+      filterPaidPasses(paidFixtures, { search: 'Mat3oBqt99', nowMs }).map((p) => p.passKey),
+      ['BLOOM-USED-SING']
+    );
+    // Free Launch search
+    assert.deepEqual(
+      filterPaidPasses(paidFixtures, { search: 'launch', nowMs }).map((p) => p.passKey),
+      ['BLOOM-MM32-AFBX']
+    );
+  });
+
+  it('classifies and filters tester keys by unclaimed, bound, expired, revoked, and label/key', () => {
+    assert.equal(classifyTesterVoucherFilterStatus(testerFixtures[0], nowMs), 'unclaimed');
+    assert.equal(classifyTesterVoucherFilterStatus(testerFixtures[1], nowMs), 'bound');
+    assert.equal(classifyTesterVoucherFilterStatus(testerFixtures[2], nowMs), 'expired');
+    assert.equal(classifyTesterVoucherFilterStatus(testerFixtures[3], nowMs), 'revoked');
+
+    assert.deepEqual(countTesterVoucherStatuses(testerFixtures, nowMs), {
+      all: 4,
+      unclaimed: 1,
+      bound: 1,
+      expired: 1,
+      revoked: 1,
+    });
+
+    assert.deepEqual(
+      filterTesterVouchers(testerFixtures, { status: 'bound', search: 'liam', nowMs }).map(
+        (v) => v.passKey
+      ),
+      ['BLOOM-TST2-BNDD']
+    );
+  });
+});
+

@@ -142,10 +142,12 @@ export interface PaidPassLedgerItem {
   expiresAt: string;
   status: 'unclaimed' | 'claimed' | 'expired' | 'revoked';
   claimedDeviceHash: string;
+  secondaryDeviceHash?: string | null;
   bouquetsCreated: number;
   blockedAttempts: number;
   boundBouquetCode?: string | null;
   isTest?: boolean;
+  isFreePromo?: boolean;
   archivedFromIncome?: boolean;
   passRecord?: StudioPassRecord;
 }
@@ -161,6 +163,7 @@ export interface TesterVoucherLedgerItem {
   expiresAt: string;
   status: 'unclaimed' | 'claimed' | 'expired' | 'revoked';
   claimedDeviceHash: string;
+  secondaryDeviceHash?: string | null;
   bouquetsCreated: number;
   blockedAttempts: number;
   passRecord?: StudioPassRecord;
@@ -1038,4 +1041,216 @@ export function computeRevenueProjection(input: RevenueProjectionInput): Revenue
         : Number(((phShare * avgPhPhp) / phpPerUsd + (1 - phShare) * avgIntlUsd).toFixed(2)),
   };
 }
+
+// ============================================================================
+// 5. OWNER KEYS & PASSES STATUS CLASSIFICATION & FILTERING HELPERS
+// ============================================================================
+
+export type PaidPassFilterStatus =
+  | 'all'
+  | 'unclaimed'
+  | 'bound'
+  | 'consumed'
+  | 'expired'
+  | 'revoked';
+
+export type TesterVoucherFilterStatus =
+  | 'all'
+  | 'unclaimed'
+  | 'bound'
+  | 'expired'
+  | 'revoked';
+
+const PASS_SENTINEL_SINGLE_CONSUMED = 'SINGLE_CONSUMED';
+const PASS_SENTINEL_REVOKED = 'REVOKED_BY_OWNER';
+const PASS_SENTINEL_TESTER_LOCK = 'TESTER_SINGLE_DEVICE_LOCK';
+
+export function getPaidPassDeviceBindingCount(
+  pass: Pick<PaidPassLedgerItem, 'claimedDeviceHash' | 'secondaryDeviceHash' | 'passRecord'>
+): 0 | 1 | 2 {
+  const primary = String(pass.passRecord?.primaryDeviceHash || pass.claimedDeviceHash || '').trim();
+  if (!primary || primary === PASS_SENTINEL_REVOKED) {
+    return 0;
+  }
+  const sec = String(
+    pass.passRecord?.secondaryDeviceHash ?? pass.secondaryDeviceHash ?? ''
+  ).trim();
+  if (
+    sec &&
+    sec !== PASS_SENTINEL_SINGLE_CONSUMED &&
+    sec !== PASS_SENTINEL_REVOKED &&
+    sec !== PASS_SENTINEL_TESTER_LOCK &&
+    sec !== primary
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+export function classifyPaidPassFilterStatus(
+  pass: PaidPassLedgerItem,
+  nowMs: number = Date.now()
+): Exclude<PaidPassFilterStatus, 'all'> {
+  const sec = pass.passRecord?.secondaryDeviceHash ?? pass.secondaryDeviceHash ?? null;
+  const primary = pass.passRecord?.primaryDeviceHash || pass.claimedDeviceHash || '';
+  if (
+    pass.status === 'revoked' ||
+    sec === PASS_SENTINEL_REVOKED ||
+    primary === PASS_SENTINEL_REVOKED
+  ) {
+    return 'revoked';
+  }
+  if (
+    pass.tier === 'single' &&
+    (Number(pass.bouquetsCreated || 0) >= 1 ||
+      sec === PASS_SENTINEL_SINGLE_CONSUMED ||
+      Number(pass.passRecord?.dailyUsageCount || 0) >= 1)
+  ) {
+    return 'consumed';
+  }
+  const expMs = Date.parse(pass.expiresAt);
+  if (pass.status === 'expired' || (Number.isFinite(expMs) && expMs <= nowMs)) {
+    return 'expired';
+  }
+  if (pass.status === 'claimed' || Boolean(primary)) {
+    return 'bound';
+  }
+  return 'unclaimed';
+}
+
+export function classifyTesterVoucherFilterStatus(
+  voucher: TesterVoucherLedgerItem,
+  nowMs: number = Date.now()
+): Exclude<TesterVoucherFilterStatus, 'all'> {
+  const sec = voucher.passRecord?.secondaryDeviceHash ?? voucher.secondaryDeviceHash ?? null;
+  const primary = voucher.passRecord?.primaryDeviceHash || voucher.claimedDeviceHash || '';
+  if (
+    voucher.status === 'revoked' ||
+    sec === PASS_SENTINEL_REVOKED ||
+    primary === PASS_SENTINEL_REVOKED
+  ) {
+    return 'revoked';
+  }
+  const expMs = Date.parse(voucher.expiresAt);
+  if (voucher.status === 'expired' || (Number.isFinite(expMs) && expMs <= nowMs)) {
+    return 'expired';
+  }
+  if (voucher.status === 'claimed' || Boolean(primary)) {
+    return 'bound';
+  }
+  return 'unclaimed';
+}
+
+export function countPaidPassStatuses(
+  passes: PaidPassLedgerItem[],
+  nowMs: number = Date.now()
+): Record<PaidPassFilterStatus, number> {
+  const counts: Record<PaidPassFilterStatus, number> = {
+    all: passes.length,
+    unclaimed: 0,
+    bound: 0,
+    consumed: 0,
+    expired: 0,
+    revoked: 0,
+  };
+  for (const pass of passes) {
+    counts[classifyPaidPassFilterStatus(pass, nowMs)] += 1;
+  }
+  return counts;
+}
+
+export function countTesterVoucherStatuses(
+  vouchers: TesterVoucherLedgerItem[],
+  nowMs: number = Date.now()
+): Record<TesterVoucherFilterStatus, number> {
+  const counts: Record<TesterVoucherFilterStatus, number> = {
+    all: vouchers.length,
+    unclaimed: 0,
+    bound: 0,
+    expired: 0,
+    revoked: 0,
+  };
+  for (const voucher of vouchers) {
+    counts[classifyTesterVoucherFilterStatus(voucher, nowMs)] += 1;
+  }
+  return counts;
+}
+
+function getTierSearchAliases(tier: StudioPassTier): string {
+  if (tier === 'single') return 'single bouquet 1';
+  if (tier === 'pass_30d') return 'pass_30d 30d 30-day eternal';
+  return 'pass_7d 7d 7-day';
+}
+
+export function filterPaidPasses(
+  passes: PaidPassLedgerItem[],
+  options: {
+    status?: PaidPassFilterStatus;
+    search?: string;
+    nowMs?: number;
+  } = {}
+): PaidPassLedgerItem[] {
+  const status = options.status || 'all';
+  const nowMs = options.nowMs ?? Date.now();
+  const q = String(options.search || '').trim().toLowerCase();
+  const qCompact = q.replace(/-/g, '');
+
+  return passes.filter((pass) => {
+    if (status !== 'all' && classifyPaidPassFilterStatus(pass, nowMs) !== status) {
+      return false;
+    }
+    if (!q) return true;
+
+    const passKeyLower = String(pass.passKey || '').toLowerCase();
+    const passKeyCompact = passKeyLower.replace(/-/g, '');
+    const isLaunchFree = Boolean(
+      pass.isFreePromo || String(pass.passRecord?.paymentReference || '').startsWith('kfl_')
+    );
+    const haystack = [
+      passKeyLower,
+      String(pass.label || '').toLowerCase(),
+      getTierSearchAliases(pass.tier),
+      String(pass.channel || '').toLowerCase(),
+      String(pass.region || '').toLowerCase(),
+      String(pass.boundBouquetCode || '').toLowerCase(),
+      isLaunchFree ? 'free launch founding' : '',
+      pass.isTest ? 'test' : '',
+    ].join(' ');
+
+    return haystack.includes(q) || (qCompact.length >= 3 && passKeyCompact.includes(qCompact));
+  });
+}
+
+export function filterTesterVouchers(
+  vouchers: TesterVoucherLedgerItem[],
+  options: {
+    status?: TesterVoucherFilterStatus;
+    search?: string;
+    nowMs?: number;
+  } = {}
+): TesterVoucherLedgerItem[] {
+  const status = options.status || 'all';
+  const nowMs = options.nowMs ?? Date.now();
+  const q = String(options.search || '').trim().toLowerCase();
+  const qCompact = q.replace(/-/g, '');
+
+  return vouchers.filter((voucher) => {
+    if (status !== 'all' && classifyTesterVoucherFilterStatus(voucher, nowMs) !== status) {
+      return false;
+    }
+    if (!q) return true;
+
+    const passKeyLower = String(voucher.passKey || '').toLowerCase();
+    const passKeyCompact = passKeyLower.replace(/-/g, '');
+    const haystack = [
+      passKeyLower,
+      String(voucher.label || '').toLowerCase(),
+      `${voucher.durationHours}h`,
+      getTierSearchAliases(voucher.tier),
+    ].join(' ');
+
+    return haystack.includes(q) || (qCompact.length >= 3 && passKeyCompact.includes(qCompact));
+  });
+}
+
 

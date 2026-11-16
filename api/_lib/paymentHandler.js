@@ -1301,13 +1301,54 @@ export const OWNER_ANALYTICS_STATE = {
 let incomePauseUpdatedAtMs = 0;
 let phDisabledUpdatedAtMs = 0;
 let launchPromoConfigUpdatedAtMs = 0;
+let kofiLaunchResetAtMs = 0;
+let recipientGiftResetAtMs = 0;
 let lastCheckoutFlagHydrateMs = 0;
+let vaultLastUpdateTime = '';
+let vaultRemoteExists = null; // null = unknown (never cleanly hydrated/confirmed), true = exists, false = confirmed missing
+let vaultWriteChain = Promise.resolve();
+const PASS_DOC_META = new Map();
+const PASS_KEY_LOCKS = new Map();
+
+export function resetOwnerVaultMetaForTests() {
+  vaultLastUpdateTime = '';
+  vaultRemoteExists = null;
+  lastCheckoutFlagHydrateMs = 0;
+  PASS_DOC_META.clear();
+}
+
+function withVaultWriteLock(fn) {
+  const run = vaultWriteChain.then(fn, fn);
+  vaultWriteChain = run.catch(() => {});
+  return run;
+}
+
+function withPassKeyLock(passKey, fn) {
+  const normKey = normalizePassKey(passKey || '') || '__global_pass__';
+  const prev = PASS_KEY_LOCKS.get(normKey) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  const cleanup = next.then(
+    () => {
+      if (PASS_KEY_LOCKS.get(normKey) === cleanup) {
+        PASS_KEY_LOCKS.delete(normKey);
+      }
+    },
+    () => {
+      if (PASS_KEY_LOCKS.get(normKey) === cleanup) {
+        PASS_KEY_LOCKS.delete(normKey);
+      }
+    }
+  );
+  PASS_KEY_LOCKS.set(normKey, cleanup);
+  return next;
+}
 
 export const TESTER_VOUCHER_LEDGER = new Map();
 export const PAID_PASS_LEDGER = new Map();
 export const ISSUED_PASS_KEYS = new Set();
 export const KOFI_LAUNCH_CLAIMED_DEVICES = new Set();
 export const KOFI_LAUNCH_TX_IDS = new Set();
+export const KOFI_LAUNCH_IGNORED_KEYS = new Set();
 export const RECIPIENT_GIFT_CLAIMED_DEVICES = new Set();
 export const RECIPIENT_GIFT_SLOTS = new Map();
 
@@ -1320,23 +1361,54 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
   const localHasNewerReset = localEpoch > remoteEpoch;
 
   const remotePauseTs = Number(remote.incomePauseUpdatedAtMs || 0);
+  const remotePauseVal =
+    remote.incomePausedForTesting !== undefined
+      ? Boolean(remote.incomePausedForTesting)
+      : remote.analytics?.incomePausedForTesting !== undefined
+      ? Boolean(remote.analytics.incomePausedForTesting)
+      : undefined;
   if (remotePauseTs > incomePauseUpdatedAtMs) {
     incomePauseUpdatedAtMs = remotePauseTs;
-    OWNER_ANALYTICS_STATE.incomePausedForTesting = Boolean(
-      remote.incomePausedForTesting ?? remote.analytics?.incomePausedForTesting
-    );
-  } else if (incomePauseUpdatedAtMs === 0 && remote.analytics?.incomePausedForTesting !== undefined) {
-    OWNER_ANALYTICS_STATE.incomePausedForTesting = Boolean(remote.analytics.incomePausedForTesting);
+    if (remotePauseVal !== undefined) {
+      OWNER_ANALYTICS_STATE.incomePausedForTesting = remotePauseVal;
+    }
+  } else if (incomePauseUpdatedAtMs === 0 && remotePauseVal !== undefined) {
+    OWNER_ANALYTICS_STATE.incomePausedForTesting = remotePauseVal;
   }
 
   const remotePhDisabledTs = Number(remote.phDisabledUpdatedAtMs || 0);
+  const remotePhDisabledVal =
+    remote.phPaymentsDisabled !== undefined
+      ? Boolean(remote.phPaymentsDisabled)
+      : remote.analytics?.phPaymentsDisabled !== undefined
+      ? Boolean(remote.analytics.phPaymentsDisabled)
+      : undefined;
   if (remotePhDisabledTs > phDisabledUpdatedAtMs) {
     phDisabledUpdatedAtMs = remotePhDisabledTs;
-    OWNER_ANALYTICS_STATE.phPaymentsDisabled = Boolean(
-      remote.phPaymentsDisabled ?? remote.analytics?.phPaymentsDisabled
-    );
-  } else if (phDisabledUpdatedAtMs === 0 && remote.analytics?.phPaymentsDisabled !== undefined) {
-    OWNER_ANALYTICS_STATE.phPaymentsDisabled = Boolean(remote.analytics.phPaymentsDisabled);
+    if (remotePhDisabledVal !== undefined) {
+      OWNER_ANALYTICS_STATE.phPaymentsDisabled = remotePhDisabledVal;
+    }
+  } else if (phDisabledUpdatedAtMs === 0 && remotePhDisabledVal !== undefined) {
+    OWNER_ANALYTICS_STATE.phPaymentsDisabled = remotePhDisabledVal;
+  }
+
+  const remoteKofiResetTs = Number(remote.kofiLaunchResetAtMs || 0);
+  if (remoteKofiResetTs > kofiLaunchResetAtMs) {
+    kofiLaunchResetAtMs = remoteKofiResetTs;
+    KOFI_LAUNCH_TX_IDS.clear();
+    KOFI_LAUNCH_CLAIMED_DEVICES.clear();
+    OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = 0;
+  }
+  const remoteGiftResetTs = Number(remote.recipientGiftResetAtMs || 0);
+  if (remoteGiftResetTs > recipientGiftResetAtMs) {
+    recipientGiftResetAtMs = remoteGiftResetTs;
+    RECIPIENT_GIFT_CLAIMED_DEVICES.clear();
+    OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = 0;
+  }
+  if (Array.isArray(remote.kofiLaunchIgnoredKeys)) {
+    for (const k of remote.kofiLaunchIgnoredKeys) {
+      if (k) KOFI_LAUNCH_IGNORED_KEYS.add(normalizePassKey(k));
+    }
   }
 
   const remoteLaunchTs = Number(remote.launchPromoConfigUpdatedAtMs || 0);
@@ -1393,17 +1465,17 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     );
   }
 
-  if (Array.isArray(remote.kofiLaunchClaimedDevices)) {
+  if (Array.isArray(remote.kofiLaunchClaimedDevices) && remoteKofiResetTs >= kofiLaunchResetAtMs) {
     for (const d of remote.kofiLaunchClaimedDevices) {
       if (d && typeof d === 'string') KOFI_LAUNCH_CLAIMED_DEVICES.add(d.trim());
     }
   }
-  if (Array.isArray(remote.kofiLaunchTxIds)) {
+  if (Array.isArray(remote.kofiLaunchTxIds) && remoteKofiResetTs >= kofiLaunchResetAtMs) {
     for (const tx of remote.kofiLaunchTxIds) {
       if (tx && typeof tx === 'string') KOFI_LAUNCH_TX_IDS.add(tx.trim());
     }
   }
-  if (Array.isArray(remote.recipientGiftClaimedDevices)) {
+  if (Array.isArray(remote.recipientGiftClaimedDevices) && remoteGiftResetTs >= recipientGiftResetAtMs) {
     for (const d of remote.recipientGiftClaimedDevices) {
       if (d && typeof d === 'string') RECIPIENT_GIFT_CLAIMED_DEVICES.add(d.trim());
     }
@@ -1759,21 +1831,39 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
       OWNER_ANALYTICS_STATE.recentEvents = combinedEvents.slice(0, 40);
     }
   }
+
+  reconcileFoundingLaunchFromLedgerServer();
 }
 
 export async function hydratePersistentOwnerVaultServer() {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2800);
+    const timer = setTimeout(() => controller.abort(), 4500);
     const resp = await fetch(
       `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`,
       { method: 'GET', signal: controller.signal }
     );
     clearTimeout(timer);
-    if (!resp.ok) return false;
-    const docJson = await resp.json();
+    if (resp.status === 404) {
+      vaultRemoteExists = false;
+      vaultLastUpdateTime = '';
+      return false;
+    }
+    if (!resp.ok) {
+      return false;
+    }
+    const docJson = await resp.json().catch(() => null);
+    if (!docJson || typeof docJson !== 'object') {
+      return false;
+    }
     const rawVaultJson = docJson?.fields?.voiceAudioDataUrl?.stringValue;
-    if (!rawVaultJson) return false;
+    if (!rawVaultJson) {
+      vaultRemoteExists = Boolean(docJson.fields);
+      vaultLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
+      return false;
+    }
+    vaultRemoteExists = true;
+    vaultLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
     const parsed = JSON.parse(rawVaultJson);
     mergeRemoteOwnerVaultIntoMemory(parsed);
     return true;
@@ -1782,71 +1872,151 @@ export async function hydratePersistentOwnerVaultServer() {
   }
 }
 
-export async function savePersistentOwnerVaultServer() {
+async function savePersistentOwnerVaultServerUnlocked(options = {}) {
+  const maxRetries = Math.max(0, Math.min(5, Number(options.maxRetries ?? 3)));
+  const onBeforeRetryMerge =
+    typeof options.onBeforeRetryMerge === 'function' ? options.onBeforeRetryMerge : null;
+
   try {
-    const nowMs = Date.now();
-    const pinEntries = [];
-    for (const [k, v] of PIN_ATTEMPT_TRACKER.entries()) {
-      if (v && (v.count > 0 || v.lockedUntilMs > nowMs)) {
-        pinEntries.push([k, v]);
+    // CRITICAL SAFETY GUARD: Never blindly PATCH default cold-start memory over Firestore if we
+    // haven't cleanly read or confirmed 404 on the remote vault yet!
+    if (vaultRemoteExists === null) {
+      await hydratePersistentOwnerVaultServer();
+      if (onBeforeRetryMerge && vaultRemoteExists === true) {
+        onBeforeRetryMerge();
+      }
+      if (vaultRemoteExists === null) {
+        return false;
       }
     }
 
-    const vaultPayload = {
-      v: 1,
-      updatedAt: new Date(nowMs).toISOString(),
-      incomeResetEpoch: Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0),
-      incomeResetAtMs: Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0),
-      incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
-      incomePauseUpdatedAtMs,
-      phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
-      phDisabledUpdatedAtMs,
-      launchPromoConfigUpdatedAtMs,
-      kofiLaunchEnabled: Boolean(OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false),
-      kofiLaunchMaxLimit: Number(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit ?? 30),
-      kofiLaunchClaimedCount: Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
-      recipientGiftEnabled: Boolean(OWNER_ANALYTICS_STATE.recipientGiftEnabled !== false),
-      recipientGiftMaxLimit: Number(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit ?? 150),
-      recipientGiftClaimedCount: Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
-      kofiLaunchClaimedDevices: Array.from(KOFI_LAUNCH_CLAIMED_DEVICES).slice(-500),
-      kofiLaunchTxIds: Array.from(KOFI_LAUNCH_TX_IDS).slice(-500),
-      recipientGiftClaimedDevices: Array.from(RECIPIENT_GIFT_CLAIMED_DEVICES).slice(-600),
-      recipientGiftSlots: Array.from(RECIPIENT_GIFT_SLOTS.entries()).slice(-600),
-      customOwnerPin: cachedCustomOwnerPin || '',
-      revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
-      issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
-      pinAttemptTracker: pinEntries.slice(0, 200),
-      testerVouchers: Array.from(TESTER_VOUCHER_LEDGER.values()).slice(0, 250),
-      paidPasses: Array.from(PAID_PASS_LEDGER.values()).slice(0, 350),
-      analytics: OWNER_ANALYTICS_STATE,
-    };
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const nowMs = Date.now();
+      const pinEntries = [];
+      for (const [k, v] of PIN_ATTEMPT_TRACKER.entries()) {
+        if (v && (v.count > 0 || v.lockedUntilMs > nowMs)) {
+          pinEntries.push([k, v]);
+        }
+      }
 
-    const jsonStr = JSON.stringify(vaultPayload);
-    if (jsonStr.length > 880_000) return false;
+      const vaultPayload = {
+        v: 1,
+        updatedAt: new Date(nowMs).toISOString(),
+        incomeResetEpoch: Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0),
+        incomeResetAtMs: Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0),
+        incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
+        incomePauseUpdatedAtMs,
+        phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
+        phDisabledUpdatedAtMs,
+        launchPromoConfigUpdatedAtMs,
+        kofiLaunchResetAtMs,
+        recipientGiftResetAtMs,
+        kofiLaunchIgnoredKeys: Array.from(KOFI_LAUNCH_IGNORED_KEYS).slice(-500),
+        kofiLaunchEnabled: Boolean(OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false),
+        kofiLaunchMaxLimit: Number(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit ?? 30),
+        kofiLaunchClaimedCount: Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
+        recipientGiftEnabled: Boolean(OWNER_ANALYTICS_STATE.recipientGiftEnabled !== false),
+        recipientGiftMaxLimit: Number(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit ?? 150),
+        recipientGiftClaimedCount: Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
+        kofiLaunchClaimedDevices: Array.from(KOFI_LAUNCH_CLAIMED_DEVICES).slice(-500),
+        kofiLaunchTxIds: Array.from(KOFI_LAUNCH_TX_IDS).slice(-500),
+        recipientGiftClaimedDevices: Array.from(RECIPIENT_GIFT_CLAIMED_DEVICES).slice(-600),
+        recipientGiftSlots: Array.from(RECIPIENT_GIFT_SLOTS.entries()).slice(-600),
+        customOwnerPin: cachedCustomOwnerPin || '',
+        revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
+        issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
+        pinAttemptTracker: pinEntries.slice(0, 200),
+        testerVouchers: Array.from(TESTER_VOUCHER_LEDGER.values()).slice(0, 250),
+        paidPasses: Array.from(PAID_PASS_LEDGER.values()).slice(0, 350),
+        analytics: OWNER_ANALYTICS_STATE,
+      };
 
-    const fields = {
-      code: { stringValue: OWNER_VAULT_DOC_CODE },
-      payload: { stringValue: OWNER_VAULT_IMMUTABLE_PAYLOAD },
-      createdAt: { stringValue: OWNER_VAULT_IMMUTABLE_CREATED_AT },
-      voiceAudioDataUrl: { stringValue: jsonStr },
-    };
+      const jsonStr = JSON.stringify(vaultPayload);
+      if (jsonStr.length > 880_000) return false;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3500);
-    const resp = await fetch(
-      `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`,
-      {
+      const fields = {
+        code: { stringValue: OWNER_VAULT_DOC_CODE },
+        payload: { stringValue: OWNER_VAULT_IMMUTABLE_PAYLOAD },
+        createdAt: { stringValue: OWNER_VAULT_IMMUTABLE_CREATED_AT },
+        voiceAudioDataUrl: { stringValue: jsonStr },
+      };
+
+      const baseDocUrl = `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`;
+      let writeUrl = baseDocUrl;
+      if (vaultRemoteExists === true && vaultLastUpdateTime) {
+        writeUrl = `${baseDocUrl}?currentDocument.updateTime=${encodeURIComponent(vaultLastUpdateTime)}`;
+      } else if (vaultRemoteExists === false) {
+        writeUrl = `${baseDocUrl}?currentDocument.exists=false`;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const resp = await fetch(writeUrl, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
         signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (resp.ok) {
+        const savedDoc = await resp.json().catch(() => null);
+        vaultRemoteExists = true;
+        if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
+          vaultLastUpdateTime = savedDoc.updateTime;
+        }
+        return true;
       }
-    );
-    clearTimeout(timer);
-    return resp.ok;
+
+      // CAS conflict (409 ALREADY_EXISTS / 412 FAILED_PRECONDITION): re-hydrate, re-apply local delta, and retry
+      if ((resp.status === 409 || resp.status === 412) && attempt < maxRetries) {
+        const hydrated = await hydratePersistentOwnerVaultServer();
+        if (!hydrated && vaultRemoteExists === null) {
+          return false;
+        }
+        if (onBeforeRetryMerge) {
+          onBeforeRetryMerge();
+        }
+        continue;
+      }
+
+      return false;
+    }
+    return false;
   } catch {
     return false;
   }
+}
+
+export async function savePersistentOwnerVaultServer(options = {}) {
+  return withVaultWriteLock(() => savePersistentOwnerVaultServerUnlocked(options));
+}
+
+export async function mutateAndSaveOwnerVaultServer(mutatorFn, options = {}) {
+  return withVaultWriteLock(async () => {
+    if (vaultRemoteExists === null) {
+      await hydratePersistentOwnerVaultServer();
+      if (vaultRemoteExists === null) {
+        return { saved: false, result: { abort: true, reason: 'VAULT_UNAVAILABLE' } };
+      }
+    }
+    let result = typeof mutatorFn === 'function' ? mutatorFn({ retry: false }) : undefined;
+    if (result && typeof result === 'object' && result.abort === true) {
+      return { saved: false, result };
+    }
+    const saved = await savePersistentOwnerVaultServerUnlocked({
+      ...options,
+      onBeforeRetryMerge: () => {
+        if (typeof mutatorFn === 'function') {
+          result = mutatorFn({ retry: true });
+        }
+      },
+    });
+    if (result && typeof result === 'object' && result.abort === true) {
+      return { saved: false, result };
+    }
+    return { saved, result };
+  });
 }
 
 function resolvePaidPassCatalogMeta(tier, region) {
@@ -2036,12 +2206,17 @@ export function togglePhPaymentsDisabledServer(disabled, nowMs = Date.now()) {
   return OWNER_ANALYTICS_STATE.phPaymentsDisabled;
 }
 
-async function ensureCheckoutFlagsHydratedServer() {
-  if (process.env.NODE_TEST_CONTEXT) return false;
+async function ensureCheckoutFlagsHydratedServer({ force = false } = {}) {
+  if (process.env.NODE_TEST_CONTEXT && !force) return false;
   const nowMs = Date.now();
-  if (nowMs - lastCheckoutFlagHydrateMs < 15_000) return false;
-  lastCheckoutFlagHydrateMs = nowMs;
-  return hydratePersistentOwnerVaultServer();
+  if (!force && vaultRemoteExists !== null && nowMs - lastCheckoutFlagHydrateMs < 3_000) {
+    return true;
+  }
+  const ok = await hydratePersistentOwnerVaultServer();
+  if (ok || vaultRemoteExists === false) {
+    lastCheckoutFlagHydrateMs = Date.now();
+  }
+  return ok;
 }
 
 export function clearTestAndRevokedPaidKeysServer() {
@@ -2195,8 +2370,53 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
   return true;
 }
 
+export function reconcileFoundingLaunchFromLedgerServer() {
+  let ledgerKofiLaunchCount = 0;
+  for (const [key, item] of PAID_PASS_LEDGER.entries()) {
+    const normKey = normalizePassKey(key);
+    if (!item || KOFI_LAUNCH_IGNORED_KEYS.has(normKey)) continue;
+    const record = SERVER_PASS_STORE.get(normKey) || item.passRecord;
+    const isRevoked =
+      item.status === 'revoked' ||
+      REVOKED_VOUCHER_KEYS.has(normKey) ||
+      record?.secondaryDeviceHash === REVOKED_PASS_SENTINEL ||
+      record?.primaryDeviceHash === REVOKED_PASS_SENTINEL;
+    if (isRevoked) continue;
+
+    const refStr = String(record?.paymentReference || '');
+    const isKofiFree =
+      (Boolean(item.isFreePromo) || refStr.startsWith('kfl_')) &&
+      !refStr.startsWith('pif_') &&
+      item.label !== 'Recipient Gift Free';
+    if (!isKofiFree) continue;
+
+    ledgerKofiLaunchCount += 1;
+    const claimedHash = String(item.claimedDeviceHash || record?.primaryDeviceHash || '').trim();
+    if (claimedHash) {
+      KOFI_LAUNCH_CLAIMED_DEVICES.add(claimedHash);
+    }
+  }
+
+  const nextKofiClaimed = Math.max(
+    0,
+    Math.round(Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0)),
+    KOFI_LAUNCH_TX_IDS.size,
+    ledgerKofiLaunchCount
+  );
+  OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = nextKofiClaimed;
+
+  const nextGiftClaimed = Math.max(
+    0,
+    Math.round(Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0)),
+    RECIPIENT_GIFT_CLAIMED_DEVICES.size
+  );
+  OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = nextGiftClaimed;
+  return { kofiClaimed: nextKofiClaimed, giftClaimed: nextGiftClaimed };
+}
+
 export function getFoundingLaunchPromoStatusServer(deviceTokenHash = '') {
   const cleanDevice = String(deviceTokenHash || '').trim();
+  const { kofiClaimed, giftClaimed } = reconcileFoundingLaunchFromLedgerServer();
   const kofiEnabled = OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false;
   const kofiMax =
     typeof OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit === 'number' &&
@@ -2204,12 +2424,6 @@ export function getFoundingLaunchPromoStatusServer(deviceTokenHash = '') {
     OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit >= 0
       ? Math.round(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit)
       : 30;
-  const kofiClaimed = Math.max(
-    0,
-    Math.round(Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0)),
-    KOFI_LAUNCH_TX_IDS.size
-  );
-  OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = kofiClaimed;
   const kofiRemaining = Math.max(0, kofiMax - kofiClaimed);
   const deviceClaimedKofi = Boolean(
     cleanDevice && KOFI_LAUNCH_CLAIMED_DEVICES.has(cleanDevice)
@@ -2225,12 +2439,7 @@ export function getFoundingLaunchPromoStatusServer(deviceTokenHash = '') {
     OWNER_ANALYTICS_STATE.recipientGiftMaxLimit >= 0
       ? Math.round(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit)
       : 150;
-  const rgClaimed = Math.max(
-    0,
-    Math.round(Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0)),
-    RECIPIENT_GIFT_CLAIMED_DEVICES.size
-  );
-  OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = rgClaimed;
+  const rgClaimed = giftClaimed;
   const rgRemaining = Math.max(0, rgMax - rgClaimed);
 
   return {
@@ -2262,6 +2471,13 @@ export function updateFoundingLaunchPromoConfigServer(config = {}, nowMs = Date.
   if (config.resetKofiLaunchClaims === true) {
     KOFI_LAUNCH_TX_IDS.clear();
     KOFI_LAUNCH_CLAIMED_DEVICES.clear();
+    for (const [key, item] of PAID_PASS_LEDGER.entries()) {
+      const refStr = String(item?.passRecord?.paymentReference || '');
+      if (item?.isFreePromo || refStr.startsWith('kfl_')) {
+        KOFI_LAUNCH_IGNORED_KEYS.add(normalizePassKey(key));
+      }
+    }
+    kofiLaunchResetAtMs = Math.max(nowMs, kofiLaunchResetAtMs + 1);
     OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = 0;
   } else if (
     typeof config.kofiLaunchClaimedCount === 'number' &&
@@ -2288,6 +2504,7 @@ export function updateFoundingLaunchPromoConfigServer(config = {}, nowMs = Date.
   }
   if (config.resetRecipientGiftClaims === true) {
     RECIPIENT_GIFT_CLAIMED_DEVICES.clear();
+    recipientGiftResetAtMs = Math.max(nowMs, recipientGiftResetAtMs + 1);
     OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = 0;
   } else if (
     typeof config.recipientGiftClaimedCount === 'number' &&
@@ -2344,8 +2561,11 @@ export async function registerSharedBouquetGiftOfferServer({
   }
 
   const slotKey = deriveRecipientGiftSlotKey(safeCode);
+  const remotePassSlot = await fetchStudioPassFromFirestoreRest(slotKey);
   const existingPassSlot =
-    SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+    pickCanonicalPassRecordServer(SERVER_PASS_STORE.get(slotKey), remotePassSlot) ||
+    remotePassSlot ||
+    SERVER_PASS_STORE.get(slotKey);
   if (existingPassSlot && existingPassSlot.secondaryDeviceHash === 'CLAIMED') {
     const claimedEntry = {
       status: 'CLAIMED',
@@ -2375,7 +2595,6 @@ export async function registerSharedBouquetGiftOfferServer({
     claimedDeviceHash: '',
     updatedAt: new Date().toISOString(),
   };
-  RECIPIENT_GIFT_SLOTS.set(safeCode, slotRecord);
 
   const passSlotDoc = createSignedStudioPassServer({
     passKey: slotKey,
@@ -2389,9 +2608,14 @@ export async function registerSharedBouquetGiftOfferServer({
   });
   SERVER_PASS_STORE.set(slotKey, passSlotDoc);
   await saveStudioPassToFirestoreRest(passSlotDoc);
-  await savePersistentOwnerVaultServer();
+  await mutateAndSaveOwnerVaultServer(() => {
+    const cur = RECIPIENT_GIFT_SLOTS.get(safeCode);
+    if (!cur || cur.status !== 'CLAIMED') {
+      RECIPIENT_GIFT_SLOTS.set(safeCode, slotRecord);
+    }
+  });
 
-  return slotRecord;
+  return RECIPIENT_GIFT_SLOTS.get(safeCode) || slotRecord;
 }
 
 async function resolveBouquetGiftSlotServer({
@@ -2405,8 +2629,10 @@ async function resolveBouquetGiftSlotServer({
 
   const memSlot = RECIPIENT_GIFT_SLOTS.get(safeCode);
   const slotKey = deriveRecipientGiftSlotKey(safeCode);
+  const remoteSlot = await fetchStudioPassFromFirestoreRest(slotKey);
+  const memPassSlot = SERVER_PASS_STORE.get(slotKey);
   const passSlot =
-    SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+    pickCanonicalPassRecordServer(memPassSlot, remoteSlot) || remoteSlot || memPassSlot;
 
   if (passSlot) {
     const rawBound = String(passSlot.boundBouquetCode || '');
@@ -2431,6 +2657,7 @@ async function resolveBouquetGiftSlotServer({
       updatedAt: passSlot.createdAt || new Date().toISOString(),
     };
     RECIPIENT_GIFT_SLOTS.set(safeCode, merged);
+    SERVER_PASS_STORE.set(slotKey, passSlot);
     return merged;
   }
 
@@ -2841,6 +3068,7 @@ function serializeTesterVoucherList(nowMs = Date.now()) {
       ...item,
       status,
       claimedDeviceHash: claimedHash,
+      secondaryDeviceHash: passRecord?.secondaryDeviceHash ?? item.secondaryDeviceHash ?? null,
       bouquetsCreated: Math.max(item.bouquetsCreated || 0, passRecord?.dailyUsageCount || 0),
     });
   }
@@ -2869,6 +3097,7 @@ function serializePaidPassList(nowMs = Date.now()) {
       ...item,
       status,
       claimedDeviceHash: claimedHash,
+      secondaryDeviceHash: passRecord?.secondaryDeviceHash ?? item.secondaryDeviceHash ?? null,
       boundBouquetCode: passRecord?.boundBouquetCode ?? item.boundBouquetCode ?? null,
       bouquetsCreated: Math.max(item.bouquetsCreated || 0, passRecord?.dailyUsageCount || 0),
     });
@@ -2971,38 +3200,98 @@ export function revokePaidPassServer(passKey) {
   return { ok: true, targetKey };
 }
 
-export async function saveStudioPassToFirestoreRest(pass) {
-  if (!pass || !isValidPassKeyFormat(pass.passKey)) return false;
+function buildFirestorePassFields(pass) {
+  return {
+    passKey: { stringValue: String(pass.passKey) },
+    tier: { stringValue: String(pass.tier) },
+    region: { stringValue: String(pass.region) },
+    createdAt: { stringValue: String(pass.createdAt) },
+    expiresAt: { stringValue: String(pass.expiresAt) },
+    retentionDays: { integerValue: String(pass.retentionDays) },
+    isEternalKeepsake: { booleanValue: Boolean(pass.isEternalKeepsake) },
+    primaryDeviceHash: { stringValue: String(pass.primaryDeviceHash || '') },
+    secondaryDeviceHash: { stringValue: String(pass.secondaryDeviceHash || '') },
+    activeSessionNonce: { stringValue: String(pass.activeSessionNonce) },
+    boundBouquetCode: { stringValue: String(pass.boundBouquetCode || '') },
+    dailyUsageDate: { stringValue: String(pass.dailyUsageDate) },
+    dailyUsageCount: { integerValue: String(pass.dailyUsageCount || 0) },
+    paymentProvider: { stringValue: String(pass.paymentProvider) },
+    paymentReference: { stringValue: String(pass.paymentReference).slice(0, 64) },
+    signature: { stringValue: String(pass.signature) },
+  };
+}
+
+export async function saveStudioPassWithCasRest(pass, { expectMissing = false } = {}) {
+  if (!pass || !isValidPassKeyFormat(pass.passKey)) {
+    return { ok: false, conflict: false };
+  }
+  const normKey = normalizePassKey(pass.passKey);
   try {
-    const fields = {
-      passKey: { stringValue: String(pass.passKey) },
-      tier: { stringValue: String(pass.tier) },
-      region: { stringValue: String(pass.region) },
-      createdAt: { stringValue: String(pass.createdAt) },
-      expiresAt: { stringValue: String(pass.expiresAt) },
-      retentionDays: { integerValue: String(pass.retentionDays) },
-      isEternalKeepsake: { booleanValue: Boolean(pass.isEternalKeepsake) },
-      primaryDeviceHash: { stringValue: String(pass.primaryDeviceHash || '') },
-      secondaryDeviceHash: { stringValue: String(pass.secondaryDeviceHash || '') },
-      activeSessionNonce: { stringValue: String(pass.activeSessionNonce) },
-      boundBouquetCode: { stringValue: String(pass.boundBouquetCode || '') },
-      dailyUsageDate: { stringValue: String(pass.dailyUsageDate) },
-      dailyUsageCount: { integerValue: String(pass.dailyUsageCount || 0) },
-      paymentProvider: { stringValue: String(pass.paymentProvider) },
-      paymentReference: { stringValue: String(pass.paymentReference).slice(0, 64) },
-      signature: { stringValue: String(pass.signature) },
-    };
+    const fields = buildFirestorePassFields(pass);
+    const meta = PASS_DOC_META.get(normKey);
+    const baseUrl = `${FIRESTORE_PASSES_URL}/${encodeURIComponent(normKey)}`;
+    let writeUrl = baseUrl;
+    if (expectMissing) {
+      writeUrl = `${baseUrl}?currentDocument.exists=false`;
+    } else if (meta?.exists && meta.updateTime) {
+      writeUrl = `${baseUrl}?currentDocument.updateTime=${encodeURIComponent(meta.updateTime)}`;
+    } else if (meta && meta.exists === false) {
+      writeUrl = `${baseUrl}?currentDocument.exists=false`;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(`${FIRESTORE_PASSES_URL}/${encodeURIComponent(pass.passKey)}`, {
+    const resp = await fetch(writeUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
       signal: controller.signal,
     });
     clearTimeout(timer);
-    return resp.ok;
+
+    if (resp.ok) {
+      const savedDoc = await resp.json().catch(() => null);
+      PASS_DOC_META.set(normKey, {
+        exists: true,
+        updateTime:
+          savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime
+            ? savedDoc.updateTime
+            : meta?.updateTime || '',
+      });
+      return { ok: true, conflict: false };
+    }
+
+    if (resp.status === 409 || resp.status === 412) {
+      return { ok: false, conflict: true };
+    }
+    return { ok: false, conflict: false };
+  } catch {
+    return { ok: false, conflict: false };
+  }
+}
+
+export async function saveStudioPassToFirestoreRest(pass) {
+  if (!pass || !isValidPassKeyFormat(pass.passKey)) return false;
+  const normKey = normalizePassKey(pass.passKey);
+  try {
+    const fields = buildFirestorePassFields(pass);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(`${FIRESTORE_PASSES_URL}/${encodeURIComponent(normKey)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const savedDoc = await resp.json().catch(() => null);
+      if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
+        PASS_DOC_META.set(normKey, { exists: true, updateTime: savedDoc.updateTime });
+      }
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -3019,10 +3308,23 @@ export async function fetchStudioPassFromFirestoreRest(passKey) {
       signal: controller.signal,
     });
     clearTimeout(timer);
+    if (resp.status === 404) {
+      PASS_DOC_META.set(normalized, { exists: false, updateTime: '' });
+      return null;
+    }
     if (!resp.ok) return null;
     const docJson = await resp.json();
     const f = docJson?.fields;
-    if (!f || !f.passKey?.stringValue) return null;
+    if (!f || !f.passKey?.stringValue) {
+      if (!f) {
+        PASS_DOC_META.set(normalized, { exists: false, updateTime: '' });
+      }
+      return null;
+    }
+    PASS_DOC_META.set(normalized, {
+      exists: true,
+      updateTime: typeof docJson.updateTime === 'string' ? docJson.updateTime : '',
+    });
     return {
       passKey: f.passKey.stringValue,
       tier: f.tier?.stringValue || 'pass_7d',
@@ -3075,6 +3377,16 @@ export function pickCanonicalPassRecordServer(passA, passB) {
   const isConsumed = (p) => p.secondaryDeviceHash === SINGLE_CONSUMED_SENTINEL;
   if (isConsumed(passA) !== isConsumed(passB)) {
     return isConsumed(passA) ? passA : passB;
+  }
+
+  const isClaimedSlot = (p) => p.secondaryDeviceHash === 'CLAIMED';
+  if (isClaimedSlot(passA) !== isClaimedSlot(passB)) {
+    return isClaimedSlot(passA) ? passA : passB;
+  }
+
+  const isPaidSlot = (p) => p.secondaryDeviceHash === 'PAID';
+  if (isPaidSlot(passA) !== isPaidSlot(passB)) {
+    return isPaidSlot(passA) ? passA : passB;
   }
 
   const claimedA = Boolean(passA.primaryDeviceHash);
@@ -4102,47 +4414,50 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        await hydratePersistentOwnerVaultServer();
-        const isSikatpayTest =
-          sikatpay.isTestKey ||
-          !verifiedLivemode ||
-          Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
+        return await withPassKeyLock(slotKey || pending.passKey, async () => {
+          await hydratePersistentOwnerVaultServer();
+          const isSikatpayTest =
+            sikatpay.isTestKey ||
+            !verifiedLivemode ||
+            Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
 
-        pending.status = 'paid';
-        const anchorCreatedAt =
-          orderSlot?.secondaryDeviceHash === 'PAID' && orderSlot.createdAt
-            ? orderSlot.createdAt
-            : undefined;
-        const anchorNowMs = anchorCreatedAt ? Date.parse(anchorCreatedAt) || Date.now() : Date.now();
-        const mintedPass = createSignedStudioPassServer({
-          passKey: pending.passKey,
-          tier: pending.tier,
-          region: 'PH',
-          createdAt: anchorCreatedAt,
-          nowMs: anchorNowMs,
-          deviceTokenHash: pending.deviceTokenHash,
-          boundBouquetCode: pending.boundBouquetCode,
-          paymentProvider: 'sikatpay',
-          paymentReference: `${isSikatpayTest ? 'sptest' : 'sp'}_${orderId || pending.checkoutId}`,
+          pending.status = 'paid';
+          const anchorCreatedAt =
+            orderSlot?.secondaryDeviceHash === 'PAID' && orderSlot.createdAt
+              ? orderSlot.createdAt
+              : undefined;
+          const anchorNowMs = anchorCreatedAt ? Date.parse(anchorCreatedAt) || Date.now() : Date.now();
+          const mintedPass = createSignedStudioPassServer({
+            passKey: pending.passKey,
+            tier: pending.tier,
+            region: 'PH',
+            createdAt: anchorCreatedAt,
+            nowMs: anchorNowMs,
+            deviceTokenHash: pending.deviceTokenHash,
+            boundBouquetCode: pending.boundBouquetCode,
+            paymentProvider: 'sikatpay',
+            paymentReference: `${isSikatpayTest ? 'sptest' : 'sp'}_${orderId || pending.checkoutId}`,
+          });
+          SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+          await saveStudioPassToFirestoreRest(mintedPass);
+
+          if (orderSlot && orderSlot.secondaryDeviceHash !== 'PAID') {
+            const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+            paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+            SERVER_PASS_STORE.set(slotKey, paidSlot);
+            await saveStudioPassWithCasRest(paidSlot);
+          }
+
+          await mutateAndSaveOwnerVaultServer(() => {
+            recordPaidPassIssuanceServer(mintedPass, {
+              isTest: isSikatpayTest,
+              label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
+            });
+          });
+
+          sendJson(res, 200, { ok: true, pass: mintedPass });
+          return true;
         });
-        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
-        await saveStudioPassToFirestoreRest(mintedPass);
-
-        if (orderSlot) {
-          const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
-          paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
-          SERVER_PASS_STORE.set(slotKey, paidSlot);
-          await saveStudioPassToFirestoreRest(paidSlot);
-        }
-
-        recordPaidPassIssuanceServer(mintedPass, {
-          isTest: isSikatpayTest,
-          label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
-        });
-        await savePersistentOwnerVaultServer();
-
-        sendJson(res, 200, { ok: true, pass: mintedPass });
-        return true;
       }
 
       // Case A0: BayadGate Order Verification (Webhook slot OR server-to-server query_status.php)
@@ -4281,32 +4596,35 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        pending.status = 'paid';
-        const mintedPass = createSignedStudioPassServer({
-          passKey: pending.passKey,
-          tier: pending.tier,
-          region: 'PH',
-          deviceTokenHash: pending.deviceTokenHash,
-          boundBouquetCode: pending.boundBouquetCode,
-          paymentProvider: 'bayadgate',
-          paymentReference: `bg_${orderId || pending.checkoutId}`,
+        return await withPassKeyLock(slotKey || pending.passKey, async () => {
+          pending.status = 'paid';
+          const mintedPass = createSignedStudioPassServer({
+            passKey: pending.passKey,
+            tier: pending.tier,
+            region: 'PH',
+            deviceTokenHash: pending.deviceTokenHash,
+            boundBouquetCode: pending.boundBouquetCode,
+            paymentProvider: 'bayadgate',
+            paymentReference: `bg_${orderId || pending.checkoutId}`,
+          });
+          SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+          await saveStudioPassToFirestoreRest(mintedPass);
+
+          if (orderSlot && orderSlot.secondaryDeviceHash !== 'PAID') {
+            const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+            paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+            SERVER_PASS_STORE.set(slotKey, paidSlot);
+            await saveStudioPassWithCasRest(paidSlot);
+          }
+
+          await hydratePersistentOwnerVaultServer();
+          await mutateAndSaveOwnerVaultServer(() => {
+            recordPaidPassIssuanceServer(mintedPass);
+          });
+
+          sendJson(res, 200, { ok: true, pass: mintedPass });
+          return true;
         });
-        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
-        await saveStudioPassToFirestoreRest(mintedPass);
-
-        if (orderSlot) {
-          const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
-          paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
-          SERVER_PASS_STORE.set(slotKey, paidSlot);
-          await saveStudioPassToFirestoreRest(paidSlot);
-        }
-
-        await hydratePersistentOwnerVaultServer();
-        recordPaidPassIssuanceServer(mintedPass);
-        await savePersistentOwnerVaultServer();
-
-        sendJson(res, 200, { ok: true, pass: mintedPass });
-        return true;
       }
 
       // Case A: Live PayMongo Session Verification
@@ -4401,88 +4719,107 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         await hydratePersistentOwnerVaultServer();
 
         const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, pending.tier);
-        const receiptSlot =
-          SERVER_PASS_STORE.get(emailTierSlotKey) ||
-          (await fetchStudioPassFromFirestoreRest(emailTierSlotKey));
+        return await withPassKeyLock(emailTierSlotKey, async () => {
+          const remoteSlot = await fetchStudioPassFromFirestoreRest(emailTierSlotKey);
+          const memSlot = SERVER_PASS_STORE.get(emailTierSlotKey);
+          const receiptSlot =
+            pickCanonicalPassRecordServer(memSlot, remoteSlot) || remoteSlot || memSlot;
+          if (receiptSlot) {
+            SERVER_PASS_STORE.set(emailTierSlotKey, receiptSlot);
+          }
 
-        const isReceiptFreeLaunch = Boolean(
-          pending.tier === 'single' &&
-            receiptSlot &&
-            (Boolean(pending.isKofiLaunchStarter) ||
-              String(receiptSlot.paymentReference || '').startsWith('kfl_'))
-        );
-        const deviceAlreadyClaimedLaunchStarter = Boolean(
-          (deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(deviceTokenHash)) ||
-            (pending.deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(pending.deviceTokenHash))
-        );
+          const isReceiptFreeLaunch = Boolean(
+            pending.tier === 'single' &&
+              receiptSlot &&
+              (Boolean(pending.isKofiLaunchStarter) ||
+                String(receiptSlot.paymentReference || '').startsWith('kfl_'))
+          );
+          const deviceAlreadyClaimedLaunchStarter = Boolean(
+            (deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(deviceTokenHash)) ||
+              (pending.deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(pending.deviceTokenHash))
+          );
 
-        // Unified anti-enumeration response for: not found, wrong tier, wrong item code,
-        // already claimed order, or already claimed $0 Founding Launch starter on this device.
-        if (
-          !receiptSlot ||
-          receiptSlot.tier !== pending.tier ||
-          !doesReceiptMatchTierCode(receiptSlot, pending.tier) ||
-          receiptSlot.secondaryDeviceHash === 'CLAIMED' ||
-          (isReceiptFreeLaunch && deviceAlreadyClaimedLaunchStarter)
-        ) {
-          sendJson(res, 402, {
-            ok: false,
-            status: 'NO_MATCHING_ORDER',
-            message: UNIFIED_KOFI_NO_MATCH_MESSAGE,
+          // Unified anti-enumeration response for: not found, wrong tier, wrong item code,
+          // already claimed order, or already claimed $0 Founding Launch starter on this device.
+          if (
+            !receiptSlot ||
+            receiptSlot.tier !== pending.tier ||
+            !doesReceiptMatchTierCode(receiptSlot, pending.tier) ||
+            receiptSlot.secondaryDeviceHash === 'CLAIMED' ||
+            (isReceiptFreeLaunch && deviceAlreadyClaimedLaunchStarter)
+          ) {
+            sendJson(res, 402, {
+              ok: false,
+              status: 'NO_MATCHING_ORDER',
+              message: UNIFIED_KOFI_NO_MATCH_MESSAGE,
+            });
+            return true;
+          }
+
+          // Mark this `(buyerEmail, tier)` receipt slot as CLAIMED with Firestore CAS so concurrent claims never double-issue
+          const claimedSlot = {
+            ...receiptSlot,
+            primaryDeviceHash: deviceTokenHash,
+            secondaryDeviceHash: 'CLAIMED',
+          };
+          claimedSlot.signature = computePassIntegritySignature(claimedSlot, CLIENT_SIGNATURE_SALT);
+          const casSlotRes = await saveStudioPassWithCasRest(claimedSlot, { expectMissing: false });
+          if (casSlotRes.conflict) {
+            const latestSlot = await fetchStudioPassFromFirestoreRest(emailTierSlotKey);
+            if (latestSlot) SERVER_PASS_STORE.set(emailTierSlotKey, latestSlot);
+            sendJson(res, 402, {
+              ok: false,
+              status: 'NO_MATCHING_ORDER',
+              message: UNIFIED_KOFI_NO_MATCH_MESSAGE,
+            });
+            return true;
+          }
+          SERVER_PASS_STORE.set(emailTierSlotKey, claimedSlot);
+
+          // Issue the buyer's device-bound Pass Key (`BLOOM-XXXX-XXXX`)
+          const rawSlotRef = String(receiptSlot.paymentReference || 'kofi_shop');
+          const slotRefPrefix = rawSlotRef.includes('_')
+            ? rawSlotRef.slice(0, rawSlotRef.lastIndexOf('_'))
+            : rawSlotRef;
+          const boundRefPrefix = isReceiptFreeLaunch
+            ? slotRefPrefix.startsWith('kfl_')
+              ? slotRefPrefix
+              : `kfl_${slotRefPrefix.replace(/^kfs_/, '').slice(0, 12)}`
+            : slotRefPrefix;
+
+          const boundPass = createSignedStudioPassServer({
+            passKey: pending.passKey,
+            tier: pending.tier,
+            region: pending.region,
+            deviceTokenHash: pending.deviceTokenHash,
+            boundBouquetCode: pending.boundBouquetCode,
+            paymentProvider: 'kofi',
+            paymentReference: boundRefPrefix,
+          });
+
+          SERVER_PASS_STORE.set(boundPass.passKey, boundPass);
+          await saveStudioPassToFirestoreRest(boundPass);
+          await mutateAndSaveOwnerVaultServer(() => {
+            if (isReceiptFreeLaunch) {
+              if (deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(deviceTokenHash);
+              if (pending.deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(pending.deviceTokenHash);
+            }
+            recordPaidPassIssuanceServer(boundPass, {
+              isFreePromo: isReceiptFreeLaunch,
+              label: isReceiptFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+            });
+            if (isReceiptFreeLaunch) {
+              reconcileFoundingLaunchFromLedgerServer();
+            }
+          });
+          sendJson(res, 200, {
+            ok: true,
+            pass: boundPass,
+            isKofiLaunchStarter: isReceiptFreeLaunch,
+            launchPromo: getFoundingLaunchPromoStatusServer(deviceTokenHash),
           });
           return true;
-        }
-
-        // Mark this `(buyerEmail, tier)` receipt slot as CLAIMED so it cannot be reused
-        const claimedSlot = {
-          ...receiptSlot,
-          primaryDeviceHash: deviceTokenHash,
-          secondaryDeviceHash: 'CLAIMED',
-        };
-        claimedSlot.signature = computePassIntegritySignature(claimedSlot, CLIENT_SIGNATURE_SALT);
-        SERVER_PASS_STORE.set(emailTierSlotKey, claimedSlot);
-        await saveStudioPassToFirestoreRest(claimedSlot);
-
-        // Issue the buyer's device-bound Pass Key (`BLOOM-XXXX-XXXX`)
-        const rawSlotRef = String(receiptSlot.paymentReference || 'kofi_shop');
-        const slotRefPrefix = rawSlotRef.includes('_')
-          ? rawSlotRef.slice(0, rawSlotRef.lastIndexOf('_'))
-          : rawSlotRef;
-        const boundRefPrefix = isReceiptFreeLaunch
-          ? slotRefPrefix.startsWith('kfl_')
-            ? slotRefPrefix
-            : `kfl_${slotRefPrefix.replace(/^kfs_/, '').slice(0, 12)}`
-          : slotRefPrefix;
-
-        const boundPass = createSignedStudioPassServer({
-          passKey: pending.passKey,
-          tier: pending.tier,
-          region: pending.region,
-          deviceTokenHash: pending.deviceTokenHash,
-          boundBouquetCode: pending.boundBouquetCode,
-          paymentProvider: 'kofi',
-          paymentReference: boundRefPrefix,
         });
-
-        if (isReceiptFreeLaunch) {
-          if (deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(deviceTokenHash);
-          if (pending.deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(pending.deviceTokenHash);
-        }
-
-        SERVER_PASS_STORE.set(boundPass.passKey, boundPass);
-        await saveStudioPassToFirestoreRest(boundPass);
-        recordPaidPassIssuanceServer(boundPass, {
-          isFreePromo: isReceiptFreeLaunch,
-          label: isReceiptFreeLaunch ? 'Ko-fi Launch Free' : undefined,
-        });
-        await savePersistentOwnerVaultServer();
-        sendJson(res, 200, {
-          ok: true,
-          pass: boundPass,
-          isKofiLaunchStarter: isReceiptFreeLaunch,
-          launchPromo: getFoundingLaunchPromoStatusServer(deviceTokenHash),
-        });
-        return true;
       }
 
       // Case C: Local Sandbox Preview / Confirmed PayMongo Session
@@ -4530,23 +4867,24 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         SERVER_PASS_STORE.set(passRecord.passKey, passRecord);
       }
 
-      if (isSandboxFreeLaunch) {
-        if (deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(deviceTokenHash);
-        if (pending.deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(pending.deviceTokenHash);
-        if (!KOFI_LAUNCH_TX_IDS.has(pending.checkoutId)) {
-          KOFI_LAUNCH_TX_IDS.add(pending.checkoutId);
-          OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount =
-            Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0) + 1;
-        }
-      }
-
       pending.status = 'paid';
       await saveStudioPassToFirestoreRest(passRecord);
-      recordPaidPassIssuanceServer(passRecord, {
-        isFreePromo: isSandboxFreeLaunch,
-        label: isSandboxFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+      await mutateAndSaveOwnerVaultServer(() => {
+        if (isSandboxFreeLaunch) {
+          if (deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(deviceTokenHash);
+          if (pending.deviceTokenHash) KOFI_LAUNCH_CLAIMED_DEVICES.add(pending.deviceTokenHash);
+          if (!KOFI_LAUNCH_TX_IDS.has(pending.checkoutId)) {
+            KOFI_LAUNCH_TX_IDS.add(pending.checkoutId);
+          }
+        }
+        recordPaidPassIssuanceServer(passRecord, {
+          isFreePromo: isSandboxFreeLaunch,
+          label: isSandboxFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+        });
+        if (isSandboxFreeLaunch) {
+          reconcileFoundingLaunchFromLedgerServer();
+        }
       });
-      await savePersistentOwnerVaultServer();
 
       sendJson(res, 200, {
         ok: true,
@@ -4810,145 +5148,187 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      await hydratePersistentOwnerVaultServer();
+      return await withPassKeyLock(passKey, async () => {
+        await hydratePersistentOwnerVaultServer();
 
-      const existingRecord = await resolveCanonicalStudioPassServer(passKey);
+        let finalResult = null;
+        let finalExistingRecord = null;
+        let savedPassOk = false;
 
-      if (!existingRecord) {
-        sendJson(res, 403, {
-          ok: false,
-          status: 'INVALID_OR_EXPIRED',
-          message: 'Invalid or expired pass key.',
-        });
-        return true;
-      }
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const remoteCandidate = await fetchStudioPassFromFirestoreRest(passKey);
+          const candidateRecord =
+            attempt === 0
+              ? await resolveCanonicalStudioPassServer(passKey)
+              : pickCanonicalPassRecordServer(SERVER_PASS_STORE.get(passKey), remoteCandidate) ||
+                remoteCandidate ||
+                SERVER_PASS_STORE.get(passKey);
 
-      const result = validateAndBindPassRedemptionServer(
-        existingRecord,
-        deviceTokenHash,
-        Date.now(),
-        { bouquetCode: reqBouquetCode }
-      );
-
-      if (!result.valid || !result.updatedPass) {
-        if (result.status === 'DEVICE_LIMIT_EXCEEDED') {
-          OWNER_ANALYTICS_STATE.blockedShareAttempts += 1;
-          if (TESTER_VOUCHER_LEDGER.has(passKey)) {
-            const item = TESTER_VOUCHER_LEDGER.get(passKey);
-            item.blockedAttempts = (item.blockedAttempts || 0) + 1;
-            TESTER_VOUCHER_LEDGER.set(passKey, item);
+          if (!candidateRecord) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'INVALID_OR_EXPIRED',
+              message: 'Invalid or expired pass key.',
+            });
+            return true;
           }
-          pushAnalyticsEventServer(
-            'security',
-            'voucher_share_blocked',
-            `Blocked additional device from claiming ${
-              isTesterVoucherPassServer(existingRecord) ? '1-device Tester Voucher' : 'Studio Pass'
-            } (${passKey})`,
-            'mobile',
-            existingRecord.region || 'INTL'
+
+          const result = validateAndBindPassRedemptionServer(
+            candidateRecord,
+            deviceTokenHash,
+            Date.now(),
+            { bouquetCode: reqBouquetCode }
           );
-          await savePersistentOwnerVaultServer();
+
+          if (!result.valid || !result.updatedPass) {
+            if (result.status === 'DEVICE_LIMIT_EXCEEDED') {
+              await mutateAndSaveOwnerVaultServer(() => {
+                OWNER_ANALYTICS_STATE.blockedShareAttempts += 1;
+                if (TESTER_VOUCHER_LEDGER.has(passKey)) {
+                  const item = TESTER_VOUCHER_LEDGER.get(passKey);
+                  item.blockedAttempts = (item.blockedAttempts || 0) + 1;
+                  TESTER_VOUCHER_LEDGER.set(passKey, item);
+                }
+                pushAnalyticsEventServer(
+                  'security',
+                  'voucher_share_blocked',
+                  `Blocked additional device from claiming ${
+                    isTesterVoucherPassServer(candidateRecord)
+                      ? '1-device Tester Voucher'
+                      : 'Studio Pass'
+                  } (${passKey})`,
+                  'mobile',
+                  candidateRecord.region || 'INTL'
+                );
+              });
+            }
+            sendJson(res, 403, {
+              ok: false,
+              status: 'INVALID_OR_EXPIRED',
+              message: 'Invalid or expired pass key.',
+            });
+            return true;
+          }
+
+          const casRes = await saveStudioPassWithCasRest(result.updatedPass);
+          if (casRes.conflict) {
+            continue;
+          }
+          finalResult = result;
+          finalExistingRecord = candidateRecord;
+          savedPassOk = casRes.ok;
+          SERVER_PASS_STORE.set(passKey, result.updatedPass);
+          break;
         }
-        sendJson(res, 403, {
-          ok: false,
-          status: 'INVALID_OR_EXPIRED',
-          message: 'Invalid or expired pass key.',
+
+        if (!finalResult || !finalResult.updatedPass) {
+          sendJson(res, 403, {
+            ok: false,
+            status: 'INVALID_OR_EXPIRED',
+            message: 'Invalid or expired pass key.',
+          });
+          return true;
+        }
+
+        if (!savedPassOk) {
+          SERVER_PASS_STORE.set(passKey, finalResult.updatedPass);
+        }
+
+        const updatedPass = finalResult.updatedPass;
+        await mutateAndSaveOwnerVaultServer(() => {
+          if (isTesterVoucherPassServer(updatedPass)) {
+            const meta = parseTesterVoucherMetaServer(updatedPass.boundBouquetCode);
+            const existingItem = TESTER_VOUCHER_LEDGER.get(passKey);
+            const wasUnclaimed = !finalExistingRecord?.primaryDeviceHash;
+            TESTER_VOUCHER_LEDGER.set(passKey, {
+              passKey,
+              label: existingItem?.label || meta.label || 'Tester Invite',
+              durationHours:
+                existingItem?.durationHours ||
+                Math.max(
+                  1,
+                  Math.round(
+                    (Date.parse(updatedPass.expiresAt) - Date.parse(updatedPass.createdAt)) /
+                      3600000
+                  )
+                ),
+              dailyCap: existingItem?.dailyCap || meta.dailyCap || 10,
+              retentionDays: updatedPass.retentionDays || 30,
+              createdAt: updatedPass.createdAt,
+              expiresAt: updatedPass.expiresAt,
+              status: 'claimed',
+              claimedDeviceHash: updatedPass.primaryDeviceHash,
+              secondaryDeviceHash: updatedPass.secondaryDeviceHash || null,
+              bouquetsCreated: Math.max(
+                existingItem?.bouquetsCreated || 0,
+                updatedPass.dailyUsageCount || 0
+              ),
+              blockedAttempts: existingItem?.blockedAttempts || 0,
+              passRecord: updatedPass,
+            });
+            if (wasUnclaimed) {
+              OWNER_ANALYTICS_STATE.referrers.tester_magic_link += 1;
+              pushAnalyticsEventServer(
+                'monetization',
+                'voucher_claimed',
+                `Tester Voucher claimed (${meta.label || passKey}) — locked to 1 device`,
+                'mobile',
+                updatedPass.region || 'INTL'
+              );
+            }
+          } else {
+            const existingPaid = PAID_PASS_LEDGER.get(passKey);
+            const { currency, amountMinor } = resolvePaidPassCatalogMeta(
+              updatedPass.tier,
+              updatedPass.region
+            );
+            PAID_PASS_LEDGER.set(passKey, {
+              passKey,
+              label: existingPaid?.label || `${updatedPass.paymentProvider || 'Studio'} Buyer`,
+              tier: updatedPass.tier,
+              region: updatedPass.region === 'PH' ? 'PH' : 'INTL',
+              channel:
+                existingPaid?.channel ||
+                (updatedPass.paymentProvider === 'kofi'
+                  ? 'kofi'
+                  : updatedPass.paymentProvider === 'sikatpay'
+                  ? 'sikatpay'
+                  : updatedPass.paymentProvider === 'bayadgate'
+                  ? 'bayadgate'
+                  : updatedPass.paymentProvider === 'paymongo'
+                  ? 'paymongo'
+                  : 'manual_gcash'),
+              amountMinor: existingPaid?.amountMinor ?? amountMinor,
+              currency: existingPaid?.currency || currency,
+              retentionDays: updatedPass.retentionDays || 90,
+              isEternalKeepsake: Boolean(updatedPass.isEternalKeepsake),
+              createdAt: updatedPass.createdAt,
+              expiresAt: updatedPass.expiresAt,
+              status: 'claimed',
+              claimedDeviceHash: updatedPass.primaryDeviceHash,
+              secondaryDeviceHash: updatedPass.secondaryDeviceHash || null,
+              bouquetsCreated: Math.max(
+                existingPaid?.bouquetsCreated || 0,
+                updatedPass.dailyUsageCount || 0
+              ),
+              blockedAttempts: existingPaid?.blockedAttempts || 0,
+              boundBouquetCode: updatedPass.boundBouquetCode || null,
+              isTest: existingPaid?.isTest,
+              isFreePromo: existingPaid?.isFreePromo,
+              archivedFromIncome: existingPaid?.archivedFromIncome,
+              passRecord: updatedPass,
+            });
+          }
+        });
+
+        sendJson(res, 200, {
+          ok: true,
+          status: finalResult.status,
+          message: finalResult.message,
+          pass: updatedPass,
         });
         return true;
-      }
-
-      SERVER_PASS_STORE.set(passKey, result.updatedPass);
-      await saveStudioPassToFirestoreRest(result.updatedPass);
-
-      if (isTesterVoucherPassServer(result.updatedPass)) {
-        const meta = parseTesterVoucherMetaServer(result.updatedPass.boundBouquetCode);
-        const existingItem = TESTER_VOUCHER_LEDGER.get(passKey);
-        const wasUnclaimed = !existingRecord.primaryDeviceHash;
-        TESTER_VOUCHER_LEDGER.set(passKey, {
-          passKey,
-          label: existingItem?.label || meta.label || 'Tester Invite',
-          durationHours:
-            existingItem?.durationHours ||
-            Math.max(
-              1,
-              Math.round(
-                (Date.parse(result.updatedPass.expiresAt) -
-                  Date.parse(result.updatedPass.createdAt)) /
-                  3600000
-              )
-            ),
-          dailyCap: existingItem?.dailyCap || meta.dailyCap || 10,
-          retentionDays: result.updatedPass.retentionDays || 30,
-          createdAt: result.updatedPass.createdAt,
-          expiresAt: result.updatedPass.expiresAt,
-          status: 'claimed',
-          claimedDeviceHash: result.updatedPass.primaryDeviceHash,
-          bouquetsCreated: Math.max(
-            existingItem?.bouquetsCreated || 0,
-            result.updatedPass.dailyUsageCount || 0
-          ),
-          blockedAttempts: existingItem?.blockedAttempts || 0,
-          passRecord: result.updatedPass,
-        });
-        if (wasUnclaimed) {
-          OWNER_ANALYTICS_STATE.referrers.tester_magic_link += 1;
-          pushAnalyticsEventServer(
-            'monetization',
-            'voucher_claimed',
-            `Tester Voucher claimed (${meta.label || passKey}) — locked to 1 device`,
-            'mobile',
-            result.updatedPass.region || 'INTL'
-          );
-        }
-        await savePersistentOwnerVaultServer();
-      } else {
-        const existingPaid = PAID_PASS_LEDGER.get(passKey);
-        const { currency, amountMinor } = resolvePaidPassCatalogMeta(
-          result.updatedPass.tier,
-          result.updatedPass.region
-        );
-        PAID_PASS_LEDGER.set(passKey, {
-          passKey,
-          label: existingPaid?.label || `${result.updatedPass.paymentProvider || 'Studio'} Buyer`,
-          tier: result.updatedPass.tier,
-          region: result.updatedPass.region === 'PH' ? 'PH' : 'INTL',
-          channel:
-            existingPaid?.channel ||
-            (result.updatedPass.paymentProvider === 'kofi'
-              ? 'kofi'
-              : result.updatedPass.paymentProvider === 'sikatpay'
-              ? 'sikatpay'
-              : result.updatedPass.paymentProvider === 'bayadgate'
-              ? 'bayadgate'
-              : result.updatedPass.paymentProvider === 'paymongo'
-              ? 'paymongo'
-              : 'manual_gcash'),
-          amountMinor: existingPaid?.amountMinor ?? amountMinor,
-          currency: existingPaid?.currency || currency,
-          retentionDays: result.updatedPass.retentionDays || 90,
-          isEternalKeepsake: Boolean(result.updatedPass.isEternalKeepsake),
-          createdAt: result.updatedPass.createdAt,
-          expiresAt: result.updatedPass.expiresAt,
-          status: 'claimed',
-          claimedDeviceHash: result.updatedPass.primaryDeviceHash,
-          bouquetsCreated: Math.max(
-            existingPaid?.bouquetsCreated || 0,
-            result.updatedPass.dailyUsageCount || 0
-          ),
-          blockedAttempts: existingPaid?.blockedAttempts || 0,
-          boundBouquetCode: result.updatedPass.boundBouquetCode || null,
-          passRecord: result.updatedPass,
-        });
-        await savePersistentOwnerVaultServer();
-      }
-
-      sendJson(res, 200, {
-        ok: true,
-        status: result.status,
-        message: result.message,
-        pass: result.updatedPass,
       });
-      return true;
     }
 
     // 4. POST /api/payments/verify-action
@@ -4961,8 +5341,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       // 4A. First-party telemetry event ingestion (Persisted to Firestore so Vercel redeploys never reset visits/analytics)
       if (actionType === 'telemetry_event') {
         await hydratePersistentOwnerVaultServer();
-        applyServerTelemetryEvent(parsed.telemetry);
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(() => {
+          applyServerTelemetryEvent(parsed.telemetry);
+        });
         sendJson(res, 200, { ok: true });
         return true;
       }
@@ -4996,17 +5377,18 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
         const pinResult = verifyOwnerPinWithRateLimit(pin, deviceTokenHash || 'anon');
         if (!pinResult.ok) {
-          OWNER_ANALYTICS_STATE.blockedPinAttempts += 1;
-          pushAnalyticsEventServer(
-            'security',
-            'pin_failed',
-            pinResult.locked
-              ? 'Stealth gate locked for 15m after repeated incorrect passphrase attempts'
-              : 'Incorrect passphrase entered on stealth bouquet gate',
-            'desktop',
-            'INTL'
-          );
-          await savePersistentOwnerVaultServer();
+          await mutateAndSaveOwnerVaultServer(() => {
+            OWNER_ANALYTICS_STATE.blockedPinAttempts += 1;
+            pushAnalyticsEventServer(
+              'security',
+              'pin_failed',
+              pinResult.locked
+                ? 'Stealth gate locked for 15m after repeated incorrect passphrase attempts'
+                : 'Incorrect passphrase entered on stealth bouquet gate',
+              'desktop',
+              'INTL'
+            );
+          });
           sendJson(res, 200, {
             ok: false,
             unauthorized: true,
@@ -5019,14 +5401,15 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
         const adminSessionToken = createSignedAdminSessionToken(deviceTokenHash || 'anon');
         await syncRealAnalyticsSnapshotServer();
-        pushAnalyticsEventServer(
-          'security',
-          'owner_unlocked',
-          'Owner unlocked the Atelier Analytics & Tester Voucher Console',
-          'desktop',
-          'INTL'
-        );
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(() => {
+          pushAnalyticsEventServer(
+            'security',
+            'owner_unlocked',
+            'Owner unlocked the Atelier Analytics & Tester Voucher Console',
+            'desktop',
+            'INTL'
+          );
+        });
         sendJson(res, 200, {
           ok: true,
           adminSessionToken,
@@ -5083,7 +5466,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         });
 
         await saveStudioPassToFirestoreRest(minted.pass);
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(({ retry }) => {
+          if (retry) {
+            ISSUED_PASS_KEYS.delete(normalizePassKey(minted.pass.passKey));
+            recordPaidPassIssuanceServer(minted.pass, {
+              label: minted.paidPass?.label,
+              channel: minted.paidPass?.channel,
+              isTest: minted.paidPass?.isTest,
+            });
+          }
+        });
 
         sendJson(res, 200, {
           ok: true,
@@ -5127,7 +5519,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           SERVER_PASS_STORE.set(revResult.targetKey, revokedPass);
           await saveStudioPassToFirestoreRest(revokedPass);
         }
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(({ retry }) => {
+          if (retry) {
+            revokePaidPassServer(revResult.targetKey);
+          }
+        });
 
         sendJson(res, 200, {
           ok: true,
@@ -5152,8 +5548,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         await hydratePersistentOwnerVaultServer();
-        toggleIncomePauseServer(typeof parsed.paused === 'boolean' ? parsed.paused : undefined);
-        await savePersistentOwnerVaultServer();
+        const targetPaused =
+          typeof parsed.paused === 'boolean'
+            ? parsed.paused
+            : !OWNER_ANALYTICS_STATE.incomePausedForTesting;
+        await mutateAndSaveOwnerVaultServer(() => {
+          toggleIncomePauseServer(targetPaused);
+        });
 
         sendJson(res, 200, {
           ok: true,
@@ -5179,10 +5580,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         await hydratePersistentOwnerVaultServer();
-        togglePhPaymentsDisabledServer(
-          typeof parsed.disabled === 'boolean' ? parsed.disabled : undefined
-        );
-        await savePersistentOwnerVaultServer();
+        const targetDisabled =
+          typeof parsed.disabled === 'boolean'
+            ? parsed.disabled
+            : !OWNER_ANALYTICS_STATE.phPaymentsDisabled;
+        await mutateAndSaveOwnerVaultServer(() => {
+          togglePhPaymentsDisabledServer(targetDisabled);
+        });
 
         sendJson(res, 200, {
           ok: true,
@@ -5208,10 +5612,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         await hydratePersistentOwnerVaultServer();
-        resetOwnerIncomeServer({
-          purgeTestAndRevoked: parsed.purgeTestAndRevoked !== false,
+        await mutateAndSaveOwnerVaultServer(() => {
+          resetOwnerIncomeServer({
+            purgeTestAndRevoked: parsed.purgeTestAndRevoked !== false,
+          });
         });
-        await savePersistentOwnerVaultServer();
 
         sendJson(res, 200, {
           ok: true,
@@ -5236,8 +5641,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         await hydratePersistentOwnerVaultServer();
-        const removedCount = clearTestAndRevokedPaidKeysServer();
-        await savePersistentOwnerVaultServer();
+        const mutRes = await mutateAndSaveOwnerVaultServer(() => clearTestAndRevokedPaidKeysServer());
+        const removedCount = typeof mutRes?.result === 'number' ? mutRes.result : 0;
 
         sendJson(res, 200, {
           ok: true,
@@ -5327,20 +5732,21 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           blockedAttempts: 0,
           passRecord: signedPass,
         };
-        TESTER_VOUCHER_LEDGER.set(signedPass.passKey, voucherEntry);
-        OWNER_ANALYTICS_STATE.passesIssued.tester = Math.max(
-          OWNER_ANALYTICS_STATE.passesIssued.tester + 1,
-          TESTER_VOUCHER_LEDGER.size
-        );
-        getTodayDailyBucketServer().passUnlocks += 1;
-        pushAnalyticsEventServer(
-          'monetization',
-          'voucher_minted',
-          `Minted ${durationHours}h 1-device Tester Voucher for "${label}" (${signedPass.passKey})`,
-          'desktop',
-          'INTL'
-        );
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(() => {
+          TESTER_VOUCHER_LEDGER.set(signedPass.passKey, voucherEntry);
+          OWNER_ANALYTICS_STATE.passesIssued.tester = Math.max(
+            OWNER_ANALYTICS_STATE.passesIssued.tester + 1,
+            TESTER_VOUCHER_LEDGER.size
+          );
+          getTodayDailyBucketServer().passUnlocks += 1;
+          pushAnalyticsEventServer(
+            'monetization',
+            'voucher_minted',
+            `Minted ${durationHours}h 1-device Tester Voucher for "${label}" (${signedPass.passKey})`,
+            'desktop',
+            'INTL'
+          );
+        });
 
         sendJson(res, 200, {
           ok: true,
@@ -5386,20 +5792,21 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           await saveStudioPassToFirestoreRest(revokedPass);
         }
 
-        if (TESTER_VOUCHER_LEDGER.has(targetKey)) {
-          const item = TESTER_VOUCHER_LEDGER.get(targetKey);
-          item.status = 'revoked';
-          TESTER_VOUCHER_LEDGER.set(targetKey, item);
-        }
-
-        pushAnalyticsEventServer(
-          'security',
-          'voucher_revoked',
-          `Owner revoked Tester Voucher ${targetKey}`,
-          'desktop',
-          'INTL'
-        );
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(() => {
+          REVOKED_VOUCHER_KEYS.add(targetKey);
+          if (TESTER_VOUCHER_LEDGER.has(targetKey)) {
+            const item = TESTER_VOUCHER_LEDGER.get(targetKey);
+            item.status = 'revoked';
+            TESTER_VOUCHER_LEDGER.set(targetKey, item);
+          }
+          pushAnalyticsEventServer(
+            'security',
+            'voucher_revoked',
+            `Owner revoked Tester Voucher ${targetKey}`,
+            'desktop',
+            'INTL'
+          );
+        });
 
         sendJson(res, 200, {
           ok: true,
@@ -5432,15 +5839,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         await hydratePersistentOwnerVaultServer();
-        cachedCustomOwnerPin = newPin;
-        pushAnalyticsEventServer(
-          'security',
-          'owner_pin_updated',
-          'Owner updated the stealth gate passphrase',
-          'desktop',
-          'INTL'
-        );
-        await savePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(() => {
+          cachedCustomOwnerPin = newPin;
+          pushAnalyticsEventServer(
+            'security',
+            'owner_pin_updated',
+            'Owner updated the stealth gate passphrase',
+            'desktop',
+            'INTL'
+          );
+        });
         sendJson(res, 200, { ok: true, message: 'Owner passphrase updated and saved.' });
         return true;
       }
@@ -5459,8 +5867,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         await hydratePersistentOwnerVaultServer();
-        const launchPromo = updateFoundingLaunchPromoConfigServer(parsed);
-        await savePersistentOwnerVaultServer();
+        const mutRes = await mutateAndSaveOwnerVaultServer(() =>
+          updateFoundingLaunchPromoConfigServer(parsed)
+        );
+        const launchPromo = mutRes?.result?.abort ? getFoundingLaunchPromoStatusServer() : mutRes?.result || getFoundingLaunchPromoStatusServer();
 
         sendJson(res, 200, {
           ok: true,
@@ -5502,84 +5912,120 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        const check = await checkRecipientGiftOfferServer({
-          bouquetCode: safeCode,
-          deviceTokenHash: cleanDevice,
-          visibleStemCount:
-            typeof parsed.visibleStemCount === 'number' ? parsed.visibleStemCount : undefined,
-          noteCharCount:
-            typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
-          isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
-        });
+        const slotKey = deriveRecipientGiftSlotKey(safeCode);
+        return await withPassKeyLock(slotKey, async () => {
+          const check = await checkRecipientGiftOfferServer({
+            bouquetCode: safeCode,
+            deviceTokenHash: cleanDevice,
+            visibleStemCount:
+              typeof parsed.visibleStemCount === 'number' ? parsed.visibleStemCount : undefined,
+            noteCharCount:
+              typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
+            isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
+          });
 
-        if (!check.eligible) {
-          sendJson(res, 403, {
-            ok: false,
-            message: 'This gift offer is no longer available.',
+          if (!check.eligible) {
+            sendJson(res, 403, {
+              ok: false,
+              message: 'This gift offer is no longer available.',
+            });
+            return true;
+          }
+
+          const hop = Math.max(1, Math.min(3, Number(check.hop || 1)));
+          const existingSlot = RECIPIENT_GIFT_SLOTS.get(safeCode);
+          const creatorHash = existingSlot?.creatorDeviceHash || '';
+          const slotMeta = PASS_DOC_META.get(slotKey);
+          const expectMissingSlot = !slotMeta || slotMeta.exists === false;
+
+          const claimedSlotRecord = {
+            status: 'CLAIMED',
+            hop,
+            creatorDeviceHash: creatorHash,
+            claimedDeviceHash: cleanDevice,
+            updatedAt: new Date().toISOString(),
+          };
+
+          const claimedSlotDoc = createSignedStudioPassServer({
+            passKey: slotKey,
+            tier: 'single',
+            region: 'INTL',
+            deviceTokenHash: creatorHash || cleanDevice,
+            secondaryDeviceHash: 'CLAIMED',
+            boundBouquetCode: `RG:${hop}:CLAIMED:${safeCode.slice(0, 16)}`,
+            paymentProvider: 'verified_checkout',
+            paymentReference: `rgs_h${hop}`,
+          });
+
+          const slotCasRes = await saveStudioPassWithCasRest(claimedSlotDoc, {
+            expectMissing: expectMissingSlot,
+          });
+          if (slotCasRes.conflict) {
+            const latestSlot = await fetchStudioPassFromFirestoreRest(slotKey);
+            if (latestSlot) SERVER_PASS_STORE.set(slotKey, latestSlot);
+            sendJson(res, 403, {
+              ok: false,
+              message: 'This gift offer is no longer available.',
+            });
+            return true;
+          }
+
+          SERVER_PASS_STORE.set(slotKey, claimedSlotDoc);
+          RECIPIENT_GIFT_SLOTS.set(safeCode, claimedSlotRecord);
+
+          // Reserve global & per-device cap atomically via Vault CAS before issuing unlock pass
+          const prevDeviceAlreadyClaimed = RECIPIENT_GIFT_CLAIMED_DEVICES.has(cleanDevice);
+          const vaultRes = await mutateAndSaveOwnerVaultServer(({ retry }) => {
+            RECIPIENT_GIFT_SLOTS.set(safeCode, claimedSlotRecord);
+            const promoNow = getFoundingLaunchPromoStatusServer();
+            const deviceClaimedElsewhere = retry
+              ? RECIPIENT_GIFT_CLAIMED_DEVICES.has(cleanDevice) && !prevDeviceAlreadyClaimed
+              : RECIPIENT_GIFT_CLAIMED_DEVICES.has(cleanDevice);
+            if (!promoNow.recipientGiftEnabled || promoNow.recipientGiftRemaining <= 0 || deviceClaimedElsewhere) {
+              return { abort: true, denied: true };
+            }
+            RECIPIENT_GIFT_CLAIMED_DEVICES.add(cleanDevice);
+            OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
+              Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0) + 1,
+              RECIPIENT_GIFT_CLAIMED_DEVICES.size
+            );
+            pushAnalyticsEventServer(
+              'recipient',
+              'recipient_gift_claimed',
+              `Recipient claimed Pay-It-Forward Gift Box (hop ${hop}/3 · ${OWNER_ANALYTICS_STATE.recipientGiftClaimedCount}/${OWNER_ANALYTICS_STATE.recipientGiftMaxLimit})`,
+              'mobile',
+              'INTL'
+            );
+            return { reserved: true };
+          });
+
+          if (vaultRes?.result?.denied) {
+            sendJson(res, 403, {
+              ok: false,
+              message: 'This gift offer is no longer available.',
+            });
+            return true;
+          }
+
+          // Mint silent 1-device, 1-bouquet Single Unlock pass (primary === secondary === cleanDevice so no 2nd device can ever use it)
+          const silentPass = createSignedStudioPassServer({
+            tier: 'single',
+            region: 'INTL',
+            deviceTokenHash: cleanDevice,
+            secondaryDeviceHash: cleanDevice,
+            boundBouquetCode: null,
+            paymentProvider: 'verified_checkout',
+            paymentReference: `pif_h${hop}`,
+          });
+          SERVER_PASS_STORE.set(silentPass.passKey, silentPass);
+          await saveStudioPassToFirestoreRest(silentPass);
+
+          sendJson(res, 200, {
+            ok: true,
+            pass: silentPass,
           });
           return true;
-        }
-
-        const hop = Math.max(1, Math.min(3, Number(check.hop || 1)));
-        const slotKey = deriveRecipientGiftSlotKey(safeCode);
-        const existingSlot = RECIPIENT_GIFT_SLOTS.get(safeCode);
-        const creatorHash = existingSlot?.creatorDeviceHash || '';
-
-        const claimedSlotRecord = {
-          status: 'CLAIMED',
-          hop,
-          creatorDeviceHash: creatorHash,
-          claimedDeviceHash: cleanDevice,
-          updatedAt: new Date().toISOString(),
-        };
-        RECIPIENT_GIFT_SLOTS.set(safeCode, claimedSlotRecord);
-
-        const claimedSlotDoc = createSignedStudioPassServer({
-          passKey: slotKey,
-          tier: 'single',
-          region: 'INTL',
-          deviceTokenHash: creatorHash || cleanDevice,
-          secondaryDeviceHash: 'CLAIMED',
-          boundBouquetCode: `RG:${hop}:CLAIMED:${safeCode.slice(0, 16)}`,
-          paymentProvider: 'verified_checkout',
-          paymentReference: `rgs_h${hop}`,
         });
-        SERVER_PASS_STORE.set(slotKey, claimedSlotDoc);
-        await saveStudioPassToFirestoreRest(claimedSlotDoc);
-
-        RECIPIENT_GIFT_CLAIMED_DEVICES.add(cleanDevice);
-        OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
-          Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0) + 1,
-          RECIPIENT_GIFT_CLAIMED_DEVICES.size
-        );
-
-        // Mint silent 1-device, 1-bouquet Single Unlock pass (primary === secondary === cleanDevice so no 2nd device can ever use it)
-        const silentPass = createSignedStudioPassServer({
-          tier: 'single',
-          region: 'INTL',
-          deviceTokenHash: cleanDevice,
-          secondaryDeviceHash: cleanDevice,
-          boundBouquetCode: null,
-          paymentProvider: 'verified_checkout',
-          paymentReference: `pif_h${hop}`,
-        });
-        SERVER_PASS_STORE.set(silentPass.passKey, silentPass);
-        await saveStudioPassToFirestoreRest(silentPass);
-
-        pushAnalyticsEventServer(
-          'recipient',
-          'recipient_gift_claimed',
-          `Recipient claimed Pay-It-Forward Gift Box (hop ${hop}/3 · ${OWNER_ANALYTICS_STATE.recipientGiftClaimedCount}/${OWNER_ANALYTICS_STATE.recipientGiftMaxLimit})`,
-          'mobile',
-          'INTL'
-        );
-        await savePersistentOwnerVaultServer();
-
-        sendJson(res, 200, {
-          ok: true,
-          pass: silentPass,
-        });
-        return true;
       }
 
       // 4H. Standard Studio Pass Verification for Couture Actions (Strict Server-Only Authority)
@@ -5602,6 +6048,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         normKey.startsWith('BLOOM-KS') ||
         normKey.startsWith('BLOOM-BG') ||
         normKey.startsWith('BLOOM-SP') ||
+        normKey.startsWith('BLOOM-RG') ||
         normKey === 'BLOOM-KCFG-SHOP'
       ) {
         sendJson(res, 403, {
@@ -5612,79 +6059,122 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         return true;
       }
 
-      await hydratePersistentOwnerVaultServer();
+      return await withPassKeyLock(normKey, async () => {
+        await hydratePersistentOwnerVaultServer();
 
-      const canonicalPass = await resolveCanonicalStudioPassServer(normKey, clientPass);
+        let finalCheck = null;
+        let savedOk = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const canonicalPass =
+            attempt === 0
+              ? await resolveCanonicalStudioPassServer(normKey, clientPass)
+              : pickCanonicalPassRecordServer(
+                  SERVER_PASS_STORE.get(normKey),
+                  await fetchStudioPassFromFirestoreRest(normKey)
+                ) || SERVER_PASS_STORE.get(normKey);
 
-      if (!canonicalPass) {
-        sendJson(res, 403, {
-          ok: false,
-          status: 'NOT_FOUND',
-          message:
-            'We couldn’t verify your active pass right now. Please re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
+          if (!canonicalPass) {
+            sendJson(res, 403, {
+              ok: false,
+              status: 'NOT_FOUND',
+              message:
+                'We couldn’t verify your active pass right now. Please re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".',
+            });
+            return true;
+          }
+
+          const check = verifyActiveStudioPassForActionServer({
+            pass: canonicalPass,
+            deviceTokenHash,
+            clientSessionNonce,
+            bouquetCode,
+            incrementUsage,
+          });
+
+          if (!check.valid || !check.updatedPass) {
+            sendJson(res, 403, {
+              ok: false,
+              status: check.status,
+              message: check.message,
+            });
+            return true;
+          }
+
+          const casRes = await saveStudioPassWithCasRest(check.updatedPass);
+          if (casRes.conflict) {
+            continue;
+          }
+          finalCheck = check;
+          savedOk = casRes.ok;
+          SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
+          break;
+        }
+
+        if (!finalCheck || !finalCheck.updatedPass) {
+          sendJson(res, 409, {
+            ok: false,
+            status: 'CONCURRENT_UPDATE',
+            message:
+              'Your pass was updated from another request. Please tap Seal & Share again.',
+          });
+          return true;
+        }
+
+        if (!savedOk) {
+          SERVER_PASS_STORE.set(finalCheck.updatedPass.passKey, finalCheck.updatedPass);
+        }
+
+        const updatedPass = finalCheck.updatedPass;
+        if (TESTER_VOUCHER_LEDGER.has(normKey) || PAID_PASS_LEDGER.has(normKey)) {
+          await mutateAndSaveOwnerVaultServer(() => {
+            if (TESTER_VOUCHER_LEDGER.has(normKey)) {
+              const entry = TESTER_VOUCHER_LEDGER.get(normKey);
+              if (incrementUsage) {
+                entry.bouquetsCreated = Math.max(
+                  (entry.bouquetsCreated || 0) + 1,
+                  updatedPass.dailyUsageCount || 0
+                );
+              }
+              entry.status =
+                entry.status === 'revoked'
+                  ? 'revoked'
+                  : updatedPass.primaryDeviceHash
+                  ? 'claimed'
+                  : entry.status;
+              entry.claimedDeviceHash = updatedPass.primaryDeviceHash || entry.claimedDeviceHash || '';
+              entry.secondaryDeviceHash = updatedPass.secondaryDeviceHash || null;
+              entry.passRecord = updatedPass;
+              TESTER_VOUCHER_LEDGER.set(normKey, entry);
+            } else if (PAID_PASS_LEDGER.has(normKey)) {
+              const entry = PAID_PASS_LEDGER.get(normKey);
+              if (incrementUsage) {
+                entry.bouquetsCreated = Math.max(
+                  (entry.bouquetsCreated || 0) + 1,
+                  updatedPass.dailyUsageCount || 0
+                );
+              }
+              entry.status =
+                entry.status === 'revoked'
+                  ? 'revoked'
+                  : updatedPass.primaryDeviceHash
+                  ? 'claimed'
+                  : entry.status;
+              entry.claimedDeviceHash = updatedPass.primaryDeviceHash || entry.claimedDeviceHash || '';
+              entry.secondaryDeviceHash = updatedPass.secondaryDeviceHash || null;
+              entry.boundBouquetCode = updatedPass.boundBouquetCode || entry.boundBouquetCode || null;
+              entry.passRecord = updatedPass;
+              PAID_PASS_LEDGER.set(normKey, entry);
+            }
+          });
+        }
+
+        sendJson(res, 200, {
+          ok: true,
+          status: 'VALID',
+          pass: updatedPass,
         });
         return true;
-      }
-
-      const check = verifyActiveStudioPassForActionServer({
-        pass: canonicalPass,
-        deviceTokenHash,
-        clientSessionNonce,
-        bouquetCode,
-        incrementUsage,
       });
-
-      if (!check.valid || !check.updatedPass) {
-        sendJson(res, 403, {
-          ok: false,
-          status: check.status,
-          message: check.message,
-        });
-        return true;
-      }
-
-      SERVER_PASS_STORE.set(check.updatedPass.passKey, check.updatedPass);
-      await saveStudioPassToFirestoreRest(check.updatedPass);
-
-      if (TESTER_VOUCHER_LEDGER.has(normKey)) {
-        const entry = TESTER_VOUCHER_LEDGER.get(normKey);
-        if (incrementUsage) {
-          entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
-        }
-        entry.status =
-          entry.status === 'revoked'
-            ? 'revoked'
-            : check.updatedPass.primaryDeviceHash
-            ? 'claimed'
-            : entry.status;
-        entry.claimedDeviceHash = check.updatedPass.primaryDeviceHash || entry.claimedDeviceHash || '';
-        entry.passRecord = check.updatedPass;
-        TESTER_VOUCHER_LEDGER.set(normKey, entry);
-        await savePersistentOwnerVaultServer();
-      } else if (PAID_PASS_LEDGER.has(normKey)) {
-        const entry = PAID_PASS_LEDGER.get(normKey);
-        if (incrementUsage) {
-          entry.bouquetsCreated = (entry.bouquetsCreated || 0) + 1;
-        }
-        entry.status =
-          entry.status === 'revoked'
-            ? 'revoked'
-            : check.updatedPass.primaryDeviceHash
-            ? 'claimed'
-            : entry.status;
-        entry.claimedDeviceHash = check.updatedPass.primaryDeviceHash || entry.claimedDeviceHash || '';
-        entry.boundBouquetCode = check.updatedPass.boundBouquetCode || entry.boundBouquetCode || null;
-        entry.passRecord = check.updatedPass;
-        PAID_PASS_LEDGER.set(normKey, entry);
-        await savePersistentOwnerVaultServer();
-      }
-
-      sendJson(res, 200, {
-        ok: true,
-        status: 'VALID',
-        pass: check.updatedPass,
-      });
-      return true;
     }
 
     // 5. POST /api/webhooks/paymongo
@@ -5723,8 +6213,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
           await saveStudioPassToFirestoreRest(signedPass);
           await hydratePersistentOwnerVaultServer();
-          recordPaidPassIssuanceServer(signedPass);
-          await savePersistentOwnerVaultServer();
+          await mutateAndSaveOwnerVaultServer(() => {
+            recordPaidPassIssuanceServer(signedPass);
+          });
         } else if (isValidPassKeyFormat(passKey)) {
           const tier = isValidTier(metadata.tier) ? metadata.tier : 'pass_7d';
           const region = isValidRegion(metadata.region) ? metadata.region : 'PH';
@@ -5739,8 +6230,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           SERVER_PASS_STORE.set(signedPass.passKey, signedPass);
           await saveStudioPassToFirestoreRest(signedPass);
           await hydratePersistentOwnerVaultServer();
-          recordPaidPassIssuanceServer(signedPass);
-          await savePersistentOwnerVaultServer();
+          await mutateAndSaveOwnerVaultServer(() => {
+            recordPaidPassIssuanceServer(signedPass);
+          });
         }
       }
 
@@ -5804,26 +6296,38 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         String(parsed.amount ?? '').replace(/,/g, '').trim()
       );
       const isZeroPriceOrder = Number.isFinite(parsedAmount) && parsedAmount === 0;
-      const promoState = getFoundingLaunchPromoStatusServer();
-      const isSingleLaunchFreeWebhook =
-        matchedTiers.includes('single') &&
-        (isZeroPriceOrder ||
-          (promoState.kofiLaunchEnabled && promoState.kofiLaunchRemaining > 0));
 
-      if (isSingleLaunchFreeWebhook && !KOFI_LAUNCH_TX_IDS.has(kofiTxId)) {
-        KOFI_LAUNCH_TX_IDS.add(kofiTxId);
-        OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
-          Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0) + 1,
-          KOFI_LAUNCH_TX_IDS.size
+      // Atomically reserve a Founding Launch slot via Vault CAS when this is a free/launch Single order
+      let isSingleLaunchFreeWebhook = false;
+      if (matchedTiers.includes('single')) {
+        const launchReserveRes = await mutateAndSaveOwnerVaultServer(() => {
+          const promoNow = getFoundingLaunchPromoStatusServer();
+          const alreadyKnownTx = KOFI_LAUNCH_TX_IDS.has(kofiTxId);
+          const qualifies =
+            isZeroPriceOrder || (promoNow.kofiLaunchEnabled && promoNow.kofiLaunchRemaining > 0);
+          if (!qualifies) {
+            return { isLaunchFree: false, abort: true };
+          }
+          if (!alreadyKnownTx) {
+            KOFI_LAUNCH_TX_IDS.add(kofiTxId);
+            OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
+              Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0) + 1,
+              KOFI_LAUNCH_TX_IDS.size
+            );
+            reconcileFoundingLaunchFromLedgerServer();
+            pushAnalyticsEventServer(
+              'monetization',
+              'kofi_launch_webhook',
+              `Ko-fi Founding Launch Starter claimed (${OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount}/${OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit})`,
+              'mobile',
+              currency === 'PHP' ? 'PH' : 'INTL'
+            );
+          }
+          return { isLaunchFree: true };
+        });
+        isSingleLaunchFreeWebhook = Boolean(
+          launchReserveRes?.result?.isLaunchFree || isZeroPriceOrder
         );
-        pushAnalyticsEventServer(
-          'monetization',
-          'kofi_launch_webhook',
-          `Ko-fi Founding Launch Starter claimed (${OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount}/${OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit})`,
-          'mobile',
-          currency === 'PHP' ? 'PH' : 'INTL'
-        );
-        await savePersistentOwnerVaultServer();
       }
 
       // Store unclaimed receipt in deterministic `(buyerEmail, matchedTier)` slot(s) `BLOOM-KSXX-XXXX`
@@ -5833,19 +6337,21 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           resolution.matchedCodeByTier?.[matchedTier] || directLinkCode;
         const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);
         const isThisSlotFreeLaunch = matchedTier === 'single' && isSingleLaunchFreeWebhook;
-        const receiptRecord = createSignedStudioPassServer({
-          passKey: slotKey,
-          tier: matchedTier,
-          region: currency === 'PHP' ? 'PH' : 'INTL',
-          deviceTokenHash: '',
-          secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
-          boundBouquetCode: tierSpecificCode,
-          paymentProvider: 'kofi',
-          paymentReference: `${isThisSlotFreeLaunch ? 'kfl' : 'kfs'}_${kofiTxId.slice(0, 12)}`,
-        });
+        await withPassKeyLock(slotKey, async () => {
+          const receiptRecord = createSignedStudioPassServer({
+            passKey: slotKey,
+            tier: matchedTier,
+            region: currency === 'PHP' ? 'PH' : 'INTL',
+            deviceTokenHash: '',
+            secondaryDeviceHash: null, // Unclaimed until buyer verifies with their email
+            boundBouquetCode: tierSpecificCode,
+            paymentProvider: 'kofi',
+            paymentReference: `${isThisSlotFreeLaunch ? 'kfl' : 'kfs'}_${kofiTxId.slice(0, 12)}`,
+          });
 
-        SERVER_PASS_STORE.set(slotKey, receiptRecord);
-        await saveStudioPassToFirestoreRest(receiptRecord);
+          SERVER_PASS_STORE.set(slotKey, receiptRecord);
+          await saveStudioPassToFirestoreRest(receiptRecord);
+        });
         writtenSlots.push(slotKey);
       }
 
@@ -5908,96 +6414,102 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       const slotKey = deriveBayadgateOrderSlotKey(orderId);
-      const orderSlot =
-        SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+      return await withPassKeyLock(slotKey, async () => {
+        const remoteSlot = await fetchStudioPassFromFirestoreRest(slotKey);
+        const orderSlot =
+          pickCanonicalPassRecordServer(SERVER_PASS_STORE.get(slotKey), remoteSlot) ||
+          remoteSlot ||
+          SERVER_PASS_STORE.get(slotKey);
 
-      let pendingEntry = null;
-      for (const entry of PENDING_CHECKOUT_STORE.values()) {
-        if (entry.bayadgateOrderId === orderId) {
-          pendingEntry = entry;
-          break;
+        let pendingEntry = null;
+        for (const entry of PENDING_CHECKOUT_STORE.values()) {
+          if (entry.bayadgateOrderId === orderId) {
+            pendingEntry = entry;
+            break;
+          }
         }
-      }
 
-      if (!orderSlot && !pendingEntry) {
-        res.statusCode = 404;
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.end('FAIL_ORDER_NOT_FOUND');
-        return true;
-      }
+        if (!orderSlot && !pendingEntry) {
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end('FAIL_ORDER_NOT_FOUND');
+          return true;
+        }
 
-      // Verify slot cryptographic provenance when loaded from store/Firestore
-      if (orderSlot && !verifyServerPaymentReference(orderSlot)) {
-        res.statusCode = 403;
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.end('FAIL_INVALID_ORDER_RECORD');
-        return true;
-      }
+        // Verify slot cryptographic provenance when loaded from store/Firestore
+        if (orderSlot && !verifyServerPaymentReference(orderSlot)) {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end('FAIL_INVALID_ORDER_RECORD');
+          return true;
+        }
 
-      const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
-        ? orderSlot?.tier || pendingEntry?.tier
-        : 'pass_7d';
-      const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
-      const incomingMinor = parseBayadgateAmountToMinor(parsed.amount);
-      if (!Number.isFinite(incomingMinor) || incomingMinor !== expectedMinor) {
-        res.statusCode = 400;
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.end('FAIL_AMOUNT_MISMATCH');
-        return true;
-      }
+        const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
+          ? orderSlot?.tier || pendingEntry?.tier
+          : 'pass_7d';
+        const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+        const incomingMinor = parseBayadgateAmountToMinor(parsed.amount);
+        if (!Number.isFinite(incomingMinor) || incomingMinor !== expectedMinor) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end('FAIL_AMOUNT_MISMATCH');
+          return true;
+        }
 
-      // Idempotent guard: already processed
-      if (orderSlot?.secondaryDeviceHash === 'PAID' || pendingEntry?.status === 'paid') {
+        // Idempotent guard: already processed
+        if (orderSlot?.secondaryDeviceHash === 'PAID' || pendingEntry?.status === 'paid') {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.end('SUCCESS');
+          return true;
+        }
+
+        const packedMeta = String(orderSlot?.boundBouquetCode || '');
+        const pipeIdx = packedMeta.indexOf('|');
+        const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
+        const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+        const targetPassKey = isValidPassKeyFormat(decodedPassKey)
+          ? decodedPassKey
+          : pendingEntry?.passKey || generatePassKeyCode();
+        const targetDeviceHash =
+          orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
+        const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
+
+        const mintedPass = createSignedStudioPassServer({
+          passKey: targetPassKey,
+          tier,
+          region: 'PH',
+          deviceTokenHash: targetDeviceHash,
+          boundBouquetCode: targetBouquetCode,
+          paymentProvider: 'bayadgate',
+          paymentReference: `bg_${orderId}`,
+        });
+
+        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+        await saveStudioPassToFirestoreRest(mintedPass);
+
+        if (orderSlot) {
+          const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+          paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+          SERVER_PASS_STORE.set(slotKey, paidSlot);
+          await saveStudioPassWithCasRest(paidSlot);
+        }
+
+        if (pendingEntry) {
+          pendingEntry.status = 'paid';
+        }
+
+        await hydratePersistentOwnerVaultServer();
+        await mutateAndSaveOwnerVaultServer(() => {
+          recordPaidPassIssuanceServer(mintedPass);
+        });
+
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
         res.end('SUCCESS');
         return true;
-      }
-
-      const packedMeta = String(orderSlot?.boundBouquetCode || '');
-      const pipeIdx = packedMeta.indexOf('|');
-      const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
-      const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
-      const targetPassKey = isValidPassKeyFormat(decodedPassKey)
-        ? decodedPassKey
-        : pendingEntry?.passKey || generatePassKeyCode();
-      const targetDeviceHash =
-        orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
-      const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
-
-      const mintedPass = createSignedStudioPassServer({
-        passKey: targetPassKey,
-        tier,
-        region: 'PH',
-        deviceTokenHash: targetDeviceHash,
-        boundBouquetCode: targetBouquetCode,
-        paymentProvider: 'bayadgate',
-        paymentReference: `bg_${orderId}`,
       });
-
-      SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
-      await saveStudioPassToFirestoreRest(mintedPass);
-
-      if (orderSlot) {
-        const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
-        paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
-        SERVER_PASS_STORE.set(slotKey, paidSlot);
-        await saveStudioPassToFirestoreRest(paidSlot);
-      }
-
-      if (pendingEntry) {
-        pendingEntry.status = 'paid';
-      }
-
-      await hydratePersistentOwnerVaultServer();
-      recordPaidPassIssuanceServer(mintedPass);
-      await savePersistentOwnerVaultServer();
-
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store');
-      res.end('SUCCESS');
-      return true;
     }
 
     // 8. POST /api/webhooks/sikatpay — SikatPay `payment.paid` & `ping` Webhook Listener
@@ -6057,98 +6569,104 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       }
 
       const slotKey = deriveSikatpayOrderSlotKey(orderId);
-      const orderSlot =
-        SERVER_PASS_STORE.get(slotKey) || (await fetchStudioPassFromFirestoreRest(slotKey));
+      return await withPassKeyLock(slotKey, async () => {
+        const remoteSlot = await fetchStudioPassFromFirestoreRest(slotKey);
+        const orderSlot =
+          pickCanonicalPassRecordServer(SERVER_PASS_STORE.get(slotKey), remoteSlot) ||
+          remoteSlot ||
+          SERVER_PASS_STORE.get(slotKey);
 
-      let pendingEntry = null;
-      for (const entry of PENDING_CHECKOUT_STORE.values()) {
-        if (entry.sikatpayOrderId === orderId) {
-          pendingEntry = entry;
-          break;
+        let pendingEntry = null;
+        for (const entry of PENDING_CHECKOUT_STORE.values()) {
+          if (entry.sikatpayOrderId === orderId) {
+            pendingEntry = entry;
+            break;
+          }
         }
-      }
 
-      if (!orderSlot && !pendingEntry) {
-        sendJson(res, 404, { ok: false, message: 'Order not found' });
+        if (!orderSlot && !pendingEntry) {
+          sendJson(res, 404, { ok: false, message: 'Order not found' });
+          return true;
+        }
+
+        if (orderSlot && !verifyServerPaymentReference(orderSlot)) {
+          sendJson(res, 403, { ok: false, message: 'Invalid order slot provenance' });
+          return true;
+        }
+
+        const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
+          ? orderSlot?.tier || pendingEntry?.tier
+          : 'pass_7d';
+        const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+        const incomingAmount = Number(data.amount);
+        const incomingCurrency = String(data.currency || '').toUpperCase();
+
+        if (
+          incomingCurrency !== 'PHP' ||
+          !Number.isInteger(incomingAmount) ||
+          incomingAmount !== expectedMinor
+        ) {
+          sendJson(res, 400, { ok: false, message: 'Amount or currency mismatch' });
+          return true;
+        }
+
+        // Idempotent guard: already fulfilled
+        if (orderSlot?.secondaryDeviceHash === 'PAID' || pendingEntry?.status === 'paid') {
+          sendJson(res, 200, { ok: true, duplicate: true });
+          return true;
+        }
+
+        const packedMeta = String(orderSlot?.boundBouquetCode || '');
+        const pipeIdx = packedMeta.indexOf('|');
+        const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
+        const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+        const targetPassKey = isValidPassKeyFormat(decodedPassKey)
+          ? decodedPassKey
+          : pendingEntry?.passKey || generatePassKeyCode();
+        const targetDeviceHash =
+          orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
+        const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
+
+        await hydratePersistentOwnerVaultServer();
+        const isSikatpayTest =
+          sikatpay.isTestKey ||
+          !paymentLivemode ||
+          Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
+
+        const mintedPass = createSignedStudioPassServer({
+          passKey: targetPassKey,
+          tier,
+          region: 'PH',
+          deviceTokenHash: targetDeviceHash,
+          boundBouquetCode: targetBouquetCode,
+          paymentProvider: 'sikatpay',
+          paymentReference: `${isSikatpayTest ? 'sptest' : 'sp'}_${orderId}`,
+        });
+
+        SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
+        await saveStudioPassToFirestoreRest(mintedPass);
+
+        if (orderSlot) {
+          const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
+          paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
+          SERVER_PASS_STORE.set(slotKey, paidSlot);
+          await saveStudioPassWithCasRest(paidSlot);
+        }
+
+        if (pendingEntry) {
+          pendingEntry.status = 'paid';
+        }
+
+        await mutateAndSaveOwnerVaultServer(() => {
+          recordPaidPassIssuanceServer(mintedPass, {
+            isTest: isSikatpayTest,
+            label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
+          });
+        });
+
+        sendJson(res, 200, { ok: true, passKey: mintedPass.passKey, isTest: isSikatpayTest });
         return true;
-      }
-
-      if (orderSlot && !verifyServerPaymentReference(orderSlot)) {
-        sendJson(res, 403, { ok: false, message: 'Invalid order slot provenance' });
-        return true;
-      }
-
-      const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
-        ? orderSlot?.tier || pendingEntry?.tier
-        : 'pass_7d';
-      const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
-      const incomingAmount = Number(data.amount);
-      const incomingCurrency = String(data.currency || '').toUpperCase();
-
-      if (
-        incomingCurrency !== 'PHP' ||
-        !Number.isInteger(incomingAmount) ||
-        incomingAmount !== expectedMinor
-      ) {
-        sendJson(res, 400, { ok: false, message: 'Amount or currency mismatch' });
-        return true;
-      }
-
-      // Idempotent guard: already fulfilled
-      if (orderSlot?.secondaryDeviceHash === 'PAID' || pendingEntry?.status === 'paid') {
-        sendJson(res, 200, { ok: true, duplicate: true });
-        return true;
-      }
-
-      const packedMeta = String(orderSlot?.boundBouquetCode || '');
-      const pipeIdx = packedMeta.indexOf('|');
-      const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
-      const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
-      const targetPassKey = isValidPassKeyFormat(decodedPassKey)
-        ? decodedPassKey
-        : pendingEntry?.passKey || generatePassKeyCode();
-      const targetDeviceHash =
-        orderSlot?.primaryDeviceHash || pendingEntry?.deviceTokenHash || 'anonymous_device_hash';
-      const targetBouquetCode = decodedBouquetCode || pendingEntry?.boundBouquetCode || null;
-
-      await hydratePersistentOwnerVaultServer();
-      const isSikatpayTest =
-        sikatpay.isTestKey ||
-        !paymentLivemode ||
-        Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
-
-      const mintedPass = createSignedStudioPassServer({
-        passKey: targetPassKey,
-        tier,
-        region: 'PH',
-        deviceTokenHash: targetDeviceHash,
-        boundBouquetCode: targetBouquetCode,
-        paymentProvider: 'sikatpay',
-        paymentReference: `${isSikatpayTest ? 'sptest' : 'sp'}_${orderId}`,
       });
-
-      SERVER_PASS_STORE.set(mintedPass.passKey, mintedPass);
-      await saveStudioPassToFirestoreRest(mintedPass);
-
-      if (orderSlot) {
-        const paidSlot = { ...orderSlot, secondaryDeviceHash: 'PAID' };
-        paidSlot.signature = computePassIntegritySignature(paidSlot, CLIENT_SIGNATURE_SALT);
-        SERVER_PASS_STORE.set(slotKey, paidSlot);
-        await saveStudioPassToFirestoreRest(paidSlot);
-      }
-
-      if (pendingEntry) {
-        pendingEntry.status = 'paid';
-      }
-
-      recordPaidPassIssuanceServer(mintedPass, {
-        isTest: isSikatpayTest,
-        label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
-      });
-      await savePersistentOwnerVaultServer();
-
-      sendJson(res, 200, { ok: true, passKey: mintedPass.passKey, isTest: isSikatpayTest });
-      return true;
     }
 
     sendJson(res, 404, { ok: false, message: 'Unknown payment endpoint' });

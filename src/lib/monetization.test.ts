@@ -3721,6 +3721,461 @@ test('Anti-enumeration & concise 1-sentence error copy across Ko-fi verification
   }
 });
 
+test('Vault CAS & cold-start safety: failed hydration never overwrites PH disabled flag, 409/412 retries merge cleanly, and Founding Launch reconciles from ledger', async () => {
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error ESM server module
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const originalFetch = globalThis.fetch;
+
+  const makeReq = (method: string, url: string, bodyStr?: string) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: {
+        host: 'www.sendabouquet.online',
+        'content-type': 'application/json',
+      },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) req.emit('data', Buffer.from(bodyStr));
+      req.emit('end');
+    });
+    return req;
+  };
+  const makeRes = () => {
+    const state = { statusCode: 200, body: '' };
+    return {
+      set statusCode(v: number) {
+        state.statusCode = v;
+      },
+      get statusCode() {
+        return state.statusCode;
+      },
+      setHeader() {},
+      end(str = '') {
+        state.body = str;
+      },
+      json() {
+        return state.body ? JSON.parse(state.body) : {};
+      },
+    };
+  };
+
+  try {
+    // 1. Cold-start failed hydration guard: if Firestore Vault GET returns 500, savePersistentOwnerVaultServer MUST NOT blindly PATCH
+    paymentLib.resetOwnerVaultMetaForTests();
+    let patchCountDuringOutage = 0;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        patchCountDuringOutage += 1;
+      }
+      return new Response('Backend unavailable', { status: 500 });
+    }) as unknown as typeof fetch;
+
+    const savedWhileUnknown = await paymentLib.savePersistentOwnerVaultServer();
+    assert.equal(savedWhileUnknown, false);
+    assert.equal(patchCountDuringOutage, 0);
+
+    // 2. CAS 412 retry preserves phPaymentsDisabled: true when remote vault already updated
+    paymentLib.resetOwnerVaultMetaForTests();
+    paymentLib.OWNER_ANALYTICS_STATE.phPaymentsDisabled = false;
+    let remoteVaultPayload = {
+      v: 1,
+      updatedAt: '2026-11-16T01:54:14.628Z',
+      phPaymentsDisabled: true,
+      phDisabledUpdatedAtMs: Date.now() + 5000,
+      kofiLaunchMaxLimit: 30,
+      kofiLaunchClaimedCount: 0,
+      paidPasses: [
+        {
+          passKey: 'BLOOM-MM32-AFBX',
+          label: 'Ko-fi Launch Free',
+          tier: 'single',
+          region: 'INTL',
+          channel: 'kofi',
+          amountMinor: 0,
+          currency: 'USD',
+          retentionDays: 90,
+          isEternalKeepsake: false,
+          createdAt: '2026-11-15T22:26:02.176Z',
+          expiresAt: '2027-02-13T22:26:02.176Z',
+          status: 'claimed',
+          claimedDeviceHash: 'bf39a229bd25fb9cea2400f0094f7c64',
+          bouquetsCreated: 0,
+          blockedAttempts: 0,
+          isFreePromo: true,
+          passRecord: {
+            passKey: 'BLOOM-MM32-AFBX',
+            tier: 'single',
+            region: 'INTL',
+            paymentProvider: 'kofi',
+            paymentReference: 'kfl_a5de613c-11f',
+            primaryDeviceHash: 'bf39a229bd25fb9cea2400f0094f7c64',
+            signature: 'mock_sig',
+          },
+        },
+      ],
+      analytics: {
+        ...paymentLib.OWNER_ANALYTICS_STATE,
+        phPaymentsDisabled: true,
+        webVisits: 100,
+      },
+    };
+    let remoteUpdateTime = '2026-11-16T01:54:14.628628Z';
+    let patchAttempts = 0;
+
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('sab_ov_33d5718976debf')) {
+        if (!init?.method || init.method === 'GET') {
+          return new Response(
+            JSON.stringify({
+              updateTime: remoteUpdateTime,
+              fields: {
+                voiceAudioDataUrl: { stringValue: JSON.stringify(remoteVaultPayload) },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (init.method === 'PATCH') {
+          patchAttempts += 1;
+          // Simulate a racing writer updating remoteUpdateTime right before our 1st PATCH
+          if (patchAttempts === 1) {
+            remoteUpdateTime = '2026-11-16T01:54:20.000000Z';
+            return new Response(JSON.stringify({ error: { code: 412 } }), { status: 412 });
+          }
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const writtenJson = JSON.parse(bodyObj.fields.voiceAudioDataUrl.stringValue);
+          remoteVaultPayload = writtenJson;
+          remoteUpdateTime = '2026-11-16T01:54:25.000000Z';
+          return new Response(JSON.stringify({ updateTime: remoteUpdateTime }), { status: 200 });
+        }
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const hydratedOk = await paymentLib.hydratePersistentOwnerVaultServer();
+    assert.equal(hydratedOk, true);
+    // Remote phPaymentsDisabled=true was hydrated, AND Founding Launch ledger count reconciled BLOOM-MM32-AFBX -> 1/30 (29 left)!
+    assert.equal(paymentLib.OWNER_ANALYTICS_STATE.phPaymentsDisabled, true);
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchClaimedCount, 1);
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchRemaining, 29);
+
+    // Telemetry event hits 412 once, retries via CAS, and preserves phPaymentsDisabled=true + kofiLaunchClaimedCount=1
+    const telRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'telemetry_event',
+          deviceTokenHash: 'dev_tel_cas_1',
+          telemetry: { eventType: 'landing_view', device: 'desktop', region: 'INTL' },
+        })
+      ),
+      telRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(telRes.statusCode, 200);
+    assert.equal(patchAttempts, 2);
+    assert.equal(remoteVaultPayload.phPaymentsDisabled, true);
+    assert.equal(remoteVaultPayload.kofiLaunchClaimedCount, 1);
+
+    // Resetting Ko-fi launch claims clears to 0 and ignores pre-reset ledger keys like BLOOM-MM32-AFBX
+    paymentLib.updateFoundingLaunchPromoConfigServer({ resetKofiLaunchClaims: true });
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchClaimedCount, 0);
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchRemaining, 30);
+  } finally {
+    paymentLib.PAID_PASS_LEDGER.delete('BLOOM-MM32-AFBX');
+    paymentLib.ISSUED_PASS_KEYS.delete('BLOOM-MM32-AFBX');
+    paymentLib.KOFI_LAUNCH_IGNORED_KEYS.delete('BLOOM-MM32-AFBX');
+    paymentLib.OWNER_ANALYTICS_STATE.phPaymentsDisabled = false;
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Race-condition protection: concurrent Ko-fi slot claims, concurrent Pass Key single-bouquet sealing, and concurrent Gift Box claims allow only one winner', async () => {
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error ESM server module
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const originalFetch = globalThis.fetch;
+
+  const makeReq = (method: string, url: string, bodyStr?: string) => {
+    const req = Object.assign(new EventEmitter(), {
+      method,
+      url,
+      headers: {
+        host: 'www.sendabouquet.online',
+        'content-type': 'application/json',
+      },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    process.nextTick(() => {
+      if (bodyStr !== undefined) req.emit('data', Buffer.from(bodyStr));
+      req.emit('end');
+    });
+    return req;
+  };
+  const makeRes = () => {
+    const state = { statusCode: 200, body: '' };
+    return {
+      set statusCode(v: number) {
+        state.statusCode = v;
+      },
+      get statusCode() {
+        return state.statusCode;
+      },
+      setHeader() {},
+      end(str = '') {
+        state.body = str;
+      },
+      json() {
+        return state.body ? JSON.parse(state.body) : {};
+      },
+    };
+  };
+
+  const prevSingleCode = process.env.KOFI_SHOP_SINGLE_CODE;
+  process.env.KOFI_SHOP_SINGLE_CODE = 'racecode01';
+  const createdKeys: string[] = [];
+
+  try {
+    paymentLib.resetOwnerVaultMetaForTests();
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
+    });
+
+    // Simple in-memory Firestore CAS simulator for `studio_passes/*`
+    const remotePasses = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+    let revSeq = 1;
+
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/studio_passes/')) {
+        const after = urlStr.split('/studio_passes/')[1] || '';
+        const [rawDocId, queryStr = ''] = after.split('?');
+        const docId = decodeURIComponent(rawDocId);
+        const params = new URLSearchParams(queryStr);
+        const existing = remotePasses.get(docId);
+
+        if (!init?.method || init.method === 'GET') {
+          if (!existing) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(existing), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (init.method === 'PATCH') {
+          const expectedExists = params.get('currentDocument.exists');
+          const expectedUpdateTime = params.get('currentDocument.updateTime');
+          if (expectedExists === 'false' && existing) {
+            return new Response('{}', { status: 409 });
+          }
+          if (expectedUpdateTime && (!existing || existing.updateTime !== expectedUpdateTime)) {
+            return new Response('{}', { status: 412 });
+          }
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T02:00:0${revSeq++}.000Z`;
+          const stored = { fields: bodyObj.fields, updateTime: nextTime };
+          remotePasses.set(docId, stored);
+          return new Response(JSON.stringify(stored), { status: 200 });
+        }
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    // A. Concurrent Ko-fi Case B verify-and-issue on the SAME buyer email
+    const whRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: 'racer@example.com',
+          amount: '0.00',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_race_kofi_1',
+          shop_items: [{ direct_link_code: 'racecode01' }],
+        })
+      ),
+      whRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(whRes.statusCode, 200);
+    createdKeys.push(whRes.json().emailTierSlotKey);
+
+    const chk1Res = makeRes();
+    const chk2Res = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: 'dev_racer_A_1234',
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      chk1Res,
+      '/api/payments/create-checkout'
+    );
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: 'dev_racer_B_1234',
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      chk2Res,
+      '/api/payments/create-checkout'
+    );
+    const chk1 = chk1Res.json();
+    const chk2 = chk2Res.json();
+
+    const v1Res = makeRes();
+    const v2Res = makeRes();
+    await Promise.all([
+      paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-and-issue',
+          JSON.stringify({
+            checkoutId: chk1.checkoutId,
+            checkoutToken: chk1.checkoutToken,
+            deviceTokenHash: 'dev_racer_A_1234',
+            buyerEmail: 'racer@example.com',
+          })
+        ),
+        v1Res,
+        '/api/payments/verify-and-issue'
+      ),
+      paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-and-issue',
+          JSON.stringify({
+            checkoutId: chk2.checkoutId,
+            checkoutToken: chk2.checkoutToken,
+            deviceTokenHash: 'dev_racer_B_1234',
+            buyerEmail: 'racer@example.com',
+          })
+        ),
+        v2Res,
+        '/api/payments/verify-and-issue'
+      ),
+    ]);
+    const kofiStatuses = [v1Res.statusCode, v2Res.statusCode].sort();
+    assert.deepEqual(kofiStatuses, [200, 402]);
+    const wonPass = v1Res.statusCode === 200 ? v1Res.json().pass : v2Res.json().pass;
+    createdKeys.push(wonPass.passKey);
+
+    // B. Concurrent Single-Bouquet verify_pass (incrementUsage: true) allows only ONE seal
+    const seal1Res = makeRes();
+    const seal2Res = makeRes();
+    await Promise.all([
+      paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-action',
+          JSON.stringify({
+            action: 'verify_pass',
+            pass: wonPass,
+            deviceTokenHash: wonPass.primaryDeviceHash,
+            bouquetCode: 'RaceBqt01',
+            incrementUsage: true,
+          })
+        ),
+        seal1Res,
+        '/api/payments/verify-action'
+      ),
+      paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-action',
+          JSON.stringify({
+            action: 'verify_pass',
+            pass: wonPass,
+            deviceTokenHash: wonPass.primaryDeviceHash,
+            bouquetCode: 'RaceBqt02',
+            incrementUsage: true,
+          })
+        ),
+        seal2Res,
+        '/api/payments/verify-action'
+      ),
+    ]);
+    assert.deepEqual([seal1Res.statusCode, seal2Res.statusCode].sort(), [200, 403]);
+
+    // C. Concurrent Recipient Gift Box claims on the same curated seed bouquet allow only ONE winner
+    const g1Res = makeRes();
+    const g2Res = makeRes();
+    await Promise.all([
+      paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-action',
+          JSON.stringify({
+            action: 'claim_recipient_gift_offer',
+            bouquetCode: 'sc_race_seed_1',
+            deviceTokenHash: 'dev_gift_racer_1',
+            visibleStemCount: 5,
+            noteCharCount: 40,
+            isCoutureOrSeed: true,
+          })
+        ),
+        g1Res,
+        '/api/payments/verify-action'
+      ),
+      paymentLib.handlePaymentEndpoint(
+        makeReq(
+          'POST',
+          '/api/payments/verify-action',
+          JSON.stringify({
+            action: 'claim_recipient_gift_offer',
+            bouquetCode: 'sc_race_seed_1',
+            deviceTokenHash: 'dev_gift_racer_2',
+            visibleStemCount: 5,
+            noteCharCount: 40,
+            isCoutureOrSeed: true,
+          })
+        ),
+        g2Res,
+        '/api/payments/verify-action'
+      ),
+    ]);
+    assert.deepEqual([g1Res.statusCode, g2Res.statusCode].sort(), [200, 403]);
+  } finally {
+    for (const k of createdKeys) {
+      if (k) {
+        paymentLib.SERVER_PASS_STORE.delete(k);
+        paymentLib.PAID_PASS_LEDGER.delete(k);
+        paymentLib.ISSUED_PASS_KEYS.delete(k);
+      }
+    }
+    if (prevSingleCode !== undefined) process.env.KOFI_SHOP_SINGLE_CODE = prevSingleCode;
+    else delete process.env.KOFI_SHOP_SINGLE_CODE;
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
 
 
 
