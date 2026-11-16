@@ -5068,6 +5068,311 @@ test('Ko-fi paid Shop Order & diagnostic webhook observability in Admin + paid $
   }
 });
 
+test('Discounted $0 order on paid Single item (prodSingle) does not consume Founding Launch cap and verifies on repeat device+email, plus rescues legacy kfl_-tagged prodSingle slot', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const { EventEmitter } = await import('node:events');
+
+  const makeReq = (method: string, url: string, bodyInput?: string | Record<string, unknown>) => {
+    const req = new EventEmitter() as InstanceType<typeof EventEmitter> & {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+      body?: unknown;
+    };
+    req.method = method;
+    req.url = url;
+    req.headers = { host: 'www.sendabouquet.online', 'content-type': 'application/json' };
+    if (bodyInput && typeof bodyInput === 'object') {
+      req.body = bodyInput;
+    } else {
+      process.nextTick(() => {
+        if (typeof bodyInput === 'string') {
+          req.emit('data', Buffer.from(bodyInput, 'utf8'));
+        }
+        req.emit('end');
+      });
+    }
+    return req;
+  };
+
+  const makeRes = () => ({
+    statusCode: 200,
+    headers: {} as Record<string, string>,
+    body: '',
+    setHeader(k: string, v: string) {
+      this.headers[k] = v;
+    },
+    end(chunk?: string) {
+      if (chunk) this.body += chunk;
+    },
+    json() {
+      return JSON.parse(this.body || '{}');
+    },
+  });
+
+  const prevSingleCode = process.env.KOFI_SHOP_SINGLE_CODE;
+  const prevTestSingleCode = process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+  const prevToken = process.env.KOFI_VERIFICATION_TOKEN;
+  const originalFetch = globalThis.fetch;
+
+  process.env.KOFI_SHOP_SINGLE_CODE = '7b9751fdd0';
+  process.env.KOFI_SHOP_TEST_SINGLE_CODE = '470b54529a';
+  process.env.KOFI_VERIFICATION_TOKEN = 'coupon_tok_123';
+  const createdKeys: string[] = [];
+
+  try {
+    const remotePasses = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+    let remoteVault: { fields: Record<string, unknown>; updateTime: string } | null = null;
+    let revSeq = 1;
+
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/shared_bouquets/')) {
+        if (!init?.method || init.method === 'GET') {
+          if (!remoteVault) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T07:00:0${revSeq++}.000Z`;
+          remoteVault = { fields: bodyObj.fields, updateTime: nextTime };
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+      }
+      if (urlStr.includes('/studio_passes/')) {
+        const after = urlStr.split('/studio_passes/')[1] || '';
+        const [rawDocId] = after.split('?');
+        const docId = decodeURIComponent(rawDocId);
+        const existing = remotePasses.get(docId);
+
+        if (!init?.method || init.method === 'GET') {
+          if (!existing) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(existing), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T07:00:0${revSeq++}.000Z`;
+          const stored = { fields: bodyObj.fields, updateTime: nextTime };
+          remotePasses.set(docId, stored);
+          return new Response(JSON.stringify(stored), { status: 200 });
+        }
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    paymentLib.resetOwnerVaultMetaForTests();
+    paymentLib.PAID_PASS_LEDGER.clear();
+    paymentLib.ISSUED_PASS_KEYS.clear();
+    paymentLib.OWNER_ANALYTICS_STATE.recentEvents = [];
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
+
+    const repeatDev = 'dev_repeat_coupon_buyer_01';
+    const buyerEmail = 'witchdark078@gmail.com';
+    // Device already used its one-time Founding Launch free starter previously
+    paymentLib.KOFI_LAUNCH_CLAIMED_DEVICES.add(repeatDev);
+
+    // 1. $0.00 (100% owner coupon) Ko-fi order on the PAID single product (`7b9751fdd0`)
+    const couponWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq('POST', '/api/webhooks/kofi', {
+        data: JSON.stringify({
+          verification_token: 'coupon_tok_123',
+          type: 'Shop Order',
+          email: buyerEmail,
+          amount: '0.00',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_coupon_7b9751_001',
+          shop_items: [{ direct_link_code: '7b9751fdd0' }],
+        }),
+      }),
+      couponWhRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(couponWhRes.statusCode, 200);
+    assert.equal(couponWhRes.json().isKofiLaunchStarter, false);
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchClaimedCount, 0);
+    const slotKey = couponWhRes.json().emailTierSlotKey;
+    createdKeys.push(slotKey);
+
+    // Verify slot was saved as kfs_ (paid single product), NOT kfl_
+    const storedSlot = paymentLib.SERVER_PASS_STORE.get(slotKey);
+    assert.ok(storedSlot);
+    assert.equal(storedSlot.boundBouquetCode, '7b9751fdd0');
+    assert.match(String(storedSlot.paymentReference), /^kfs_/);
+    assert.equal(
+      paymentLib.OWNER_ANALYTICS_STATE.recentEvents.some(
+        (ev: { type: string }) => ev.type === 'kofi_order_webhook'
+      ),
+      true
+    );
+    assert.equal(
+      paymentLib.OWNER_ANALYTICS_STATE.recentEvents.some(
+        (ev: { type: string }) => ev.type === 'kofi_launch_webhook'
+      ),
+      false
+    );
+
+    // 2. Returning device creates checkout (routes to 7b9751fdd0, isKofiLaunchStarter=false) and verifies cleanly
+    const chkRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: repeatDev,
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      chkRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(chkRes.statusCode, 200);
+    assert.equal(chkRes.json().isKofiLaunchStarter, false);
+    assert.equal(chkRes.json().directLinkCode, '7b9751fdd0');
+
+    const verifyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chkRes.json().checkoutId,
+          checkoutToken: chkRes.json().checkoutToken,
+          deviceTokenHash: repeatDev,
+          buyerEmail,
+        })
+      ),
+      verifyRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyRes.statusCode, 200);
+    assert.equal(verifyRes.json().isKofiLaunchStarter, false);
+    createdKeys.push(verifyRes.json().pass.passKey);
+
+    // 3. Rescue check: legacy stuck slot tagged kfl_ on prodSingle (`7b9751fdd0`) ALSO verifies cleanly and upgrades to kfs_
+    const stuckPass = paymentLib.createSignedStudioPassServer({
+      passKey: slotKey,
+      tier: 'single',
+      region: 'INTL',
+      deviceTokenHash: '',
+      secondaryDeviceHash: null,
+      boundBouquetCode: '7b9751fdd0',
+      paymentProvider: 'kofi',
+      paymentReference: 'kfl_legacy999',
+    });
+    paymentLib.SERVER_PASS_STORE.set(slotKey, stuckPass);
+
+    const chk2 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: repeatDev,
+        })
+      ),
+      chk2,
+      '/api/payments/create-checkout'
+    );
+    const verifyRescued = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk2.json().checkoutId,
+          checkoutToken: chk2.json().checkoutToken,
+          deviceTokenHash: repeatDev,
+          buyerEmail,
+        })
+      ),
+      verifyRescued,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(verifyRescued.statusCode, 200);
+    assert.equal(verifyRescued.json().isKofiLaunchStarter, false);
+    assert.match(String(verifyRescued.json().pass.paymentReference), /^kfs_/);
+    createdKeys.push(verifyRescued.json().pass.passKey);
+
+    // 4. Security check: free-item receipt (`470b54529a`) STILL cannot verify against a paid checkout (`7b9751fdd0`)
+    const freeItemPass = paymentLib.createSignedStudioPassServer({
+      passKey: slotKey,
+      tier: 'single',
+      region: 'INTL',
+      deviceTokenHash: '',
+      secondaryDeviceHash: null,
+      boundBouquetCode: '470b54529a',
+      paymentProvider: 'kofi',
+      paymentReference: 'kfl_freeitem01',
+    });
+    paymentLib.SERVER_PASS_STORE.set(slotKey, freeItemPass);
+
+    const chk3 = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: repeatDev,
+        })
+      ),
+      chk3,
+      '/api/payments/create-checkout'
+    );
+    const blockedFreeVerify = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: chk3.json().checkoutId,
+          checkoutToken: chk3.json().checkoutToken,
+          deviceTokenHash: repeatDev,
+          buyerEmail,
+        })
+      ),
+      blockedFreeVerify,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(blockedFreeVerify.statusCode, 402);
+  } finally {
+    for (const k of createdKeys) {
+      if (k) {
+        paymentLib.SERVER_PASS_STORE.delete(k);
+        paymentLib.PAID_PASS_LEDGER.delete(k);
+        paymentLib.ISSUED_PASS_KEYS.delete(k);
+      }
+    }
+    if (prevSingleCode !== undefined) process.env.KOFI_SHOP_SINGLE_CODE = prevSingleCode;
+    else delete process.env.KOFI_SHOP_SINGLE_CODE;
+    if (prevTestSingleCode !== undefined) process.env.KOFI_SHOP_TEST_SINGLE_CODE = prevTestSingleCode;
+    else delete process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+    if (prevToken !== undefined) process.env.KOFI_VERIFICATION_TOKEN = prevToken;
+    else delete process.env.KOFI_VERIFICATION_TOKEN;
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+    });
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 
 
 

@@ -4779,11 +4779,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           if (!slot || slot.tier !== targetTier) return false;
           if (targetTier === 'single' && activeShopCodes.hasSeparateLaunchFreeSingle && !isTestingMode) {
             if (!pending.isKofiLaunchStarter) {
-              // Paid $1.99 Single Bouquet checkout: strictly require the paid prodSingle product
-              // and reject $0 free-launch (`kfl_`) or free-item receipts.
-              if (String(slot.paymentReference || '').startsWith('kfl_')) {
-                return false;
-              }
+              // Paid Single Bouquet checkout: require the paid prodSingle product and reject
+              // receipts originating from the dedicated free-launch item (`launchFreeSingle`).
               if (!slot.boundBouquetCode || slot.boundBouquetCode !== activeShopCodes.prodSingle) {
                 return false;
               }
@@ -4818,10 +4815,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             SERVER_PASS_STORE.set(emailTierSlotKey, receiptSlot);
           }
 
+          const isPaidProdSingleReceipt = Boolean(
+            activeShopCodes.hasSeparateLaunchFreeSingle &&
+              receiptSlot &&
+              receiptSlot.boundBouquetCode === activeShopCodes.prodSingle
+          );
           const isReceiptFreeLaunch = Boolean(
             pending.tier === 'single' &&
               receiptSlot &&
-              String(receiptSlot.paymentReference || '').startsWith('kfl_')
+              String(receiptSlot.paymentReference || '').startsWith('kfl_') &&
+              !isPaidProdSingleReceipt
           );
           const deviceAlreadyClaimedLaunchStarter = Boolean(
             (deviceTokenHash && KOFI_LAUNCH_CLAIMED_DEVICES.has(deviceTokenHash)) ||
@@ -4874,6 +4877,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             ? slotRefPrefix.startsWith('kfl_')
               ? slotRefPrefix
               : `kfl_${slotRefPrefix.replace(/^kfs_/, '').slice(0, 12)}`
+            : slotRefPrefix.startsWith('kfl_')
+            ? `kfs_${slotRefPrefix.slice(4)}`
             : slotRefPrefix;
 
           const boundPass = createSignedStudioPassServer({
@@ -6438,10 +6443,14 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         activeCodesForWh.hasSeparateLaunchFreeSingle &&
           singleCodeFromOrder === activeCodesForWh.launchFreeSingle
       );
-      // Only treat $0 orders or orders from the dedicated launch-free item as Founding Launch claims.
-      // A full-price ($1.99) purchase on KOFI_SHOP_SINGLE_CODE remains a normal paid order even while launch slots are active.
+      // When separate paid (`KOFI_SHOP_SINGLE_CODE`) and free launch (`KOFI_SHOP_LAUNCH_FREE_CODE` /
+      // `KOFI_SHOP_TEST_SINGLE_CODE`) items exist, ONLY orders for the dedicated launch-free item
+      // count as Founding Launch claims — even if the paid item was discounted to $0 via a coupon.
       const isFreeLaunchAttempt = Boolean(
-        matchedTiers.includes('single') && (isZeroPriceOrder || isLaunchFreeCodeOrder)
+        matchedTiers.includes('single') &&
+          (activeCodesForWh.hasSeparateLaunchFreeSingle
+            ? isLaunchFreeCodeOrder
+            : isZeroPriceOrder)
       );
 
       // Atomically reserve a Founding Launch slot via Vault CAS when this is a free/launch Single order
