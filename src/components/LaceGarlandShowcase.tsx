@@ -228,27 +228,27 @@ export const LaceHangerClipSVG: React.FC<{
   const isEternal = frameTier === 'eternal';
   const cordColor = isSpecial
     ? isDarkMode
-      ? '#ECA99B'
-      : '#B86656'
+      ? '#CBD5E1'
+      : '#8E9BAE'
     : isDarkMode
     ? '#A38B7E'
     : '#B48E78';
   const laceStroke = isSpecial
     ? isDarkMode
-      ? '#FAD6CE'
-      : '#F2C2B6'
+      ? '#F1F5F9'
+      : '#E2E8F0'
     : isDarkMode
     ? '#D8C2B5'
     : '#C9AE9B';
   const brassBody = isSpecial
     ? isDarkMode
-      ? '#EBA89A'
-      : '#CE7A69'
+      ? '#DCE4EE'
+      : '#BCC7D6'
     : isDarkMode
     ? '#D4A373'
     : '#C89666';
   const brassHighlight = isSpecial
-    ? '#FFFDFB'
+    ? '#FFFFFF'
     : isDarkMode
     ? '#FDE68A'
     : '#FEF3C7';
@@ -295,7 +295,7 @@ export const LaceHangerClipSVG: React.FC<{
               cx="22"
               cy={Math.round(dropCordPx * 0.36)}
               r="1.5"
-              fill="#FFFDFB"
+              fill={isEternal ? '#FFFDF5' : '#FFFFFF'}
               stroke={cordColor}
               strokeWidth="0.65"
             />
@@ -303,14 +303,14 @@ export const LaceHangerClipSVG: React.FC<{
               cx="22"
               cy={Math.round(dropCordPx * 0.7)}
               r="1.8"
-              fill="#FFFDFB"
+              fill={isEternal ? '#FFFBEB' : '#FFFFFF'}
               stroke={cordColor}
               strokeWidth="0.7"
             />
           </g>
         )}
 
-        {/* Top Knot Tied Directly onto the Overhead Lace Cord (Pearl-set Rose-Gold Knot for Couture/Eternal) */}
+        {/* Top Knot Tied Directly onto the Overhead Lace Cord (Pearl-set Silver Clasp Knot for Holographic Cards) */}
         {isSpecial ? (
           <g transform="translate(22, -1)">
             <circle
@@ -321,7 +321,7 @@ export const LaceHangerClipSVG: React.FC<{
               stroke={cordColor}
               strokeWidth="0.85"
             />
-            <circle cx="0" cy="0" r="1.55" fill="#FFFDF9" />
+            <circle cx="0" cy="0" r="1.55" fill="#FFFFFF" />
           </g>
         ) : (
           <>
@@ -333,20 +333,20 @@ export const LaceHangerClipSVG: React.FC<{
         {/* Delicate Scalloped Lace Bow & Florist Clasp at the Card Rim */}
         <g transform={`translate(22, ${dropCordPx + 4})`}>
           {isSpecial ? (
-            /* Sculpted Rose-Gold Satin Ribbon Bow on Couture / Eternal Clasp */
+            /* Sculpted Iridescent Silver-Pearl Satin Ribbon Bow on Couture / Eternal Clasp */
             <>
               <path
                 d="M 0,0.5 C -10,-6.5 -15,2.5 -1.5,2 M 0,0.5 C 10,-6.5 15,2.5 1.5,2"
-                fill={isDarkMode ? '#E59F90' : '#DF9585'}
-                fillOpacity="0.45"
-                stroke={isDarkMode ? '#F5C4B8' : '#B86454'}
-                strokeWidth="1.55"
+                fill={isDarkMode ? '#E2E8F0' : '#E8EEF5'}
+                fillOpacity="0.65"
+                stroke={isDarkMode ? '#F1F5F9' : '#8592A6'}
+                strokeWidth="1.5"
                 strokeLinecap="round"
               />
               <path
                 d="M -1.4,1.8 Q -5.5,6.5 -8,10.2 M 1.4,1.8 Q 5.5,6.5 8,10.2"
                 fill="none"
-                stroke={isDarkMode ? '#F5C4B8' : '#B86454'}
+                stroke={isDarkMode ? '#F1F5F9' : '#8592A6'}
                 strokeWidth="1.3"
                 strokeLinecap="round"
               />
@@ -369,7 +369,7 @@ export const LaceHangerClipSVG: React.FC<{
               />
             </>
           )}
-          {/* Sculpted Brass / Brushed Rose-Gold Florist Clothespin */}
+          {/* Sculpted Brass / Brushed Chrome Florist Clothespin */}
           <rect
             x="-3.8"
             y="-3.5"
@@ -381,12 +381,12 @@ export const LaceHangerClipSVG: React.FC<{
             strokeWidth="0.95"
           />
           {isSpecial ? (
-            /* Mother-of-Pearl Cabochon Jewel Set into the Rose-Gold Clasp */
+            /* Mother-of-Pearl Cabochon Jewel Set into the Silver Clasp */
             <circle
               cx="0"
               cy="1.1"
               r="1.75"
-              fill="#FFFDF9"
+              fill="#FFFFFF"
               stroke={cordColor}
               strokeWidth="0.7"
             />
@@ -411,9 +411,9 @@ export const LaceHangerClipSVG: React.FC<{
 /**
  * Pure PNG-Style Hanging Bouquet Keepsake Frame (View-Only / Unwrap-Only):
  * - Standard free creations use the classic dashed warm cardstock frame.
- * - Couture & Supporter Pass creations stand out with a rich Rose-Gold & Blush-Champagne
- *   metallic gallery mat (single outer border — zero triple-border clutter) and four
- *   mother-of-pearl corner studs on the mat.
+ * - Couture & Eternal creations wrap the warm stationery card inside a beveled,
+ *   shimmering holographic silver-prism metallic foil border with animated light sweep
+ *   and crisp 4-point crystal star glints along the rim.
  */
 const HangingCreationCard: React.FC<{
   entry: ShowcaseBouquetEntry;
@@ -422,36 +422,38 @@ const HangingCreationCard: React.FC<{
   disableStaticTilt?: boolean;
 }> = React.memo(({ entry, isDarkMode, onUnwrap, disableStaticTilt }) => {
   const tierInfo = useMemo(() => getShowcaseFrameTier(entry), [entry]);
-  const isCouture = tierInfo.tier === 'couture';
   const isEternal = tierInfo.tier === 'eternal';
   const isHighlighted = tierInfo.isHighlighted;
 
-  const cardSurfaceClass = isEternal
+  // High-contrast metallic chrome + holographic rainbow prism bezel (matches polished holographic foil rim)
+  const holoBezelBackground = isEternal
+    ? 'linear-gradient(126deg, #B6C2D2 0%, #F8FAFC 8%, #7EDDF0 16%, #C59EF8 25%, #DCE4EE 35%, #FFFFFF 42%, #F5A3CA 51%, #F6D574 61%, #99A7BA 71%, #7CE0BA 81%, #88B8F8 90%, #E2E8F0 100%)'
+    : 'linear-gradient(128deg, #AEBACB 0%, #F8FAFC 9%, #83DFF2 18%, #C3A0F8 28%, #CFD8E4 38%, #FFFFFF 46%, #F3A6CC 56%, #F7D87C 66%, #94A3B8 76%, #82E0BE 86%, #89BDF8 94%, #DCE4EE 100%)';
+
+  const holoSecondaryConic = isEternal
+    ? 'conic-gradient(from 32deg at 50% 50%, rgba(255,255,255,0.72) 0deg, rgba(116,220,245,0.52) 48deg, rgba(242,158,205,0.52) 105deg, rgba(255,255,255,0.8) 155deg, rgba(248,214,116,0.58) 215deg, rgba(124,226,184,0.52) 275deg, rgba(142,156,178,0.48) 325deg, rgba(255,255,255,0.72) 360deg)'
+    : 'conic-gradient(from 22deg at 50% 50%, rgba(255,255,255,0.7) 0deg, rgba(118,220,244,0.5) 54deg, rgba(196,158,248,0.5) 114deg, rgba(255,255,255,0.78) 168deg, rgba(244,162,204,0.5) 222deg, rgba(246,214,122,0.48) 278deg, rgba(126,226,186,0.48) 324deg, rgba(255,255,255,0.7) 360deg)';
+
+  const cardSurfaceClass = isHighlighted
     ? isDarkMode
-      ? 'bg-[linear-gradient(140deg,#633A34_0%,#4A2925_48%,#351D1A_100%)] border-[1.5px] border-solid border-[#F0B0A1] shadow-[inset_0_1px_0_rgba(255,235,230,0.38),0_16px_34px_-6px_rgba(232,158,142,0.32)] group-hover:border-[#FAD0C6]'
-      : 'bg-[linear-gradient(140deg,#F7D1C5_0%,#E9A896_48%,#D88975_100%)] border-[1.5px] border-solid border-[#B86352] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_16px_32px_-6px_rgba(184,99,82,0.30)] group-hover:border-[#9E4F3F]'
-    : isCouture
-    ? isDarkMode
-      ? 'bg-[linear-gradient(140deg,#593530_0%,#422623_50%,#301B19_100%)] border-[1.5px] border-solid border-[#E6A293] shadow-[inset_0_1px_0_rgba(255,232,226,0.32),0_14px_30px_-6px_rgba(224,152,136,0.26)] group-hover:border-[#F4C2B7]'
-      : 'bg-[linear-gradient(140deg,#F9DBD2_0%,#EDB7A8_50%,#DF9B89_100%)] border-[1.5px] border-solid border-[#C27160] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_14px_28px_-6px_rgba(190,106,88,0.25)] group-hover:border-[#AA5C4C]'
+      ? 'border border-[#C4D0DF]/75 shadow-[inset_0_1.5px_1.5px_rgba(255,255,255,0.9),inset_0_-1.5px_2px_rgba(51,65,85,0.6),0_14px_28px_-8px_rgba(148,163,184,0.34)] group-hover:border-[#F8FAFC]'
+      : 'border border-[#7E8DA3]/80 shadow-[inset_0_1.5px_1.5px_rgba(255,255,255,0.96),inset_0_-1.5px_2px_rgba(71,85,105,0.48),inset_1px_0_1.5px_rgba(255,255,255,0.72),0_12px_26px_-8px_rgba(71,85,105,0.28)] group-hover:border-[#5D6D84]'
     : isDarkMode
     ? 'bg-[#28211F] border border-dashed border-[#5C4B45] group-hover:border-[#856D64] shadow-[0_10px_24px_rgba(15,11,9,0.28)]'
     : 'bg-[#F7F1E8] border border-dashed border-[#D8C5B4] group-hover:border-[#B99B84] shadow-[0_10px_22px_rgba(122,75,58,0.06)]';
 
-  // Single-border discipline: Couture/Eternal inner window & plate sit cleanly inside the rich rose-gold mat
-  // without dark concentric inner line borders (eliminates the "triple border" look).
   const windowClass = isHighlighted
     ? isDarkMode
-      ? 'bg-[#211716] shadow-[0_2px_10px_rgba(0,0,0,0.35)]'
-      : 'bg-[#FFFDFB] shadow-[0_2px_10px_rgba(148,74,60,0.14)]'
+      ? 'border border-[#4A3C37]/85 bg-[#221B19]'
+      : 'border border-[#E5D5C5]/75 bg-[#FDF9F5]'
     : isDarkMode
     ? 'border border-[#4A3C37]/85 bg-[#221B19]'
     : 'border border-[#E5D5C5]/80 bg-[#FDF9F5]';
 
   const plateClass = isHighlighted
     ? isDarkMode
-      ? 'bg-[#231817]/95 text-[#FBF6F1] shadow-[0_2px_8px_rgba(0,0,0,0.32)]'
-      : 'bg-[#FFFDFB]/96 text-[#1F1713] shadow-[0_2px_8px_rgba(148,74,60,0.12)]'
+      ? 'bg-[#221B18] border border-dashed border-[#6A5A53] text-[#FBF6F1]'
+      : 'bg-[#FFFDF9] border border-dashed border-[#D6C2B0] text-[#1F1713] shadow-2xs'
     : isDarkMode
     ? 'bg-[#221B18] border border-dashed border-[#5A4943] text-[#FBF6F1]'
     : 'bg-[#FFFDF9] border border-dashed border-[#D8C4B2] text-[#1F1713] shadow-2xs';
@@ -470,103 +472,153 @@ const HangingCreationCard: React.FC<{
         onClick={() => onUnwrap(entry)}
         data-frame-tier={tierInfo.tier}
         aria-label={`Open bouquet for ${entry.to} from ${entry.from} (view-only)`}
-        style={disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }}
-        className={`w-full aspect-[12/15.8] sm:aspect-[12/15.6] rounded-[20px] sm:rounded-[24px] ${
-          isHighlighted ? 'p-2 sm:p-2.5' : 'p-1.5 sm:p-2'
+        style={
+          isHighlighted
+            ? {
+                ...(disableStaticTilt ? undefined : { transform: `rotate(${entry.tiltDeg}deg)` }),
+                background: holoBezelBackground,
+              }
+            : disableStaticTilt
+            ? undefined
+            : { transform: `rotate(${entry.tiltDeg}deg)` }
+        }
+        className={`w-full aspect-[12/15.8] sm:aspect-[12/15.6] ${
+          isHighlighted
+            ? 'rounded-[21px] sm:rounded-[24px] p-[7px] sm:p-[8px]'
+            : 'rounded-[20px] sm:rounded-[24px] p-1.5 sm:p-2'
         } relative flex flex-col items-stretch justify-between overflow-hidden transition-transform duration-300 ease-out group-hover:rotate-0 group-hover:-translate-y-1 cursor-pointer focus:outline-none ${cardSurfaceClass}`}
       >
-        {/* Subtle Diagonal Rose-Gold Silk Sheen + 4 Dainty Mother-of-Pearl Corner Cabochons on the Outer Mat */}
+        {/* Holographic Foil Layers + Animated Diagonal Shine + Crystal Rim Glints (Strictly Masked to Bezel) */}
         {isHighlighted && (
           <>
+            {/* Soft Spectral Conic Refraction & Chrome Rim Contrast */}
             <div
               aria-hidden="true"
               className="pointer-events-none absolute inset-0"
               style={{
-                background: isDarkMode
-                  ? 'linear-gradient(125deg, rgba(255,228,220,0.12) 0%, rgba(255,228,220,0) 38%, rgba(255,210,198,0.08) 72%, rgba(0,0,0,0) 100%)'
-                  : 'linear-gradient(125deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 38%, rgba(255,245,240,0.35) 70%, rgba(255,255,255,0) 100%)',
+                background: holoSecondaryConic,
+                mixBlendMode: 'overlay',
+                opacity: isEternal ? 0.78 : 0.68,
               }}
             />
-            <span
+
+            {/* Fine Metallic Diagonal Brushed Foil Facets & Crystal Hairlines */}
+            <div
               aria-hidden="true"
-              className={`pointer-events-none absolute top-1.5 left-1.5 w-1.5 h-1.5 rounded-full ${
-                isDarkMode
-                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
-                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
-              }`}
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  'repeating-linear-gradient(122deg, rgba(255,255,255,0.45) 0px, rgba(255,255,255,0) 1.5px, rgba(100,116,139,0.18) 9px, rgba(255,255,255,0.34) 17px, rgba(255,255,255,0) 25px)',
+              }}
             />
-            <span
+
+            {/* Animated Diagonal Light Shine Sweeping Across the Metallic Bezel */}
+            <div
               aria-hidden="true"
-              className={`pointer-events-none absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
-                isDarkMode
-                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
-                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
-              }`}
+              className="pointer-events-none absolute -inset-y-10 -left-1/2 w-[90%] sab-holo-shine-beam"
+              style={{
+                background:
+                  'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.34) 28%, rgba(255,255,255,0.96) 50%, rgba(212,236,255,0.58) 64%, rgba(255,255,255,0) 100%)',
+                animationDelay: isEternal ? '0.6s' : '0s',
+              }}
             />
-            <span
+
+            {/* Crisp Needle-Fine 4-Point Crystal Glints Pinned Along the Foil Rim */}
+            <svg
               aria-hidden="true"
-              className={`pointer-events-none absolute bottom-1.5 left-1.5 w-1.5 h-1.5 rounded-full ${
-                isDarkMode
-                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
-                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
-              }`}
-            />
-            <span
+              viewBox="0 0 24 24"
+              className="pointer-events-none absolute top-[1px] right-[17%] w-[18px] h-[18px] sab-holo-glint z-20 drop-shadow-[0_0_2px_rgba(148,163,184,0.85)]"
+            >
+              <path
+                d="M12 0.5 L12.7 11.3 L23.5 12 L12.7 12.7 L12 23.5 L11.3 12.7 L0.5 12 L11.3 11.3 Z"
+                fill="#FFFFFF"
+              />
+            </svg>
+            <svg
               aria-hidden="true"
-              className={`pointer-events-none absolute bottom-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
-                isDarkMode
-                  ? 'bg-[#FCEEE9] ring-1 ring-[#C97E6E]'
-                  : 'bg-[#FFFDFB] ring-1 ring-[#B86858]/70'
-              }`}
-            />
+              viewBox="0 0 24 24"
+              className="pointer-events-none absolute bottom-[5px] left-[4px] w-4 h-4 sab-holo-glint z-20 drop-shadow-[0_0_2px_rgba(148,163,184,0.85)]"
+              style={{ animationDelay: '1.15s' }}
+            >
+              <path
+                d="M12 0.5 L12.7 11.3 L23.5 12 L12.7 12.7 L12 23.5 L11.3 12.7 L0.5 12 L11.3 11.3 Z"
+                fill="#FFFFFF"
+              />
+            </svg>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="pointer-events-none absolute top-[18%] left-[1px] w-3.5 h-3.5 sab-holo-glint z-20 drop-shadow-[0_0_2px_rgba(148,163,184,0.8)]"
+              style={{ animationDelay: '2.1s' }}
+            >
+              <path
+                d="M12 1 L12.6 11.4 L23 12 L12.6 12.6 L12 23 L11.4 12.6 L1 12 L11.4 11.4 Z"
+                fill="#FFFFFF"
+              />
+            </svg>
           </>
         )}
 
-        {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Uncropped Full Creation Window — Clean Single-Mat Framing) */}
+        {/* Inner Stationery Card Body (When Holographic, sits cleanly inside the outer foil bezel) */}
         <div
-          className={`w-full flex-1 min-h-0 rounded-[14px] sm:rounded-[16px] overflow-hidden relative p-0 ${windowClass}`}
+          className={`w-full flex-1 min-h-0 flex flex-col items-stretch justify-between relative z-10 ${
+            isHighlighted
+              ? `rounded-[14px] sm:rounded-[16px] p-1 sm:p-1.5 border ${
+                  isDarkMode
+                    ? 'bg-[#261F1D] border-[#94A3B8]/50 shadow-[inset_0_1px_3px_rgba(0,0,0,0.5),0_1px_0_rgba(255,255,255,0.2)]'
+                    : 'bg-[#F7F1E8] border-[#7E8DA3]/65 shadow-[inset_0_1px_2px_rgba(71,85,105,0.24),0_1px_0_rgba(255,255,255,0.88)]'
+                }`
+              : ''
+          }`}
         >
-          <div className="w-full h-full">
-            <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
+          {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Uncropped Full Creation Window) */}
+          <div
+            className={`w-full flex-1 min-h-0 ${
+              isHighlighted
+                ? 'rounded-[10px] sm:rounded-[11px]'
+                : 'rounded-[14px] sm:rounded-[16px]'
+            } overflow-hidden relative p-0 ${windowClass}`}
+          >
+            <div className="w-full h-full">
+              <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
+            </div>
           </div>
-        </div>
 
-        {/* High-Contrast Editorial Dedication Plate at Base of Portrait Card */}
-        <div
-          className={`pointer-events-none mt-1.5 py-1 sm:py-1.5 px-2 sm:px-2.5 rounded-[12px] sm:rounded-[14px] text-center shrink-0 transition-all duration-300 relative ${plateClass}`}
-          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-        >
-          <div className="text-[14px] sm:text-[15.5px] lg:text-[16.5px] leading-[1.1] tracking-[-0.01em] truncate">
-            <span
-              className={`italic font-medium ${
-                isHighlighted
-                  ? isDarkMode
-                    ? 'text-[#F2B5A7]'
-                    : 'text-[#B05848]'
-                  : isDarkMode
-                  ? 'text-[#E6B89C]'
-                  : 'text-[#8A4B38]'
-              }`}
-            >
-              For{' '}
-            </span>
-            <span className="font-bold">{entry.to}</span>
-          </div>
-          <div className="text-[11.5px] sm:text-[12.5px] lg:text-[13px] leading-[1.12] truncate mt-0.5">
-            <span
-              className={`italic ${
-                isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E584D]'
-              }`}
-            >
-              from{' '}
-            </span>
-            <span
-              className={`font-semibold ${
-                isDarkMode ? 'text-[#F2E6DE]' : 'text-[#3B2D26]'
-              }`}
-            >
-              {entry.from}
-            </span>
+          {/* High-Contrast Editorial Dedication Plate at Base of Portrait Card */}
+          <div
+            className={`pointer-events-none mt-1.5 py-1 sm:py-1.5 px-2 sm:px-2.5 ${
+              isHighlighted
+                ? 'rounded-[10px] sm:rounded-[11px]'
+                : 'rounded-[12px] sm:rounded-[14px]'
+            } text-center shrink-0 transition-all duration-300 relative ${plateClass}`}
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
+            <div className="text-[14px] sm:text-[15.5px] lg:text-[16.5px] leading-[1.1] tracking-[-0.01em] truncate">
+              <span
+                className={`italic font-medium ${
+                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
+                }`}
+              >
+                For{' '}
+              </span>
+              <span className="font-bold">{entry.to}</span>
+            </div>
+            <div className="text-[11.5px] sm:text-[12.5px] lg:text-[13px] leading-[1.12] truncate mt-0.5">
+              <span
+                className={`italic ${
+                  isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E584D]'
+                }`}
+              >
+                from{' '}
+              </span>
+              <span
+                className={`font-semibold ${
+                  isDarkMode ? 'text-[#F2E6DE]' : 'text-[#3B2D26]'
+                }`}
+              >
+                {entry.from}
+              </span>
+            </div>
           </div>
         </div>
       </button>
@@ -902,7 +954,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                   pointerEvents: initial.isVisible ? 'auto' : 'none',
                   visibility: initial.isVisible ? 'visible' : 'hidden',
                   willChange: 'transform, opacity',
-                  contain: 'layout style paint',
+                  contain: 'layout style',
                 }}
                 className="absolute top-0 w-[166px] min-[380px]:w-[176px] sm:w-[208px] lg:w-[228px]"
               >

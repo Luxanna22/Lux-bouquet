@@ -183,4 +183,48 @@
   }
 }
 
+@keyframes sab-holo-shine-sweep {
+  0% {
+    transform: translate3d(-135%, -25%, 0) rotate(24deg);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.92;
+  }
+  58% {
+    opacity: 0.85;
+  }
+  78%, 100% {
+    transform: translate3d(145%, 25%, 0) rotate(24deg);
+    opacity: 0;
+  }
+}
+
+@keyframes sab-holo-glint-twinkle {
+  0%, 100% {
+    transform: scale(0.76) rotate(0deg);
+    opacity: 0.52;
+  }
+  50% {
+    transform: scale(1.12) rotate(12deg);
+    opacity: 1;
+  }
+}
+
+.sab-holo-shine-beam {
+  animation: sab-holo-shine-sweep 5.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.sab-holo-glint {
+  animation: sab-holo-glint-twinkle 3.4s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sab-holo-shine-beam,
+  .sab-holo-glint {
+    animation: none !important;
+  }
+}
 
