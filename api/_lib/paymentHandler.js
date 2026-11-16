@@ -228,6 +228,11 @@ export function getActiveKofiShopCodes(clientOverride) {
     extractKofiShopCode(process.env.KOFI_SHOP_TEST_CODE) ||
     overrideTestSingle ||
     '';
+  const launchFreeSingle =
+    extractKofiShopCode(process.env.KOFI_SHOP_LAUNCH_FREE_CODE) ||
+    testSingle ||
+    prodSingle ||
+    '';
   const test7d =
     extractKofiShopCode(process.env.KOFI_SHOP_TEST_7D_CODE) ||
     overrideTest7d ||
@@ -237,7 +242,9 @@ export function getActiveKofiShopCodes(clientOverride) {
     overrideTest30d ||
     '';
 
-  const allowedSingle = Array.from(new Set([prodSingle, testSingle].filter(Boolean)));
+  const allowedSingle = Array.from(
+    new Set([prodSingle, testSingle, launchFreeSingle].filter(Boolean))
+  );
   const allowed7d = Array.from(new Set([prod7d, test7d].filter(Boolean)));
   const allowed30d = Array.from(new Set([prod30d, test30d].filter(Boolean)));
 
@@ -245,6 +252,11 @@ export function getActiveKofiShopCodes(clientOverride) {
     single: prodSingle || testSingle || '',
     pass_7d: prod7d || test7d || '',
     pass_30d: prod30d || test30d || '',
+    prodSingle: prodSingle || '',
+    launchFreeSingle: launchFreeSingle || '',
+    hasSeparateLaunchFreeSingle: Boolean(
+      prodSingle && launchFreeSingle && prodSingle !== launchFreeSingle
+    ),
     test: testSingle || '',
     test_single: testSingle || '',
     test_pass_7d: test7d || '',
@@ -3908,18 +3920,6 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       await syncOwnerShopCodesWithFirestore(parsed.shopCodes);
       const shopCodes = getActiveKofiShopCodes(parsed.shopCodes);
-      const tierDirectLinkCode = shopCodes[tier] || '';
-      const kofiShopItemUrl = buildKofiShopItemUrl(tierDirectLinkCode, process.env.KOFI_PAGE_URL);
-
-      const isProductionEnv = Boolean(
-        process.env.VERCEL ||
-          sikatpay.configured ||
-          paymongoSecret ||
-          bayadgate.configured ||
-          kofiVerificationToken ||
-          process.env.KOFI_PAGE_URL ||
-          tierDirectLinkCode
-      );
 
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' && parsed.deviceTokenHash.length >= 8
@@ -3930,6 +3930,30 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         tier === 'single' &&
           launchPromo.isKofiFreeStarterAvailable &&
           (parsed.provider === 'kofi' || parsed.claimFreeLaunchStarter === true)
+      );
+
+      // Route eligible $0 Founding Launch claims to the separate free Ko-fi product
+      // (KOFI_SHOP_LAUNCH_FREE_CODE || KOFI_SHOP_TEST_SINGLE_CODE), and automatically
+      // route returning/post-cap/paid buyers to the $1.99 KOFI_SHOP_SINGLE_CODE product.
+      const singlePaidCode = shopCodes.prodSingle || shopCodes.single || '';
+      const singleLaunchFreeCode =
+        shopCodes.launchFreeSingle || shopCodes.test_single || shopCodes.single || '';
+      const tierDirectLinkCode =
+        tier === 'single'
+          ? isKofiLaunchStarter
+            ? singleLaunchFreeCode
+            : singlePaidCode
+          : shopCodes[tier] || '';
+      const kofiShopItemUrl = buildKofiShopItemUrl(tierDirectLinkCode, process.env.KOFI_PAGE_URL);
+
+      const isProductionEnv = Boolean(
+        process.env.VERCEL ||
+          sikatpay.configured ||
+          paymongoSecret ||
+          bayadgate.configured ||
+          kofiVerificationToken ||
+          process.env.KOFI_PAGE_URL ||
+          tierDirectLinkCode
       );
 
       const resolvedCheckout = resolveCheckoutRegionAndProvider({
@@ -4695,9 +4719,25 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         ) {
           await syncOwnerShopCodesWithFirestore();
         }
+        await hydratePersistentOwnerVaultServer();
+
         const activeShopCodes = getActiveKofiShopCodes();
+        const isTestingMode = Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting);
         const doesReceiptMatchTierCode = (slot, targetTier) => {
           if (!slot || slot.tier !== targetTier) return false;
+          if (targetTier === 'single' && activeShopCodes.hasSeparateLaunchFreeSingle && !isTestingMode) {
+            if (!pending.isKofiLaunchStarter) {
+              // Paid $1.99 Single Bouquet checkout: strictly require the paid prodSingle product
+              // and reject $0 free-launch (`kfl_`) or free-item receipts.
+              if (String(slot.paymentReference || '').startsWith('kfl_')) {
+                return false;
+              }
+              if (!slot.boundBouquetCode || slot.boundBouquetCode !== activeShopCodes.prodSingle) {
+                return false;
+              }
+              return true;
+            }
+          }
           const allowedForTier = activeShopCodes.allowedByTier?.[targetTier] || [];
           if (allowedForTier.length > 0) {
             if (!slot.boundBouquetCode) {
@@ -4715,8 +4755,6 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           }
           return true;
         };
-
-        await hydratePersistentOwnerVaultServer();
 
         const emailTierSlotKey = deriveKofiEmailTierSlotKey(buyerEmail, pending.tier);
         return await withPassKeyLock(emailTierSlotKey, async () => {
@@ -6296,17 +6334,29 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         String(parsed.amount ?? '').replace(/,/g, '').trim()
       );
       const isZeroPriceOrder = Number.isFinite(parsedAmount) && parsedAmount === 0;
+      const activeCodesForWh = getActiveKofiShopCodes(ownerCodes);
+      const singleCodeFromOrder = resolution.matchedCodeByTier?.single || directLinkCode;
+      const isLaunchFreeCodeOrder = Boolean(
+        activeCodesForWh.hasSeparateLaunchFreeSingle &&
+          singleCodeFromOrder === activeCodesForWh.launchFreeSingle
+      );
+      // Only treat $0 orders or orders from the dedicated launch-free item as Founding Launch claims.
+      // A full-price ($1.99) purchase on KOFI_SHOP_SINGLE_CODE remains a normal paid order even while launch slots are active.
+      const isFreeLaunchAttempt = Boolean(
+        matchedTiers.includes('single') && (isZeroPriceOrder || isLaunchFreeCodeOrder)
+      );
 
       // Atomically reserve a Founding Launch slot via Vault CAS when this is a free/launch Single order
       let isSingleLaunchFreeWebhook = false;
-      if (matchedTiers.includes('single')) {
+      let launchSlotRejectedAsDepleted = false;
+      if (isFreeLaunchAttempt) {
         const launchReserveRes = await mutateAndSaveOwnerVaultServer(() => {
           const promoNow = getFoundingLaunchPromoStatusServer();
           const alreadyKnownTx = KOFI_LAUNCH_TX_IDS.has(kofiTxId);
           const qualifies =
-            isZeroPriceOrder || (promoNow.kofiLaunchEnabled && promoNow.kofiLaunchRemaining > 0);
+            alreadyKnownTx || (promoNow.kofiLaunchEnabled && promoNow.kofiLaunchRemaining > 0);
           if (!qualifies) {
-            return { isLaunchFree: false, abort: true };
+            return { isLaunchFree: false, depleted: true, abort: true };
           }
           if (!alreadyKnownTx) {
             KOFI_LAUNCH_TX_IDS.add(kofiTxId);
@@ -6323,16 +6373,34 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               currency === 'PHP' ? 'PH' : 'INTL'
             );
           }
-          return { isLaunchFree: true };
+          return { isLaunchFree: true, depleted: false };
         });
-        isSingleLaunchFreeWebhook = Boolean(
-          launchReserveRes?.result?.isLaunchFree || isZeroPriceOrder
+        isSingleLaunchFreeWebhook = Boolean(launchReserveRes?.result?.isLaunchFree);
+        launchSlotRejectedAsDepleted = Boolean(
+          launchReserveRes?.result?.depleted && !OWNER_ANALYTICS_STATE.incomePausedForTesting
         );
+      }
+
+      if (
+        launchSlotRejectedAsDepleted &&
+        matchedTiers.length === 1 &&
+        matchedTiers[0] === 'single'
+      ) {
+        sendJson(res, 200, {
+          ok: false,
+          ignored: true,
+          reason: 'LAUNCH_PROMO_DEPLETED',
+          message: 'Founding Launch free starter limit reached.',
+        });
+        return true;
       }
 
       // Store unclaimed receipt in deterministic `(buyerEmail, matchedTier)` slot(s) `BLOOM-KSXX-XXXX`
       const writtenSlots = [];
       for (const matchedTier of matchedTiers) {
+        if (matchedTier === 'single' && launchSlotRejectedAsDepleted) {
+          continue;
+        }
         const tierSpecificCode =
           resolution.matchedCodeByTier?.[matchedTier] || directLinkCode;
         const slotKey = deriveKofiEmailTierSlotKey(buyerEmail, matchedTier);

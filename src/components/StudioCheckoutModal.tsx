@@ -608,6 +608,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     setErrorMessage(null);
     setVerifyCooldownSec(0);
     setLocalDeviceClaimedKofi(hasDeviceClaimedKofiStarter());
+    let storedPendingIsFreeStarter = false;
+    const claimedLocally = hasDeviceClaimedKofiStarter();
     if (activePass) {
       setCheckoutStep('select');
       setPendingCheckout(null);
@@ -619,7 +621,8 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     } else {
       setActiveView('plans');
       const storedPending = loadPendingCheckoutStorage();
-      if (storedPending) {
+      if (storedPending && !(storedPending.isKofiLaunchStarter && claimedLocally)) {
+        storedPendingIsFreeStarter = Boolean(storedPending.isKofiLaunchStarter);
         const fallbackRegion: PricingRegion = storedPending.provider === 'kofi' ? 'INTL' : 'PH';
         const fallbackPlan = getPricingCatalog(fallbackRegion)[1];
         setPendingCheckout({
@@ -632,30 +635,61 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
           paymentMethod: storedPending.paymentMethod || null,
           checkoutUrl: storedPending.checkoutUrl || null,
           liveGatewayConfigured: Boolean(storedPending.liveGatewayConfigured ?? true),
-          isKofiLaunchStarter: Boolean(storedPending.isKofiLaunchStarter),
+          isKofiLaunchStarter: storedPendingIsFreeStarter,
         });
         setCheckoutStep('qr_confirm');
       } else {
+        if (storedPending?.isKofiLaunchStarter && claimedLocally) {
+          clearPendingCheckoutStorage();
+        }
         setCheckoutStep('select');
         setPendingCheckout(null);
       }
     }
 
+    let cancelled = false;
     if (cachedCheckoutCapability) {
       setIsPhEligible(cachedCheckoutCapability.isPhEligible);
       setPaymentGateway(cachedCheckoutCapability.initialGateway);
       setLaunchPromo(cachedCheckoutCapability.launchPromo ?? null);
       setIsResolvingRegion(false);
-      return;
+      // Background-refresh capability on modal open so Founding Launch eligibility & slot count stay server-fresh
+      invalidateCheckoutCapabilityCache();
+      fetchCheckoutCapability().then((fresh) => {
+        if (cancelled) return;
+        setIsPhEligible(fresh.isPhEligible);
+        setPaymentGateway(fresh.initialGateway);
+        setLaunchPromo(fresh.launchPromo ?? null);
+        if (
+          storedPendingIsFreeStarter &&
+          fresh.launchPromo &&
+          !fresh.launchPromo.isKofiFreeStarterAvailable
+        ) {
+          clearPendingCheckoutStorage();
+          setPendingCheckout(null);
+          setCheckoutStep('select');
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
     setIsResolvingRegion(true);
     fetchCheckoutCapability().then((resolved) => {
       if (cancelled) return;
       setIsPhEligible(resolved.isPhEligible);
       setPaymentGateway(resolved.initialGateway);
       setLaunchPromo(resolved.launchPromo ?? null);
+      if (
+        storedPendingIsFreeStarter &&
+        resolved.launchPromo &&
+        !resolved.launchPromo.isKofiFreeStarterAvailable
+      ) {
+        clearPendingCheckoutStorage();
+        setPendingCheckout(null);
+        setCheckoutStep('select');
+      }
       setIsResolvingRegion(false);
     });
 

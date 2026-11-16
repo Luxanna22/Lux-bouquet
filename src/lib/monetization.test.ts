@@ -4175,6 +4175,324 @@ test('Race-condition protection: concurrent Ko-fi slot claims, concurrent Pass K
   }
 });
 
+test('Dynamic Ko-fi product routing: eligible users route to KOFI_SHOP_TEST_SINGLE_CODE ($0) and returning/post-cap/paid users route to KOFI_SHOP_SINGLE_CODE ($1.99)', async () => {
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  const { EventEmitter } = await import('node:events');
+
+  const makeReq = (method: string, url: string, bodyStr?: string) => {
+    const req = new EventEmitter() as InstanceType<typeof EventEmitter> & {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    req.method = method;
+    req.url = url;
+    req.headers = { host: 'www.sendabouquet.online', 'content-type': 'application/json' };
+    process.nextTick(() => {
+      if (bodyStr !== undefined) {
+        req.emit('data', Buffer.from(bodyStr, 'utf8'));
+      }
+      req.emit('end');
+    });
+    return req;
+  };
+
+  const makeRes = () => {
+    const res = {
+      statusCode: 200,
+      headers: {} as Record<string, string>,
+      body: '',
+      writableEnded: false,
+      setHeader(k: string, v: string) {
+        this.headers[k] = v;
+      },
+      end(chunk?: string) {
+        if (chunk) this.body += chunk;
+        this.writableEnded = true;
+      },
+      json() {
+        return JSON.parse(this.body || '{}');
+      },
+    };
+    return res;
+  };
+
+  const prevSingleCode = process.env.KOFI_SHOP_SINGLE_CODE;
+  const prevTestSingleCode = process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+  const prevLaunchFreeCode = process.env.KOFI_SHOP_LAUNCH_FREE_CODE;
+  const originalFetch = globalThis.fetch;
+
+  process.env.KOFI_SHOP_SINGLE_CODE = 'paid199code';
+  process.env.KOFI_SHOP_TEST_SINGLE_CODE = 'free0launch';
+  delete process.env.KOFI_SHOP_LAUNCH_FREE_CODE;
+
+  const createdKeys: string[] = [];
+  try {
+    const remotePasses = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+    let remoteVault: { fields: Record<string, unknown>; updateTime: string } | null = null;
+    let revSeq = 1;
+
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/shared_bouquets/')) {
+        if (!init?.method || init.method === 'GET') {
+          if (!remoteVault) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T04:00:0${revSeq++}.000Z`;
+          remoteVault = { fields: bodyObj.fields, updateTime: nextTime };
+          return new Response(JSON.stringify(remoteVault), { status: 200 });
+        }
+      }
+      if (urlStr.includes('/studio_passes/')) {
+        const after = urlStr.split('/studio_passes/')[1] || '';
+        const [rawDocId, queryStr = ''] = after.split('?');
+        const docId = decodeURIComponent(rawDocId);
+        const params = new URLSearchParams(queryStr);
+        const existing = remotePasses.get(docId);
+
+        if (!init?.method || init.method === 'GET') {
+          if (!existing) return new Response('{}', { status: 404 });
+          return new Response(JSON.stringify(existing), { status: 200 });
+        }
+        if (init.method === 'PATCH') {
+          const expectedExists = params.get('currentDocument.exists');
+          const expectedUpdateTime = params.get('currentDocument.updateTime');
+          if (expectedExists === 'false' && existing) {
+            return new Response('{}', { status: 409 });
+          }
+          if (expectedUpdateTime && (!existing || existing.updateTime !== expectedUpdateTime)) {
+            return new Response('{}', { status: 412 });
+          }
+          const bodyObj = JSON.parse(String(init.body || '{}'));
+          const nextTime = `2026-11-16T04:00:0${revSeq++}.000Z`;
+          const stored = { fields: bodyObj.fields, updateTime: nextTime };
+          remotePasses.set(docId, stored);
+          return new Response(JSON.stringify(stored), { status: 200 });
+        }
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    paymentLib.resetOwnerVaultMetaForTests();
+    paymentLib.PAID_PASS_LEDGER.clear();
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 1,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
+    });
+
+    // 1. Eligible Device A -> routes to KOFI_SHOP_TEST_SINGLE_CODE (free0launch)
+    const eligibleChkRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: 'dev_dual_A_0001',
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      eligibleChkRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(eligibleChkRes.statusCode, 200);
+    assert.equal(eligibleChkRes.json().isKofiLaunchStarter, true);
+    assert.equal(eligibleChkRes.json().directLinkCode, 'free0launch');
+    assert.equal(eligibleChkRes.json().checkoutUrl, 'https://ko-fi.com/s/free0launch');
+
+    // 2. Paid $1.99 order arriving via webhook on KOFI_SHOP_SINGLE_CODE does NOT consume the 1 free launch slot
+    const paidWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: 'fullprice@example.com',
+          amount: '1.99',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_paid_single_199',
+          shop_items: [{ direct_link_code: 'paid199code' }],
+        })
+      ),
+      paidWhRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(paidWhRes.statusCode, 200);
+    assert.equal(paidWhRes.json().isKofiLaunchStarter, false);
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchRemaining, 1);
+    createdKeys.push(paidWhRes.json().emailTierSlotKey);
+
+    // 3. Free $0 webhook + claim on free0launch consumes the 1 launch slot
+    const freeWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: 'starter@example.com',
+          amount: '0.00',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_free_launch_001',
+          shop_items: [{ direct_link_code: 'free0launch' }],
+        })
+      ),
+      freeWhRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(freeWhRes.statusCode, 200);
+    assert.equal(freeWhRes.json().isKofiLaunchStarter, true);
+    createdKeys.push(freeWhRes.json().emailTierSlotKey);
+
+    const claimFreeRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: eligibleChkRes.json().checkoutId,
+          checkoutToken: eligibleChkRes.json().checkoutToken,
+          deviceTokenHash: 'dev_dual_A_0001',
+          buyerEmail: 'starter@example.com',
+        })
+      ),
+      claimFreeRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(claimFreeRes.statusCode, 200);
+    createdKeys.push(claimFreeRes.json().pass.passKey);
+
+    // 4. Same Device A returning immediately automatically routes to $1.99 paid KOFI_SHOP_SINGLE_CODE
+    const returningChkRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: 'dev_dual_A_0001',
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      returningChkRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(returningChkRes.statusCode, 200);
+    assert.equal(returningChkRes.json().isKofiLaunchStarter, false);
+    assert.equal(returningChkRes.json().directLinkCode, 'paid199code');
+    assert.equal(returningChkRes.json().checkoutUrl, 'https://ko-fi.com/s/paid199code');
+
+    // 5. Security check: Device A cannot verify a $0 free0launch receipt against the paid $1.99 checkout session
+    const secondFreeWhRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/webhooks/kofi',
+        JSON.stringify({
+          type: 'Shop Order',
+          email: 'sneaky@example.com',
+          amount: '0.00',
+          currency: 'USD',
+          kofi_transaction_id: 'tx_free_overcap_002',
+          shop_items: [{ direct_link_code: 'free0launch' }],
+        })
+      ),
+      secondFreeWhRes,
+      '/api/webhooks/kofi'
+    );
+    assert.equal(secondFreeWhRes.json().ignored, true);
+    assert.equal(secondFreeWhRes.json().reason, 'LAUNCH_PROMO_DEPLETED');
+
+    const sneakyVerifyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: returningChkRes.json().checkoutId,
+          checkoutToken: returningChkRes.json().checkoutToken,
+          deviceTokenHash: 'dev_dual_A_0001',
+          buyerEmail: 'sneaky@example.com',
+        })
+      ),
+      sneakyVerifyRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(sneakyVerifyRes.statusCode, 402);
+
+    // 6. Returning Device A verifying the actual $1.99 paid199code order succeeds!
+    const paidVerifyRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-and-issue',
+        JSON.stringify({
+          checkoutId: returningChkRes.json().checkoutId,
+          checkoutToken: returningChkRes.json().checkoutToken,
+          deviceTokenHash: 'dev_dual_A_0001',
+          buyerEmail: 'fullprice@example.com',
+        })
+      ),
+      paidVerifyRes,
+      '/api/payments/verify-and-issue'
+    );
+    assert.equal(paidVerifyRes.statusCode, 200);
+    assert.equal(paidVerifyRes.json().isKofiLaunchStarter, false);
+    createdKeys.push(paidVerifyRes.json().pass.passKey);
+
+    // 7. Brand new Device B after 1/1 cap depleted automatically routes to $1.99 paid KOFI_SHOP_SINGLE_CODE
+    const postCapDeviceBRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/create-checkout',
+        JSON.stringify({
+          tier: 'single',
+          region: 'INTL',
+          provider: 'kofi',
+          deviceTokenHash: 'dev_dual_B_0002',
+          claimFreeLaunchStarter: true,
+        })
+      ),
+      postCapDeviceBRes,
+      '/api/payments/create-checkout'
+    );
+    assert.equal(postCapDeviceBRes.statusCode, 200);
+    assert.equal(postCapDeviceBRes.json().isKofiLaunchStarter, false);
+    assert.equal(postCapDeviceBRes.json().directLinkCode, 'paid199code');
+    assert.equal(postCapDeviceBRes.json().checkoutUrl, 'https://ko-fi.com/s/paid199code');
+  } finally {
+    for (const k of createdKeys) {
+      if (k) {
+        paymentLib.SERVER_PASS_STORE.delete(k);
+        paymentLib.PAID_PASS_LEDGER.delete(k);
+        paymentLib.ISSUED_PASS_KEYS.delete(k);
+      }
+    }
+    if (prevSingleCode !== undefined) process.env.KOFI_SHOP_SINGLE_CODE = prevSingleCode;
+    else delete process.env.KOFI_SHOP_SINGLE_CODE;
+    if (prevTestSingleCode !== undefined) process.env.KOFI_SHOP_TEST_SINGLE_CODE = prevTestSingleCode;
+    else delete process.env.KOFI_SHOP_TEST_SINGLE_CODE;
+    if (prevLaunchFreeCode !== undefined) process.env.KOFI_SHOP_LAUNCH_FREE_CODE = prevLaunchFreeCode;
+    else delete process.env.KOFI_SHOP_LAUNCH_FREE_CODE;
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 
 
 
