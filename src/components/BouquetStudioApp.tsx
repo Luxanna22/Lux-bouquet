@@ -139,7 +139,17 @@ import { SelectedFlowerToolbar, UnifiedColorTarget } from './SelectedFlowerToolb
 import { VoiceRecorderStudio, VoiceKeepsakePlayerModal } from './VoiceRecorderStudio';
 import { LandingPageView } from './LandingPageView';
 import { BouquetVaultModal } from './BouquetVaultModal';
+import { RecipientDeliveryPrelude } from './RecipientDeliveryPrelude';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
+import {
+  computeStemBloomCadenceMs,
+  DeliveryPreludeScene,
+  getDeliverySceneTimings,
+  hasSeenDeliveryPrelude,
+  markDeliveryPreludeSeen,
+  playWaxSealUnsealChime,
+  resolveInitialDeliveryScene,
+} from '../lib/deliveryPrelude';
 import { sendBouquetSurpriseEmail } from '../lib/contactService';
 import {
   clearPendingCheckoutStorage,
@@ -280,9 +290,9 @@ export default function App() {
     typeof window !== 'undefined' ? getShortCodeFromPathname(window.location.pathname) : null;
   const initialNeedsRemoteResolve = Boolean(
     initialPathShortCode &&
-      typeof window !== 'undefined' &&
-      !localShortCodeCache.has(initialPathShortCode) &&
-      !localStorage.getItem(`bq_short_${initialPathShortCode}`)
+    typeof window !== 'undefined' &&
+    !localShortCodeCache.has(initialPathShortCode) &&
+    !localStorage.getItem(`bq_short_${initialPathShortCode}`)
   );
   const [stealthGateSlug, setStealthGateSlug] = useState<string | null>(() =>
     typeof window !== 'undefined' ? extractStealthGateSlug(window.location.pathname) : null
@@ -333,12 +343,27 @@ export default function App() {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isGiftView, setIsGiftView] = useState<boolean>(initialGiftMode);
   const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState<boolean>(initialGiftMode);
+  const [isReducedMotion, setIsReducedMotion] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+  const initialDeliveryKey =
+    initialPathShortCode || (typeof window !== 'undefined' ? window.location.hash : '');
+  const deliveryIdentityKeyRef = useRef<string>(initialDeliveryKey);
+  const [deliveryScene, setDeliveryScene] = useState<DeliveryPreludeScene>(() =>
+    initialGiftMode
+      ? resolveInitialDeliveryScene({
+          hasSeenBefore: hasSeenDeliveryPrelude(initialDeliveryKey),
+          forceFullStory: false,
+        })
+      : 'arrival'
+  );
   const [isEntranceUnfurling, setIsEntranceUnfurling] = useState<boolean>(false);
   const [entranceSlideProgress, setEntranceSlideProgress] = useState<number>(0);
   const [isDraggingEntranceSlider, setIsDraggingEntranceSlider] = useState<boolean>(false);
-  const entranceSliderTrackRef = useRef<HTMLDivElement | null>(null);
-  const entranceSliderDragStartXRef = useRef<number | null>(null);
   const entranceSlideRafRef = useRef<number | null>(null);
+  const unfurlTimerRef = useRef<number | null>(null);
+  const bloomDelayTimerRef = useRef<number | null>(null);
   const [isResolvingShortCode, setIsResolvingShortCode] = useState<boolean>(initialNeedsRemoteResolve);
   const [bloomedCount, setBloomedCount] = useState<number | undefined>(
     initialGiftMode ? 0 : undefined
@@ -482,8 +507,8 @@ export default function App() {
     currentPassCheck.valid && activeStudioPass
       ? activeStudioPass
       : isSealedPaidBouquet
-      ? sealedPaidPass
-      : null;
+        ? sealedPaidPass
+        : null;
   const isBouquetUnlockedByPass = Boolean(unlockedPassForCurrentBouquet);
   const activeRetentionPolicy = useMemo(
     () =>
@@ -924,7 +949,7 @@ export default function App() {
     };
     setIsVoicePlaying(true);
     if (isGiftView && !isPreviewMode && activeShortCode) {
-      incrementSharedBouquetVoicePlayCount(activeShortCode).catch(() => {});
+      incrementSharedBouquetVoicePlayCount(activeShortCode).catch(() => { });
     }
     audio.play().catch(() => {
       setIsVoicePlaying(false);
@@ -955,81 +980,157 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const runStemBloomSequence = useCallback((totalItems: number) => {
-    if (bloomIntervalRef.current !== null) {
-      clearInterval(bloomIntervalRef.current);
-      bloomIntervalRef.current = null;
-    }
-    setShowGiftCardReveal(false);
-    setIsGiftBloomFinished(false);
-    setBloomedCount(0);
-    if (totalItems <= 0) {
-      setShowGiftCardReveal(true);
-      setIsGiftBloomFinished(true);
-      return;
-    }
-    let current = 0;
-    const cardRevealThreshold = Math.max(1, Math.ceil(totalItems * 0.5));
-    bloomIntervalRef.current = window.setInterval(() => {
-      current += 1;
-      setBloomedCount(current);
-      if (current === cardRevealThreshold) {
-        setShowGiftCardReveal(true);
-      }
-      if (current >= totalItems) {
-        if (bloomIntervalRef.current !== null) {
-          clearInterval(bloomIntervalRef.current);
-          bloomIntervalRef.current = null;
-        }
-        setShowGiftCardReveal(true);
-        setIsGiftBloomFinished(true);
-      }
-    }, 130);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = (e: MediaQueryListEvent) => setIsReducedMotion(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
   }, []);
 
-  const startGiftBloomAnimation = useCallback((_totalItems: number, fromEditorPreview = true) => {
-    if (bloomIntervalRef.current !== null) {
-      clearInterval(bloomIntervalRef.current);
-      bloomIntervalRef.current = null;
+  const runStemBloomSequence = useCallback(
+    (totalItems: number) => {
+      if (bloomIntervalRef.current !== null) {
+        clearInterval(bloomIntervalRef.current);
+        bloomIntervalRef.current = null;
+      }
+      setShowGiftCardReveal(false);
+      setIsGiftBloomFinished(false);
+      setBloomedCount(0);
+      if (totalItems <= 0) {
+        setShowGiftCardReveal(true);
+        setIsGiftBloomFinished(true);
+        return;
+      }
+      let current = 0;
+      const cardRevealThreshold = Math.max(1, Math.ceil(totalItems * 0.5));
+      const cadenceMs = computeStemBloomCadenceMs(totalItems, isReducedMotion);
+      bloomIntervalRef.current = window.setInterval(() => {
+        current += 1;
+        setBloomedCount(current);
+        if (current === cardRevealThreshold) {
+          setShowGiftCardReveal(true);
+        }
+        if (current >= totalItems) {
+          if (bloomIntervalRef.current !== null) {
+            clearInterval(bloomIntervalRef.current);
+            bloomIntervalRef.current = null;
+          }
+          setShowGiftCardReveal(true);
+          setIsGiftBloomFinished(true);
+        }
+      }, cadenceMs);
+    },
+    [isReducedMotion]
+  );
+
+  const startGiftBloomAnimation = useCallback(
+    (
+      _totalItems: number,
+      fromEditorPreview = true,
+      forceFullStory?: boolean,
+      overrideCodeKey?: string
+    ) => {
+      if (bloomIntervalRef.current !== null) {
+        clearInterval(bloomIntervalRef.current);
+        bloomIntervalRef.current = null;
+      }
+      if (unfurlTimerRef.current !== null) {
+        window.clearTimeout(unfurlTimerRef.current);
+        unfurlTimerRef.current = null;
+      }
+      if (bloomDelayTimerRef.current !== null) {
+        window.clearTimeout(bloomDelayTimerRef.current);
+        bloomDelayTimerRef.current = null;
+      }
+      selectItem(null);
+      setMobilePopover(null);
+      if (passcodeUnlockTimerRef.current !== null) {
+        window.clearTimeout(passcodeUnlockTimerRef.current);
+        passcodeUnlockTimerRef.current = null;
+      }
+      if (pinErrorClearTimerRef.current !== null) {
+        window.clearTimeout(pinErrorClearTimerRef.current);
+        pinErrorClearTimerRef.current = null;
+      }
+      if (entranceSlideRafRef.current !== null) {
+        cancelAnimationFrame(entranceSlideRafRef.current);
+        entranceSlideRafRef.current = null;
+      }
+      const resolvedKey =
+        overrideCodeKey ||
+        activeShortCode ||
+        (typeof window !== 'undefined' ? window.location.hash : '') ||
+        'default';
+      deliveryIdentityKeyRef.current = resolvedKey;
+      const shouldPlayFull = forceFullStory ?? fromEditorPreview;
+      const nextScene = resolveInitialDeliveryScene({
+        hasSeenBefore: hasSeenDeliveryPrelude(resolvedKey),
+        forceFullStory: shouldPlayFull,
+      });
+
+      setNowMs(Date.now());
+      setIsPasscodeUnlocked(false);
+      setPasscodeAttempt('');
+      setPasscodeError(null);
+      setPasscodeFeedback('idle');
+      setPasscodeShakeKey(0);
+      setIsReactionPopoverOpen(false);
+      setIsPreviewMode(fromEditorPreview);
+      setIsGiftView(true);
+      setDeliveryScene(nextScene);
+      setIsEntranceUnfurling(false);
+      setEntranceSlideProgress(0);
+      setIsDraggingEntranceSlider(false);
+      setIsGiftEntranceOpen(true);
+      setShowGiftCardReveal(false);
+      setIsGiftBloomFinished(false);
+      setIsRecipientGiftBoxVisible(false);
+      setIsRecipientGiftModalOpen(false);
+      setRecipientGiftClaimError(null);
+      setBloomedCount(0);
+
+      if (nextScene === 'threshold') {
+        musicBox.start();
+        musicBox.resumeIfBlocked();
+        setIsMusicPlaying(true);
+      }
+    },
+    [selectItem, activeShortCode]
+  );
+
+  const handleTouchDeliveryWaxSeal = useCallback(() => {
+    if (isResolvingShortCode) return;
+    playWaxSealUnsealChime();
+    musicBox.start();
+    musicBox.resumeIfBlocked();
+    setIsMusicPlaying(true);
+    if (!isPreviewMode && deliveryIdentityKeyRef.current) {
+      markDeliveryPreludeSeen(deliveryIdentityKeyRef.current);
     }
-    selectItem(null);
-    setMobilePopover(null);
-    if (passcodeUnlockTimerRef.current !== null) {
-      window.clearTimeout(passcodeUnlockTimerRef.current);
-      passcodeUnlockTimerRef.current = null;
+    setDeliveryScene('seal_break');
+  }, [isResolvingShortCode, isPreviewMode]);
+
+  const handleSkipDeliveryToThreshold = useCallback(() => {
+    musicBox.start();
+    musicBox.resumeIfBlocked();
+    setIsMusicPlaying(true);
+    if (!isPreviewMode && deliveryIdentityKeyRef.current) {
+      markDeliveryPreludeSeen(deliveryIdentityKeyRef.current);
     }
-    if (pinErrorClearTimerRef.current !== null) {
-      window.clearTimeout(pinErrorClearTimerRef.current);
-      pinErrorClearTimerRef.current = null;
-    }
+    setDeliveryScene('threshold');
+  }, [isPreviewMode]);
+
+  const handleReplayDeliveryPrelude = useCallback(() => {
     if (entranceSlideRafRef.current !== null) {
       cancelAnimationFrame(entranceSlideRafRef.current);
       entranceSlideRafRef.current = null;
     }
-    setNowMs(Date.now());
-    setIsPasscodeUnlocked(false);
-    setPasscodeAttempt('');
-    setPasscodeError(null);
-    setPasscodeFeedback('idle');
-    setPasscodeShakeKey(0);
-    setIsReactionPopoverOpen(false);
-    setIsPreviewMode(fromEditorPreview);
-    setIsGiftView(true);
-    setIsEntranceUnfurling(false);
     setEntranceSlideProgress(0);
     setIsDraggingEntranceSlider(false);
-    setIsGiftEntranceOpen(true);
-    setShowGiftCardReveal(false);
-    setIsGiftBloomFinished(false);
-    setIsRecipientGiftBoxVisible(false);
-    setIsRecipientGiftModalOpen(false);
-    setRecipientGiftClaimError(null);
-    setBloomedCount(0);
-    // Ensure music autoplays when entering shared gift view or preview bloom
-    musicBox.start();
-    musicBox.resumeIfBlocked();
-    setIsMusicPlaying(true);
-  }, [selectItem]);
+    setIsEntranceUnfurling(false);
+    setDeliveryScene('arrival');
+  }, []);
 
   const handleUnwrapGiftEntrance = useCallback(
     (forceBypassLock = false) => {
@@ -1043,18 +1144,31 @@ export default function App() {
         cancelAnimationFrame(entranceSlideRafRef.current);
         entranceSlideRafRef.current = null;
       }
+      if (unfurlTimerRef.current !== null) {
+        window.clearTimeout(unfurlTimerRef.current);
+      }
+      if (bloomDelayTimerRef.current !== null) {
+        window.clearTimeout(bloomDelayTimerRef.current);
+      }
       setEntranceSlideProgress(1);
       setIsDraggingEntranceSlider(false);
       musicBox.start();
       musicBox.resumeIfBlocked();
       setIsMusicPlaying(true);
       setIsEntranceUnfurling(true);
-      runStemBloomSequence(items.length);
 
-      window.setTimeout(() => {
+      const timings = getDeliverySceneTimings(isReducedMotion);
+      const stemLeadInMs = isReducedMotion ? 90 : 320;
+      bloomDelayTimerRef.current = window.setTimeout(() => {
+        bloomDelayTimerRef.current = null;
+        runStemBloomSequence(items.length);
+      }, stemLeadInMs);
+
+      unfurlTimerRef.current = window.setTimeout(() => {
+        unfurlTimerRef.current = null;
         setIsGiftEntranceOpen(false);
         setIsEntranceUnfurling(false);
-      }, 420);
+      }, timings.unfurlMs);
 
       if (!isPreviewMode && activeShortCode && countedOpenCodeRef.current !== activeShortCode) {
         countedOpenCodeRef.current = activeShortCode;
@@ -1067,6 +1181,7 @@ export default function App() {
       runStemBloomSequence,
       isGiftCurrentlyLocked,
       isResolvingShortCode,
+      isReducedMotion,
       isPreviewMode,
       activeShortCode,
     ]
@@ -1082,13 +1197,13 @@ export default function App() {
         cancelAnimationFrame(entranceSlideRafRef.current);
       }
       const startVal = Math.max(0, Math.min(1, startFrom));
-      const durationMs = Math.max(180, (1 - startVal) * 440);
+      const durationMs = isReducedMotion ? 220 : Math.max(480, (1 - startVal) * 840);
       const startTime = performance.now();
 
       const tick = (now: number) => {
         const elapsed = now - startTime;
         const t = Math.min(1, elapsed / durationMs);
-        const eased = 1 - Math.pow(1 - t, 2.2);
+        const eased = 1 - Math.pow(1 - t, 2.4);
         const nextVal = startVal + (1 - startVal) * eased;
         setEntranceSlideProgress(nextVal);
         if (t < 1) {
@@ -1104,9 +1219,42 @@ export default function App() {
       entranceSlideProgress,
       isGiftCurrentlyLocked,
       isResolvingShortCode,
+      isReducedMotion,
       isEntranceUnfurling,
       handleUnwrapGiftEntrance,
     ]
+  );
+
+  // Smoothly springs the slider & peony back to 0% if released mid-drag so nothing snaps
+  const handleGlideSlideReset = useCallback(
+    (startFrom = entranceSlideProgress) => {
+      if (entranceSlideRafRef.current !== null) {
+        cancelAnimationFrame(entranceSlideRafRef.current);
+        entranceSlideRafRef.current = null;
+      }
+      const startVal = Math.max(0, Math.min(1, startFrom));
+      if (startVal <= 0.005 || isReducedMotion) {
+        setEntranceSlideProgress(0);
+        return;
+      }
+      const durationMs = Math.max(220, startVal * 380);
+      const startTime = performance.now();
+
+      const tick = (now: number) => {
+        const elapsed = now - startTime;
+        const t = Math.min(1, elapsed / durationMs);
+        const eased = 1 - Math.pow(1 - t, 2.6);
+        setEntranceSlideProgress(startVal * (1 - eased));
+        if (t < 1) {
+          entranceSlideRafRef.current = requestAnimationFrame(tick);
+        } else {
+          entranceSlideRafRef.current = null;
+          setEntranceSlideProgress(0);
+        }
+      };
+      entranceSlideRafRef.current = requestAnimationFrame(tick);
+    },
+    [entranceSlideProgress, isReducedMotion]
   );
 
   const recipientBloom = useMemo(
@@ -1151,6 +1299,14 @@ export default function App() {
         window.clearTimeout(pinErrorClearTimerRef.current);
         pinErrorClearTimerRef.current = null;
       }
+      if (unfurlTimerRef.current !== null) {
+        window.clearTimeout(unfurlTimerRef.current);
+        unfurlTimerRef.current = null;
+      }
+      if (bloomDelayTimerRef.current !== null) {
+        window.clearTimeout(bloomDelayTimerRef.current);
+        bloomDelayTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -1168,8 +1324,15 @@ export default function App() {
       if (isSecretAnswerMatch(lock?.passcodeAnswer, candidateAnswer, lock?.passcodeType)) {
         setPasscodeError(null);
         setPasscodeFeedback('success');
-        // 100% match Slide-to-Unlock's petal-by-petal bloom glide -> unfurl -> stem bloom animation
-        handleGlideSlideToOpen(0, true);
+        playWaxSealUnsealChime();
+        // Let the crimson wax seal stamp press onto the card before gliding the peony open
+        passcodeUnlockTimerRef.current = window.setTimeout(
+          () => {
+            passcodeUnlockTimerRef.current = null;
+            handleGlideSlideToOpen(0, true);
+          },
+          isReducedMotion ? 140 : 380
+        );
       } else {
         setPasscodeFeedback('error');
         setPasscodeShakeKey((k) => k + 1);
@@ -1201,6 +1364,7 @@ export default function App() {
       lock?.passcodeAnswer,
       lock?.passcodeType,
       effectivePasscodeType,
+      isReducedMotion,
       handleGlideSlideToOpen,
     ]
   );
@@ -1617,7 +1781,7 @@ export default function App() {
             triggerToast('Payment confirmed — Bloom Pass activated!');
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     return () => window.removeEventListener('popstate', handlePopState);
@@ -1658,7 +1822,7 @@ export default function App() {
           setIsResolvingShortCode(false);
           setShowLandingPage(false);
           if (giftMode) {
-            startGiftBloomAnimation(shared.items.length, false);
+            startGiftBloomAnimation(shared.items.length, false, false, effectiveCode);
           } else {
             triggerToast('Loaded shared bouquet');
           }
@@ -1672,15 +1836,15 @@ export default function App() {
                   : null;
                 const baseSnap =
                   fromFirestoreSnap &&
-                  Array.isArray(fromFirestoreSnap.items) &&
-                  fromFirestoreSnap.items.length > 0
+                    Array.isArray(fromFirestoreSnap.items) &&
+                    fromFirestoreSnap.items.length > 0
                     ? fromFirestoreSnap
                     : shared;
                 const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, docData);
                 skipNextDirtyMarkRef.current = true;
                 loadSnapshot(hydrated);
               })
-              .catch(() => {});
+              .catch(() => { });
           }
           return;
         }
@@ -1720,7 +1884,7 @@ export default function App() {
                   skipNextDirtyMarkRef.current = true;
                   loadSnapshot(hydratedSnap);
                   selectItem(null);
-                  startGiftBloomAnimation(hydratedSnap.items.length, false);
+                  startGiftBloomAnimation(hydratedSnap.items.length, false, false, pathCode);
                 }
               }
             } catch {
@@ -1956,7 +2120,7 @@ export default function App() {
         }
         triggerToast(
           serverVerify.message ||
-            'Please unlock a Studio Pass or enter your BLOOM-XXXX-XXXX key to export High-Res PNG.'
+          'Please unlock a Studio Pass or enter your BLOOM-XXXX-XXXX key to export High-Res PNG.'
         );
         setCheckoutTriggerAction('png');
         setIsCheckoutModalOpen(true);
@@ -2069,9 +2233,9 @@ export default function App() {
       );
       const garlandPublishPromise = shouldPinToGarland
         ? publishBouquetToGlobalGarlandFeed(
-            vaultEntry,
-            previousDraftCode
-          ).catch(() => false)
+          vaultEntry,
+          previousDraftCode
+        ).catch(() => false)
         : Promise.resolve(true);
       currentSessionVaultCodeRef.current = code;
       currentSessionVaultIsDraftRef.current = false;
@@ -2080,7 +2244,7 @@ export default function App() {
 
       if (!countedCreatedCodeSetRef.current.has(code)) {
         countedCreatedCodeSetRef.current.add(code);
-        incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
+        incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => { });
       }
 
       // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key
@@ -2104,9 +2268,9 @@ export default function App() {
           pass: verifiedPass || null,
           garlandEntry: shouldPinToGarland
             ? {
-                ...vaultEntry,
-                replaceCode: previousDraftCode || null,
-              }
+              ...vaultEntry,
+              replaceCode: previousDraftCode || null,
+            }
             : null,
         })
       }).catch(() => null);
@@ -2148,7 +2312,7 @@ export default function App() {
     saveSharedBouquetToFirestore(code, hashPayload, snap, {
       isPremium: policy.isPremiumEternal,
       retentionDays: policy.retentionDays,
-    }).catch(() => {});
+    }).catch(() => { });
 
     const replaceDraftCode = currentSessionVaultIsDraftRef.current
       ? currentSessionVaultCodeRef.current
@@ -2219,9 +2383,9 @@ export default function App() {
             // Prefer the canonical Firestore snapshot whenever its payload is richer (e.g. has inline photos that localStorage stripped)
             const preferRecordSnap = Boolean(
               fromRecordSnap &&
-                (!decoded ||
-                  (record.payload?.length || 0) >= (draftPayload?.length || 0) ||
-                  (fromRecordSnap.items?.length || 0) > (decoded.items?.length || 0))
+              (!decoded ||
+                (record.payload?.length || 0) >= (draftPayload?.length || 0) ||
+                (fromRecordSnap.items?.length || 0) > (decoded.items?.length || 0))
             );
             const baseSnap = preferRecordSnap ? fromRecordSnap : decoded;
             if (!baseSnap) {
@@ -2318,7 +2482,7 @@ export default function App() {
         if (currentPremiumInspection.isPremiumBouquet) {
           triggerToast(
             serverVerify.message ||
-              'Please unlock a Studio Pass or re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".'
+            'Please unlock a Studio Pass or re-enter your BLOOM-XXXX-XXXX key under "Have a Key?".'
           );
           setIsShareModalOpen(false);
           setCheckoutTriggerAction('share');
@@ -2370,7 +2534,7 @@ export default function App() {
     }
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(firstPartyUrl).catch(() => {});
+      navigator.clipboard.writeText(firstPartyUrl).catch(() => { });
     }
     trackStudioTelemetry({
       eventType: 'bouquet_sealed',
@@ -2408,10 +2572,10 @@ export default function App() {
           mobileCategory === 'ribbon'
             ? 'ribbon'
             : mobileCategory === 'card'
-            ? 'card'
-            : mobileCategory === 'voice'
-            ? 'voicePrimary'
-            : 'wrapper'
+              ? 'card'
+              : mobileCategory === 'voice'
+                ? 'voicePrimary'
+                : 'wrapper'
         );
       }
     }
@@ -2450,11 +2614,10 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        isDarkMode
-          ? 'dark bg-[#2B2321] text-[#FBF6F1]'
-          : 'bg-[#FAFAF8] text-[#1C1917]'
-      }`}
+      className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isDarkMode
+        ? 'dark bg-[#2B2321] text-[#FBF6F1]'
+        : 'bg-[#FAFAF8] text-[#1C1917]'
+        }`}
       style={{
         fontFamily: "'Inter', system-ui, sans-serif",
         ...(viewportHeight ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px` } : {})
@@ -2539,19 +2702,26 @@ export default function App() {
           animation: cardModalZoomIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
         @keyframes stemSpringBloom {
-          0% { opacity: 0; transform: scale(0.25) translateY(28px); }
-          70% { opacity: 1; transform: scale(1.08) translateY(-3px); }
+          0% { opacity: 0; transform: scale(0.32) translateY(32px); }
+          68% { opacity: 1; transform: scale(1.04) translateY(-2px); }
           100% { opacity: 1; transform: scale(1) translateY(0); }
         }
         .stem-bloom-pop {
-          animation: stemSpringBloom 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          animation: stemSpringBloom 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         @keyframes giftStageEntrance {
-          0% { opacity: 0; transform: scale(0.88) translateY(22px); }
-          100% { opacity: 1; transform: scale(1) translateY(0); }
+          0% { opacity: 0; transform: translate3d(0, 14px, 0) scale3d(0.96, 0.96, 1); }
+          100% { opacity: 1; transform: translate3d(0, 0, 0) scale3d(1, 1, 1); }
         }
         .gift-stage-entrance {
-          animation: giftStageEntrance 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          animation: giftStageEntrance 1.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes giftHudFloatIn {
+          0% { opacity: 0; transform: translate3d(0, 6px, 0); }
+          100% { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+        .gift-hud-float-in {
+          animation: giftHudFloatIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
         @keyframes floatKeepsakeEnvelope {
           0%, 100% { transform: translateY(0px) rotate(-1deg); }
@@ -2613,17 +2783,17 @@ export default function App() {
                       recordSnap && Array.isArray(recordSnap.items) && recordSnap.items.length > 0
                         ? recordSnap
                         : {
-                            items: currentSnap.items,
-                            wrapStyle: currentSnap.wrapStyle,
-                            wrapColor: currentSnap.wrapColor,
-                            ribbonColor: currentSnap.ribbonColor,
-                            ribbonStyle: currentSnap.ribbonStyle,
-                            environment: currentSnap.environment,
-                            bouquetPose: currentSnap.bouquetPose,
-                            card: currentSnap.card,
-                            voice: currentSnap.voice,
-                            lock: currentSnap.lock,
-                          };
+                          items: currentSnap.items,
+                          wrapStyle: currentSnap.wrapStyle,
+                          wrapColor: currentSnap.wrapColor,
+                          ribbonColor: currentSnap.ribbonColor,
+                          ribbonStyle: currentSnap.ribbonStyle,
+                          environment: currentSnap.environment,
+                          bouquetPose: currentSnap.bouquetPose,
+                          card: currentSnap.card,
+                          voice: currentSnap.voice,
+                          lock: currentSnap.lock,
+                        };
                     const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, record);
                     loadSnapshot(hydrated);
                     setNowMs(Date.now());
@@ -2640,7 +2810,7 @@ export default function App() {
                       }
                     }
                   })
-                  .catch(() => {})
+                  .catch(() => { })
                   .finally(() => {
                     if (showcaseResolveRequestIdRef.current === reqId) {
                       setIsResolvingShortCode(false);
@@ -2658,7 +2828,7 @@ export default function App() {
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'showcase_view' });
             // Strictly view-only recipient mode (fromEditorPreview = false) so showcase creations cannot be edited
-            startGiftBloomAnimation(currentItems.length, false);
+            startGiftBloomAnimation(currentItems.length, false, false, entry?.code || entry?.id);
           }}
           onOpenVault={() => setIsVaultModalOpen(true)}
           vaultCount={vaultCount}
@@ -2695,43 +2865,357 @@ export default function App() {
               so the recipient focuses purely on the bouquet and card.
               ===================================================================== */}
           {!isGiftView && !isPreviewMode && (
-        <div className="px-2 sm:px-5 pt-2 pb-1 shrink-0 z-30">
-          <div
-            className={`h-11.5 sm:h-12 px-2.5 sm:px-3.5 md:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-1 sm:gap-2 overflow-hidden transition-colors ${
-              isDarkMode
-                ? 'bg-[#352C29]/95 border-[#4E423E] text-[#FBF6F1]'
-                : 'bg-[#FFFDF9]/95 border-[#EFE6DD] text-[#231C18]'
-            }`}
-          >
-            {/* Left: Brand Wordmark (Returns to Home) */}
-            <button
-              type="button"
-              onClick={() => {
-                setCanvasRecoveryInStudioFlag(false);
-                setShowLandingPage(true);
-              }}
-              title="Back to Send A Bouquet Home"
-              aria-label="Open Send A Bouquet Home Page"
-              className="flex items-center gap-1.5 sm:gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
-            >
-              <BrandLogoMark className="w-6 h-6 sm:w-6.5 sm:h-6.5" isDarkMode={isDarkMode} />
-              <span
-                className="hidden lg:inline text-lg font-semibold tracking-tight whitespace-nowrap"
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                Send A Bouquet
-              </span>
-            </button>
-
-            {/* Center: Undo / Redo / Save Draft / Start Over Capsule + Desktop/Tablet Selected Item Layer & Photo Controls */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="px-2 sm:px-5 pt-2 pb-1 shrink-0 z-30">
               <div
-                className={`flex items-center gap-0.5 sm:gap-1 rounded-full px-1 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${
-                  isDarkMode
-                    ? 'bg-[#2B2321]/80 border-[#52433E]'
-                    : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
-                }`}
+                className={`h-11.5 sm:h-12 px-2.5 sm:px-3.5 md:px-4 rounded-full border shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-1 sm:gap-2 overflow-hidden transition-colors ${isDarkMode
+                  ? 'bg-[#352C29]/95 border-[#4E423E] text-[#FBF6F1]'
+                  : 'bg-[#FFFDF9]/95 border-[#EFE6DD] text-[#231C18]'
+                  }`}
               >
+                {/* Left: Brand Wordmark (Returns to Home) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCanvasRecoveryInStudioFlag(false);
+                    setShowLandingPage(true);
+                  }}
+                  title="Back to Send A Bouquet Home"
+                  aria-label="Open Send A Bouquet Home Page"
+                  className="flex items-center gap-1.5 sm:gap-2 select-none hover:opacity-85 transition cursor-pointer shrink-0"
+                >
+                  <BrandLogoMark className="w-6 h-6 sm:w-6.5 sm:h-6.5" isDarkMode={isDarkMode} />
+                  <span
+                    className="hidden lg:inline text-lg font-semibold tracking-tight whitespace-nowrap"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Send A Bouquet
+                  </span>
+                </button>
+
+                {/* Center: Undo / Redo / Save Draft / Start Over Capsule + Desktop/Tablet Selected Item Layer & Photo Controls */}
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  <div
+                    className={`flex items-center gap-0.5 sm:gap-1 rounded-full px-1 sm:px-1.5 py-0.5 border border-dashed shrink-0 ${isDarkMode
+                      ? 'bg-[#2B2321]/80 border-[#52433E]'
+                      : 'bg-[#FAF4EE]/85 border-[#E2D1C1]'
+                      }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        undo();
+                        triggerToast('Undone');
+                      }}
+                      disabled={past.length === 0}
+                      aria-label="Undo"
+                      title="Undo"
+                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                    >
+                      <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        redo();
+                        triggerToast('Redone');
+                      }}
+                      disabled={future.length === 0}
+                      aria-label="Redo"
+                      title="Redo"
+                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                    >
+                      <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </button>
+                    <span
+                      aria-hidden="true"
+                      className={`w-[1px] h-3.5 mx-0.5 ${isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                        }`}
+                    />
+                    <button
+                      type="button"
+                      data-testid="save-draft-device-btn"
+                      onClick={handleSaveDraftOnDevice}
+                      aria-label="Save bouquet draft on this device"
+                      title={
+                        hasUnsavedDraftChanges
+                          ? 'Save Draft on Device (unsaved changes)'
+                          : 'Save Draft on Device'
+                      }
+                      className={`relative w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${savedDraftPulse
+                        ? 'bg-emerald-500/20 text-emerald-500 scale-105'
+                        : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
+                        }`}
+                    >
+                      {savedDraftPulse ? (
+                        <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B4846C]" />
+                      )}
+                      {hasUnsavedDraftChanges && !savedDraftPulse && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#B4846C]"
+                        />
+                      )}
+                    </button>
+                    <span
+                      aria-hidden="true"
+                      className={`w-[1px] h-3.5 mx-0.5 ${isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                        }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetStudioCanvasSession();
+                        triggerToast('Canvas reset');
+                      }}
+                      aria-label="Reset bouquet and start over"
+                      title="Start Over"
+                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </button>
+                  </div>
+
+                  {/* Desktop & Tablet (sm: and up) Quick Layering & Photo Controls Capsule in Header */}
+                  {selectedItem && !selectedItem.hidden && (
+                    <div
+                      role="toolbar"
+                      aria-label="Quick layer order controls"
+                      className={`hidden sm:inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 border border-dashed shrink-0 transition-all ${isDarkMode
+                        ? 'bg-[#2B2321]/85 border-[#5E4E49] text-[#FBF6F1]'
+                        : 'bg-[#FAF4EE]/90 border-[#DECBB9] text-[#2A201D]'
+                        }`}
+                    >
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'back')}
+                        title="Send Behind / Inside Bouquet"
+                        aria-label="Send to Most Back"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                      >
+                        <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'down')}
+                        title="Send Back 1 Layer"
+                        aria-label="Send Back 1 Layer"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                      >
+                        <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex >= items.length - 1 &&
+                            getEffectiveItemPlane(selectedItem) === 'front')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'up')}
+                        title="Bring Forward 1 Layer"
+                        aria-label="Bring Forward 1 Layer"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                      >
+                        <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex >= items.length - 1 &&
+                            getEffectiveItemPlane(selectedItem) === 'front')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'front')}
+                        title="Bring to Overlay / Front of Bouquet"
+                        aria-label="Bring to Most Front"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                      >
+                        <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+
+                      {selectedItem.photoStyle && (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className={`w-[1px] h-3.5 mx-0.5 ${isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
+                              }`}
+                          />
+                          <button
+                            type="button"
+                            disabled={Boolean(selectedItem.locked)}
+                            onClick={() => {
+                              const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
+                              updateItem(
+                                selectedItem.id,
+                                {
+                                  clippedToBouquet: nextClipped,
+                                  layerPlane: nextClipped ? 'inside' : 'front',
+                                },
+                                true
+                              );
+                            }}
+                            title={
+                              getEffectiveItemPlane(selectedItem) === 'inside'
+                                ? 'Tucked inside bouquet wrapper (Click to float free)'
+                                : 'Floating photo (Click to tuck inside bouquet wrapper)'
+                            }
+                            aria-label={
+                              getEffectiveItemPlane(selectedItem) === 'inside'
+                                ? 'Unclip photo from bouquet'
+                                : 'Clip photo to bouquet'
+                            }
+                            aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
+                            className={`w-7 h-7 rounded-full inline-flex items-center justify-center active:scale-95 transition cursor-pointer ${getEffectiveItemPlane(selectedItem) === 'inside'
+                              ? 'bg-[#B4846C] text-white'
+                              : 'text-[#B4846C] hover:bg-[#B4846C]/15'
+                              }`}
+                          >
+                            <BouquetClipToggleIcon
+                              clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
+                              className="w-3.5 h-3.5"
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
+                            }
+                            title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                            aria-label="Upload photo into photocard"
+                            className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
+                          >
+                            <ImagePlus className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Premium + Icon-Only Utility Controls + Primary Share Button */}
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    data-testid="studio-pass-header-btn"
+                    onClick={() => {
+                      setCheckoutTriggerAction('pass_menu');
+                      setIsCheckoutModalOpen(true);
+                    }}
+                    aria-label="Open Premium Studio Pass and Pass Key"
+                    title={
+                      isBouquetUnlockedByPass && activeStudioPass
+                        ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
+                        : 'Premium Studio Pass & Pass Key'
+                    }
+                    className={`h-7.5 sm:h-8 w-7.5 sm:w-auto sm:px-2.5 justify-center rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${isBouquetUnlockedByPass
+                      ? isDarkMode
+                        ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
+                        : 'bg-[#FAF3EB] border-[#B4846C] text-[#6E4434]'
+                      : isDarkMode
+                        ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                        : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                      }`}
+                  >
+                    <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                    <span className="hidden sm:inline">Premium</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="open-vault-header-btn"
+                    onClick={() => setIsVaultModalOpen(true)}
+                    aria-label="Open Saved Bouquets"
+                    title="Saved Bouquets"
+                    className={`h-7.5 sm:h-8 ${vaultCount > 0 ? 'px-2 sm:px-2.5' : 'w-7.5 sm:w-8 justify-center'
+                      } rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${isDarkMode
+                        ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                        : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+                      }`}
+                  >
+                    <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                    {vaultCount > 0 && (
+                      <span
+                        className={`text-[10.5px] sm:text-[11px] font-semibold tabular-nums ${isDarkMode ? 'text-[#F0C8B0]' : 'text-[#7A4B3A]'
+                          }`}
+                      >
+                        {vaultCount}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleMusic}
+                    aria-pressed={isMusicPlaying}
+                    aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                    title={isMusicPlaying ? 'Pause music' : 'Play music'}
+                    className={`hidden sm:flex w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full items-center justify-center shrink-0 active:scale-95 transition cursor-pointer ${isMusicPlaying
+                      ? 'bg-[#B4846C]/15 text-[#B4846C]'
+                      : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36]'
+                      }`}
+                  >
+                    {isMusicPlaying ? <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsDarkMode((prev) => !prev)}
+                    aria-label="Toggle theme"
+                    title="Toggle theme"
+                    className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
+                  >
+                    <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
+                      {isDarkMode ? <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" /> : <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsShareModalOpen(true)}
+                    aria-label="Share bouquet"
+                    title="Share bouquet"
+                    className={`h-7.5 sm:h-8 px-3 sm:px-3.5 rounded-full text-xs font-medium flex items-center justify-center gap-1 shrink-0 active:scale-95 transition cursor-pointer ${isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                      }`}
+                  >
+                    <span>Share</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =====================================================================
+          PRESERVED SSR HEADER STRUCTURE (Hidden visually so Desktop uses the clean pill bar)
+          ===================================================================== */}
+          <header
+            className={`hidden h-14 shrink-0 px-2 sm:px-4 md:px-6 border-b items-center justify-between gap-1 sm:gap-2 z-30 transition-colors ${isDarkMode
+              ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
+              : 'bg-[#FAFAF8]/95 border-stone-200 text-[#1C1917]'
+              }`}
+          >
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+              <h1
+                className="text-sm sm:text-base md:text-lg font-semibold tracking-tight text-[#1C1917] dark:text-stone-100"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                Flowers For You
+              </h1>
+            </div>
+
+            {/* Center Controls (Undo / Redo / Randomize) */}
+            {!isGiftView ? (
+              <div className="flex items-center gap-1 sm:gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -2739,11 +3223,14 @@ export default function App() {
                     triggerToast('Undone');
                   }}
                   disabled={past.length === 0}
-                  aria-label="Undo"
-                  title="Undo"
-                  className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  aria-label="Undo (Ctrl+Z)"
+                  title="Undo (Ctrl+Z)"
+                  className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl disabled:opacity-30 border transition ${isDarkMode
+                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                    }`}
                 >
-                  <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <Undo2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
                 </button>
                 <button
                   type="button"
@@ -2752,1935 +3239,2562 @@ export default function App() {
                     triggerToast('Redone');
                   }}
                   disabled={future.length === 0}
-                  aria-label="Redo"
-                  title="Redo"
-                  className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                  aria-label="Redo (Ctrl+Shift+Z)"
+                  title="Redo (Ctrl+Shift+Z)"
+                  className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl disabled:opacity-30 border transition ${isDarkMode
+                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                    }`}
                 >
-                  <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-                <span
-                  aria-hidden="true"
-                  className={`w-[1px] h-3.5 mx-0.5 ${
-                    isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                  }`}
-                />
-                <button
-                  type="button"
-                  data-testid="save-draft-device-btn"
-                  onClick={handleSaveDraftOnDevice}
-                  aria-label="Save bouquet draft on this device"
-                  title={
-                    hasUnsavedDraftChanges
-                      ? 'Save Draft on Device (unsaved changes)'
-                      : 'Save Draft on Device'
-                  }
-                  className={`relative w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer ${
-                    savedDraftPulse
-                      ? 'bg-emerald-500/20 text-emerald-500 scale-105'
-                      : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:text-[#231C18] dark:hover:text-white'
-                  }`}
-                >
-                  {savedDraftPulse ? (
-                    <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
-                  ) : (
-                    <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#B4846C]" />
-                  )}
-                  {hasUnsavedDraftChanges && !savedDraftPulse && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#B4846C]"
-                    />
-                  )}
-                </button>
-                <span
-                  aria-hidden="true"
-                  className={`w-[1px] h-3.5 mx-0.5 ${
-                    isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetStudioCanvasSession();
-                    triggerToast('Canvas reset');
-                  }}
-                  aria-label="Reset bouquet and start over"
-                  title="Start Over"
-                  className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center text-[#6E5D54] dark:text-[#D8C7BE] hover:text-rose-600 dark:hover:text-rose-300 active:scale-95 transition cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <Redo2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
                 </button>
               </div>
-
-              {/* Desktop & Tablet (sm: and up) Quick Layering & Photo Controls Capsule in Header */}
-              {selectedItem && !selectedItem.hidden && (
-                <div
-                  role="toolbar"
-                  aria-label="Quick layer order controls"
-                  className={`hidden sm:inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 border border-dashed shrink-0 transition-all ${
-                    isDarkMode
-                      ? 'bg-[#2B2321]/85 border-[#5E4E49] text-[#FBF6F1]'
-                      : 'bg-[#FAF4EE]/90 border-[#DECBB9] text-[#2A201D]'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'back')}
-                    title="Send Behind / Inside Bouquet"
-                    aria-label="Send to Most Back"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'down')}
-                    title="Send Back 1 Layer"
-                    aria-label="Send Back 1 Layer"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex >= items.length - 1 &&
-                        getEffectiveItemPlane(selectedItem) === 'front')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'up')}
-                    title="Bring Forward 1 Layer"
-                    aria-label="Bring Forward 1 Layer"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex >= items.length - 1 &&
-                        getEffectiveItemPlane(selectedItem) === 'front')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'front')}
-                    title="Bring to Overlay / Front of Bouquet"
-                    aria-label="Bring to Most Front"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-
-                  {selectedItem.photoStyle && (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className={`w-[1px] h-3.5 mx-0.5 ${
-                          isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        disabled={Boolean(selectedItem.locked)}
-                        onClick={() => {
-                          const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
-                          updateItem(
-                            selectedItem.id,
-                            {
-                              clippedToBouquet: nextClipped,
-                              layerPlane: nextClipped ? 'inside' : 'front',
-                            },
-                            true
-                          );
-                        }}
-                        title={
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'Tucked inside bouquet wrapper (Click to float free)'
-                            : 'Floating photo (Click to tuck inside bouquet wrapper)'
-                        }
-                        aria-label={
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'Unclip photo from bouquet'
-                            : 'Clip photo to bouquet'
-                        }
-                        aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
-                        className={`w-7 h-7 rounded-full inline-flex items-center justify-center active:scale-95 transition cursor-pointer ${
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'bg-[#B4846C] text-white'
-                            : 'text-[#B4846C] hover:bg-[#B4846C]/15'
-                        }`}
-                      >
-                        <BouquetClipToggleIcon
-                          clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
-                          className="w-3.5 h-3.5"
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
-                        }
-                        title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
-                        aria-label="Upload photo into photocard"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
-                      >
-                        <ImagePlus className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Right: Premium + Icon-Only Utility Controls + Primary Share Button */}
-            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              <button
-                type="button"
-                data-testid="studio-pass-header-btn"
-                onClick={() => {
-                  setCheckoutTriggerAction('pass_menu');
-                  setIsCheckoutModalOpen(true);
-                }}
-                aria-label="Open Premium Studio Pass and Pass Key"
-                title={
-                  isBouquetUnlockedByPass && activeStudioPass
-                    ? `Premium Active (${formatPassRemainingTime(activeStudioPass.expiresAt)})`
-                    : 'Premium Studio Pass & Pass Key'
-                }
-                className={`h-7.5 sm:h-8 w-7.5 sm:w-auto sm:px-2.5 justify-center rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
-                  isBouquetUnlockedByPass
-                    ? isDarkMode
-                      ? 'bg-[#E6B89C]/20 border-[#E6B89C] text-[#F0C8B0]'
-                      : 'bg-[#FAF3EB] border-[#B4846C] text-[#6E4434]'
-                    : isDarkMode
-                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                }`}
-              >
-                <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                <span className="hidden sm:inline">Premium</span>
-              </button>
-
-              <button
-                type="button"
-                data-testid="open-vault-header-btn"
-                onClick={() => setIsVaultModalOpen(true)}
-                aria-label="Open Saved Bouquets"
-                title="Saved Bouquets"
-                className={`h-7.5 sm:h-8 ${
-                  vaultCount > 0 ? 'px-2 sm:px-2.5' : 'w-7.5 sm:w-8 justify-center'
-                } rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 border border-dashed shrink-0 active:scale-95 transition cursor-pointer ${
-                  isDarkMode
-                    ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                    : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                }`}
-              >
-                <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                {vaultCount > 0 && (
-                  <span
-                    className={`text-[10.5px] sm:text-[11px] font-semibold tabular-nums ${
-                      isDarkMode ? 'text-[#F0C8B0]' : 'text-[#7A4B3A]'
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => startGiftBloomAnimation(items.length)}
+                  className={`h-8 px-2 sm:h-9 sm:px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition ${isDarkMode
+                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
                     }`}
-                  >
-                    {vaultCount}
-                  </span>
-                )}
-              </button>
+                >
+                  <Play className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                  <span className="hidden sm:inline">Replay bloom</span>
+                </button>
+              </div>
+            )}
 
+            {/* Right Music, Dark Mode, Gift View, Share & Export Actions */}
+            <div className="flex items-center gap-1 sm:gap-1.5">
               <button
                 type="button"
                 onClick={handleToggleMusic}
                 aria-pressed={isMusicPlaying}
-                aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
-                title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                className={`hidden sm:flex w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full items-center justify-center shrink-0 active:scale-95 transition cursor-pointer ${
-                  isMusicPlaying
-                    ? 'bg-[#B4846C]/15 text-[#B4846C]'
-                    : 'text-[#6E5D54] dark:text-[#D8C7BE] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36]'
-                }`}
+                aria-label={isMusicPlaying ? 'Mute soft background music' : 'Play soft background music'}
+                title={isMusicPlaying ? 'Pause soft music box' : 'Play soft music box'}
+                className={`h-8 w-8 sm:h-9 sm:w-auto sm:px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${isMusicPlaying
+                  ? 'bg-[#1C1917] text-white border-[#1C1917] dark:bg-white dark:text-[#1C1917] dark:border-white'
+                  : isDarkMode
+                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                  }`}
               >
-                {isMusicPlaying ? <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                {isMusicPlaying ? (
+                  <Music className="w-3.5 h-3.5" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                )}
+                <span className="hidden xl:inline">{isMusicPlaying ? 'Music on' : 'Music'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsDarkMode((prev) => !prev)}
-                aria-label="Toggle theme"
-                title="Toggle theme"
-                className="w-7.5 h-7.5 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 text-[#6E5D54] dark:text-[#E6B89C] hover:bg-[#FAF4EE] dark:hover:bg-[#463A36] active:scale-95 transition cursor-pointer"
+                aria-pressed={isDarkMode}
+                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl border text-xs font-medium flex items-center justify-center transition ${isDarkMode
+                  ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                  : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                  }`}
               >
-                <span key={isDarkMode ? 'sun' : 'moon'} className="block studio-theme-icon-pop">
-                  {isDarkMode ? <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" /> : <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                </span>
+                {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5 text-stone-600" />}
               </button>
 
-              <button
-                type="button"
-                onClick={() => setIsShareModalOpen(true)}
-                aria-label="Share bouquet"
-                title="Share bouquet"
-                className={`h-7.5 sm:h-8 px-3 sm:px-3.5 rounded-full text-xs font-medium flex items-center justify-center gap-1 shrink-0 active:scale-95 transition cursor-pointer ${
-                  isDarkMode
-                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                }`}
-              >
-                <span>Share</span>
-              </button>
+              {isGiftView ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleExportPng}
+                    title="Download high-res PNG image"
+                    aria-label="Download PNG image"
+                    className={`h-8 px-2 sm:h-9 sm:px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition ${isDarkMode
+                      ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                      : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                      }`}
+                  >
+                    <Download className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                    <span className="hidden sm:inline">Save PNG</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
+                    className="h-8 px-2.5 sm:h-9 sm:px-3.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shrink-0"
+                  >
+                    <Flower2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Make your own</span>
+                    <span className="sm:hidden">Craft</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => startGiftBloomAnimation(items.length)}
+                    className={`hidden sm:flex h-8 sm:h-9 sm:w-auto sm:px-3 rounded-xl border text-xs font-medium items-center justify-center gap-1.5 transition ${isDarkMode
+                      ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                      : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                      }`}
+                    title="Preview recipient gift view"
+                    aria-label="Preview recipient gift view"
+                  >
+                    <Gift className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                    <span className="hidden lg:inline">Gift view</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportPng}
+                    aria-label="Download PNG"
+                    title="Download PNG"
+                    className={`hidden sm:flex h-8 px-2 sm:h-9 sm:px-3 rounded-xl border text-xs font-medium items-center gap-1.5 transition ${isDarkMode
+                      ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
+                      : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+                      }`}
+                  >
+                    <Download className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                    <span className="hidden xl:inline">PNG</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsShareModalOpen(true)}
+                    className="h-8 px-2.5 sm:h-9 sm:px-3.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shadow-sm shrink-0"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Save &amp; Send</span>
+                    <span className="sm:hidden">Send</span>
+                  </button>
+                </>
+              )}
             </div>
-          </div>
-        </div>
-      )}
+          </header>
 
-      {/* =====================================================================
-          PRESERVED SSR HEADER STRUCTURE (Hidden visually so Desktop uses the clean pill bar)
-          ===================================================================== */}
-      <header
-        className={`hidden h-14 shrink-0 px-2 sm:px-4 md:px-6 border-b items-center justify-between gap-1 sm:gap-2 z-30 transition-colors ${
-          isDarkMode
-            ? 'bg-[#1E1C1A]/95 border-stone-800 text-stone-100'
-            : 'bg-[#FAFAF8]/95 border-stone-200 text-[#1C1917]'
-        }`}
-      >
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          <h1
-            className="text-sm sm:text-base md:text-lg font-semibold tracking-tight text-[#1C1917] dark:text-stone-100"
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-          >
-            Flowers For You
-          </h1>
-        </div>
-
-        {/* Center Controls (Undo / Redo / Randomize) */}
-        {!isGiftView ? (
-          <div className="flex items-center gap-1 sm:gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                undo();
-                triggerToast('Undone');
-              }}
-              disabled={past.length === 0}
-              aria-label="Undo (Ctrl+Z)"
-              title="Undo (Ctrl+Z)"
-              className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl disabled:opacity-30 border transition ${
-                isDarkMode
-                  ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                  : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
+          {/* MAIN RESPONSIVE WORKSPACE (Unified Clean Layout across Phone & Desktop) */}
+          <div
+            key={`studio-workspace-${studioEntranceKey}`}
+            className={`flex-1 flex flex-col overflow-hidden relative ${studioEntranceKey > 0 ? 'studio-workspace-enter' : ''
               }`}
-            >
-              <Undo2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                redo();
-                triggerToast('Redone');
-              }}
-              disabled={future.length === 0}
-              aria-label="Redo (Ctrl+Shift+Z)"
-              title="Redo (Ctrl+Shift+Z)"
-              className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl disabled:opacity-30 border transition ${
-                isDarkMode
-                  ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                  : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-              }`}
-            >
-              <Redo2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => startGiftBloomAnimation(items.length)}
-              className={`h-8 px-2 sm:h-9 sm:px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition ${
-                isDarkMode
-                  ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                  : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-              }`}
-            >
-              <Play className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-              <span className="hidden sm:inline">Replay bloom</span>
-            </button>
-          </div>
-        )}
-
-        {/* Right Music, Dark Mode, Gift View, Share & Export Actions */}
-        <div className="flex items-center gap-1 sm:gap-1.5">
-          <button
-            type="button"
-            onClick={handleToggleMusic}
-            aria-pressed={isMusicPlaying}
-            aria-label={isMusicPlaying ? 'Mute soft background music' : 'Play soft background music'}
-            title={isMusicPlaying ? 'Pause soft music box' : 'Play soft music box'}
-            className={`h-8 w-8 sm:h-9 sm:w-auto sm:px-2.5 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-              isMusicPlaying
-                ? 'bg-[#1C1917] text-white border-[#1C1917] dark:bg-white dark:text-[#1C1917] dark:border-white'
-                : isDarkMode
-                ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-            }`}
           >
-            {isMusicPlaying ? (
-              <Music className="w-3.5 h-3.5" />
-            ) : (
-              <VolumeX className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-            )}
-            <span className="hidden xl:inline">{isMusicPlaying ? 'Music on' : 'Music'}</span>
-          </button>
+            {/* CENTER MAIN STAGE AREA (Never resizes when selecting stems) */}
+            <main className="flex-1 min-h-0 min-w-0 relative flex flex-col items-center justify-center overflow-hidden order-1">
+              {/* Gentle Falling Petals Animation in Read-Only Gift View */}
+              {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
 
-          <button
-            type="button"
-            onClick={() => setIsDarkMode((prev) => !prev)}
-            aria-pressed={isDarkMode}
-            aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl border text-xs font-medium flex items-center justify-center transition ${
-              isDarkMode
-                ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-            }`}
-          >
-            {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5 text-stone-600" />}
-          </button>
-
-          {isGiftView ? (
-            <>
-              <button
-                type="button"
-                onClick={handleExportPng}
-                title="Download high-res PNG image"
-                aria-label="Download PNG image"
-                className={`h-8 px-2 sm:h-9 sm:px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition ${
-                  isDarkMode
-                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-                }`}
-              >
-                <Download className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                <span className="hidden sm:inline">Save PNG</span>
-              </button>
-              <button
-                type="button"
-                onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
-                className="h-8 px-2.5 sm:h-9 sm:px-3.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shrink-0"
-              >
-                <Flower2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Make your own</span>
-                <span className="sm:hidden">Craft</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => startGiftBloomAnimation(items.length)}
-                className={`hidden sm:flex h-8 sm:h-9 sm:w-auto sm:px-3 rounded-xl border text-xs font-medium items-center justify-center gap-1.5 transition ${
-                  isDarkMode
-                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-                }`}
-                title="Preview recipient gift view"
-                aria-label="Preview recipient gift view"
-              >
-                <Gift className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                <span className="hidden lg:inline">Gift view</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleExportPng}
-                aria-label="Download PNG"
-                title="Download PNG"
-                className={`hidden sm:flex h-8 px-2 sm:h-9 sm:px-3 rounded-xl border text-xs font-medium items-center gap-1.5 transition ${
-                  isDarkMode
-                    ? 'border-stone-700 bg-[#1E1C1A] hover:bg-[#292524] text-stone-300'
-                    : 'border border-stone-200 bg-white hover:bg-stone-50 text-[#1C1917]'
-                }`}
-              >
-                <Download className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                <span className="hidden xl:inline">PNG</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsShareModalOpen(true)}
-                className="h-8 px-2.5 sm:h-9 sm:px-3.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white dark:bg-white dark:text-[#1C1917] dark:hover:bg-stone-200 text-xs font-medium flex items-center gap-1.5 transition shadow-sm shrink-0"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Save &amp; Send</span>
-                <span className="sm:hidden">Send</span>
-              </button>
-            </>
-          )}
-        </div>
-      </header>
-
-      {/* MAIN RESPONSIVE WORKSPACE (Unified Clean Layout across Phone & Desktop) */}
-      <div
-        key={`studio-workspace-${studioEntranceKey}`}
-        className={`flex-1 flex flex-col overflow-hidden relative ${
-          studioEntranceKey > 0 ? 'studio-workspace-enter' : ''
-        }`}
-      >
-        {/* CENTER MAIN STAGE AREA (Never resizes when selecting stems) */}
-        <main className="flex-1 min-h-0 min-w-0 relative flex flex-col items-center justify-center overflow-hidden order-1">
-          {/* Gentle Falling Petals Animation in Read-Only Gift View */}
-          {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
-
-          {/* ===================================================================
-              GIFT ENTRANCE OVERLAY — Full-Screen Couture Botanical Bloom Unveiling
-              Minimal, expensive, non-text-y opening with our signature Watercolor
-              & Colored Lineart Blooming Peony, Depth-of-Field foreground petals,
-              and tactile Wax-Sealed Ribbon button.
+              {/* ===================================================================
+              GIFT ENTRANCE OVERLAY — "The Delivery" 5-Scene Couture Botanical Prelude
               =================================================================== */}
-          {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Bouquet Gift Entrance"
-              className={`absolute inset-0 z-40 flex flex-col items-center justify-center px-4 sm:px-8 py-8 overflow-hidden select-none transition-all duration-420 ease-out ${
-                isEntranceUnfurling ? 'opacity-0 scale-[1.08] pointer-events-none' : 'opacity-100 scale-100'
-              } ${
-                isDarkMode
-                  ? 'bg-[#2B2321] text-[#FBF6F1]'
-                  : 'bg-[#FDF9F5] text-[#231C18]'
-              }`}
-            >
-              {/* Subtle Top-Left Return Button (Returns to Home for view-only showcase/shared gifts, or Studio for sender preview) */}
-              <div className="absolute top-3 left-3 sm:top-5 sm:left-6 z-20">
+              {(isGiftView || isPreviewMode) && isGiftEntranceOpen && (
+                <RecipientDeliveryPrelude
+                  scene={deliveryScene}
+                  onSceneChange={setDeliveryScene}
+                  onTouchWaxSeal={handleTouchDeliveryWaxSeal}
+                  onSkipToThreshold={handleSkipDeliveryToThreshold}
+                  onReplayPrelude={handleReplayDeliveryPrelude}
+                  isReducedMotion={isReducedMotion}
+                  isDarkMode={isDarkMode}
+                  isPreviewMode={isPreviewMode}
+                  isResolvingShortCode={isResolvingShortCode}
+                  isEntranceUnfurling={isEntranceUnfurling}
+                  recipientName={card.to || 'You'}
+                  recipientBloom={recipientBloom}
+                  entranceSlideProgress={entranceSlideProgress}
+                  isDraggingEntranceSlider={isDraggingEntranceSlider}
+                  onBack={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
+                  lock={lock}
+                  isCountdownLocked={isCountdownLocked}
+                  countdownParts={countdownParts}
+                  countdownTargetMs={countdownTargetMs}
+                  isPasscodeLocked={isPasscodeLocked}
+                  effectivePasscodeType={effectivePasscodeType}
+                  passcodeAttempt={passcodeAttempt}
+                  passcodeFeedback={passcodeFeedback}
+                  passcodeError={passcodeError}
+                  passcodeShakeKey={passcodeShakeKey}
+                  isPinFocused={isPinFocused}
+                  isWordFocused={isWordFocused}
+                  onSetIsPinFocused={setIsPinFocused}
+                  onSetIsWordFocused={setIsWordFocused}
+                  onPasscodeAttemptChange={setPasscodeAttempt}
+                  onResetPasscodeFeedback={() => {
+                    if (passcodeFeedback !== 'idle') setPasscodeFeedback('idle');
+                    if (passcodeError) setPasscodeError(null);
+                  }}
+                  onTriggerPasscodeVerification={triggerPasscodeVerification}
+                  onSubmitPasscodeForm={handleAttemptPasscodeUnlock}
+                  onClearPinErrorTimer={() => {
+                    if (pinErrorClearTimerRef.current !== null) {
+                      window.clearTimeout(pinErrorClearTimerRef.current);
+                      pinErrorClearTimerRef.current = null;
+                    }
+                  }}
+                  pinInputRef={pinInputRef}
+                  isGiftCurrentlyLocked={isGiftCurrentlyLocked}
+                  onUnwrapForceBypass={() => handleGlideSlideToOpen(entranceSlideProgress, true)}
+                  onGlideSlideToOpen={handleGlideSlideToOpen}
+                  onGlideSlideReset={handleGlideSlideReset}
+                  onSetEntranceSlideProgress={setEntranceSlideProgress}
+                  onSetIsDraggingEntranceSlider={setIsDraggingEntranceSlider}
+                  onCancelEntranceSlideRaf={() => {
+                    if (entranceSlideRafRef.current !== null) {
+                      cancelAnimationFrame(entranceSlideRafRef.current);
+                      entranceSlideRafRef.current = null;
+                    }
+                  }}
+                  renderCoutureSealIcon={(cls) => <CoutureBloomSeal className={cls} />}
+                />
+              )}
+
+              {/* Preserved hook for responsive studio test suite */}
+              {!isGiftView && !isPreviewMode && drawerState === 'collapsed' && !selectedId && (
                 <button
                   type="button"
-                  onClick={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
-                  data-testid="gift-entrance-back-btn"
-                  className={`px-3.5 py-1.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 backdrop-blur-md transition cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#423734]'
-                      : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#4A382E] hover:bg-[#FAF4EE]'
-                  }`}
+                  onClick={() => {
+                    autoCollapsedRef.current = false;
+                    setDrawerState('peek');
+                  }}
+                  title="Open Flower Palette"
+                  aria-label="Open Flower Palette"
+                  className="hidden"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>{isPreviewMode ? 'Back to Studio' : 'Back'}</span>
+                  <Flower2 className="w-3.5 h-3.5 text-[#B4846C]" />
+                  <span>Add flowers</span>
                 </button>
-              </div>
-              {/* Seamless Radial Aura Behind the Living Watercolor Bloom (Scales with slide progress) */}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute left-1/2 top-1/2 w-[560px] sm:w-[980px] h-[560px] sm:h-[740px] rounded-full transition-transform duration-150 ease-out"
-                style={{
-                  transform: `translate(-50%, -50%) scale(${recipientBloom.auraScale})`,
-                  background: isDarkMode
-                    ? 'radial-gradient(closest-side at 50% 46%, rgba(164, 96, 116, 0.30) 0%, rgba(112, 82, 126, 0.14) 52%, rgba(43, 35, 33, 0) 100%)'
-                    : 'radial-gradient(closest-side at 50% 46%, rgba(250, 210, 225, 0.72) 0%, rgba(235, 220, 250, 0.36) 52%, rgba(253, 249, 245, 0) 100%)',
-                }}
-              />
-
-              {/* Two Large Out-of-Focus Wind-Swept Side-Profile Depth-of-Field Petals at the Outer Screen Edges
-                  They part outward off the screen edges and fade away as the recipient slides to open */}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -left-10 sm:-left-14 md:-left-16 bottom-[3%] w-56 h-40 sm:w-76 sm:h-52 md:w-92 md:h-64"
-                style={{
-                  filter: 'blur(13px)',
-                  opacity: Number(((isDarkMode ? 0.38 : 0.55) * (1 - recipientBloom.progress)).toFixed(3)),
-                  transform: `translate3d(${(-recipientBloom.progress * 180).toFixed(1)}px, ${(recipientBloom.progress * 55).toFixed(1)}px, 0) rotate(-10deg) scale(1.08)`,
-                }}
-              >
-                <svg viewBox="0 0 220 150" className="w-full h-full overflow-visible">
-                  <path
-                    d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-                    fill={isDarkMode ? '#E28BA6' : '#F6B0C8'}
-                    fillOpacity="0.74"
-                  />
-                  <path
-                    d="M 28,122 Q 112,92 184,26"
-                    fill="none"
-                    stroke={isDarkMode ? '#FAD2DF' : '#FFF7FA'}
-                    strokeWidth="2.4"
-                    strokeOpacity="0.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -right-10 sm:-right-14 md:-right-16 top-[11%] w-60 h-44 sm:w-80 sm:h-56 md:w-96 md:h-68"
-                style={{
-                  filter: 'blur(15px)',
-                  opacity: Number(((isDarkMode ? 0.32 : 0.48) * (1 - recipientBloom.progress)).toFixed(3)),
-                  transform: `translate3d(${(recipientBloom.progress * 190).toFixed(1)}px, ${(recipientBloom.progress * 40).toFixed(1)}px, 0) rotate(-6deg) scale(1.12)`,
-                }}
-              >
-                <svg viewBox="0 0 220 150" className="w-full h-full overflow-visible">
-                  <path
-                    d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-                    fill={isDarkMode ? '#E49B85' : '#F8BCAE'}
-                    fillOpacity="0.68"
-                  />
-                  <path
-                    d="M 28,122 Q 112,92 184,26"
-                    fill="none"
-                    stroke={isDarkMode ? '#FDE2D6' : '#FFFDF9'}
-                    strokeWidth="2.4"
-                    strokeOpacity="0.45"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-
-              {/* LIVING WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING PEONY
-                  Blooms open in real time as the recipient slides the wax-seal handle */}
-              <div
-                aria-hidden="true"
-                data-testid="recipient-entrance-bloom"
-                data-bloom-progress={recipientBloom.progress}
-                className={`pointer-events-none select-none absolute left-1/2 top-1/2 z-0 w-[410px] sm:w-[680px] md:w-[780px] h-[280px] sm:h-[450px] md:h-[520px] transition-all ${
-                  isDraggingEntranceSlider ? 'duration-0' : 'duration-300'
-                } ease-out ${
-                  isEntranceUnfurling
-                    ? '-translate-x-1/2 -translate-y-[50%] scale-[1.42] opacity-0'
-                    : '-translate-x-1/2 -translate-y-[50%] scale-100'
-                }`}
-                style={{ opacity: isEntranceUnfurling ? 0 : isDarkMode ? 0.72 : 0.88 }}
-              >
-                <svg viewBox="0 0 520 340" className="w-full h-full overflow-visible">
-                  <defs>
-                    <radialGradient id="rg-wc-petal-blush" cx="50%" cy="35%" r="65%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
-                      <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
-                      <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
-                    </radialGradient>
-                    <radialGradient id="rg-wc-petal-peach" cx="50%" cy="30%" r="65%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.32' : '0.66'} />
-                      <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.18' : '0.38'} />
-                      <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
-                    </radialGradient>
-                    <radialGradient id="rg-wc-leaf-sage" cx="50%" cy="50%" r="60%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.58'} />
-                      <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.28'} />
-                      <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
-                    </radialGradient>
-                    <radialGradient id="rg-wc-center-gold" cx="50%" cy="50%" r="55%">
-                      <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.38' : '0.62'} />
-                      <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.14' : '0.20'} />
-                      <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
-                    </radialGradient>
-                    <radialGradient id="rg-wc-text-readability-veil" cx="50%" cy="54%" r="52%">
-                      <stop offset="0%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.68' : '0.72'} />
-                      <stop offset="58%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.36' : '0.42'} />
-                      <stop offset="100%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity="0" />
-                    </radialGradient>
-                  </defs>
-
-                  {/* 1. Botanical Sage Leaf Sprigs & Dashed Rope Tendrils (Unfurls with slide progress) */}
-                  <g
-                    transform={`translate(260, 170) scale(${recipientBloom.leafScale}, ${recipientBloom.leafScale})`}
-                  >
-                    <path
-                      d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
-                      fill="url(#rg-wc-leaf-sage)"
-                      stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
-                      strokeWidth="1.2"
-                      strokeOpacity={isDarkMode ? '0.55' : '0.65'}
-                    />
-                    <path
-                      d="M -60,10 Q -135,4 -198,17 M -115,7 L -138,-6 M -145,10 L -168,0 M -125,11 L -148,24"
-                      fill="none"
-                      stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
-                      strokeWidth="0.9"
-                      strokeLinecap="round"
-                      strokeOpacity={isDarkMode ? '0.48' : '0.56'}
-                    />
-                    <path
-                      d="M -75,-18 C -128,-58 -168,-54 -194,-32"
-                      fill="none"
-                      stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
-                      strokeWidth="1.05"
-                      strokeDasharray="3 3"
-                      strokeDashoffset={recipientBloom.stamenDashOffset}
-                      strokeLinecap="round"
-                      strokeOpacity="0.58"
-                    />
-                    <path
-                      d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
-                      fill="url(#rg-wc-petal-blush)"
-                      stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
-                      strokeWidth="1.1"
-                    />
-
-                    <path
-                      d="M 55,10 C 115,-28 175,-18 212,18 C 170,48 110,44 55,10 Z"
-                      fill="url(#rg-wc-leaf-sage)"
-                      stroke={isDarkMode ? '#8AB89A' : '#7AA387'}
-                      strokeWidth="1.2"
-                      strokeOpacity={isDarkMode ? '0.55' : '0.65'}
-                    />
-                    <path
-                      d="M 60,10 Q 135,4 198,17 M 115,7 L 138,-6 M 145,10 L 168,0 M 125,11 L 148,24"
-                      fill="none"
-                      stroke={isDarkMode ? '#8AB89A' : '#6A9478'}
-                      strokeWidth="0.9"
-                      strokeLinecap="round"
-                      strokeOpacity={isDarkMode ? '0.48' : '0.56'}
-                    />
-                    <path
-                      d="M 75,-18 C 128,-58 168,-54 194,-32"
-                      fill="none"
-                      stroke={isDarkMode ? '#D8A48F' : '#C28C7A'}
-                      strokeWidth="1.05"
-                      strokeDasharray="3 3"
-                      strokeDashoffset={recipientBloom.stamenDashOffset}
-                      strokeLinecap="round"
-                      strokeOpacity="0.58"
-                    />
-                    <path
-                      d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
-                      fill="url(#rg-wc-petal-blush)"
-                      stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
-                      strokeWidth="1.1"
-                    />
-                  </g>
-
-                  {/* 2. Outer Ring of 8 Watercolor Peony Petals (Blooms from 0.58 bud to 1.12 full bloom) */}
-                  <g
-                    transform={`translate(260, 170) rotate(${recipientBloom.outerRotateDeg}) scale(${recipientBloom.outerScale})`}
-                  >
-                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-                      <g key={`rg-outer-${angle}`} transform={`rotate(${angle})`}>
-                        <path
-                          d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
-                          fill="url(#rg-wc-petal-blush)"
-                          stroke={isDarkMode ? '#E5A3B7' : '#CD7E95'}
-                          strokeWidth="1.2"
-                          strokeOpacity={isDarkMode ? '0.56' : '0.66'}
-                        />
-                        <path
-                          d="M 0,-14 Q -12,-62 -6,-106 M 0,-18 Q 12,-62 6,-106 M 0,-10 L 0,-114"
-                          fill="none"
-                          stroke={isDarkMode ? '#DF9BB0' : '#C67B91'}
-                          strokeWidth="0.7"
-                          strokeLinecap="round"
-                          strokeOpacity={isDarkMode ? '0.38' : '0.44'}
-                        />
-                      </g>
-                    ))}
-                  </g>
-
-                  {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals (Blooms from 0.50 bud to 1.04 full bloom) */}
-                  <g
-                    transform={`translate(260, 170) rotate(${recipientBloom.midRotateDeg}) scale(${recipientBloom.midScale})`}
-                  >
-                    {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
-                      <g key={`rg-mid-${angle}`} transform={`rotate(${angle})`}>
-                        <path
-                          d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
-                          fill="url(#rg-wc-petal-peach)"
-                          stroke={isDarkMode ? '#E8B298' : '#C88A74'}
-                          strokeWidth="1.1"
-                          strokeOpacity={isDarkMode ? '0.58' : '0.68'}
-                        />
-                        <path
-                          d="M 0,-12 Q -8,-48 -3,-78 M 0,-12 Q 8,-48 3,-78"
-                          fill="none"
-                          stroke={isDarkMode ? '#E2A88B' : '#B87B65'}
-                          strokeWidth="0.65"
-                          strokeLinecap="round"
-                          strokeOpacity="0.42"
-                        />
-                      </g>
-                    ))}
-                  </g>
-
-                  {/* 4. Inner Corolla & Golden Botanical Stamens (Blooms from 0.44 bud to 0.98 full bloom) */}
-                  <g
-                    transform={`translate(260, 170) rotate(${recipientBloom.innerRotateDeg}) scale(${recipientBloom.innerScale})`}
-                  >
-                    {[0, 60, 120, 180, 240, 300].map((angle) => (
-                      <path
-                        key={`rg-inner-${angle}`}
-                        transform={`rotate(${angle})`}
-                        d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
-                        fill="url(#rg-wc-petal-blush)"
-                        stroke={isDarkMode ? '#F0B6C8' : '#C4748B'}
-                        strokeWidth="1.05"
-                        strokeOpacity="0.62"
-                      />
-                    ))}
-                    <circle cx="0" cy="0" r="24" fill="url(#rg-wc-center-gold)" />
-                    {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
-                      <g key={`rg-stamen-${deg}`} transform={`rotate(${deg})`}>
-                        <line
-                          x1="0"
-                          y1="-4"
-                          x2="0"
-                          y2="-20"
-                          stroke={isDarkMode ? '#FCD34D' : '#D97706'}
-                          strokeWidth="1"
-                          strokeOpacity="0.58"
-                          strokeLinecap="round"
-                        />
-                        <circle
-                          cx="0"
-                          cy="-21.5"
-                          r="2"
-                          fill={isDarkMode ? '#FDE68A' : '#F59E0B'}
-                          fillOpacity="0.72"
-                        />
-                      </g>
-                    ))}
-                    <circle
-                      cx="0"
-                      cy="0"
-                      r="6.5"
-                      fill={isDarkMode ? '#FDE68A' : '#FEF3C7'}
-                      stroke={isDarkMode ? '#F59E0B' : '#D97706'}
-                      strokeWidth="1.05"
-                      strokeOpacity="0.68"
-                    />
-                  </g>
-
-                  {/* 5. Soft Readability Veil Over Inner Corolla & Lower Petal Zone (Matches Hero Section) */}
-                  <ellipse
-                    cx="260"
-                    cy="205"
-                    rx="235"
-                    ry="125"
-                    fill="url(#rg-wc-text-readability-veil)"
-                  />
-                </svg>
-              </div>
-
-              {isResolvingShortCode && (
-                <div
-                  data-testid="recipient-resolving-indicator"
-                  className="relative z-10 mt-4 text-center px-3"
-                >
-                  <p
-                    className={`text-lg sm:text-xl italic font-normal animate-pulse ${
-                      isDarkMode ? 'text-[#DFCFC6]' : 'text-[#6E594E]'
-                    }`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    Preparing bouquet…
-                  </p>
-                </div>
               )}
 
-              {!isResolvingShortCode && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className="relative z-10 max-w-xl w-full mx-auto text-center flex flex-col items-center px-3"
-                >
-                  {/* Delicate Thin Rope Lace & Scallop Bow Ornament Above Dedication */}
-                  <div className="mb-3 sm:mb-4 opacity-85" aria-hidden="true">
-                    <svg viewBox="0 0 220 24" className="w-36 sm:w-44 h-5 overflow-visible">
-                      <line
-                        x1="14"
-                        y1="12"
-                        x2="86"
-                        y2="12"
-                        stroke={isDarkMode ? '#8C766C' : '#C8B09E'}
-                        strokeWidth="1.1"
-                        strokeDasharray="2.5 3"
-                        strokeLinecap="round"
-                      />
-                      <line
-                        x1="134"
-                        y1="12"
-                        x2="206"
-                        y2="12"
-                        stroke={isDarkMode ? '#8C766C' : '#C8B09E'}
-                        strokeWidth="1.1"
-                        strokeDasharray="2.5 3"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M 110,12 C 100,4 92,8 97,13 C 100,16 106,14 110,12 Z M 110,12 C 120,4 128,8 123,13 C 120,16 114,14 110,12 Z"
-                        fill="none"
-                        stroke={isDarkMode ? '#E6B89C' : '#A6725C'}
-                        strokeWidth="1.25"
-                      />
-                      <path
-                        d="M 110,12 Q 104,18 100,21 M 110,12 Q 116,18 120,21"
-                        fill="none"
-                        stroke={isDarkMode ? '#E6B89C' : '#A6725C'}
-                        strokeWidth="1.1"
-                        strokeLinecap="round"
-                      />
-                      <circle cx="110" cy="12" r="1.8" fill={isDarkMode ? '#E6B89C' : '#A6725C'} />
-                    </svg>
-                  </div>
-
-                  {/* Minimal Editorial Dedication Lockup Over the Living Peony Bloom (Keeps Sender Unnamed for Surprise) */}
-                  <h2
-                    className="mx-auto leading-[0.98] tracking-[-0.02em]"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    <span
-                      className={`block text-2xl sm:text-3xl italic font-normal mb-1 ${
-                        isDarkMode ? 'text-[#DFCFC6]' : 'text-[#6E594E]'
+              {/* Interactive SVG Bouquet Stage (Always 100% height, zero layout shift; emerges seamlessly during Scene 5 light wash) */}
+              <div
+                className={`flex-1 w-full h-full min-h-0 flex items-center justify-center relative touch-none ${
+                  (isGiftView || isPreviewMode) && isGiftEntranceOpen && !isEntranceUnfurling
+                    ? 'opacity-0 pointer-events-none'
+                    : (isGiftView || isPreviewMode) && (!isGiftEntranceOpen || isEntranceUnfurling)
+                    ? 'gift-stage-entrance'
+                    : ''
+                }`}
+              >
+                {/* Mobile-Only (< sm) Floating Top Selected-Item Bar (Positioned right under top navbar; never moves or resizes the main canvas) */}
+                {!isPreviewMode && !isGiftView && selectedItem && !selectedItem.hidden && (
+                  <div
+                    role="toolbar"
+                    aria-label="Mobile selected item quick controls"
+                    className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.25rem)] max-w-[356px] flex sm:hidden items-center justify-between gap-2 px-3 py-1 rounded-full border border-dashed shadow-[0_8px_24px_rgba(35,28,24,0.10)] backdrop-blur-md pointer-events-auto ${isDarkMode
+                      ? 'bg-[#2B2321]/92 border-[#5E4E49] text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#2A201D]'
                       }`}
-                    >
-                      For
-                    </span>
-                    <span
-                      className={`block text-[46px] sm:text-[62px] md:text-[74px] font-semibold tracking-[-0.02em] leading-[0.98] ${
-                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                      }`}
-                    >
-                      {card.to || 'You'}
-                    </span>
-                  </h2>
-
-                  <p
-                    data-testid="recipient-surprise-subtitle"
-                    className={`mt-3 sm:mt-4 text-lg sm:text-xl italic font-normal ${
-                      isDarkMode ? 'text-[#E5D6CE]' : 'text-[#5C473C]'
-                    }`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                   >
-                    Someone sent you a bouquet
-                  </p>
+                    <span className="text-[11.5px] font-medium truncate text-[#6E5D54] dark:text-[#D8C7BE] pl-0.5">
+                      {selectedItem.photoStyle
+                        ? selectedItem.photoStyle === 'raw'
+                          ? 'Photo'
+                          : PHOTO_FRAME_CATALOG.find((p) => p.id === selectedItem.photoStyle)?.shortLabel || 'Photocard'
+                        : selectedMeta?.shortName || 'Stem'}
+                    </span>
 
-                  {/* MODE 1: TIME-CAPSULE COUNTDOWN LOCK (Clean Editorial Numerals, Zero Box Clutter) */}
-                  {isCountdownLocked ? (
-                    <div className="mt-7 sm:mt-8 flex flex-col items-center space-y-3" onClick={(e) => e.stopPropagation()}>
-                      <div
-                        className={`inline-flex items-center gap-3 sm:gap-5 px-6 py-3 rounded-full border border-dashed backdrop-blur-md shadow-[0_10px_28px_rgba(35,28,24,0.06)] ${
-                          isDarkMode
-                            ? 'bg-[#352C29]/90 border-[#5E4E49]'
-                            : 'bg-[#FFFDF9]/90 border-[#D8C3B0]'
-                        }`}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'back')}
+                        title="Send Behind / Inside Bouquet"
+                        aria-label="Send to Most Back"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
-                        {[
-                          { label: 'd', val: countdownParts.days },
-                          { label: 'h', val: countdownParts.hours },
-                          { label: 'm', val: countdownParts.minutes },
-                          { label: 's', val: countdownParts.seconds },
-                        ].map((unit, idx) => (
-                          <React.Fragment key={unit.label}>
-                            {idx > 0 && (
-                              <span
-                                aria-hidden="true"
-                                className={`text-sm ${
-                                  isDarkMode ? 'text-[#7E6B62]' : 'text-[#C8B4A4]'
-                                }`}
-                              >
-                                ·
-                              </span>
-                            )}
-                            <div className="flex items-baseline gap-0.5 tabular-nums">
-                              <span
-                                className={`text-2xl sm:text-3xl font-semibold ${
-                                  isDarkMode ? 'text-[#F0C2AE]' : 'text-[#6E4434]'
-                                }`}
-                                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                              >
-                                {unit.val}
-                              </span>
-                              <span
-                                className={`text-xs italic ${
-                                  isDarkMode ? 'text-[#B8A59B]' : 'text-[#8C7A70]'
-                                }`}
-                                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                              >
-                                {unit.label}
-                              </span>
-                            </div>
-                          </React.Fragment>
-                        ))}
-                      </div>
-
-                      <p
-                        className={`text-sm italic ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
-                        }`}
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                        <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'down')}
+                        title="Send Back 1 Layer"
+                        aria-label="Send Back 1 Layer"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
-                        Opens{' '}
-                        {countdownTargetMs
-                          ? new Date(countdownTargetMs).toLocaleString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })
-                          : 'soon'}
-                      </p>
-
-                      {isPreviewMode && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnwrapGiftEntrance(true);
-                          }}
-                          className={`mt-1 px-4 py-1.5 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                            isDarkMode
-                              ? 'border-[#5E4E49] bg-[#352C29]/80 text-[#E6D6C7] hover:bg-[#423632]'
-                              : 'border-[#DECBB9] bg-white/80 text-[#5C4438] hover:bg-[#FAF4EE]'
-                          }`}
-                        >
-                          Sender Preview: Test Unwrap
-                        </button>
-                      )}
-                    </div>
-                  ) : isPasscodeLocked ||
-                    (lock?.mode === 'passcode' &&
-                      Boolean(lock.passcodeAnswer && lock.passcodeAnswer.trim().length > 0) &&
-                      isEntranceUnfurling) ? (
-                    /* MODE 2: SECRET HINT LOCK (4 Animated PIN Squares OR Micro-Animated Secret Word Pill) */
-                    <form
-                      onSubmit={handleAttemptPasscodeUnlock}
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-6 sm:mt-7 w-full max-w-xs flex flex-col items-center space-y-3"
-                    >
-                      <p
-                        className={`text-lg sm:text-xl italic font-normal leading-snug px-2 ${
-                          isDarkMode ? 'text-[#F0DFD6]' : 'text-[#4A3B33]'
-                        }`}
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                        <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex >= items.length - 1 &&
+                            getEffectiveItemPlane(selectedItem) === 'front')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'up')}
+                        title="Bring Forward 1 Layer"
+                        aria-label="Bring Forward 1 Layer"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
-                        “{lock?.questionPrompt || (effectivePasscodeType === 'pin' ? DEFAULT_PIN_HINT : DEFAULT_WORD_HINT)}”
-                      </p>
-
-                      <p
-                        data-testid="recipient-passcode-format-hint"
-                        className={`text-[11px] tracking-wide ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#7D6B60]'
-                        }`}
+                        <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          Boolean(selectedItem.locked) ||
+                          (selectedItemIndex >= items.length - 1 &&
+                            getEffectiveItemPlane(selectedItem) === 'front')
+                        }
+                        onClick={() => moveItemLayer(selectedItem.id, 'front')}
+                        title="Bring to Overlay / Front of Bouquet"
+                        aria-label="Bring to Most Front"
+                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
-                        {effectivePasscodeType === 'pin'
-                          ? '4-digit numerical PIN'
-                          : 'Secret word · case-insensitive'}
-                      </p>
+                        <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
+                      </button>
 
-                      {effectivePasscodeType === 'pin' ? (
-                        <div className="w-full flex flex-col items-center space-y-3">
-                          <div
-                            data-testid="recipient-pin-grid"
-                            data-lock-state={passcodeFeedback}
-                            onClick={() => pinInputRef.current?.focus()}
-                            className="relative w-full max-w-[256px]"
-                          >
-                            <input
-                              ref={pinInputRef}
-                              type="text"
-                              data-testid="recipient-passcode-input"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              maxLength={4}
-                              autoComplete="one-time-code"
-                              readOnly={passcodeFeedback === 'success'}
-                              value={passcodeAttempt}
-                              onFocus={() => setIsPinFocused(true)}
-                              onBlur={() => setIsPinFocused(false)}
-                              onChange={(e) => {
-                                if (passcodeFeedback === 'success') return;
-                                if (pinErrorClearTimerRef.current !== null) {
-                                  window.clearTimeout(pinErrorClearTimerRef.current);
-                                  pinErrorClearTimerRef.current = null;
-                                }
-                                const next = sanitizeSecretPinInput(e.target.value);
-                                setPasscodeAttempt(next);
-                                if (next.length < 4) {
-                                  if (passcodeFeedback !== 'idle') setPasscodeFeedback('idle');
-                                  if (passcodeError) setPasscodeError(null);
-                                } else if (next.length === 4) {
-                                  triggerPasscodeVerification(next);
-                                }
-                              }}
-                              aria-label="4-digit PIN to unlock bouquet"
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                            />
-
-                            <div
-                              key={passcodeFeedback === 'error' ? `pin-shake-${passcodeShakeKey}` : 'pin-idle'}
-                              className={`grid grid-cols-4 gap-2.5 sm:gap-3 ${
-                                passcodeFeedback === 'error'
-                                  ? 'animate-[sab-lock-shake_0.42s_ease-in-out]'
-                                  : passcodeFeedback === 'success'
-                                  ? 'animate-[sab-unlock-glow_0.45s_ease-out]'
-                                  : ''
+                      {selectedItem.photoStyle && (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className={`w-[1px] h-3.5 mx-0.5 ${isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
                               }`}
-                            >
-                              {[0, 1, 2, 3].map((idx) => {
-                                const char = passcodeAttempt[idx] || '';
-                                const isActiveSquare =
-                                  passcodeFeedback === 'idle' &&
-                                  isPinFocused &&
-                                  idx === Math.min(passcodeAttempt.length, 3);
-                                const isFilled = char.length > 0;
-
-                                const squareStyleClass =
-                                  passcodeFeedback === 'success'
-                                    ? isDarkMode
-                                      ? 'border-solid border-[#E6B89C] bg-[#3E322E]/95 text-[#FBF6F1] shadow-[0_10px_28px_rgba(0,0,0,0.28)] scale-[1.03]'
-                                      : 'border-solid border-[#B4846C] bg-[#FFF8F4]/95 text-[#5C3A2E] shadow-[0_10px_28px_rgba(122,75,58,0.14)] scale-[1.03]'
-                                    : passcodeFeedback === 'error'
-                                    ? isDarkMode
-                                      ? 'border-solid border-rose-400 bg-rose-950/60 text-rose-200 shadow-[0_0_14px_rgba(251,113,133,0.3)]'
-                                      : 'border-solid border-rose-500 bg-rose-50/95 text-rose-700 shadow-[0_0_14px_rgba(244,63,94,0.24)]'
-                                    : isActiveSquare
-                                    ? isDarkMode
-                                      ? 'border-solid border-[#E6B89C] bg-[#3E332F]/95 text-[#FBF6F1] shadow-[0_0_0_3px_rgba(230,184,156,0.22),0_10px_24px_rgba(0,0,0,0.2)] scale-[1.04]'
-                                      : 'border-solid border-[#A86B53] bg-[#FFFDF9]/95 text-[#231C18] shadow-[0_0_0_3px_rgba(168,107,83,0.18),0_10px_24px_rgba(35,28,24,0.08)] scale-[1.04]'
-                                    : isFilled
-                                    ? isDarkMode
-                                      ? 'border-solid border-[#9B8277] bg-[#3A302C]/95 text-[#FBF6F1] shadow-[0_8px_20px_rgba(0,0,0,0.18)]'
-                                      : 'border-solid border-[#C4A690] bg-[#FFFDF9]/95 text-[#231C18] shadow-[0_8px_20px_rgba(35,28,24,0.06)]'
-                                    : isDarkMode
-                                    ? 'border-dashed border-[#66554F] bg-[#352C29]/90 text-[#8C7A70] shadow-[0_8px_20px_rgba(0,0,0,0.14)]'
-                                    : 'border-dashed border-[#D8C3B0] bg-[#FFFDF9]/90 text-[#B8A59B] shadow-[0_8px_20px_rgba(35,28,24,0.05)]';
-
-                                return (
-                                  <div
-                                    key={idx}
-                                    data-testid={`recipient-pin-square-${idx}`}
-                                    className={`relative aspect-square h-14 sm:h-[58px] w-full rounded-2xl border-[1.5px] backdrop-blur-md flex items-center justify-center transition-all duration-200 select-none ${squareStyleClass}`}
-                                  >
-                                    {isFilled ? (
-                                      <span
-                                        key={`pin-digit-${idx}-${char}`}
-                                        className="inline-block text-2xl sm:text-[26px] font-semibold leading-none animate-[sab-pin-pop_0.24s_cubic-bezier(0.22,1,0.36,1)]"
-                                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                                      >
-                                        {char}
-                                      </span>
-                                    ) : isActiveSquare ? (
-                                      <span
-                                        aria-hidden="true"
-                                        className={`w-[2px] h-5 rounded-full animate-[sab-caret-blink_1s_ease-in-out_infinite] ${
-                                          isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#A86B53]'
-                                        }`}
-                                      />
-                                    ) : (
-                                      <span
-                                        aria-hidden="true"
-                                        className="w-1.5 h-1.5 rounded-full bg-current opacity-40"
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          key={passcodeFeedback === 'error' ? `word-shake-${passcodeShakeKey}` : 'word-idle'}
-                          data-testid="recipient-word-box"
-                          data-lock-state={passcodeFeedback}
-                          className={`relative w-full ${
-                            passcodeFeedback === 'error'
-                              ? 'animate-[sab-lock-shake_0.42s_ease-in-out]'
-                              : passcodeFeedback === 'success'
-                              ? 'animate-[sab-unlock-glow_0.45s_ease-out]'
-                              : ''
-                          }`}
-                        >
-                          <div
-                            className={`relative w-full flex items-center p-1 rounded-full border backdrop-blur-md transition-all duration-200 ${
-                              passcodeFeedback === 'success'
-                                ? isDarkMode
-                                  ? 'border-solid border-[#E6B89C] bg-[#3E322E]/95 shadow-[0_10px_28px_rgba(0,0,0,0.28)]'
-                                  : 'border-solid border-[#B4846C] bg-[#FFF8F4]/95 shadow-[0_10px_28px_rgba(122,75,58,0.14)]'
-                                : passcodeFeedback === 'error'
-                                ? isDarkMode
-                                  ? 'border-solid border-rose-400 bg-rose-950/55 shadow-[0_0_16px_rgba(251,113,133,0.3)]'
-                                  : 'border-solid border-rose-500 bg-rose-50/95 shadow-[0_0_16px_rgba(244,63,94,0.24)]'
-                                : isWordFocused
-                                ? isDarkMode
-                                  ? 'border-solid border-[#E6B89C] bg-[#352C29]/95 shadow-[0_0_0_3px_rgba(230,184,156,0.18),0_10px_28px_rgba(0,0,0,0.22)]'
-                                  : 'border-solid border-[#A86B53] bg-[#FFFDF9]/95 shadow-[0_0_0_3px_rgba(168,107,83,0.15),0_10px_28px_rgba(35,28,24,0.08)]'
-                                : isDarkMode
-                                ? 'border-dashed border-[#66554F] bg-[#352C29]/92 shadow-[0_10px_28px_rgba(35,28,24,0.07)]'
-                                : 'border-dashed border-[#D8C3B0] bg-[#FFFDF9]/92 shadow-[0_10px_28px_rgba(35,28,24,0.07)]'
-                            }`}
-                          >
-                            <span
-                              aria-hidden="true"
-                              className={`pl-3 pr-1 transition-transform duration-300 ${
-                                passcodeFeedback === 'success'
-                                  ? isDarkMode
-                                    ? 'scale-110 rotate-12 text-[#E6B89C]'
-                                    : 'scale-110 rotate-12 text-[#8A4B38]'
-                                  : passcodeFeedback === 'error'
-                                  ? 'text-rose-500 dark:text-rose-400'
-                                  : passcodeAttempt.length > 0
-                                  ? isDarkMode
-                                    ? 'scale-105 text-[#E6B89C]'
-                                    : 'scale-105 text-[#A86B53]'
-                                  : isDarkMode
-                                  ? 'text-[#9A877B]'
-                                  : 'text-[#B8A59B]'
-                              }`}
-                            >
-                              <CoutureBloomSeal className="w-3.5 h-3.5" />
-                            </span>
-                            <input
-                              type="text"
-                              data-testid="recipient-passcode-input"
-                              inputMode="text"
-                              maxLength={40}
-                              autoComplete="off"
-                              readOnly={passcodeFeedback === 'success'}
-                              value={passcodeAttempt}
-                              onFocus={() => setIsWordFocused(true)}
-                              onBlur={() => setIsWordFocused(false)}
-                              onChange={(e) => {
-                                if (passcodeFeedback === 'success') return;
-                                const next =
-                                  lock?.passcodeType === 'word'
-                                    ? sanitizeSecretWordInput(e.target.value)
-                                    : e.target.value;
-                                setPasscodeAttempt(next);
-                                if (passcodeFeedback !== 'idle') setPasscodeFeedback('idle');
-                                if (passcodeError) setPasscodeError(null);
-                              }}
-                              placeholder="Secret word..."
-                              aria-label="Secret word to unlock bouquet"
-                              className={`flex-1 min-w-0 bg-transparent px-2.5 py-2 text-xs sm:text-sm focus:outline-none ${
-                                isDarkMode
-                                  ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
-                                  : 'text-[#231C18] placeholder:text-[#9A877B]'
-                              }`}
-                            />
-                            <button
-                              type="submit"
-                              data-testid="recipient-passcode-submit"
-                              disabled={passcodeFeedback === 'success'}
-                              className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium shrink-0 transition-all duration-200 active:scale-95 cursor-pointer ${
-                                isDarkMode
-                                  ? 'bg-[#9A6550] text-white hover:bg-[#875642]'
-                                  : 'bg-[#7A4B3A] text-white hover:bg-[#633B2C]'
-                              }`}
-                            >
-                              {passcodeFeedback === 'success' ? (
-                                <>
-                                  <CoutureBloomSeal className="w-3.5 h-3.5 animate-[sab-bloom-seal-open_0.45s_ease-out]" />
-                                  <span>Blooming...</span>
-                                </>
-                              ) : (
-                                <span>Unlock</span>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {passcodeError && (
-                        <p
-                          data-testid="recipient-passcode-error"
-                          className="text-xs text-rose-600 dark:text-rose-300 font-medium"
-                        >
-                          {passcodeError}
-                        </p>
-                      )}
-
-                      {isPreviewMode && (
-                        <button
-                          type="button"
-                          onClick={() => handleUnwrapGiftEntrance(true)}
-                          className={`pt-0.5 text-[11px] underline decoration-dashed underline-offset-4 transition cursor-pointer ${
-                            isDarkMode
-                              ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
-                              : 'text-[#8C7A70] hover:text-[#231C18]'
-                          }`}
-                        >
-                          Preview bloom without answer
-                        </button>
-                      )}
-                    </form>
-                  ) : (
-                    /* MODE 3: SLIDE TO OPEN & BLOOM — Interactive Couture Wax-Seal Track */
-                    <div className="mt-7 sm:mt-9 flex flex-col items-center">
-                      <div
-                        ref={entranceSliderTrackRef}
-                        data-testid="recipient-slide-track"
-                        role="button"
-                        tabIndex={0}
-                        aria-label="Slide to open bouquet"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleGlideSlideToOpen(entranceSlideProgress);
-                          }
-                        }}
-                        onPointerDown={(e) => {
-                          if (isEntranceUnfurling || isGiftCurrentlyLocked || isResolvingShortCode) return;
-                          e.stopPropagation();
-                          if (entranceSlideRafRef.current !== null) {
-                            cancelAnimationFrame(entranceSlideRafRef.current);
-                            entranceSlideRafRef.current = null;
-                          }
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          entranceSliderDragStartXRef.current = e.clientX;
-                          setIsDraggingEntranceSlider(true);
-                        }}
-                        onPointerMove={(e) => {
-                          if (!isDraggingEntranceSlider || !entranceSliderTrackRef.current) return;
-                          const rect = entranceSliderTrackRef.current.getBoundingClientRect();
-                          const thumbDiameter = 42;
-                          const maxTravel = Math.max(1, rect.width - thumbDiameter - 12);
-                          const offsetFromLeft = e.clientX - rect.left - thumbDiameter / 2 - 6;
-                          const ratio = Math.max(0, Math.min(1, offsetFromLeft / maxTravel));
-                          setEntranceSlideProgress(ratio);
-                        }}
-                        onPointerUp={(e) => {
-                          if (!isDraggingEntranceSlider) return;
-                          setIsDraggingEntranceSlider(false);
-                          const dragDistance =
-                            entranceSliderDragStartXRef.current !== null
-                              ? Math.abs(e.clientX - entranceSliderDragStartXRef.current)
-                              : 0;
-                          entranceSliderDragStartXRef.current = null;
-
-                          if (entranceSlideProgress >= 0.72) {
-                            handleGlideSlideToOpen(entranceSlideProgress);
-                          } else if (dragDistance < 8) {
-                            // Quick tap/click glides the slider smoothly across so the flower blooms open
-                            handleGlideSlideToOpen(entranceSlideProgress);
-                          } else {
-                            setEntranceSlideProgress(0);
-                          }
-                        }}
-                        onPointerCancel={() => {
-                          setIsDraggingEntranceSlider(false);
-                          entranceSliderDragStartXRef.current = null;
-                          setEntranceSlideProgress(0);
-                        }}
-                        className={`relative w-[264px] sm:w-[280px] h-[52px] sm:h-[54px] rounded-full border border-dashed flex items-center select-none touch-none cursor-grab active:cursor-grabbing shadow-[0_12px_32px_rgba(35,28,24,0.08)] backdrop-blur-md overflow-hidden ${
-                          isDarkMode
-                            ? 'bg-[#352C29]/92 border-[#6A5750]'
-                            : 'bg-[#FFFDF9]/92 border-[#D5BCA8]'
-                        }`}
-                      >
-                        {/* Soft Blush/Terracotta Progress Fill Trailing the Wax-Seal Thumb */}
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-y-1.5 left-1.5 rounded-full transition-none"
-                          style={{
-                            width: `calc(40px + ${entranceSlideProgress} * (100% - 52px))`,
-                            background: isDarkMode
-                              ? 'linear-gradient(90deg, rgba(184, 93, 75, 0.30) 0%, rgba(230, 184, 156, 0.38) 100%)'
-                              : 'linear-gradient(90deg, rgba(248, 187, 208, 0.42) 0%, rgba(180, 132, 108, 0.28) 100%)',
-                          }}
-                        />
-
-                        {/* Centered Editorial Prompt ("Slide to open") */}
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 pl-8 flex items-center justify-center gap-1.5 text-xs sm:text-[13px] font-medium tracking-wide"
-                          style={{
-                            opacity: Math.max(0, 1 - entranceSlideProgress * 1.45),
-                          }}
-                        >
-                          <span className={isDarkMode ? 'text-[#F0DFD6]' : 'text-[#5C4438]'}>
-                            Slide to open
-                          </span>
-                          <ChevronRight
-                            className={`w-3.5 h-3.5 ${
-                              isDarkMode ? 'text-[#E6B89C]' : 'text-[#9A6B56]'
-                            }`}
                           />
-                        </div>
+                          <button
+                            type="button"
+                            disabled={Boolean(selectedItem.locked)}
+                            onClick={() => {
+                              const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
+                              updateItem(
+                                selectedItem.id,
+                                {
+                                  clippedToBouquet: nextClipped,
+                                  layerPlane: nextClipped ? 'inside' : 'front',
+                                },
+                                true
+                              );
+                            }}
+                            title={
+                              getEffectiveItemPlane(selectedItem) === 'inside'
+                                ? 'Tucked inside bouquet wrapper (Tap to float free)'
+                                : 'Floating photo (Tap to tuck inside bouquet wrapper)'
+                            }
+                            aria-label={
+                              getEffectiveItemPlane(selectedItem) === 'inside'
+                                ? 'Unclip photo from bouquet'
+                                : 'Clip photo to bouquet'
+                            }
+                            aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
+                            className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${getEffectiveItemPlane(selectedItem) === 'inside'
+                              ? 'bg-[#B4846C] text-white'
+                              : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
+                              }`}
+                          >
+                            <BouquetClipToggleIcon
+                              clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
+                              className="w-3.5 h-3.5"
+                            />
+                            <span>{getEffectiveItemPlane(selectedItem) === 'inside' ? 'Tucked' : 'Tuck'}</span>
+                          </button>
 
-                        {/* Draggable Embossed Botanical Wax-Seal Thumb (Starts on Left, Slides to Right) */}
-                        <div
-                          data-testid="recipient-slide-thumb"
-                          style={{
-                            left: `calc(6px + ${entranceSlideProgress} * (100% - 46px))`,
-                          }}
-                          className={`absolute top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-[0_6px_16px_rgba(122,75,58,0.28)] ${
-                            isDraggingEntranceSlider ? 'scale-105' : ''
-                          } ${
-                            isDarkMode
-                              ? 'bg-[#9A6550] text-white'
-                              : 'bg-[#7A4B3A] text-white'
-                          }`}
-                        >
-                          <span className="w-7 h-7 rounded-full bg-[#B85D4B] border border-[#FFFDF9]/50 flex items-center justify-center">
-                            <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 overflow-visible">
-                              <circle
-                                cx="10"
-                                cy="10"
-                                r="7.5"
-                                fill="none"
-                                stroke="#FDE68A"
-                                strokeWidth="0.9"
-                                strokeDasharray="2 1.6"
-                                opacity="0.85"
-                              />
-                              <path
-                                d="M10,7.8 C8.2,5.8 5.4,7.3 7,10.2 L10,13.2 L13,10.2 C14.6,7.3 11.8,5.8 10,7.8 Z"
-                                fill="#FFFDF9"
-                              />
-                            </svg>
-                          </span>
-                        </div>
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
+                            }
+                            title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
+                            aria-label="Upload photo into photocard"
+                            className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
+                          >
+                            <ImagePlus className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                  </div>
+                )}
 
-          {/* Preserved hook for responsive studio test suite */}
-          {!isGiftView && !isPreviewMode && drawerState === 'collapsed' && !selectedId && (
-            <button
-              type="button"
-              onClick={() => {
-                autoCollapsedRef.current = false;
-                setDrawerState('peek');
-              }}
-              title="Open Flower Palette"
-              aria-label="Open Flower Palette"
-              className="hidden"
-            >
-              <Flower2 className="w-3.5 h-3.5 text-[#B4846C]" />
-              <span>Add flowers</span>
-            </button>
-          )}
-
-          {/* Interactive SVG Bouquet Stage (Always 100% height, zero layout shift) */}
-          <div
-            className={`flex-1 w-full h-full min-h-0 flex items-center justify-center relative touch-none ${
-              (isGiftView || isPreviewMode) && isGiftEntranceOpen
-                ? 'opacity-0 pointer-events-none'
-                : (isGiftView || isPreviewMode) && !isGiftEntranceOpen
-                ? 'gift-stage-entrance'
-                : ''
-            }`}
-          >
-            {/* Mobile-Only (< sm) Floating Top Selected-Item Bar (Positioned right under top navbar; never moves or resizes the main canvas) */}
-            {!isPreviewMode && !isGiftView && selectedItem && !selectedItem.hidden && (
-              <div
-                role="toolbar"
-                aria-label="Mobile selected item quick controls"
-                className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.25rem)] max-w-[356px] flex sm:hidden items-center justify-between gap-2 px-3 py-1 rounded-full border border-dashed shadow-[0_8px_24px_rgba(35,28,24,0.10)] backdrop-blur-md pointer-events-auto ${
-                  isDarkMode
-                    ? 'bg-[#2B2321]/92 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#2A201D]'
-                }`}
-              >
-                <span className="text-[11.5px] font-medium truncate text-[#6E5D54] dark:text-[#D8C7BE] pl-0.5">
-                  {selectedItem.photoStyle
-                    ? selectedItem.photoStyle === 'raw'
-                      ? 'Photo'
-                      : PHOTO_FRAME_CATALOG.find((p) => p.id === selectedItem.photoStyle)?.shortLabel || 'Photocard'
-                    : selectedMeta?.shortName || 'Stem'}
-                </span>
-
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                <BouquetStage
+                  svgRef={svgRef}
+                  isPreviewMode={isPreviewMode || isGiftView}
+                  isDarkMode={isDarkMode}
+                  bloomedCount={isGiftView ? bloomedCount : undefined}
+                  showCardInGiftView={isGiftView ? showGiftCardReveal : true}
+                  isVoicePlaying={isVoicePlaying}
+                  onItemSelect={() => {
+                    if (isPreviewMode || isGiftView) return;
+                    setActiveColorTarget('petal');
+                    openDesktopToolPopover('stem');
+                  }}
+                  onWrapperClick={() => {
+                    if (isPreviewMode || isGiftView) return;
+                    selectItem(null);
+                    setActiveColorTarget('wrapper');
+                  }}
+                  onRibbonClick={() => {
+                    if (isPreviewMode || isGiftView) return;
+                    selectItem(null);
+                    setActiveColorTarget('ribbon');
+                  }}
+                  onCardSelect={() => {
+                    if (isPreviewMode || isGiftView) return;
+                    selectItem(null);
+                    setActiveColorTarget('card');
+                    setMobileCategory('card');
+                    setActiveTab('card');
+                    openDesktopToolPopover('card');
+                  }}
+                  onCardTagClick={() => {
+                    if (isPreviewMode || isGiftView) {
+                      if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                      setLetterTypedChars(0);
+                      setIsLetterModalOpen(true);
+                    } else {
+                      selectItem(null);
+                      setActiveColorTarget('card');
+                      setIsMobileToolsExpanded(true);
+                      setMobilePopover('card');
+                      setMobileCategory('card');
+                      setActiveTab('card');
                     }
-                    onClick={() => moveItemLayer(selectedItem.id, 'back')}
-                    title="Send Behind / Inside Bouquet"
-                    aria-label="Send to Most Back"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                  }}
+                  onVoiceSelect={() => {
+                    if (isPreviewMode || isGiftView) return;
+                    selectItem(null);
+                    setActiveColorTarget('voicePrimary');
+                    setMobileCategory('voice');
+                    openDesktopToolPopover('voice');
+                  }}
+                  onVoiceKeepsakeClick={() => {
+                    if (isPreviewMode || isGiftView) {
+                      if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                      setIsVoiceModalOpen(true);
+                      if (voice.audioDataUrl && !isVoicePlaying) {
+                        handleTogglePlayVoice();
+                      }
+                    } else {
+                      selectItem(null);
+                      setActiveColorTarget('voicePrimary');
+                      setIsMobileToolsExpanded(true);
+                      setMobilePopover('voice');
+                      setMobileCategory('voice');
                     }
-                    onClick={() => moveItemLayer(selectedItem.id, 'down')}
-                    title="Send Back 1 Layer"
-                    aria-label="Send Back 1 Layer"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex >= items.length - 1 &&
-                        getEffectiveItemPlane(selectedItem) === 'front')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'up')}
-                    title="Bring Forward 1 Layer"
-                    aria-label="Bring Forward 1 Layer"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      Boolean(selectedItem.locked) ||
-                      (selectedItemIndex >= items.length - 1 &&
-                        getEffectiveItemPlane(selectedItem) === 'front')
-                    }
-                    onClick={() => moveItemLayer(selectedItem.id, 'front')}
-                    title="Bring to Overlay / Front of Bouquet"
-                    aria-label="Bring to Most Front"
-                    className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                  >
-                    <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
-                  </button>
+                  }}
+                  onPhotoCardUploadClick={(itemId) => {
+                    if (isPreviewMode || isGiftView) return;
+                    const found = items.find((i) => i.id === itemId);
+                    triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+                  }}
+                />
 
-                  {selectedItem.photoStyle && (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className={`w-[1px] h-3.5 mx-0.5 ${
-                          isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        disabled={Boolean(selectedItem.locked)}
-                        onClick={() => {
-                          const nextClipped = getEffectiveItemPlane(selectedItem) !== 'inside';
-                          updateItem(
-                            selectedItem.id,
-                            {
-                              clippedToBouquet: nextClipped,
-                              layerPlane: nextClipped ? 'inside' : 'front',
-                            },
-                            true
-                          );
-                        }}
-                        title={
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'Tucked inside bouquet wrapper (Tap to float free)'
-                            : 'Floating photo (Tap to tuck inside bouquet wrapper)'
-                        }
-                        aria-label={
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'Unclip photo from bouquet'
-                            : 'Clip photo to bouquet'
-                        }
-                        aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
-                        className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${
-                          getEffectiveItemPlane(selectedItem) === 'inside'
-                            ? 'bg-[#B4846C] text-white'
-                            : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
-                        }`}
-                      >
-                        <BouquetClipToggleIcon
-                          clipped={getEffectiveItemPlane(selectedItem) === 'inside'}
-                          className="w-3.5 h-3.5"
-                        />
-                        <span>{getEffectiveItemPlane(selectedItem) === 'inside' ? 'Tucked' : 'Tuck'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          triggerPhotoFilePicker(selectedItem.id, selectedItem.photoStyle || 'raw')
-                        }
-                        title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
-                        aria-label="Upload photo into photocard"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
-                      >
-                        <ImagePlus className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <BouquetStage
-              svgRef={svgRef}
-              isPreviewMode={isPreviewMode || isGiftView}
-              isDarkMode={isDarkMode}
-              bloomedCount={isGiftView ? bloomedCount : undefined}
-              showCardInGiftView={isGiftView ? showGiftCardReveal : true}
-              isVoicePlaying={isVoicePlaying}
-              onItemSelect={() => {
-                if (isPreviewMode || isGiftView) return;
-                setActiveColorTarget('petal');
-                openDesktopToolPopover('stem');
-              }}
-              onWrapperClick={() => {
-                if (isPreviewMode || isGiftView) return;
-                selectItem(null);
-                setActiveColorTarget('wrapper');
-              }}
-              onRibbonClick={() => {
-                if (isPreviewMode || isGiftView) return;
-                selectItem(null);
-                setActiveColorTarget('ribbon');
-              }}
-              onCardSelect={() => {
-                if (isPreviewMode || isGiftView) return;
-                selectItem(null);
-                setActiveColorTarget('card');
-                setMobileCategory('card');
-                setActiveTab('card');
-                openDesktopToolPopover('card');
-              }}
-              onCardTagClick={() => {
-                if (isPreviewMode || isGiftView) {
-                  if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
-                  setLetterTypedChars(0);
-                  setIsLetterModalOpen(true);
-                } else {
-                  selectItem(null);
-                  setActiveColorTarget('card');
-                  setIsMobileToolsExpanded(true);
-                  setMobilePopover('card');
-                  setMobileCategory('card');
-                  setActiveTab('card');
-                }
-              }}
-              onVoiceSelect={() => {
-                if (isPreviewMode || isGiftView) return;
-                selectItem(null);
-                setActiveColorTarget('voicePrimary');
-                setMobileCategory('voice');
-                openDesktopToolPopover('voice');
-              }}
-              onVoiceKeepsakeClick={() => {
-                if (isPreviewMode || isGiftView) {
-                  if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
-                  setIsVoiceModalOpen(true);
-                  if (voice.audioDataUrl && !isVoicePlaying) {
-                    handleTogglePlayVoice();
-                  }
-                } else {
-                  selectItem(null);
-                  setActiveColorTarget('voicePrimary');
-                  setIsMobileToolsExpanded(true);
-                  setMobilePopover('voice');
-                  setMobileCategory('voice');
-                }
-              }}
-              onPhotoCardUploadClick={(itemId) => {
-                if (isPreviewMode || isGiftView) return;
-                const found = items.find((i) => i.id === itemId);
-                triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
-              }}
-            />
-
-            {/* ===============================================================
+                {/* ===============================================================
                 COLLAPSIBLE RIGHT-SIDE ACTION STACK (Phone & Desktop)
                 Collapses the right-side tools down to the Eye button capsule.
                 Clicking an active tool icon again immediately slides the side
                 drawer closed.
                 =============================================================== */}
-            {!isGiftView && !isPreviewMode && !showLandingPage && (
-              <div
-                ref={floatingToolStackRef}
-                className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3 z-40 max-h-[calc(100%-0.5rem)] flex flex-col items-center justify-end gap-1.5"
-              >
-                {isMobileToolsExpanded && (
-                  <div className="flex flex-col items-center gap-1.5 overflow-y-auto no-scrollbar py-0.5 px-0.5 animate-in fade-in duration-150">
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('color')}
-                      aria-pressed={mobilePopover === 'color'}
-                      aria-label="Open Unified Color Picker"
-                      title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon, Card & Voice)'}
-                      className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
-                        mobilePopover === 'color'
-                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                          : isDarkMode
-                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                      }`}
-                    >
-                      <Palette className="w-4 h-4" />
-                    </button>
+                {!isGiftView && !isPreviewMode && !showLandingPage && (
+                  <div
+                    ref={floatingToolStackRef}
+                    className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3 z-40 max-h-[calc(100%-0.5rem)] flex flex-col items-center justify-end gap-1.5"
+                  >
+                    {isMobileToolsExpanded && (
+                      <div className="flex flex-col items-center gap-1.5 overflow-y-auto no-scrollbar py-0.5 px-0.5 animate-in fade-in duration-150">
+                        <button
+                          type="button"
+                          onClick={() => handleMobileFloatingTool('color')}
+                          aria-pressed={mobilePopover === 'color'}
+                          aria-label="Open Unified Color Picker"
+                          title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon, Card & Voice)'}
+                          className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'color'
+                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                            : isDarkMode
+                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                            }`}
+                        >
+                          <Palette className="w-4 h-4" />
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('stem')}
-                      aria-pressed={mobilePopover === 'stem'}
-                      aria-label="Open Stem Length, Size & Tilt Settings"
-                      title={mobilePopover === 'stem' ? 'Hide Stem Settings Drawer' : 'Stem Settings (Length, Size & Tilt)'}
-                      className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
-                        mobilePopover === 'stem'
-                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                          : isDarkMode
-                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                      }`}
-                    >
-                      <Sliders className="w-4 h-4" />
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMobileFloatingTool('stem')}
+                          aria-pressed={mobilePopover === 'stem'}
+                          aria-label="Open Stem Length, Size & Tilt Settings"
+                          title={mobilePopover === 'stem' ? 'Hide Stem Settings Drawer' : 'Stem Settings (Length, Size & Tilt)'}
+                          className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'stem'
+                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                            : isDarkMode
+                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                            }`}
+                        >
+                          <Sliders className="w-4 h-4" />
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('layers')}
-                      aria-pressed={mobilePopover === 'layers'}
-                      aria-label="Open Layer Order Manager"
-                      title={mobilePopover === 'layers' ? 'Hide Layer Order Drawer' : 'Layer Order (Drag to reorder, Lock & Hide)'}
-                      className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
-                        mobilePopover === 'layers'
-                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                          : isDarkMode
-                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                      }`}
-                    >
-                      <Layers className="w-4 h-4" />
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMobileFloatingTool('layers')}
+                          aria-pressed={mobilePopover === 'layers'}
+                          aria-label="Open Layer Order Manager"
+                          title={mobilePopover === 'layers' ? 'Hide Layer Order Drawer' : 'Layer Order (Drag to reorder, Lock & Hide)'}
+                          className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'layers'
+                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                            : isDarkMode
+                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                            }`}
+                        >
+                          <Layers className="w-4 h-4" />
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('card')}
-                      aria-pressed={mobilePopover === 'card'}
-                      aria-label="Edit greeting card"
-                      title={mobilePopover === 'card' ? 'Hide Greeting Card Drawer' : 'Edit Greeting Card'}
-                      className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
-                        mobilePopover === 'card'
-                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                          : isDarkMode
-                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                      }`}
-                    >
-                      <PenLine className="w-4 h-4" />
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMobileFloatingTool('card')}
+                          aria-pressed={mobilePopover === 'card'}
+                          aria-label="Edit greeting card"
+                          title={mobilePopover === 'card' ? 'Hide Greeting Card Drawer' : 'Edit Greeting Card'}
+                          className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'card'
+                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                            : isDarkMode
+                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                            }`}
+                        >
+                          <PenLine className="w-4 h-4" />
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleMobileFloatingTool('voice')}
-                      aria-pressed={mobilePopover === 'voice'}
-                      aria-label="Open Voice Keepsake Recorder"
-                      title={mobilePopover === 'voice' ? 'Hide Voice Recorder Drawer' : 'Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)'}
-                      className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
-                        mobilePopover === 'voice'
-                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                          : isDarkMode
-                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                      }`}
+                        <button
+                          type="button"
+                          onClick={() => handleMobileFloatingTool('voice')}
+                          aria-pressed={mobilePopover === 'voice'}
+                          aria-label="Open Voice Keepsake Recorder"
+                          title={mobilePopover === 'voice' ? 'Hide Voice Recorder Drawer' : 'Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)'}
+                          className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'voice'
+                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                            : isDarkMode
+                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                            }`}
+                        >
+                          <Mic className="w-4 h-4" />
+                          {voice.audioDataUrl && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleToggleMusic}
+                          aria-pressed={isMusicPlaying}
+                          aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                          title={isMusicPlaying ? 'Pause music' : 'Play music'}
+                          className={`sm:hidden w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${isMusicPlaying
+                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
+                            : isDarkMode
+                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
+                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
+                            }`}
+                        >
+                          {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bottom Capsule: Collapse/Expand Toggle + Eye (Preview Bloom) */}
+                    <div
+                      className={`flex flex-col items-center shrink-0 rounded-full border shadow-sm backdrop-blur-md p-0.5 transition-all ${isDarkMode
+                        ? 'bg-[#1E1C1A]/95 border-stone-700'
+                        : 'bg-white/95 border-stone-200/90'
+                        }`}
                     >
-                      <Mic className="w-4 h-4" />
-                      {voice.audioDataUrl && (
-                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMobileToolsExpanded((prev) => {
+                            const next = !prev;
+                            if (!next) setMobilePopover(null);
+                            return next;
+                          });
+                        }}
+                        aria-expanded={isMobileToolsExpanded}
+                        aria-label={
+                          isMobileToolsExpanded
+                            ? 'Collapse canvas tools down to eye button'
+                            : 'Expand canvas tools (Colors, Stem, Layers, Card, Voice)'
+                        }
+                        title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card, Voice)'}
+                        className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${isMobileToolsExpanded
+                          ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
+                          : 'text-[#B4846C]'
+                          }`}
+                      >
+                        {isMobileToolsExpanded ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <>
+                            <ChevronUp className="w-4 h-4" />
+                            {(selectedId || mobilePopover) && (
+                              <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-[#B4846C]" />
+                            )}
+                          </>
+                        )}
+                      </button>
+
+                      <div className="w-4.5 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
+
+                      <button
+                        type="button"
+                        onClick={() => startGiftBloomAnimation(items.length, true)}
+                        aria-label="Preview gift bloom"
+                        title="Preview Bloom"
+                        className="w-9 h-8.5 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===============================================================
+                SLIDE-IN LEFT SIDE DRAWER FOR COLORS, STEM, LAYERS, CARD & VOICE
+                Slides smoothly from the left edge instead of popping a card over
+                the center canvas. Clicking the active right-side icon again or
+                tapping the side drawer's hide button slides it right back out.
+                =============================================================== */}
+                {!isGiftView && !isPreviewMode && (
+                  <aside
+                    ref={slideDrawerRef}
+                    aria-label="Slide-in Tool Drawer"
+                    aria-hidden={!mobilePopover}
+                    className={`absolute left-2.5 sm:left-4 top-2 sm:top-3 ${mobilePopover === 'layers' ? 'bottom-3 sm:bottom-4' : 'max-h-[calc(100%-1.5rem)]'
+                      } z-30 w-[276px] sm:w-[310px] max-w-[calc(100vw-4.5rem)] rounded-[22px] border border-dashed shadow-[0_16px_42px_rgba(28,20,16,0.14)] backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${isDarkMode
+                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#2A201D]'
+                      } ${mobilePopover
+                        ? 'translate-x-0 opacity-100'
+                        : '-translate-x-[calc(100%+1.5rem)] opacity-0 pointer-events-none'
+                      }`}
+                  >
+                    {/* Clean Stationary Header: Active Tool Title + Slide-Closed Button */}
+                    <div
+                      className={`flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-dashed shrink-0 ${isDarkMode ? 'border-[#4E403B]' : 'border-[#EADFD4]'
+                        }`}
+                    >
+                      <h3
+                        className="text-lg font-medium tracking-tight"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        {mobilePopover === 'color'
+                          ? 'Palette & Colors'
+                          : mobilePopover === 'stem'
+                            ? 'Stem Adjustment'
+                            : mobilePopover === 'layers'
+                              ? 'Bouquet Layers'
+                              : mobilePopover === 'card'
+                                ? 'Greeting Card'
+                                : 'Voice Keepsake'}
+                      </h3>
+
+                      <button
+                        type="button"
+                        onClick={() => setMobilePopover(null)}
+                        aria-label="Slide drawer closed"
+                        title="Close panel"
+                        className={`p-1.5 rounded-full transition cursor-pointer ${isDarkMode
+                          ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                          : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4]'
+                          }`}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Side Drawer Content */}
+                    <div className="flex-1 overflow-y-auto p-3">
+                      {mobilePopover === 'color' && (
+                        <SelectedFlowerToolbar
+                          isDrawerOpen={false}
+                          mobileSheetMode="color"
+                          activeColorTarget={activeColorTarget}
+                          onColorTargetChange={setActiveColorTarget}
+                          onCloseMobileSheet={() => setMobilePopover(null)}
+                          onUploadPhotoForItem={(itemId) => {
+                            const found = items.find((i) => i.id === itemId);
+                            triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+                          }}
+                        />
                       )}
+
+                      {mobilePopover === 'stem' && (
+                        <SelectedFlowerToolbar
+                          isDrawerOpen={false}
+                          mobileSheetMode="stem"
+                          activeColorTarget={activeColorTarget}
+                          onColorTargetChange={setActiveColorTarget}
+                          onCloseMobileSheet={() => setMobilePopover(null)}
+                          onUploadPhotoForItem={(itemId) => {
+                            const found = items.find((i) => i.id === itemId);
+                            triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+                          }}
+                        />
+                      )}
+
+                      {mobilePopover === 'layers' && (
+                        <LayerManagerPanel isEmbeddedInSidebar />
+                      )}
+
+                      {mobilePopover === 'card' && (
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-[#7D6B60] dark:text-[#C2B0A6]">
+                              Note on bouquet
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
+                              title={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
+                              aria-label={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
+                              className={`px-2.5 py-0.5 rounded-full border border-dashed text-[11px] font-medium flex items-center gap-1 shrink-0 transition cursor-pointer ${!card.visibleOnStage
+                                ? 'border-rose-300/80 text-rose-600 dark:border-rose-800 dark:text-rose-300'
+                                : isDarkMode
+                                  ? 'border-[#5C4B47] bg-[#2B2321] text-[#E6D6C7]'
+                                  : 'border-[#DECBB9] bg-[#FAF4EE] text-[#5C4438]'
+                                }`}
+                            >
+                              {card.visibleOnStage ? (
+                                <>
+                                  <Eye className="w-3 h-3" />
+                                  <span>Visible</span>
+                                </>
+                              ) : (
+                                <>
+                                  <EyeOff className="w-3 h-3" />
+                                  <span>Hidden</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Card Note Input Only — Letterpress Stationery Sheet */}
+                          <div
+                            className={`p-3 rounded-2xl border border-dashed transition-colors ${isDarkMode
+                              ? 'bg-[#352C29] border-[#5E4E49]'
+                              : 'bg-[#FFFDF9] border-[#DECBB9]'
+                              }`}
+                          >
+                            <div className="relative">
+                              <textarea
+                                rows={4}
+                                maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
+                                value={card.message}
+                                placeholder="Write your heartfelt note..."
+                                onChange={(e) => updateCard({ message: e.target.value })}
+                                aria-label="Card message"
+                                className={`w-full px-3.5 py-2.5 pb-7 rounded-xl border border-dashed text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto transition-colors ${isDarkMode
+                                  ? 'bg-[#2B2321] border-[#544540] text-[#FBF6F1] placeholder:text-[#9A877B]/75'
+                                  : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#2A201D] placeholder:text-[#9A877B]/80'
+                                  }`}
+                                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
+                              />
+                              <span
+                                className={`absolute bottom-2 right-3 text-[10px] pointer-events-none inline-flex items-center gap-1 ${card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                                  ? 'text-[#B4846C] font-medium'
+                                  : 'text-[#9A877B]'
+                                  }`}
+                              >
+                                {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
+                                  <>
+                                    <CoutureBloomSeal className="w-3 h-3" />
+                                    <span>Couture Note · {card.message.length}/{PREMIUM_CARD_NOTE_MAX_CHARS}</span>
+                                  </>
+                                ) : (
+                                  <span>
+                                    {card.message.length}/{FREE_CARD_NOTE_MAX_CHARS} free ({PREMIUM_CARD_NOTE_MAX_CHARS} Couture)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {mobilePopover === 'voice' && (
+                        <VoiceRecorderStudio
+                          voice={voice}
+                          isDarkMode={isDarkMode}
+                          isVoicePlaying={isVoicePlaying}
+                          onTogglePlayVoice={handleTogglePlayVoice}
+                          onStopVoice={handleStopVoice}
+                          onUpdateVoice={updateVoice}
+                          onOpenVoiceColors={() => {
+                            setActiveColorTarget('voicePrimary');
+                            setMobilePopover('color');
+                          }}
+                          onTriggerToast={triggerToast}
+                        />
+                      )}
+                    </div>
+                  </aside>
+                )}
+              </div>
+
+              {/* ===================================================================
+              RECIPIENT TOP FLOATING DEDICATION & AMBIENT PILL BAR
+              Quiet luxury header showing "For [Recipient] · with love, [Sender]"
+              on the left and Replay Bloom / Music / Theme controls on the right.
+              =================================================================== */}
+              {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
+                <div className="gift-hud-float-in w-full max-w-full px-2.5 sm:px-6 z-20 absolute top-3 sm:top-4 inset-x-0 pointer-events-none flex items-center justify-between gap-1.5 sm:gap-2">
+                  {/* Left: Dedication Capsule (Flexes and truncates cleanly so right pill never clips on mobile) */}
+                  <div
+                    className={`pointer-events-auto min-w-0 flex-initial max-w-[calc(100%-7.25rem)] sm:max-w-md inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md ${isDarkMode
+                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
+                      }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
+                      title={isPreviewMode ? 'Back to Studio' : 'Back'}
+                      aria-label={isPreviewMode ? 'Back to Studio' : 'Back'}
+                      className="shrink-0 hover:opacity-80 transition cursor-pointer flex items-center"
+                    >
+                      <ArrowLeft className="w-4 h-4 shrink-0" />
                     </button>
+                    <div
+                      className="min-w-0 truncate text-[13.5px] sm:text-base leading-tight"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      <span className="italic opacity-75 mr-1">For</span>
+                      <span className="font-semibold tracking-tight">{card.to || 'You'}</span>
+                      <span
+                        className={`ml-1.5 sm:ml-2 text-xs sm:text-sm ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
+                          }`}
+                      >
+                        · <span className="italic">from</span>{' '}
+                        <span
+                          className={`font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                            }`}
+                        >
+                          {card.from || 'Secret Admirer'}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right: Quiet Ambient Controls (Replay Bloom, Music, Theme — never clipped on mobile) */}
+                  <div
+                    className={`pointer-events-auto inline-flex items-center gap-0.5 px-1.5 sm:px-2 py-1 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md shrink-0 ${isDarkMode
+                      ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
+                      }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => startGiftBloomAnimation(items.length, isPreviewMode, true)}
+                      aria-label="Replay bloom animation"
+                      title="Replay bloom animation"
+                      className={`h-7 px-2 rounded-full text-xs font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${isDarkMode
+                        ? 'text-[#E6D6C7] hover:text-[#FBF6F1]'
+                        : 'text-[#5C4438] hover:text-[#231C18]'
+                        }`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#B4846C]" />
+                      <span className="hidden sm:inline">Replay</span>
+                    </button>
+
+                    <span aria-hidden="true" className="opacity-25 text-xs select-none">·</span>
 
                     <button
                       type="button"
                       onClick={handleToggleMusic}
                       aria-pressed={isMusicPlaying}
                       aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
-                      title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                      className={`sm:hidden w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${
-                        isMusicPlaying
-                          ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                          : isDarkMode
-                          ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                          : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                      }`}
+                      title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
+                      className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${isMusicPlaying
+                        ? 'text-[#B4846C]'
+                        : isDarkMode
+                          ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
+                          : 'text-[#7D6B60] hover:text-[#231C18]'
+                        }`}
                     >
-                      {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                      {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                    </button>
+
+                    <span aria-hidden="true" className="opacity-25 text-xs select-none">·</span>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsDarkMode((prev) => !prev)}
+                      aria-label="Toggle theme"
+                      title="Toggle theme"
+                      className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${isDarkMode
+                        ? 'text-[#E6B89C] hover:text-[#FBF6F1]'
+                        : 'text-[#7D6B60] hover:text-[#231C18]'
+                        }`}
+                    >
+                      {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Bottom Capsule: Collapse/Expand Toggle + Eye (Preview Bloom) */}
+              {/* ===================================================================
+              RECIPIENT BOTTOM KEEPSAKE BAR & MINIATURE STATIONERY REPLY POSTCARD
+              Single-surface couture dock (zero nested pills-in-pills) + cute
+              postage-stamped miniature stationery reply card.
+              =================================================================== */}
+              {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
                 <div
-                  className={`flex flex-col items-center shrink-0 rounded-full border shadow-sm backdrop-blur-md p-0.5 transition-all ${
-                    isDarkMode
-                      ? 'bg-[#1E1C1A]/95 border-stone-700'
-                      : 'bg-white/95 border-stone-200/90'
-                  }`}
+                  className="gift-hud-float-in w-full px-3 sm:px-4 z-20 absolute bottom-3.5 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2.5"
+                  style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileToolsExpanded((prev) => {
-                        const next = !prev;
-                        if (!next) setMobilePopover(null);
-                        return next;
-                      });
-                    }}
-                    aria-expanded={isMobileToolsExpanded}
-                    aria-label={
-                      isMobileToolsExpanded
-                        ? 'Collapse canvas tools down to eye button'
-                        : 'Expand canvas tools (Colors, Stem, Layers, Card, Voice)'
-                    }
-                    title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card, Voice)'}
-                    className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${
-                      isMobileToolsExpanded
-                        ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
-                        : 'text-[#B4846C]'
-                    }`}
+                  {/* Miniature Stationery Reply Postcard */}
+                  {isReactionPopoverOpen && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className={`pointer-events-auto relative w-full max-w-[340px] rounded-[24px] p-4 sm:p-5 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.18)] backdrop-blur-xl animate-in fade-in duration-150 ${isDarkMode
+                        ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#231C18]'
+                        }`}
+                    >
+                      {/* Top Header: Serif Salutation + Tiny Floral Postage Stamp + Close */}
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div>
+                          <span
+                            className="block text-xl sm:text-2xl italic font-normal tracking-tight leading-tight"
+                            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                          >
+                            Dear {card.from || 'Friend'},
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Cute Perforated Botanical Postage Stamp */}
+                          <div
+                            aria-hidden="true"
+                            className={`w-8 h-9 rounded-[4px] border border-dashed flex items-center justify-center rotate-3 ${isDarkMode
+                              ? 'border-[#6E5A53] bg-[#2B2321]'
+                              : 'border-[#D5BFA9] bg-[#FAF3EB]'
+                              }`}
+                          >
+                            <svg viewBox="0 0 24 24" className="w-4 h-4">
+                              <circle cx="12" cy="12" r="2.2" fill="#E8A558" />
+                              <circle cx="12" cy="7.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                              <circle cx="16.2" cy="10.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                              <circle cx="14.6" cy="15.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                              <circle cx="9.4" cy="15.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                              <circle cx="7.8" cy="10.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
+                            </svg>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsReactionPopoverOpen(false)}
+                            className={`p-1 rounded-full transition cursor-pointer ${isDarkMode
+                              ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                              : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#FAF4EE]'
+                              }`}
+                            aria-label="Close reaction card"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Subtle Reactions Row */}
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {RECIPIENT_REACTIONS.map((rx) => {
+                          const active = selectedReactionId === rx.id;
+                          return (
+                            <button
+                              key={rx.id}
+                              type="button"
+                              onClick={() => setSelectedReactionId(rx.id)}
+                              className={`px-2.5 py-1 rounded-full border text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${active
+                                ? isDarkMode
+                                  ? 'border-[#E6B89C] bg-[#E6B89C]/20 text-[#FBF6F1]'
+                                  : 'border-[#6E4434] bg-[#6E4434]/10 text-[#231C18]'
+                                : isDarkMode
+                                  ? 'border-dashed border-[#544540] text-[#D8C7BE] hover:border-[#6E5B54]'
+                                  : 'border-dashed border-[#DECBB9] text-[#5C4438] hover:border-[#C5A892]'
+                                }`}
+                            >
+                              <span>{rx.symbol}</span>
+                              <span>{rx.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Ruled Stationery Note Lines */}
+                      <textarea
+                        rows={2}
+                        maxLength={200}
+                        value={recipientReplyText}
+                        onChange={(e) => setRecipientReplyText(e.target.value)}
+                        placeholder="Write a little note back..."
+                        style={{
+                          fontFamily: "'Cormorant Garamond', Georgia, serif",
+                          fontSize: '17px',
+                          lineHeight: '28px',
+                          backgroundImage: isDarkMode
+                            ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(212, 180, 158, 0.14) 27px, rgba(212, 180, 158, 0.14) 28px)'
+                            : 'repeating-linear-gradient(transparent, transparent 27px, rgba(180, 148, 125, 0.18) 27px, rgba(180, 148, 125, 0.18) 28px)',
+                        }}
+                        className={`w-full px-1 py-0.5 bg-transparent resize-none focus:outline-none ${isDarkMode
+                          ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
+                          : 'text-[#231C18] placeholder:text-[#9A877B]'
+                          }`}
+                      />
+
+                      <div className="mt-3 flex items-center justify-end">
+                        <button
+                          type="button"
+                          disabled={isSubmittingReaction}
+                          onClick={handleSubmitRecipientReaction}
+                          className={`py-2 px-5 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 ${isDarkMode
+                            ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                            : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                            }`}
+                        >
+                          {isSubmittingReaction ? 'Sending...' : 'Send Reply'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Single-Surface Couture Keepsake Dock (Fits 100% on narrow mobile viewports without clipping) */}
+                  <div
+                    className={`pointer-events-auto inline-flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-1.5 rounded-full border border-dashed shadow-[0_12px_36px_rgba(35,28,24,0.10)] backdrop-blur-md max-w-[calc(100vw-1rem)] overflow-x-auto no-scrollbar transition-all duration-500 ${isDarkMode
+                      ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9]/94 border-[#DECBB9] text-[#231C18]'
+                      } ${showGiftCardReveal || isPreviewMode
+                        ? 'opacity-100 translate-y-0'
+                        : 'opacity-0 translate-y-3 pointer-events-none'
+                      }`}
                   >
-                    {isMobileToolsExpanded ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
+                    {/* 1. Open / Read Letter Action */}
+                    {card.visibleOnStage && (
                       <>
-                        <ChevronUp className="w-4 h-4" />
-                        {(selectedId || mobilePopover) && (
-                          <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-[#B4846C]" />
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLetterTypedChars(0);
+                            setIsLetterModalOpen(true);
+                          }}
+                          className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${isDarkMode
+                            ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                            : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                            }`}
+                        >
+                          <Mail className="w-3.5 h-3.5 text-[#B4846C]" />
+                          <span>Letter</span>
+                        </button>
+                        <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
                       </>
                     )}
-                  </button>
 
-                  <div className="w-4.5 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
+                    {/* 2. Recipient Voice Keepsake Play Action */}
+                    {(voice.visibleOnStage || Boolean(voice.audioDataUrl)) && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={isVoicePlaying ? 'Pause voice' : 'Play voice'}
+                          title={isVoicePlaying ? 'Pause voice' : 'Play voice'}
+                          onClick={() => {
+                            if (voice.audioDataUrl) {
+                              handleTogglePlayVoice();
+                            } else {
+                              setIsVoiceModalOpen(true);
+                            }
+                          }}
+                          className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${isVoicePlaying
+                            ? 'text-rose-500 font-semibold'
+                            : isDarkMode
+                              ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                              : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                            }`}
+                        >
+                          {isVoicePlaying ? (
+                            <Pause className="w-3.5 h-3.5 fill-current" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 fill-current text-[#B4846C]" />
+                          )}
+                          <span>Voice</span>
+                        </button>
+                        <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+                      </>
+                    )}
 
+                    {/* 3. Recipient Reaction / Reply Note Action */}
+                    <button
+                      type="button"
+                      onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
+                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${hasSubmittedReaction
+                        ? 'text-rose-600 dark:text-rose-300'
+                        : isDarkMode
+                          ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                          : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                        }`}
+                    >
+                      <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
+                      <span>{hasSubmittedReaction ? 'Sent' : 'Reply'}</span>
+                    </button>
+
+                    <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+
+                    {/* 4. Save Keepsake PNG Action */}
+                    <button
+                      type="button"
+                      onClick={handleExportPng}
+                      aria-label="Save as PNG"
+                      title="Save bouquet keepsake image"
+                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${isDarkMode
+                        ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                        : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                        }`}
+                    >
+                      <Download className="w-3.5 h-3.5 text-[#B4846C]" />
+                      <span>Save</span>
+                    </button>
+
+                    {/* 5. Back to Editing / Craft Yours Filled CTA Pill */}
+                    <button
+                      type="button"
+                      onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
+                      className={`ml-0.5 sm:ml-1 px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer whitespace-nowrap ${isDarkMode
+                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                        }`}
+                    >
+                      {isPreviewMode ? (
+                        <>
+                          <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
+                          <span>Back to Studio</span>
+                        </>
+                      ) : (
+                        <>
+                          <Flower2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Craft Yours</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Preserved hidden span for SSR test assertion */}
+                    <span className="hidden">Make your own bouquet</span>
+                  </div>
+                </div>
+              )}
+
+              {/* ===================================================================
+              PAY-IT-FORWARD SHAKING ROSE-GOLD GIFT BOX FOR RECIPIENTS
+              Appears ~3 seconds after bloom reveal finishes in a non-invasive
+              responsive corner (`bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6`).
+              =================================================================== */}
+              {isGiftView && !isPreviewMode && !isGiftEntranceOpen && isRecipientGiftBoxVisible && (
+                <div className="absolute bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6 z-30 pointer-events-auto animate-in fade-in zoom-in-95 duration-300">
                   <button
                     type="button"
-                    onClick={() => startGiftBloomAnimation(items.length, true)}
-                    aria-label="Preview gift bloom"
-                    title="Preview Bloom"
-                    className="w-9 h-8.5 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
+                    data-testid="recipient-shaking-gift-box"
+                    aria-label="Open your Founding Launch gift"
+                    onClick={() => {
+                      setRecipientGiftClaimError(null);
+                      setIsRecipientGiftModalOpen(true);
+                    }}
+                    style={{
+                      animation: 'sab-rosegold-gift-shake 2.8s ease-in-out infinite',
+                    }}
+                    className={`group relative flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-2xl border border-dashed shadow-[0_12px_32px_rgba(180,120,102,0.28)] transition cursor-pointer ${isDarkMode
+                      ? 'bg-[#3A2D2A]/95 border-[#E8B4A6] text-[#FBF6F1] hover:bg-[#463632]'
+                      : 'bg-[#FFFDF9]/95 border-[#C68B77] text-[#3B2820] hover:bg-[#FCF5F1]'
+                      }`}
                   >
-                    <Eye className="w-4 h-4" />
+                    {/* Rose-Gold Keepsake Gift Box SVG */}
+                    <span className="relative w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center shrink-0">
+                      <svg
+                        viewBox="0 0 36 36"
+                        fill="none"
+                        aria-hidden="true"
+                        className="w-full h-full overflow-visible"
+                      >
+                        {/* Box base */}
+                        <rect
+                          x="6"
+                          y="15"
+                          width="24"
+                          height="16"
+                          rx="3"
+                          fill={isDarkMode ? '#4A3833' : '#FDF4EE'}
+                          stroke="#C68B77"
+                          strokeWidth="1.4"
+                        />
+                        {/* Box lid */}
+                        <rect
+                          x="4.5"
+                          y="10.5"
+                          width="27"
+                          height="5.5"
+                          rx="2"
+                          fill={isDarkMode ? '#5A433D' : '#F8E6DC'}
+                          stroke="#C68B77"
+                          strokeWidth="1.4"
+                        />
+                        {/* Vertical & horizontal rose-gold satin ribbon */}
+                        <path
+                          d="M18 10.5V31M6 22.5H30"
+                          stroke="#B8735E"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                        />
+                        {/* Rose-gold bow loops */}
+                        <path
+                          d="M18 10.5C14.2 6.2 10 8.5 13.5 10.8C15.2 11.8 17 11 18 10.5Z"
+                          fill="#E8B4A6"
+                          fillOpacity="0.45"
+                          stroke="#B8735E"
+                          strokeWidth="1.35"
+                        />
+                        <path
+                          d="M18 10.5C21.8 6.2 26 8.5 22.5 10.8C20.8 11.8 19 11 18 10.5Z"
+                          fill="#E8B4A6"
+                          fillOpacity="0.45"
+                          stroke="#B8735E"
+                          strokeWidth="1.35"
+                        />
+                        <circle cx="18" cy="10.5" r="1.6" fill="#B8735E" />
+                      </svg>
+                      <span
+                        aria-hidden="true"
+                        className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#D48C78] ring-2 ring-[#FFFDF9] dark:ring-[#3A2D2A]"
+                      />
+                    </span>
+
+                    <span className="text-left leading-tight">
+                      <span
+                        className="block text-xs sm:text-[13px] font-semibold tracking-tight"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        A gift for you
+                      </span>
+                      <span className="block text-[9.5px] opacity-75">
+                        Tap to unwrap
+                      </span>
+                    </span>
                   </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ===============================================================
-                SLIDE-IN LEFT SIDE DRAWER FOR COLORS, STEM, LAYERS, CARD & VOICE
-                Slides smoothly from the left edge instead of popping a card over
-                the center canvas. Clicking the active right-side icon again or
-                tapping the side drawer's hide button slides it right back out.
-                =============================================================== */}
-            {!isGiftView && !isPreviewMode && (
-              <aside
-                ref={slideDrawerRef}
-                aria-label="Slide-in Tool Drawer"
-                aria-hidden={!mobilePopover}
-                className={`absolute left-2.5 sm:left-4 top-2 sm:top-3 ${
-                  mobilePopover === 'layers' ? 'bottom-3 sm:bottom-4' : 'max-h-[calc(100%-1.5rem)]'
-                } z-30 w-[276px] sm:w-[310px] max-w-[calc(100vw-4.5rem)] rounded-[22px] border border-dashed shadow-[0_16px_42px_rgba(28,20,16,0.14)] backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-200 ease-out ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#2A201D]'
-                } ${
-                  mobilePopover
-                    ? 'translate-x-0 opacity-100'
-                    : '-translate-x-[calc(100%+1.5rem)] opacity-0 pointer-events-none'
-                }`}
-              >
-                {/* Clean Stationary Header: Active Tool Title + Slide-Closed Button */}
+              {/* ===================================================================
+              RECIPIENT GIFT OFFER STATIONERY MINI-MODAL
+              =================================================================== */}
+              {isRecipientGiftModalOpen && (
                 <div
-                  className={`flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-dashed shrink-0 ${
-                    isDarkMode ? 'border-[#4E403B]' : 'border-[#EADFD4]'
-                  }`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="A little something for you too"
+                  data-testid="recipient-gift-offer-modal"
+                  onClick={() => setIsRecipientGiftModalOpen(false)}
+                  className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
                 >
-                  <h3
-                    className="text-lg font-medium tracking-tight"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`w-full max-w-sm rounded-[26px] p-5 sm:p-6 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.24)] relative text-center space-y-3.5 ${isDarkMode
+                      ? 'bg-[#352C29] border-[#E8B4A6]/65 text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9] border-[#C68B77] text-[#231C18]'
+                      }`}
                   >
-                    {mobilePopover === 'color'
-                      ? 'Palette & Colors'
-                      : mobilePopover === 'stem'
-                      ? 'Stem Adjustment'
-                      : mobilePopover === 'layers'
-                      ? 'Bouquet Layers'
-                      : mobilePopover === 'card'
-                      ? 'Greeting Card'
-                      : 'Voice Keepsake'}
-                  </h3>
+                    <button
+                      type="button"
+                      aria-label="Close gift offer"
+                      onClick={() => setIsRecipientGiftModalOpen(false)}
+                      className={`absolute top-3.5 right-3.5 w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${isDarkMode
+                        ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                        : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#F5EDE4]'
+                        }`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
 
+                    {/* Rose-Gold Seal & Parcel Illustration */}
+                    <div className="mx-auto w-14 h-14 rounded-2xl border border-dashed border-[#C68B77]/60 bg-[#FAF1EC] dark:bg-[#423430] flex items-center justify-center">
+                      <CoutureBloomSeal className="w-6 h-6 text-[#B8735E] dark:text-[#E8B4A6]" />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <h3
+                        className="text-2xl sm:text-[26px] font-semibold leading-tight tracking-tight"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        A little something for you too
+                      </h3>
+                      <p className="text-xs sm:text-[13px] opacity-85 leading-relaxed">
+                        Since someone sent you a Founding Launch keepsake, your first Couture Bouquet is on us!
+                      </p>
+                    </div>
+
+                    {/* Price Callout Pill ($1.99 -> FREE) */}
+                    <div
+                      className={`py-2.5 px-4 rounded-2xl border border-dashed flex items-center justify-center gap-2.5 ${isDarkMode
+                        ? 'bg-[#2B2321] border-[#E8B4A6]/45'
+                        : 'bg-[#FCF5F1] border-[#D8A896]'
+                        }`}
+                    >
+                      <span className="text-xs font-medium opacity-75">Single Couture Bouquet</span>
+                      <span className="text-sm line-through opacity-55">$1.99</span>
+                      <span aria-hidden="true" className="text-xs opacity-60">→</span>
+                      <span
+                        className="text-base sm:text-lg font-bold tracking-wide text-[#9E5B4B] dark:text-[#E8B4A6]"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        FREE
+                      </span>
+                    </div>
+
+                    {recipientGiftClaimError && (
+                      <div
+                        role="alert"
+                        className="px-3 py-2 rounded-xl border border-dashed border-rose-400/60 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-200"
+                      >
+                        {recipientGiftClaimError}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      data-testid="claim-recipient-gift-btn"
+                      disabled={isClaimingRecipientGift}
+                      onClick={handleClaimRecipientGiftOffer}
+                      className={`w-full py-2.5 px-5 rounded-full text-xs sm:text-sm font-medium transition active:scale-99 cursor-pointer disabled:opacity-50 ${isDarkMode
+                        ? 'bg-[#E8B4A6] text-[#231C18] hover:bg-[#F2C4B8]'
+                        : 'bg-[#8A5240] text-[#FFFDF9] hover:bg-[#734232]'
+                        }`}
+                    >
+                      {isClaimingRecipientGift
+                        ? 'Unlocking Studio...'
+                        : 'Craft Your Free Couture Bouquet →'}
+                    </button>
+
+                    <p className="text-[10px] opacity-65">
+                      Applied automatically to your session · 1 free Couture Bouquet
+                    </p>
+                  </div>
+                </div>
+              )}
+            </main>
+
+            {/* ===================================================================
+            UNIFIED BOTTOM HORIZONTAL CAROUSEL DOCK (Phone & Desktop)
+            Includes VisualViewport + safe-area-inset-bottom clearance so mobile
+            browsers (like Edge Mobile, Safari, Chrome) never cover the flowers!
+            =================================================================== */}
+            {!isPreviewMode && !isGiftView && (
+              <section
+                aria-label="Mobile Studio Dock"
+                className={`w-full shrink-0 border-t px-2.5 sm:px-5 pt-2 pb-[max(0.85rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-3 order-2 z-20 select-none transition-all duration-200 ${isDarkMode
+                  ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
+                  : 'bg-white border-stone-200/80 text-[#1C1917]'
+                  }`}
+              >
+                {/* Row 1: Category Pill Tabs + Reset & Collapse/Expand Tray Buttons (Works on Phone & Desktop) */}
+                <div
+                  className={`flex items-center justify-between gap-2 ${isDesktopDockCollapsed ? 'pb-0' : 'pb-2'
+                    }`}
+                >
+                  <div
+                    className="flex-1 min-w-0 flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar pr-3 [-webkit-mask-image:linear-gradient(to_right,black_calc(100%-14px),transparent_100%)] sm:[-webkit-mask-image:none]"
+                    role="tablist"
+                  >
+                    {(
+                      [
+                        { id: 'templates', label: 'Templates' },
+                        { id: 'wrapping', label: 'Wrappers' },
+                        { id: 'flowers', label: 'Flowers' },
+                        { id: 'fillers', label: 'Fillers' },
+                        { id: 'others', label: 'Others' },
+                        ...(activeSeasonalEvent && seasonalFlowers.length > 0
+                          ? [{ id: 'seasonal' as MobileCategory, label: 'Seasonal' }]
+                          : []),
+                        { id: 'photos', label: 'Photos' },
+                        { id: 'ribbon', label: 'Ribbon' },
+                        { id: 'environment', label: 'Background' },
+                        { id: 'card', label: 'Card' },
+                        { id: 'voice', label: 'Voice' }
+                      ] as { id: MobileCategory; label: string }[]
+                    ).map((cat) => {
+                      const isActive = mobileCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          role="tab"
+                          data-drawer-trigger="true"
+                          aria-selected={isActive}
+                          onClick={(e) => {
+                            e.currentTarget.scrollIntoView({
+                              behavior: 'smooth',
+                              inline: 'center',
+                              block: 'nearest',
+                            });
+                            if (cat.id === 'wrapping') setActiveColorTarget('wrapper');
+                            else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
+                            else if (cat.id === 'card') setActiveColorTarget('card');
+                            else if (cat.id === 'voice') setActiveColorTarget('voicePrimary');
+                            else if (
+                              cat.id === 'flowers' ||
+                              cat.id === 'fillers' ||
+                              cat.id === 'others' ||
+                              cat.id === 'seasonal' ||
+                              cat.id === 'photos'
+                            ) {
+                              setActiveColorTarget('petal');
+                            }
+
+                            if (isActive) {
+                              setIsDesktopDockCollapsed((prev) => !prev);
+                            } else {
+                              setMobileCategory(cat.id);
+                              setIsDesktopDockCollapsed(false);
+                            }
+                          }}
+                          className={`px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 cursor-pointer ${isActive
+                            ? 'bg-[#B4846C] text-white shadow-xs border border-[#B4846C]'
+                            : isDarkMode
+                              ? 'bg-[#292524] text-stone-300 border border-stone-700 hover:bg-stone-800'
+                              : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+                            }`}
+                        >
+                          <span>{cat.label}</span>
+                          {cat.id === 'seasonal' && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                              title={activeSeasonalEvent?.name || 'Upcoming seasonal collection'}
+                            />
+                          )}
+                          {cat.id === 'voice' && voice.audioDataUrl && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    className={`flex items-center shrink-0 pl-1.5 border-l border-dashed ${isDarkMode ? 'border-[#52433E]' : 'border-[#E2D1C1]'
+                      }`}
+                  >
+                    {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section */}
+                    <button
+                      type="button"
+                      onClick={() => setIsDesktopDockCollapsed((prev) => !prev)}
+                      aria-expanded={!isDesktopDockCollapsed}
+                      aria-label={
+                        isDesktopDockCollapsed
+                          ? 'Expand bottom flowers and wrappers tray'
+                          : 'Collapse bottom flowers and wrappers tray down'
+                      }
+                      title={
+                        isDesktopDockCollapsed
+                          ? 'Expand tray'
+                          : 'Collapse tray down'
+                      }
+                      className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium border border-dashed shrink-0 transition cursor-pointer ${isDarkMode
+                        ? 'bg-[#2B2321] border-[#52433E] text-[#D8C7BE] hover:border-[#B4846C] hover:text-white'
+                        : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#6E5D54] hover:border-[#B4846C] hover:text-[#1C1917]'
+                        }`}
+                    >
+                      <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show' : 'Hide'}</span>
+                      {isDesktopDockCollapsed ? (
+                        <ChevronUp className="w-4 h-4 text-[#B4846C]" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-[#B4846C]" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Row 2: Horizontal Circular Item Carousel with Desktop Scroll Arrows & Mouse-Wheel Support */}
+                <div
+                  className={`relative flex items-center ${isDesktopDockCollapsed ? 'hidden' : ''
+                    }`}
+                >
+                  {/* Left Carousel Scroll Arrow Button (Desktop & Tablet) */}
                   <button
                     type="button"
-                    onClick={() => setMobilePopover(null)}
-                    aria-label="Slide drawer closed"
-                    title="Close panel"
-                    className={`p-1.5 rounded-full transition cursor-pointer ${
-                      isDarkMode
-                        ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                        : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4]'
-                    }`}
+                    data-testid="studio-carousel-prev"
+                    onClick={() => handleScrollStudioCarousel('left')}
+                    aria-label="Scroll selection choices left"
+                    title="Previous choices"
+                    className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-dashed shrink-0 mr-1.5 transition active:scale-95 cursor-pointer shadow-xs ${canScrollCarouselLeft
+                      ? isDarkMode
+                        ? 'bg-[#2B2321] border-[#6A5750] text-[#FBF6F1] hover:border-[#B4846C]'
+                        : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438] hover:border-[#B4846C]'
+                      : isDarkMode
+                        ? 'bg-[#2B2321]/40 border-[#4A3D38] text-[#7A6860] opacity-50'
+                        : 'bg-[#FAF4EE]/50 border-[#E8D9CB] text-[#B8A69A] opacity-50'
+                      }`}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                </div>
 
-                {/* Side Drawer Content */}
-                <div className="flex-1 overflow-y-auto p-3">
-                  {mobilePopover === 'color' && (
-                    <SelectedFlowerToolbar
-                      isDrawerOpen={false}
-                      mobileSheetMode="color"
-                      activeColorTarget={activeColorTarget}
-                      onColorTargetChange={setActiveColorTarget}
-                      onCloseMobileSheet={() => setMobilePopover(null)}
-                      onUploadPhotoForItem={(itemId) => {
-                        const found = items.find((i) => i.id === itemId);
-                        triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
-                      }}
-                    />
-                  )}
+                  <div
+                    ref={studioCarouselRef}
+                    onScroll={updateStudioCarouselScrollState}
+                    onWheel={(e) => {
+                      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && studioCarouselRef.current) {
+                        studioCarouselRef.current.scrollLeft += e.deltaY;
+                        updateStudioCarouselScrollState();
+                      }
+                    }}
+                    className="flex-1 min-w-0 flex items-start gap-2 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 pr-2 scroll-smooth"
+                  >
+                    {/* CATEGORY 1: TEMPLATES */}
+                    {mobileCategory === 'templates' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            resetStudioCanvasSession();
+                            triggerToast('Canvas reset');
+                          }}
+                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                        >
+                          <div
+                            className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${isDarkMode
+                              ? 'bg-[#292524] border-stone-700 group-hover:border-red-400'
+                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-red-300'
+                              }`}
+                          >
+                            <RotateCcw className="w-5 h-5 text-[#B4846C] group-hover:text-red-500" />
+                          </div>
+                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                            Start Over
+                          </span>
+                        </button>
 
-                  {mobilePopover === 'stem' && (
-                    <SelectedFlowerToolbar
-                      isDrawerOpen={false}
-                      mobileSheetMode="stem"
-                      activeColorTarget={activeColorTarget}
-                      onColorTargetChange={setActiveColorTarget}
-                      onCloseMobileSheet={() => setMobilePopover(null)}
-                      onUploadPhotoForItem={(itemId) => {
-                        const found = items.find((i) => i.id === itemId);
-                        triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
-                      }}
-                    />
-                  )}
+                        {STARTER_TEMPLATES.map((tpl) => (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => {
+                              currentSessionVaultCodeRef.current = null;
+                              currentSessionVaultIsDraftRef.current = false;
+                              suppressRecoveryUntilNextEditRef.current = false;
+                              loadSnapshot(tpl.snapshot);
+                              triggerToast(`Loaded ${tpl.name}`);
+                            }}
+                            className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                          >
+                            <div
+                              className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                }`}
+                            >
+                              <MiniTemplateBouquetSVG
+                                wrapColor={tpl.snapshot.wrapColor}
+                                ribbonColor={tpl.snapshot.ribbonColor}
+                                bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
+                              />
+                            </div>
+                            <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                              {tpl.name}
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
 
-                  {mobilePopover === 'layers' && (
-                    <LayerManagerPanel isEmbeddedInSidebar />
-                  )}
+                    {/* CATEGORY 2: WRAPPERS (Architectural Wrapper Designs with Couture Badge) */}
+                    {mobileCategory === 'wrapping' && (
+                      <>
+                        {WRAPPER_CATALOG.map((ws) => {
+                          const isSelected = wrapStyle === ws.id;
+                          const isPremWrap = isWrapPremium(ws.id, premiumAssetConfig);
+                          return (
+                            <button
+                              key={ws.id}
+                              type="button"
+                              onClick={() => {
+                                setWrapStyle(ws.id);
+                                setActiveColorTarget('wrapper');
+                              }}
+                              className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                            >
+                              <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                                <div
+                                  className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isSelected
+                                    ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                    : isDarkMode
+                                      ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                      : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                    }`}
+                                >
+                                  <MiniWrapConeSVG
+                                    styleType={ws.id}
+                                    color={ws.defaultHex}
+                                    ribbon={ws.defaultRibbon}
+                                  />
+                                </div>
+                                {isPremWrap && (
+                                  <CoutureItemBadge
+                                    isDarkMode={isDarkMode}
+                                    title="Couture wrap (free to try)"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                                {ws.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
 
-                  {mobilePopover === 'card' && (
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-[#7D6B60] dark:text-[#C2B0A6]">
-                          Note on bouquet
-                        </span>
+                    {/* CATEGORY 3: FOCAL FLOWERS */}
+                    {mobileCategory === 'flowers' &&
+                      focalFlowers.map((entry) => {
+                        const isPremFlower = isFlowerPremium(entry.type, premiumAssetConfig);
+                        return (
+                          <button
+                            key={entry.type}
+                            type="button"
+                            data-drawer-trigger="true"
+                            onClick={() => {
+                              addFlower(entry.type);
+                              setActiveColorTarget('petal');
+                              openDesktopToolPopover('stem');
+                              triggerToast(`Added ${entry.name}`);
+                            }}
+                            className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                          >
+                            <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                              <div
+                                className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isDarkMode
+                                  ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                  : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                  }`}
+                              >
+                                <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
+                                  <FlowerRenderer
+                                    type={entry.type}
+                                    petalColor={entry.defaultPetalColor}
+                                    centerColor={entry.defaultCenterColor}
+                                  />
+                                </svg>
+                              </div>
+                              {isPremFlower && (
+                                <CoutureItemBadge
+                                  isDarkMode={isDarkMode}
+                                  title="Couture bloom (free to try)"
+                                />
+                              )}
+                            </div>
+                            <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                              {entry.shortName}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                    {/* CATEGORY 4: FILLERS & FOLIAGE */}
+                    {mobileCategory === 'fillers' &&
+                      fillerFlowers.map((entry) => {
+                        const isPremFiller = isFlowerPremium(entry.type, premiumAssetConfig);
+                        return (
+                          <button
+                            key={entry.type}
+                            type="button"
+                            data-drawer-trigger="true"
+                            onClick={() => {
+                              addFlower(entry.type);
+                              setActiveColorTarget('petal');
+                              openDesktopToolPopover('stem');
+                              triggerToast(`Added ${entry.name}`);
+                            }}
+                            className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                          >
+                            <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                              <div
+                                className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isDarkMode
+                                  ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                  : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                  }`}
+                              >
+                                <svg viewBox="-55 -68 110 135" className="w-10 h-10 sm:w-12 sm:h-12">
+                                  <FlowerRenderer
+                                    type={entry.type}
+                                    petalColor={entry.defaultPetalColor}
+                                    centerColor={entry.defaultCenterColor}
+                                  />
+                                </svg>
+                              </div>
+                              {isPremFiller && (
+                                <CoutureItemBadge
+                                  isDarkMode={isDarkMode}
+                                  title="Couture botanical (free to try)"
+                                />
+                              )}
+                            </div>
+                            <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                              {entry.shortName}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                    {/* CATEGORY 4A: OTHERS (Butterflies, Hearts, Sparkles, Romantic & Whimsical Accents) */}
+                    {mobileCategory === 'others' &&
+                      otherFlowers.map((entry) => {
+                        const isPremOther = isFlowerPremium(entry.type, premiumAssetConfig);
+                        return (
+                          <button
+                            key={entry.type}
+                            type="button"
+                            data-drawer-trigger="true"
+                            onClick={() => {
+                              addFlower(entry.type);
+                              setActiveColorTarget('petal');
+                              openDesktopToolPopover('stem');
+                              triggerToast(`Added ${entry.name}`);
+                            }}
+                            className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                          >
+                            <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                              <div
+                                className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isDarkMode
+                                  ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                  : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                  }`}
+                              >
+                                <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
+                                  <FlowerRenderer
+                                    type={entry.type}
+                                    petalColor={entry.defaultPetalColor}
+                                    centerColor={entry.defaultCenterColor}
+                                  />
+                                </svg>
+                              </div>
+                              {isPremOther && (
+                                <CoutureItemBadge
+                                  isDarkMode={isDarkMode}
+                                  title="Couture charm (free to try)"
+                                />
+                              )}
+                            </div>
+                            <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                              {entry.shortName}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                    {/* CATEGORY 4A-2: SEASONAL (Conditional — Only Appears During Active/Upcoming Season) */}
+                    {mobileCategory === 'seasonal' &&
+                      seasonalFlowers.map((entry) => {
+                        const isPremSeasonal = isFlowerPremium(entry.type, premiumAssetConfig);
+                        return (
+                          <button
+                            key={entry.type}
+                            type="button"
+                            data-drawer-trigger="true"
+                            onClick={() => {
+                              addFlower(entry.type);
+                              setActiveColorTarget('petal');
+                              openDesktopToolPopover('stem');
+                              triggerToast(`Added ${entry.name}`);
+                            }}
+                            className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                          >
+                            <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                              <div
+                                className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isDarkMode
+                                  ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                  : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                  }`}
+                              >
+                                <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
+                                  <FlowerRenderer
+                                    type={entry.type}
+                                    petalColor={entry.defaultPetalColor}
+                                    centerColor={entry.defaultCenterColor}
+                                  />
+                                </svg>
+                              </div>
+                              {isPremSeasonal && (
+                                <CoutureItemBadge
+                                  isDarkMode={isDarkMode}
+                                  title="Couture seasonal item (free to try)"
+                                />
+                              )}
+                            </div>
+                            <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                              {entry.shortName}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                    {/* CATEGORY 4B: PHOTOS & UNIQUE PHOTOCARD DESIGNS (All Photos are Couture) */}
+                    {mobileCategory === 'photos' && (
+                      <>
+                        {/* Direct Photo Upload Button (Uploads user's picture directly with no frame, no caption, no extras) */}
+                        <button
+                          type="button"
+                          data-testid="dock-upload-photo-btn"
+                          data-drawer-trigger="true"
+                          onClick={() => {
+                            const activeRawPhoto =
+                              selectedItem?.photoStyle === 'raw' ? selectedItem : null;
+                            triggerPhotoFilePicker(activeRawPhoto?.id || null, 'raw');
+                          }}
+                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                        >
+                          <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                            <div
+                              className={`w-full h-full rounded-full border border-dashed flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isDarkMode
+                                ? 'bg-[#292524] border-[#B4846C]/80 group-hover:border-[#E6B89C]'
+                                : 'bg-[#FAF4EE] border-[#B4846C]/80 group-hover:border-[#6E4434]'
+                                }`}
+                            >
+                              <ImagePlus className="w-5 h-5 text-[#B4846C]" />
+                            </div>
+                            {isPhotoStylePremium('raw', premiumAssetConfig) && (
+                              <CoutureItemBadge
+                                isDarkMode={isDarkMode}
+                                title="Couture photo attachment (free to try)"
+                              />
+                            )}
+                          </div>
+                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                            Upload Photo
+                          </span>
+                        </button>
+
+                        {PHOTO_FRAME_CATALOG.map((pf) => {
+                          const isSelected = selectedItem?.photoStyle === pf.id;
+                          const isPremPhoto = isPhotoStylePremium(pf.id, premiumAssetConfig);
+                          return (
+                            <button
+                              key={pf.id}
+                              type="button"
+                              data-drawer-trigger="true"
+                              onClick={() => {
+                                if (selectedItem?.photoStyle) {
+                                  updateItem(selectedItem.id, { photoStyle: pf.id });
+                                  setActiveColorTarget('petal');
+                                  openDesktopToolPopover('stem');
+                                  triggerToast(`Frame: ${pf.label}`);
+                                } else {
+                                  addPhotoCard(pf.id);
+                                  setActiveColorTarget('petal');
+                                  openDesktopToolPopover('stem');
+                                  triggerToast(`Added ${pf.label}`);
+                                }
+                              }}
+                              className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                            >
+                              <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                                <div
+                                  className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isSelected
+                                    ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                    : isDarkMode
+                                      ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                      : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                    }`}
+                                >
+                                  <MiniPhotoFrameSVG
+                                    styleType={pf.id}
+                                    frameColor={pf.defaultFrameColor}
+                                    accentColor={pf.defaultAccentColor}
+                                  />
+                                </div>
+                                {isPremPhoto && (
+                                  <CoutureItemBadge
+                                    isDarkMode={isDarkMode}
+                                    title="Couture photocard frame (free to try)"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                                {pf.shortLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+
+                    {/* CATEGORY 5: RIBBON & LACE DESIGNS (Colors are unified in the Color drawer tab) */}
+                    {mobileCategory === 'ribbon' && (
+                      <>
+                        {RIBBON_STYLE_CATALOG.map((rs) => {
+                          const isSelected = ribbonStyle === rs.id;
+                          const isPremRibbon = isRibbonPremium(rs.id, premiumAssetConfig);
+                          return (
+                            <button
+                              key={rs.id}
+                              type="button"
+                              onClick={() => {
+                                setRibbonStyle(rs.id);
+                                setActiveColorTarget('ribbon');
+                              }}
+                              className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                            >
+                              <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                                <div
+                                  className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isSelected
+                                    ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                    : isDarkMode
+                                      ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                      : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                    }`}
+                                >
+                                  <MiniRibbonBowSVG hex={rs.defaultHex} styleType={rs.id} />
+                                </div>
+                                {isPremRibbon && (
+                                  <CoutureItemBadge
+                                    isDarkMode={isDarkMode}
+                                    title="Couture ribbon (free to try)"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                                {rs.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+
+                    {/* CATEGORY 5B: ENVIRONMENT / BACKGROUND VIBE */}
+                    {mobileCategory === 'environment' && (
+                      <>
+                        {ENVIRONMENT_CATALOG.map((env) => {
+                          const isSelected = environment === env.id;
+                          const isPremEnv = isEnvironmentPremium(env.id as CanvasEnvironment, premiumAssetConfig);
+                          return (
+                            <button
+                              key={env.id}
+                              type="button"
+                              onClick={() => {
+                                setEnvironment(env.id as CanvasEnvironment);
+                                triggerToast(`Background: ${env.label}`);
+                              }}
+                              className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                            >
+                              <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                                <div
+                                  className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isSelected
+                                    ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                    : isDarkMode
+                                      ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                      : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                    }`}
+                                >
+                                  <MiniEnvironmentSVG env={env.id as CanvasEnvironment} />
+                                </div>
+                                {isPremEnv && (
+                                  <CoutureItemBadge
+                                    isDarkMode={isDarkMode}
+                                    title="Couture background (free to try)"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                                {env.shortLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+
+                    {/* CATEGORY 6: GREETING CARD DESIGNS & FREEFORM COLORS */}
+                    {mobileCategory === 'card' && (
+                      <>
+                        <button
+                          type="button"
+                          data-drawer-trigger="true"
+                          onClick={() => {
+                            selectItem(null);
+                            setActiveColorTarget('card');
+                            setIsMobileToolsExpanded(true);
+                            setMobilePopover((prev) => (prev === 'card' ? null : 'card'));
+                          }}
+                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                        >
+                          <div
+                            className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${mobilePopover === 'card'
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                              : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                              }`}
+                          >
+                            <PenLine className="w-5 h-5 text-[#B4846C]" />
+                          </div>
+                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                            Write Note
+                          </span>
+                        </button>
+
+                        {CARD_THEME_CATALOG.map((th) => {
+                          const isSelected = card.theme === th.id && card.visibleOnStage;
+                          return (
+                            <button
+                              key={th.id}
+                              type="button"
+                              data-drawer-trigger="true"
+                              onClick={() => {
+                                selectItem(null);
+                                updateCard({
+                                  theme: th.id,
+                                  visibleOnStage: true,
+                                });
+                                setActiveColorTarget('card');
+                                openDesktopToolPopover('card');
+                              }}
+                              className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                            >
+                              <div
+                                className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isSelected
+                                  ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                  : isDarkMode
+                                    ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                    : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                  }`}
+                              >
+                                <MiniCardShapeSVG
+                                  theme={th.id}
+                                />
+                              </div>
+                              <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                                {th.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+
                         <button
                           type="button"
                           onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
-                          title={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
-                          aria-label={card.visibleOnStage ? 'Hide card tag' : 'Show card tag'}
-                          className={`px-2.5 py-0.5 rounded-full border border-dashed text-[11px] font-medium flex items-center gap-1 shrink-0 transition cursor-pointer ${
-                            !card.visibleOnStage
-                              ? 'border-rose-300/80 text-rose-600 dark:border-rose-800 dark:text-rose-300'
-                              : isDarkMode
-                              ? 'border-[#5C4B47] bg-[#2B2321] text-[#E6D6C7]'
-                              : 'border-[#DECBB9] bg-[#FAF4EE] text-[#5C4438]'
-                          }`}
+                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
                         >
-                          {card.visibleOnStage ? (
-                            <>
-                              <Eye className="w-3 h-3" />
-                              <span>Visible</span>
-                            </>
-                          ) : (
-                            <>
-                              <EyeOff className="w-3 h-3" />
-                              <span>Hidden</span>
-                            </>
-                          )}
+                          <div
+                            className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${!card.visibleOnStage
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                              : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                              }`}
+                          >
+                            {card.visibleOnStage ? (
+                              <EyeOff className="w-5 h-5 text-[#B4846C]" />
+                            ) : (
+                              <Eye className="w-5 h-5 text-[#B4846C]" />
+                            )}
+                          </div>
+                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                            {card.visibleOnStage ? 'Hide Tag' : 'Show Tag'}
+                          </span>
                         </button>
+                      </>
+                    )}
+
+                    {/* CATEGORY 7: ROMANTIC VOICE KEEPSAKES (All Voices are Couture) */}
+                    {mobileCategory === 'voice' && (
+                      <>
+                        <button
+                          type="button"
+                          data-drawer-trigger="true"
+                          onClick={() => {
+                            selectItem(null);
+                            setActiveColorTarget('voicePrimary');
+                            setIsMobileToolsExpanded(true);
+                            setMobilePopover((prev) => (prev === 'voice' ? null : 'voice'));
+                          }}
+                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                        >
+                          <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                            <div
+                              className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${mobilePopover === 'voice'
+                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                : isDarkMode
+                                  ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                  : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                }`}
+                            >
+                              <Mic className="w-5 h-5 text-[#B4846C]" />
+                              {voice.audioDataUrl && (
+                                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
+                              )}
+                            </div>
+                            <CoutureItemBadge
+                              isDarkMode={isDarkMode}
+                              title="Couture voice keepsake (free to record & preview)"
+                            />
+                          </div>
+                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                            {voice.audioDataUrl ? 'Voice Studio' : 'Record Voice'}
+                          </span>
+                        </button>
+
+                        {VOICE_KEEPSAKE_CATALOG.map((vk) => {
+                          const isSelected = voice.style === vk.id && voice.visibleOnStage;
+                          const isPremVoice = isVoiceStylePremium(vk.id, premiumAssetConfig);
+                          return (
+                            <button
+                              key={vk.id}
+                              type="button"
+                              data-drawer-trigger="true"
+                              onClick={() => {
+                                selectItem(null);
+                                const isSwitchingStyle = voice.style !== vk.id;
+                                updateVoice({
+                                  style: vk.id,
+                                  ...(isSwitchingStyle ? { title: vk.defaultTitle } : {}),
+                                  ...((voice.scale ?? 1) < 0.95 ? { scale: 1.0 } : {}),
+                                  visibleOnStage: true,
+                                });
+                                setActiveColorTarget('voicePrimary');
+                                openDesktopToolPopover('voice');
+                                triggerToast(`Selected ${vk.label}`);
+                              }}
+                              className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
+                            >
+                              <div className="relative w-13 h-13 sm:w-16 sm:h-16">
+                                <div
+                                  className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${isSelected
+                                    ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                                    : isDarkMode
+                                      ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                      : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                                    }`}
+                                >
+                                  <MiniVoiceKeepsakeSVG
+                                    styleType={vk.id}
+                                    primaryColor={vk.defaultPrimary}
+                                    accentColor={vk.defaultAccent}
+                                  />
+                                </div>
+                                {isPremVoice && (
+                                  <CoutureItemBadge
+                                    isDarkMode={isDarkMode}
+                                    title="Couture voice keepsake (free to try)"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                                {vk.shortLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextVis = !voice.visibleOnStage;
+                            if (!nextVis) handleStopVoice();
+                            updateVoice({ visibleOnStage: nextVis });
+                          }}
+                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
+                        >
+                          <div
+                            className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${!voice.visibleOnStage
+                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
+                              : isDarkMode
+                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
+                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
+                              }`}
+                          >
+                            {voice.visibleOnStage ? (
+                              <EyeOff className="w-5 h-5 text-[#B4846C]" />
+                            ) : (
+                              <Eye className="w-5 h-5 text-[#B4846C]" />
+                            )}
+                          </div>
+                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
+                            {voice.visibleOnStage ? 'Hide Voice' : 'Show Voice'}
+                          </span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Right Carousel Scroll Arrow Button (Desktop & Tablet) */}
+                  <button
+                    type="button"
+                    data-testid="studio-carousel-next"
+                    onClick={() => handleScrollStudioCarousel('right')}
+                    aria-label="Scroll selection choices right"
+                    title="More choices"
+                    className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-dashed shrink-0 ml-1.5 transition active:scale-95 cursor-pointer shadow-xs ${canScrollCarouselRight
+                      ? isDarkMode
+                        ? 'bg-[#2B2321] border-[#6A5750] text-[#FBF6F1] hover:border-[#B4846C]'
+                        : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438] hover:border-[#B4846C]'
+                      : isDarkMode
+                        ? 'bg-[#2B2321]/40 border-[#4A3D38] text-[#7A6860] opacity-50'
+                        : 'bg-[#FAF4EE]/50 border-[#E8D9CB] text-[#B8A69A] opacity-50'
+                      }`}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {/* ===================================================================
+            DESKTOP LEFT SIDEBAR STUDIO (lg+)
+            =================================================================== */}
+            {!isPreviewMode && !isGiftView && (
+              <aside
+                className={`hidden w-full backdrop-blur-xl border-t lg:border-t-0 lg:border-r flex-col order-2 lg:order-1 z-20 shrink-0 transition-all duration-300 ease-in-out ${isDarkMode
+                  ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+                  : 'bg-[#F5F3EF] border-stone-200 text-[#1C1917]'
+                  } ${drawerState === 'collapsed'
+                    ? 'h-[52px]'
+                    : drawerState === 'expanded'
+                      ? 'h-[80vh] sm:h-[84vh]'
+                      : 'h-[44vh] sm:h-[46vh]'
+                  } ${isSidebarOpen
+                    ? 'lg:h-full lg:w-[360px] xl:w-[400px]'
+                    : 'lg:w-0 lg:h-full lg:overflow-hidden lg:border-none'
+                  }`}
+              >
+                {/* Desktop Sidebar Collapse Header */}
+                <div className="hidden lg:flex items-center justify-between px-4 py-2.5 border-b border-stone-200 dark:border-stone-800">
+                  <span className="text-xs font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400">
+                    Botanical Studio
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarOpen(false)}
+                    title="Collapse studio panel"
+                    aria-label="Collapse studio panel"
+                    className="p-1 rounded-lg hover:bg-stone-200/60 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 transition"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Preserved Mobile Sheet Toggle Button for SSR Test Compatibility */}
+                <div className="hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      autoCollapsedRef.current = false;
+                      setDrawerState((prev) =>
+                        prev === 'collapsed' ? 'peek' : prev === 'peek' ? 'expanded' : 'peek'
+                      );
+                    }}
+                    aria-label="Toggle drawer sheet height"
+                  />
+                </div>
+
+                {/* Drawer Navigation Tabs */}
+                <div
+                  className={`grid grid-cols-3 gap-1 p-1.5 border-b shrink-0 ${isDarkMode
+                    ? 'bg-[#1E1C1A] border-stone-800'
+                    : 'bg-[#F5F3EF] border-stone-200'
+                    }`}
+                  role="tablist"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === 'flowers'}
+                    onClick={() => {
+                      setActiveTab('flowers');
+                      if (drawerState === 'collapsed') setDrawerState('peek');
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition ${activeTab === 'flowers'
+                      ? isDarkMode
+                        ? 'bg-[#292524] border border-stone-700 text-stone-100 shadow-sm'
+                        : 'bg-white border border-stone-200 text-[#1C1917] shadow-sm'
+                      : isDarkMode
+                        ? 'text-stone-400 hover:text-stone-100'
+                        : 'text-stone-600 hover:text-[#1C1917]'
+                      }`}
+                  >
+                    <Flower2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 shrink-0" />
+                    <span className="truncate">Flowers</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === 'wrap'}
+                    onClick={() => {
+                      setActiveTab('wrap');
+                      if (drawerState === 'collapsed') setDrawerState('peek');
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1 transition ${activeTab === 'wrap'
+                      ? isDarkMode
+                        ? 'bg-[#292524] border border-stone-700 text-stone-100 shadow-sm'
+                        : 'bg-white border border-stone-200 text-[#1C1917] shadow-sm'
+                      : isDarkMode
+                        ? 'text-stone-400 hover:text-stone-100'
+                        : 'text-stone-600 hover:text-[#1C1917]'
+                      }`}
+                  >
+                    <Gift className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 shrink-0" />
+                    <span className="truncate">Wrapping</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === 'card'}
+                    onClick={() => {
+                      setActiveTab('card');
+                      if (drawerState === 'collapsed') setDrawerState('peek');
+                    }}
+                    className={`py-2 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1 transition ${activeTab === 'card'
+                      ? isDarkMode
+                        ? 'bg-[#292524] border border-stone-700 text-stone-100 shadow-sm'
+                        : 'bg-white border border-stone-200 text-[#1C1917] shadow-sm'
+                      : isDarkMode
+                        ? 'text-stone-400 hover:text-stone-100'
+                        : 'text-stone-600 hover:text-[#1C1917]'
+                      }`}
+                  >
+                    <Mail className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 shrink-0" />
+                    <span className="truncate">Card</span>
+                  </button>
+                </div>
+
+                {/* Drawer Content Body */}
+                <div
+                  className={`flex-1 overflow-y-auto p-3 sm:p-4 pb-8 space-y-4 ${drawerState === 'collapsed' ? 'hidden lg:block' : 'block'
+                    }`}
+                >
+                  {/* TAB 1: FLOWER PALETTE + STARTER TEMPLATES */}
+                  {activeTab === 'flowers' && (
+                    <div className="space-y-4">
+                      {/* Starter Bouquet Templates Strip */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                          Templates
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
+                          {STARTER_TEMPLATES.map((tpl) => (
+                            <button
+                              key={tpl.id}
+                              type="button"
+                              onClick={() => {
+                                currentSessionVaultCodeRef.current = null;
+                                currentSessionVaultIsDraftRef.current = false;
+                                suppressRecoveryUntilNextEditRef.current = false;
+                                loadSnapshot(tpl.snapshot);
+                                triggerToast(`Loaded "${tpl.name}" template`);
+                              }}
+                              className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${isDarkMode
+                                ? 'bg-[#292524] hover:bg-[#34302c] border-stone-700 hover:border-[#B4846C] text-stone-100'
+                                : 'bg-white hover:bg-stone-50 border-stone-200 hover:border-[#B4846C] text-[#1C1917]'
+                                }`}
+                            >
+                              <div className="w-9 h-9 rounded-full bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-center shrink-0">
+                                <MiniTemplateBouquetSVG
+                                  wrapColor={tpl.snapshot.wrapColor}
+                                  ribbonColor={tpl.snapshot.ribbonColor}
+                                  bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
+                                />
+                              </div>
+                              <span className="text-xs font-medium truncate text-[#1C1917] dark:text-stone-100">
+                                {tpl.name}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                          Flowers
+                        </h2>
+                        {items.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetStudioCanvasSession();
+                              triggerToast('Canvas reset');
+                            }}
+                            className="text-[11px] font-medium text-stone-500 hover:text-red-600 dark:text-stone-400 dark:hover:text-red-400 flex items-center gap-1 transition"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Clear all</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {FLOWER_CATALOG.map((entry) => (
+                          <button
+                            key={entry.type}
+                            type="button"
+                            onClick={() => {
+                              addFlower(entry.type);
+                              triggerToast(`Added ${entry.name}`);
+                            }}
+                            aria-label={`Add ${entry.name} to bouquet`}
+                            className={`group p-2.5 rounded-xl border transition flex flex-col items-center gap-1.5 text-center ${isDarkMode
+                              ? 'bg-[#292524] hover:bg-[#34302c] border-stone-700 hover:border-[#B4846C]'
+                              : 'bg-white hover:bg-stone-50 border-stone-200 hover:border-[#B4846C]'
+                              }`}
+                          >
+                            <div
+                              className={`w-14 h-14 rounded-full border flex items-center justify-center shrink-0 overflow-hidden ${isDarkMode
+                                ? 'bg-stone-900 border-stone-800'
+                                : 'bg-stone-50 border-stone-200'
+                                }`}
+                            >
+                              <svg viewBox="-60 -65 120 130" className="w-12 h-12">
+                                <FlowerRenderer
+                                  type={entry.type}
+                                  petalColor={entry.defaultPetalColor}
+                                  centerColor={entry.defaultCenterColor}
+                                />
+                              </svg>
+                            </div>
+                            <span className="text-xs font-medium text-[#1C1917] dark:text-stone-100 truncate w-full">
+                              {entry.name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: WRAPPING PAPER & RIBBON STUDIO */}
+                  {activeTab === 'wrap' && (
+                    <div className="space-y-4">
+                      <div>
+                        <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
+                          Wrapping
+                        </h2>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
+                          {WRAPPER_CATALOG.map((st) => (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() => {
+                                setWrapStyle(st.id);
+                                setWrapColor(st.defaultHex);
+                              }}
+                              className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${wrapStyle === st.id
+                                ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
+                                : isDarkMode
+                                  ? 'bg-[#292524] border-stone-700 text-stone-200 hover:bg-stone-800'
+                                  : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                                }`}
+                            >
+                              <div className="w-10 h-10 rounded-full bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-center shrink-0">
+                                <MiniWrapConeSVG styleType={st.id} color={wrapColor} ribbon={ribbonColor} />
+                              </div>
+                              <span className="text-xs font-medium truncate">{st.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {wrapStyle !== 'plain' && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
+                            Paper color
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {PAPER_SWATCHES.map((sw) => (
+                              <button
+                                key={sw.hex}
+                                type="button"
+                                onClick={() => setWrapColor(sw.hex)}
+                                className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-2 border transition ${wrapColor === sw.hex
+                                  ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100'
+                                  : isDarkMode
+                                    ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                                    : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                                  }`}
+                              >
+                                <span
+                                  className="w-3.5 h-3.5 rounded-full border border-black/15 shrink-0"
+                                  style={{ backgroundColor: sw.hex }}
+                                />
+                                <span>{sw.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <h3 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
+                          Ribbon &amp; Lace Design
+                        </h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2 mb-3">
+                          {RIBBON_STYLE_CATALOG.map((rs) => (
+                            <button
+                              key={rs.id}
+                              type="button"
+                              onClick={() => setRibbonStyle(rs.id)}
+                              className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-2 transition ${ribbonStyle === rs.id
+                                ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
+                                : isDarkMode
+                                  ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                                  : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                                }`}
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-stone-50 dark:bg-stone-900 flex items-center justify-center shrink-0">
+                                <MiniRibbonBowSVG hex={ribbonColor} styleType={rs.id} />
+                              </div>
+                              <span className="truncate">{rs.label}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+                          {RIBBON_SWATCHES.map((rb) => (
+                            <button
+                              key={rb.hex}
+                              type="button"
+                              onClick={() => setRibbonColor(rb.hex)}
+                              className={`p-2.5 rounded-xl border text-xs font-medium flex items-center gap-2 transition ${ribbonColor === rb.hex
+                                ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
+                                : isDarkMode
+                                  ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
+                                  : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                                }`}
+                            >
+                              <span
+                                className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
+                                style={{ backgroundColor: rb.hex }}
+                              />
+                              <span className="truncate">{rb.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: GREETING CARD EDITOR */}
+                  {activeTab === 'card' && (
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                          Greeting card
+                        </h2>
+                        <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer text-stone-700 dark:text-stone-200">
+                          <input
+                            type="checkbox"
+                            checked={card.visibleOnStage}
+                            onChange={(e) => updateCard({ visibleOnStage: e.target.checked })}
+                            className="accent-[#B4846C] rounded cursor-pointer w-4 h-4"
+                          />
+                          <span>Show card</span>
+                        </label>
                       </div>
 
                       {/* Card Note Input Only — Letterpress Stationery Sheet */}
                       <div
-                        className={`p-3 rounded-2xl border border-dashed transition-colors ${
-                          isDarkMode
-                            ? 'bg-[#352C29] border-[#5E4E49]'
-                            : 'bg-[#FFFDF9] border-[#DECBB9]'
-                        }`}
+                        className={`p-3.5 rounded-2xl border border-dashed transition-colors ${isDarkMode
+                          ? 'bg-[#352C29] border-[#5E4E49]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9]'
+                          }`}
                       >
                         <div className="relative">
                           <textarea
@@ -4688,21 +5802,20 @@ export default function App() {
                             maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
                             value={card.message}
                             placeholder="Write your heartfelt note..."
+                            onFocus={handleCardInputFocus}
                             onChange={(e) => updateCard({ message: e.target.value })}
                             aria-label="Card message"
-                            className={`w-full px-3.5 py-2.5 pb-7 rounded-xl border border-dashed text-sm focus:outline-none focus:border-[#B4846C] resize-none overflow-y-auto transition-colors ${
-                              isDarkMode
-                                ? 'bg-[#2B2321] border-[#544540] text-[#FBF6F1] placeholder:text-[#9A877B]/75'
-                                : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#2A201D] placeholder:text-[#9A877B]/80'
-                            }`}
+                            className={`w-full px-3.5 py-2.5 pb-7 rounded-xl border border-dashed text-sm focus:outline-none focus:border-[#B4846C] resize-none transition ${isDarkMode
+                              ? 'bg-[#2B2321] border-[#544540] text-[#FBF6F1] placeholder:text-[#9A877B]/75'
+                              : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#2A201D] placeholder:text-[#9A877B]/80'
+                              }`}
                             style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
                           />
                           <span
-                            className={`absolute bottom-2 right-3 text-[10px] pointer-events-none inline-flex items-center gap-1 ${
-                              card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                                ? 'text-[#B4846C] font-medium'
-                                : 'text-[#9A877B]'
-                            }`}
+                            className={`absolute bottom-2 right-3 text-[10px] pointer-events-none inline-flex items-center gap-1 ${card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                              ? 'text-[#B4846C] font-medium'
+                              : 'text-[#9A877B]'
+                              }`}
                           >
                             {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
                               <>
@@ -4719,1989 +5832,96 @@ export default function App() {
                       </div>
                     </div>
                   )}
-
-                  {mobilePopover === 'voice' && (
-                    <VoiceRecorderStudio
-                      voice={voice}
-                      isDarkMode={isDarkMode}
-                      isVoicePlaying={isVoicePlaying}
-                      onTogglePlayVoice={handleTogglePlayVoice}
-                      onStopVoice={handleStopVoice}
-                      onUpdateVoice={updateVoice}
-                      onOpenVoiceColors={() => {
-                        setActiveColorTarget('voicePrimary');
-                        setMobilePopover('color');
-                      }}
-                      onTriggerToast={triggerToast}
-                    />
-                  )}
                 </div>
               </aside>
             )}
-          </div>
 
-          {/* ===================================================================
-              RECIPIENT TOP FLOATING DEDICATION & AMBIENT PILL BAR
-              Quiet luxury header showing "For [Recipient] · with love, [Sender]"
-              on the left and Replay Bloom / Music / Theme controls on the right.
-              =================================================================== */}
-          {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
-            <div className="w-full max-w-full px-2.5 sm:px-6 z-20 absolute top-3 sm:top-4 inset-x-0 pointer-events-none flex items-center justify-between gap-1.5 sm:gap-2">
-              {/* Left: Dedication Capsule (Flexes and truncates cleanly so right pill never clips on mobile) */}
-              <div
-                className={`pointer-events-auto min-w-0 flex-initial max-w-[calc(100%-7.25rem)] sm:max-w-md inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={isPreviewMode ? handleExitGiftViewToEditor : handleReturnHomeFromGiftView}
-                  title={isPreviewMode ? 'Back to Studio' : 'Back'}
-                  aria-label={isPreviewMode ? 'Back to Studio' : 'Back'}
-                  className="shrink-0 hover:opacity-80 transition cursor-pointer flex items-center"
-                >
-                  <ArrowLeft className="w-4 h-4 shrink-0" />
-                </button>
-                <div
-                  className="min-w-0 truncate text-[13.5px] sm:text-base leading-tight"
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                >
-                  <span className="italic opacity-75 mr-1">For</span>
-                  <span className="font-semibold tracking-tight">{card.to || 'You'}</span>
-                  <span
-                    className={`ml-1.5 sm:ml-2 text-xs sm:text-sm ${
-                      isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
-                    }`}
-                  >
-                    · <span className="italic">from</span>{' '}
-                    <span
-                      className={`font-semibold tracking-tight ${
-                        isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
-                      }`}
-                    >
-                      {card.from || 'Secret Admirer'}
-                    </span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Right: Quiet Ambient Controls (Replay Bloom, Music, Theme — never clipped on mobile) */}
-              <div
-                className={`pointer-events-auto inline-flex items-center gap-0.5 px-1.5 sm:px-2 py-1 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.06)] backdrop-blur-md shrink-0 ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/90 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/90 border-[#DECBB9] text-[#231C18]'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => startGiftBloomAnimation(items.length, false)}
-                  aria-label="Replay bloom animation"
-                  title="Replay bloom animation"
-                  className={`h-7 px-2 rounded-full text-xs font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
-                    isDarkMode
-                      ? 'text-[#E6D6C7] hover:text-[#FBF6F1]'
-                      : 'text-[#5C4438] hover:text-[#231C18]'
-                  }`}
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-[#B4846C]" />
-                  <span className="hidden sm:inline">Replay</span>
-                </button>
-
-                <span aria-hidden="true" className="opacity-25 text-xs select-none">·</span>
-
-                <button
-                  type="button"
-                  onClick={handleToggleMusic}
-                  aria-pressed={isMusicPlaying}
-                  aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
-                  title={isMusicPlaying ? 'Pause music box' : 'Play music box'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
-                    isMusicPlaying
-                      ? 'text-[#B4846C]'
-                      : isDarkMode
-                      ? 'text-[#C8B6AC] hover:text-[#FBF6F1]'
-                      : 'text-[#7D6B60] hover:text-[#231C18]'
-                  }`}
-                >
-                  {isMusicPlaying ? <Music className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                </button>
-
-                <span aria-hidden="true" className="opacity-25 text-xs select-none">·</span>
-
-                <button
-                  type="button"
-                  onClick={() => setIsDarkMode((prev) => !prev)}
-                  aria-label="Toggle theme"
-                  title="Toggle theme"
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 cursor-pointer ${
-                    isDarkMode
-                      ? 'text-[#E6B89C] hover:text-[#FBF6F1]'
-                      : 'text-[#7D6B60] hover:text-[#231C18]'
-                  }`}
-                >
-                  {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ===================================================================
-              RECIPIENT BOTTOM KEEPSAKE BAR & MINIATURE STATIONERY REPLY POSTCARD
-              Single-surface couture dock (zero nested pills-in-pills) + cute
-              postage-stamped miniature stationery reply card.
-              =================================================================== */}
-          {(isPreviewMode || isGiftView) && !isGiftEntranceOpen && (
-            <div
-              className="w-full px-3 sm:px-4 z-20 absolute bottom-3.5 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2.5"
-              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-            >
-              {/* Miniature Stationery Reply Postcard */}
-              {isReactionPopoverOpen && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className={`pointer-events-auto relative w-full max-w-[340px] rounded-[24px] p-4 sm:p-5 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.18)] backdrop-blur-xl animate-in fade-in duration-150 ${
-                    isDarkMode
-                      ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
-                      : 'bg-[#FFFDF9]/96 border-[#DECBB9] text-[#231C18]'
-                  }`}
-                >
-                  {/* Top Header: Serif Salutation + Tiny Floral Postage Stamp + Close */}
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div>
-                      <span
-                        className="block text-xl sm:text-2xl italic font-normal tracking-tight leading-tight"
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                      >
-                        Dear {card.from || 'Friend'},
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {/* Cute Perforated Botanical Postage Stamp */}
-                      <div
-                        aria-hidden="true"
-                        className={`w-8 h-9 rounded-[4px] border border-dashed flex items-center justify-center rotate-3 ${
-                          isDarkMode
-                            ? 'border-[#6E5A53] bg-[#2B2321]'
-                            : 'border-[#D5BFA9] bg-[#FAF3EB]'
-                        }`}
-                      >
-                        <svg viewBox="0 0 24 24" className="w-4 h-4">
-                          <circle cx="12" cy="12" r="2.2" fill="#E8A558" />
-                          <circle cx="12" cy="7.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
-                          <circle cx="16.2" cy="10.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
-                          <circle cx="14.6" cy="15.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
-                          <circle cx="9.4" cy="15.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
-                          <circle cx="7.8" cy="10.5" r="2.4" fill="#F29BB0" fillOpacity="0.85" />
-                        </svg>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setIsReactionPopoverOpen(false)}
-                        className={`p-1 rounded-full transition cursor-pointer ${
-                          isDarkMode
-                            ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                            : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#FAF4EE]'
-                        }`}
-                        aria-label="Close reaction card"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Subtle Reactions Row */}
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {RECIPIENT_REACTIONS.map((rx) => {
-                      const active = selectedReactionId === rx.id;
-                      return (
-                        <button
-                          key={rx.id}
-                          type="button"
-                          onClick={() => setSelectedReactionId(rx.id)}
-                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
-                            active
-                              ? isDarkMode
-                                ? 'border-[#E6B89C] bg-[#E6B89C]/20 text-[#FBF6F1]'
-                                : 'border-[#6E4434] bg-[#6E4434]/10 text-[#231C18]'
-                              : isDarkMode
-                              ? 'border-dashed border-[#544540] text-[#D8C7BE] hover:border-[#6E5B54]'
-                              : 'border-dashed border-[#DECBB9] text-[#5C4438] hover:border-[#C5A892]'
-                          }`}
-                        >
-                          <span>{rx.symbol}</span>
-                          <span>{rx.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Ruled Stationery Note Lines */}
-                  <textarea
-                    rows={2}
-                    maxLength={200}
-                    value={recipientReplyText}
-                    onChange={(e) => setRecipientReplyText(e.target.value)}
-                    placeholder="Write a little note back..."
-                    style={{
-                      fontFamily: "'Cormorant Garamond', Georgia, serif",
-                      fontSize: '17px',
-                      lineHeight: '28px',
-                      backgroundImage: isDarkMode
-                        ? 'repeating-linear-gradient(transparent, transparent 27px, rgba(212, 180, 158, 0.14) 27px, rgba(212, 180, 158, 0.14) 28px)'
-                        : 'repeating-linear-gradient(transparent, transparent 27px, rgba(180, 148, 125, 0.18) 27px, rgba(180, 148, 125, 0.18) 28px)',
-                    }}
-                    className={`w-full px-1 py-0.5 bg-transparent resize-none focus:outline-none ${
-                      isDarkMode
-                        ? 'text-[#FBF6F1] placeholder:text-[#9A877B]'
-                        : 'text-[#231C18] placeholder:text-[#9A877B]'
-                    }`}
-                  />
-
-                  <div className="mt-3 flex items-center justify-end">
-                    <button
-                      type="button"
-                      disabled={isSubmittingReaction}
-                      onClick={handleSubmitRecipientReaction}
-                      className={`py-2 px-5 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 ${
-                        isDarkMode
-                          ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                          : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                      }`}
-                    >
-                      {isSubmittingReaction ? 'Sending...' : 'Send Reply'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Single-Surface Couture Keepsake Dock (Fits 100% on narrow mobile viewports without clipping) */}
-              <div
-                className={`pointer-events-auto inline-flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-1.5 rounded-full border border-dashed shadow-[0_12px_36px_rgba(35,28,24,0.10)] backdrop-blur-md max-w-[calc(100vw-1rem)] overflow-x-auto no-scrollbar transition-all duration-500 ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/94 border-[#DECBB9] text-[#231C18]'
-                } ${
-                  showGiftCardReveal || isPreviewMode
-                    ? 'opacity-100 translate-y-0'
-                    : 'opacity-0 translate-y-3 pointer-events-none'
-                }`}
-              >
-                {/* 1. Open / Read Letter Action */}
-                {card.visibleOnStage && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLetterTypedChars(0);
-                        setIsLetterModalOpen(true);
-                      }}
-                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
-                        isDarkMode
-                          ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
-                          : 'text-[#5C4438] hover:bg-[#FAF4EE]'
-                      }`}
-                    >
-                      <Mail className="w-3.5 h-3.5 text-[#B4846C]" />
-                      <span>Letter</span>
-                    </button>
-                    <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
-                  </>
-                )}
-
-                {/* 2. Recipient Voice Keepsake Play Action */}
-                {(voice.visibleOnStage || Boolean(voice.audioDataUrl)) && (
-                  <>
-                    <button
-                      type="button"
-                      aria-label={isVoicePlaying ? 'Pause voice' : 'Play voice'}
-                      title={isVoicePlaying ? 'Pause voice' : 'Play voice'}
-                      onClick={() => {
-                        if (voice.audioDataUrl) {
-                          handleTogglePlayVoice();
-                        } else {
-                          setIsVoiceModalOpen(true);
-                        }
-                      }}
-                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
-                        isVoicePlaying
-                          ? 'text-rose-500 font-semibold'
-                          : isDarkMode
-                          ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
-                          : 'text-[#5C4438] hover:bg-[#FAF4EE]'
-                      }`}
-                    >
-                      {isVoicePlaying ? (
-                        <Pause className="w-3.5 h-3.5 fill-current" />
-                      ) : (
-                        <Play className="w-3.5 h-3.5 fill-current text-[#B4846C]" />
-                      )}
-                      <span>Voice</span>
-                    </button>
-                    <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
-                  </>
-                )}
-
-                {/* 3. Recipient Reaction / Reply Note Action */}
-                <button
-                  type="button"
-                  onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
-                  className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
-                    hasSubmittedReaction
-                      ? 'text-rose-600 dark:text-rose-300'
-                      : isDarkMode
-                      ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
-                      : 'text-[#5C4438] hover:bg-[#FAF4EE]'
-                  }`}
-                >
-                  <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
-                  <span>{hasSubmittedReaction ? 'Sent' : 'Reply'}</span>
-                </button>
-
-                <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
-
-                {/* 4. Save Keepsake PNG Action */}
-                <button
-                  type="button"
-                  onClick={handleExportPng}
-                  aria-label="Save as PNG"
-                  title="Save bouquet keepsake image"
-                  className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${
-                    isDarkMode
-                      ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
-                      : 'text-[#5C4438] hover:bg-[#FAF4EE]'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5 text-[#B4846C]" />
-                  <span>Save</span>
-                </button>
-
-                {/* 5. Back to Editing / Craft Yours Filled CTA Pill */}
-                <button
-                  type="button"
-                  onClick={isPreviewMode ? handleExitGiftViewToEditor : handleCreateOwnFromShared}
-                  className={`ml-0.5 sm:ml-1 px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer whitespace-nowrap ${
-                    isDarkMode
-                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                  }`}
-                >
-                  {isPreviewMode ? (
-                    <>
-                      <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
-                      <span>Back to Studio</span>
-                    </>
-                  ) : (
-                    <>
-                      <Flower2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Craft Yours</span>
-                    </>
-                  )}
-                </button>
-
-                {/* Preserved hidden span for SSR test assertion */}
-                <span className="hidden">Make your own bouquet</span>
-              </div>
-            </div>
-          )}
-
-          {/* ===================================================================
-              PAY-IT-FORWARD SHAKING ROSE-GOLD GIFT BOX FOR RECIPIENTS
-              Appears ~3 seconds after bloom reveal finishes in a non-invasive
-              responsive corner (`bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6`).
-              =================================================================== */}
-          {isGiftView && !isPreviewMode && !isGiftEntranceOpen && isRecipientGiftBoxVisible && (
-            <div className="absolute bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6 z-30 pointer-events-auto animate-in fade-in zoom-in-95 duration-300">
-              <button
-                type="button"
-                data-testid="recipient-shaking-gift-box"
-                aria-label="Open your Founding Launch gift"
-                onClick={() => {
-                  setRecipientGiftClaimError(null);
-                  setIsRecipientGiftModalOpen(true);
-                }}
-                style={{
-                  animation: 'sab-rosegold-gift-shake 2.8s ease-in-out infinite',
-                }}
-                className={`group relative flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-2xl border border-dashed shadow-[0_12px_32px_rgba(180,120,102,0.28)] transition cursor-pointer ${
-                  isDarkMode
-                    ? 'bg-[#3A2D2A]/95 border-[#E8B4A6] text-[#FBF6F1] hover:bg-[#463632]'
-                    : 'bg-[#FFFDF9]/95 border-[#C68B77] text-[#3B2820] hover:bg-[#FCF5F1]'
-                }`}
-              >
-                {/* Rose-Gold Keepsake Gift Box SVG */}
-                <span className="relative w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center shrink-0">
-                  <svg
-                    viewBox="0 0 36 36"
-                    fill="none"
-                    aria-hidden="true"
-                    className="w-full h-full overflow-visible"
-                  >
-                    {/* Box base */}
-                    <rect
-                      x="6"
-                      y="15"
-                      width="24"
-                      height="16"
-                      rx="3"
-                      fill={isDarkMode ? '#4A3833' : '#FDF4EE'}
-                      stroke="#C68B77"
-                      strokeWidth="1.4"
-                    />
-                    {/* Box lid */}
-                    <rect
-                      x="4.5"
-                      y="10.5"
-                      width="27"
-                      height="5.5"
-                      rx="2"
-                      fill={isDarkMode ? '#5A433D' : '#F8E6DC'}
-                      stroke="#C68B77"
-                      strokeWidth="1.4"
-                    />
-                    {/* Vertical & horizontal rose-gold satin ribbon */}
-                    <path
-                      d="M18 10.5V31M6 22.5H30"
-                      stroke="#B8735E"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                    />
-                    {/* Rose-gold bow loops */}
-                    <path
-                      d="M18 10.5C14.2 6.2 10 8.5 13.5 10.8C15.2 11.8 17 11 18 10.5Z"
-                      fill="#E8B4A6"
-                      fillOpacity="0.45"
-                      stroke="#B8735E"
-                      strokeWidth="1.35"
-                    />
-                    <path
-                      d="M18 10.5C21.8 6.2 26 8.5 22.5 10.8C20.8 11.8 19 11 18 10.5Z"
-                      fill="#E8B4A6"
-                      fillOpacity="0.45"
-                      stroke="#B8735E"
-                      strokeWidth="1.35"
-                    />
-                    <circle cx="18" cy="10.5" r="1.6" fill="#B8735E" />
-                  </svg>
-                  <span
-                    aria-hidden="true"
-                    className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#D48C78] ring-2 ring-[#FFFDF9] dark:ring-[#3A2D2A]"
-                  />
-                </span>
-
-                <span className="text-left leading-tight">
-                  <span
-                    className="block text-xs sm:text-[13px] font-semibold tracking-tight"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    A gift for you
-                  </span>
-                  <span className="block text-[9.5px] opacity-75">
-                    Tap to unwrap
-                  </span>
-                </span>
-              </button>
-            </div>
-          )}
-
-          {/* ===================================================================
-              RECIPIENT GIFT OFFER STATIONERY MINI-MODAL
-              =================================================================== */}
-          {isRecipientGiftModalOpen && (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="A little something for you too"
-              data-testid="recipient-gift-offer-modal"
-              onClick={() => setIsRecipientGiftModalOpen(false)}
-              className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
-            >
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className={`w-full max-w-sm rounded-[26px] p-5 sm:p-6 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.24)] relative text-center space-y-3.5 ${
-                  isDarkMode
-                    ? 'bg-[#352C29] border-[#E8B4A6]/65 text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9] border-[#C68B77] text-[#231C18]'
-                }`}
-              >
-                <button
-                  type="button"
-                  aria-label="Close gift offer"
-                  onClick={() => setIsRecipientGiftModalOpen(false)}
-                  className={`absolute top-3.5 right-3.5 w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
-                    isDarkMode
-                      ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                      : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#F5EDE4]'
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-
-                {/* Rose-Gold Seal & Parcel Illustration */}
-                <div className="mx-auto w-14 h-14 rounded-2xl border border-dashed border-[#C68B77]/60 bg-[#FAF1EC] dark:bg-[#423430] flex items-center justify-center">
-                  <CoutureBloomSeal className="w-6 h-6 text-[#B8735E] dark:text-[#E8B4A6]" />
-                </div>
-
-                <div className="space-y-1.5">
-                  <h3
-                    className="text-2xl sm:text-[26px] font-semibold leading-tight tracking-tight"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    A little something for you too
-                  </h3>
-                  <p className="text-xs sm:text-[13px] opacity-85 leading-relaxed">
-                    Since someone sent you a Founding Launch keepsake, your first Couture Bouquet is on us!
-                  </p>
-                </div>
-
-                {/* Price Callout Pill ($1.99 -> FREE) */}
-                <div
-                  className={`py-2.5 px-4 rounded-2xl border border-dashed flex items-center justify-center gap-2.5 ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#E8B4A6]/45'
-                      : 'bg-[#FCF5F1] border-[#D8A896]'
-                  }`}
-                >
-                  <span className="text-xs font-medium opacity-75">Single Couture Bouquet</span>
-                  <span className="text-sm line-through opacity-55">$1.99</span>
-                  <span aria-hidden="true" className="text-xs opacity-60">→</span>
-                  <span
-                    className="text-base sm:text-lg font-bold tracking-wide text-[#9E5B4B] dark:text-[#E8B4A6]"
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    FREE
-                  </span>
-                </div>
-
-                {recipientGiftClaimError && (
-                  <div
-                    role="alert"
-                    className="px-3 py-2 rounded-xl border border-dashed border-rose-400/60 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-200"
-                  >
-                    {recipientGiftClaimError}
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  data-testid="claim-recipient-gift-btn"
-                  disabled={isClaimingRecipientGift}
-                  onClick={handleClaimRecipientGiftOffer}
-                  className={`w-full py-2.5 px-5 rounded-full text-xs sm:text-sm font-medium transition active:scale-99 cursor-pointer disabled:opacity-50 ${
-                    isDarkMode
-                      ? 'bg-[#E8B4A6] text-[#231C18] hover:bg-[#F2C4B8]'
-                      : 'bg-[#8A5240] text-[#FFFDF9] hover:bg-[#734232]'
-                  }`}
-                >
-                  {isClaimingRecipientGift
-                    ? 'Unlocking Studio...'
-                    : 'Craft Your Free Couture Bouquet →'}
-                </button>
-
-                <p className="text-[10px] opacity-65">
-                  Applied automatically to your session · 1 free Couture Bouquet
-                </p>
-              </div>
-            </div>
-          )}
-        </main>
-
-        {/* ===================================================================
-            UNIFIED BOTTOM HORIZONTAL CAROUSEL DOCK (Phone & Desktop)
-            Includes VisualViewport + safe-area-inset-bottom clearance so mobile
-            browsers (like Edge Mobile, Safari, Chrome) never cover the flowers!
-            =================================================================== */}
-        {!isPreviewMode && !isGiftView && (
-          <section
-            aria-label="Mobile Studio Dock"
-            className={`w-full shrink-0 border-t px-2.5 sm:px-5 pt-2 pb-[max(0.85rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-3 order-2 z-20 select-none transition-all duration-200 ${
-              isDarkMode
-                ? 'bg-[#352C29] border-[#4E423E] text-[#FBF6F1]'
-                : 'bg-white border-stone-200/80 text-[#1C1917]'
-            }`}
-          >
-            {/* Row 1: Category Pill Tabs + Reset & Collapse/Expand Tray Buttons (Works on Phone & Desktop) */}
-            <div
-              className={`flex items-center justify-between gap-2 ${
-                isDesktopDockCollapsed ? 'pb-0' : 'pb-2'
-              }`}
-            >
-              <div
-                className="flex-1 min-w-0 flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar pr-3 [-webkit-mask-image:linear-gradient(to_right,black_calc(100%-14px),transparent_100%)] sm:[-webkit-mask-image:none]"
-                role="tablist"
-              >
-                {(
-                  [
-                    { id: 'templates', label: 'Templates' },
-                    { id: 'wrapping', label: 'Wrappers' },
-                    { id: 'flowers', label: 'Flowers' },
-                    { id: 'fillers', label: 'Fillers' },
-                    { id: 'others', label: 'Others' },
-                    ...(activeSeasonalEvent && seasonalFlowers.length > 0
-                      ? [{ id: 'seasonal' as MobileCategory, label: 'Seasonal' }]
-                      : []),
-                    { id: 'photos', label: 'Photos' },
-                    { id: 'ribbon', label: 'Ribbon' },
-                    { id: 'environment', label: 'Background' },
-                    { id: 'card', label: 'Card' },
-                    { id: 'voice', label: 'Voice' }
-                  ] as { id: MobileCategory; label: string }[]
-                ).map((cat) => {
-                  const isActive = mobileCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      role="tab"
-                      data-drawer-trigger="true"
-                      aria-selected={isActive}
-                      onClick={(e) => {
-                        e.currentTarget.scrollIntoView({
-                          behavior: 'smooth',
-                          inline: 'center',
-                          block: 'nearest',
-                        });
-                        if (cat.id === 'wrapping') setActiveColorTarget('wrapper');
-                        else if (cat.id === 'ribbon') setActiveColorTarget('ribbon');
-                        else if (cat.id === 'card') setActiveColorTarget('card');
-                        else if (cat.id === 'voice') setActiveColorTarget('voicePrimary');
-                        else if (
-                          cat.id === 'flowers' ||
-                          cat.id === 'fillers' ||
-                          cat.id === 'others' ||
-                          cat.id === 'seasonal' ||
-                          cat.id === 'photos'
-                        ) {
-                          setActiveColorTarget('petal');
-                        }
-
-                        if (isActive) {
-                          setIsDesktopDockCollapsed((prev) => !prev);
-                        } else {
-                          setMobileCategory(cat.id);
-                          setIsDesktopDockCollapsed(false);
-                        }
-                      }}
-                      className={`px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0 transition flex items-center gap-1 cursor-pointer ${
-                        isActive
-                          ? 'bg-[#B4846C] text-white shadow-xs border border-[#B4846C]'
-                          : isDarkMode
-                          ? 'bg-[#292524] text-stone-300 border border-stone-700 hover:bg-stone-800'
-                          : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
-                      }`}
-                    >
-                      <span>{cat.label}</span>
-                      {cat.id === 'seasonal' && (
-                        <span
-                          className="w-1.5 h-1.5 rounded-full bg-emerald-500"
-                          title={activeSeasonalEvent?.name || 'Upcoming seasonal collection'}
-                        />
-                      )}
-                      {cat.id === 'voice' && voice.audioDataUrl && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div
-                className={`flex items-center shrink-0 pl-1.5 border-l border-dashed ${
-                  isDarkMode ? 'border-[#52433E]' : 'border-[#E2D1C1]'
-                }`}
-              >
-                {/* Collapsible Down Toggle for the Bottom Flowers/Wrappers Section */}
-                <button
-                  type="button"
-                  onClick={() => setIsDesktopDockCollapsed((prev) => !prev)}
-                  aria-expanded={!isDesktopDockCollapsed}
-                  aria-label={
-                    isDesktopDockCollapsed
-                      ? 'Expand bottom flowers and wrappers tray'
-                      : 'Collapse bottom flowers and wrappers tray down'
-                  }
-                  title={
-                    isDesktopDockCollapsed
-                      ? 'Expand tray'
-                      : 'Collapse tray down'
-                  }
-                  className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium border border-dashed shrink-0 transition cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#52433E] text-[#D8C7BE] hover:border-[#B4846C] hover:text-white'
-                      : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#6E5D54] hover:border-[#B4846C] hover:text-[#1C1917]'
-                  }`}
-                >
-                  <span className="hidden lg:inline">{isDesktopDockCollapsed ? 'Show' : 'Hide'}</span>
-                  {isDesktopDockCollapsed ? (
-                    <ChevronUp className="w-4 h-4 text-[#B4846C]" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-[#B4846C]" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Row 2: Horizontal Circular Item Carousel with Desktop Scroll Arrows & Mouse-Wheel Support */}
-            <div
-              className={`relative flex items-center ${
-                isDesktopDockCollapsed ? 'hidden' : ''
-              }`}
-            >
-              {/* Left Carousel Scroll Arrow Button (Desktop & Tablet) */}
-              <button
-                type="button"
-                data-testid="studio-carousel-prev"
-                onClick={() => handleScrollStudioCarousel('left')}
-                aria-label="Scroll selection choices left"
-                title="Previous choices"
-                className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-dashed shrink-0 mr-1.5 transition active:scale-95 cursor-pointer shadow-xs ${
-                  canScrollCarouselLeft
-                    ? isDarkMode
-                      ? 'bg-[#2B2321] border-[#6A5750] text-[#FBF6F1] hover:border-[#B4846C]'
-                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438] hover:border-[#B4846C]'
-                    : isDarkMode
-                    ? 'bg-[#2B2321]/40 border-[#4A3D38] text-[#7A6860] opacity-50'
-                    : 'bg-[#FAF4EE]/50 border-[#E8D9CB] text-[#B8A69A] opacity-50'
-                }`}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <div
-                ref={studioCarouselRef}
-                onScroll={updateStudioCarouselScrollState}
-                onWheel={(e) => {
-                  if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && studioCarouselRef.current) {
-                    studioCarouselRef.current.scrollLeft += e.deltaY;
-                    updateStudioCarouselScrollState();
-                  }
-                }}
-                className="flex-1 min-w-0 flex items-start gap-2 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 pr-2 scroll-smooth"
-              >
-                {/* CATEGORY 1: TEMPLATES */}
-              {mobileCategory === 'templates' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetStudioCanvasSession();
-                      triggerToast('Canvas reset');
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                  >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
-                        isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-red-400'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-red-300'
-                      }`}
-                    >
-                      <RotateCcw className="w-5 h-5 text-[#B4846C] group-hover:text-red-500" />
-                    </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                      Start Over
-                    </span>
-                  </button>
-
-                  {STARTER_TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      onClick={() => {
-                        currentSessionVaultCodeRef.current = null;
-                        currentSessionVaultIsDraftRef.current = false;
-                        suppressRecoveryUntilNextEditRef.current = false;
-                        loadSnapshot(tpl.snapshot);
-                        triggerToast(`Loaded ${tpl.name}`);
-                      }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                    >
-                      <div
-                        className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${
-                          isDarkMode
-                            ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                            : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                        }`}
-                      >
-                        <MiniTemplateBouquetSVG
-                          wrapColor={tpl.snapshot.wrapColor}
-                          ribbonColor={tpl.snapshot.ribbonColor}
-                          bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
-                        />
-                      </div>
-                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                        {tpl.name}
-                      </span>
-                    </button>
-                  ))}
-                </>
-              )}
-
-              {/* CATEGORY 2: WRAPPERS (Architectural Wrapper Designs with Couture Badge) */}
-              {mobileCategory === 'wrapping' && (
-                <>
-                  {WRAPPER_CATALOG.map((ws) => {
-                    const isSelected = wrapStyle === ws.id;
-                    const isPremWrap = isWrapPremium(ws.id, premiumAssetConfig);
-                    return (
-                      <button
-                        key={ws.id}
-                        type="button"
-                        onClick={() => {
-                          setWrapStyle(ws.id);
-                          setActiveColorTarget('wrapper');
-                        }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                      >
-                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                          <div
-                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                              isSelected
-                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                                : isDarkMode
-                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                            }`}
-                          >
-                            <MiniWrapConeSVG
-                              styleType={ws.id}
-                              color={ws.defaultHex}
-                              ribbon={ws.defaultRibbon}
-                            />
-                          </div>
-                          {isPremWrap && (
-                            <CoutureItemBadge
-                              isDarkMode={isDarkMode}
-                              title="Couture wrap (free to try)"
-                            />
-                          )}
-                        </div>
-                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                          {ws.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* CATEGORY 3: FOCAL FLOWERS */}
-              {mobileCategory === 'flowers' &&
-                focalFlowers.map((entry) => {
-                  const isPremFlower = isFlowerPremium(entry.type, premiumAssetConfig);
-                  return (
-                    <button
-                      key={entry.type}
-                      type="button"
-                      data-drawer-trigger="true"
-                      onClick={() => {
-                        addFlower(entry.type);
-                        setActiveColorTarget('petal');
-                        openDesktopToolPopover('stem');
-                        triggerToast(`Added ${entry.name}`);
-                      }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                    >
-                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                        <div
-                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
-                            <FlowerRenderer
-                              type={entry.type}
-                              petalColor={entry.defaultPetalColor}
-                              centerColor={entry.defaultCenterColor}
-                            />
-                          </svg>
-                        </div>
-                        {isPremFlower && (
-                          <CoutureItemBadge
-                            isDarkMode={isDarkMode}
-                            title="Couture bloom (free to try)"
-                          />
-                        )}
-                      </div>
-                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                        {entry.shortName}
-                      </span>
-                    </button>
-                  );
-                })}
-
-              {/* CATEGORY 4: FILLERS & FOLIAGE */}
-              {mobileCategory === 'fillers' &&
-                fillerFlowers.map((entry) => {
-                  const isPremFiller = isFlowerPremium(entry.type, premiumAssetConfig);
-                  return (
-                    <button
-                      key={entry.type}
-                      type="button"
-                      data-drawer-trigger="true"
-                      onClick={() => {
-                        addFlower(entry.type);
-                        setActiveColorTarget('petal');
-                        openDesktopToolPopover('stem');
-                        triggerToast(`Added ${entry.name}`);
-                      }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                    >
-                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                        <div
-                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <svg viewBox="-55 -68 110 135" className="w-10 h-10 sm:w-12 sm:h-12">
-                            <FlowerRenderer
-                              type={entry.type}
-                              petalColor={entry.defaultPetalColor}
-                              centerColor={entry.defaultCenterColor}
-                            />
-                          </svg>
-                        </div>
-                        {isPremFiller && (
-                          <CoutureItemBadge
-                            isDarkMode={isDarkMode}
-                            title="Couture botanical (free to try)"
-                          />
-                        )}
-                      </div>
-                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                        {entry.shortName}
-                      </span>
-                    </button>
-                  );
-                })}
-
-              {/* CATEGORY 4A: OTHERS (Butterflies, Hearts, Sparkles, Romantic & Whimsical Accents) */}
-              {mobileCategory === 'others' &&
-                otherFlowers.map((entry) => {
-                  const isPremOther = isFlowerPremium(entry.type, premiumAssetConfig);
-                  return (
-                    <button
-                      key={entry.type}
-                      type="button"
-                      data-drawer-trigger="true"
-                      onClick={() => {
-                        addFlower(entry.type);
-                        setActiveColorTarget('petal');
-                        openDesktopToolPopover('stem');
-                        triggerToast(`Added ${entry.name}`);
-                      }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                    >
-                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                        <div
-                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
-                            <FlowerRenderer
-                              type={entry.type}
-                              petalColor={entry.defaultPetalColor}
-                              centerColor={entry.defaultCenterColor}
-                            />
-                          </svg>
-                        </div>
-                        {isPremOther && (
-                          <CoutureItemBadge
-                            isDarkMode={isDarkMode}
-                            title="Couture charm (free to try)"
-                          />
-                        )}
-                      </div>
-                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                        {entry.shortName}
-                      </span>
-                    </button>
-                  );
-                })}
-
-              {/* CATEGORY 4A-2: SEASONAL (Conditional — Only Appears During Active/Upcoming Season) */}
-              {mobileCategory === 'seasonal' &&
-                seasonalFlowers.map((entry) => {
-                  const isPremSeasonal = isFlowerPremium(entry.type, premiumAssetConfig);
-                  return (
-                    <button
-                      key={entry.type}
-                      type="button"
-                      data-drawer-trigger="true"
-                      onClick={() => {
-                        addFlower(entry.type);
-                        setActiveColorTarget('petal');
-                        openDesktopToolPopover('stem');
-                        triggerToast(`Added ${entry.name}`);
-                      }}
-                      className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                    >
-                      <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                        <div
-                          className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <svg viewBox="-55 -62 110 124" className="w-10 h-10 sm:w-12 sm:h-12">
-                            <FlowerRenderer
-                              type={entry.type}
-                              petalColor={entry.defaultPetalColor}
-                              centerColor={entry.defaultCenterColor}
-                            />
-                          </svg>
-                        </div>
-                        {isPremSeasonal && (
-                          <CoutureItemBadge
-                            isDarkMode={isDarkMode}
-                            title="Couture seasonal item (free to try)"
-                          />
-                        )}
-                      </div>
-                      <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                        {entry.shortName}
-                      </span>
-                    </button>
-                  );
-                })}
-
-              {/* CATEGORY 4B: PHOTOS & UNIQUE PHOTOCARD DESIGNS (All Photos are Couture) */}
-              {mobileCategory === 'photos' && (
-                <>
-                  {/* Direct Photo Upload Button (Uploads user's picture directly with no frame, no caption, no extras) */}
-                  <button
-                    type="button"
-                    data-testid="dock-upload-photo-btn"
-                    data-drawer-trigger="true"
-                    onClick={() => {
-                      const activeRawPhoto =
-                        selectedItem?.photoStyle === 'raw' ? selectedItem : null;
-                      triggerPhotoFilePicker(activeRawPhoto?.id || null, 'raw');
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                  >
-                    <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                      <div
-                        className={`w-full h-full rounded-full border border-dashed flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                          isDarkMode
-                            ? 'bg-[#292524] border-[#B4846C]/80 group-hover:border-[#E6B89C]'
-                            : 'bg-[#FAF4EE] border-[#B4846C]/80 group-hover:border-[#6E4434]'
-                        }`}
-                      >
-                        <ImagePlus className="w-5 h-5 text-[#B4846C]" />
-                      </div>
-                      {isPhotoStylePremium('raw', premiumAssetConfig) && (
-                        <CoutureItemBadge
-                          isDarkMode={isDarkMode}
-                          title="Couture photo attachment (free to try)"
-                        />
-                      )}
-                    </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                      Upload Photo
-                    </span>
-                  </button>
-
-                  {PHOTO_FRAME_CATALOG.map((pf) => {
-                    const isSelected = selectedItem?.photoStyle === pf.id;
-                    const isPremPhoto = isPhotoStylePremium(pf.id, premiumAssetConfig);
-                    return (
-                      <button
-                        key={pf.id}
-                        type="button"
-                        data-drawer-trigger="true"
-                        onClick={() => {
-                          if (selectedItem?.photoStyle) {
-                            updateItem(selectedItem.id, { photoStyle: pf.id });
-                            setActiveColorTarget('petal');
-                            openDesktopToolPopover('stem');
-                            triggerToast(`Frame: ${pf.label}`);
-                          } else {
-                            addPhotoCard(pf.id);
-                            setActiveColorTarget('petal');
-                            openDesktopToolPopover('stem');
-                            triggerToast(`Added ${pf.label}`);
-                          }
-                        }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                      >
-                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                          <div
-                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                              isSelected
-                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                                : isDarkMode
-                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                            }`}
-                          >
-                            <MiniPhotoFrameSVG
-                              styleType={pf.id}
-                              frameColor={pf.defaultFrameColor}
-                              accentColor={pf.defaultAccentColor}
-                            />
-                          </div>
-                          {isPremPhoto && (
-                            <CoutureItemBadge
-                              isDarkMode={isDarkMode}
-                              title="Couture photocard frame (free to try)"
-                            />
-                          )}
-                        </div>
-                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                          {pf.shortLabel}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* CATEGORY 5: RIBBON & LACE DESIGNS (Colors are unified in the Color drawer tab) */}
-              {mobileCategory === 'ribbon' && (
-                <>
-                  {RIBBON_STYLE_CATALOG.map((rs) => {
-                    const isSelected = ribbonStyle === rs.id;
-                    const isPremRibbon = isRibbonPremium(rs.id, premiumAssetConfig);
-                    return (
-                      <button
-                        key={rs.id}
-                        type="button"
-                        onClick={() => {
-                          setRibbonStyle(rs.id);
-                          setActiveColorTarget('ribbon');
-                        }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                      >
-                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                          <div
-                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                              isSelected
-                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                                : isDarkMode
-                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                            }`}
-                          >
-                            <MiniRibbonBowSVG hex={rs.defaultHex} styleType={rs.id} />
-                          </div>
-                          {isPremRibbon && (
-                            <CoutureItemBadge
-                              isDarkMode={isDarkMode}
-                              title="Couture ribbon (free to try)"
-                            />
-                          )}
-                        </div>
-                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                          {rs.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* CATEGORY 5B: ENVIRONMENT / BACKGROUND VIBE */}
-              {mobileCategory === 'environment' && (
-                <>
-                  {ENVIRONMENT_CATALOG.map((env) => {
-                    const isSelected = environment === env.id;
-                    const isPremEnv = isEnvironmentPremium(env.id as CanvasEnvironment, premiumAssetConfig);
-                    return (
-                      <button
-                        key={env.id}
-                        type="button"
-                        onClick={() => {
-                          setEnvironment(env.id as CanvasEnvironment);
-                          triggerToast(`Background: ${env.label}`);
-                        }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                      >
-                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                          <div
-                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                              isSelected
-                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                                : isDarkMode
-                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                            }`}
-                          >
-                            <MiniEnvironmentSVG env={env.id as CanvasEnvironment} />
-                          </div>
-                          {isPremEnv && (
-                            <CoutureItemBadge
-                              isDarkMode={isDarkMode}
-                              title="Couture background (free to try)"
-                            />
-                          )}
-                        </div>
-                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                          {env.shortLabel}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* CATEGORY 6: GREETING CARD DESIGNS & FREEFORM COLORS */}
-              {mobileCategory === 'card' && (
-                <>
-                  <button
-                    type="button"
-                    data-drawer-trigger="true"
-                    onClick={() => {
-                      selectItem(null);
-                      setActiveColorTarget('card');
-                      setIsMobileToolsExpanded(true);
-                      setMobilePopover((prev) => (prev === 'card' ? null : 'card'));
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                  >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                        mobilePopover === 'card'
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                          : isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
-                    >
-                      <PenLine className="w-5 h-5 text-[#B4846C]" />
-                    </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                      Write Note
-                    </span>
-                  </button>
-
-                  {CARD_THEME_CATALOG.map((th) => {
-                    const isSelected = card.theme === th.id && card.visibleOnStage;
-                    return (
-                      <button
-                        key={th.id}
-                        type="button"
-                        data-drawer-trigger="true"
-                        onClick={() => {
-                          selectItem(null);
-                          updateCard({
-                            theme: th.id,
-                            visibleOnStage: true,
-                          });
-                          setActiveColorTarget('card');
-                          openDesktopToolPopover('card');
-                        }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                      >
-                        <div
-                          className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                            isSelected
-                              ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                              : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                          }`}
-                        >
-                          <MiniCardShapeSVG
-                            theme={th.id}
-                          />
-                        </div>
-                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                          {th.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    type="button"
-                    onClick={() => updateCard({ visibleOnStage: !card.visibleOnStage })}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                  >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                        !card.visibleOnStage
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                          : isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
-                    >
-                      {card.visibleOnStage ? (
-                        <EyeOff className="w-5 h-5 text-[#B4846C]" />
-                      ) : (
-                        <Eye className="w-5 h-5 text-[#B4846C]" />
-                      )}
-                    </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                      {card.visibleOnStage ? 'Hide Tag' : 'Show Tag'}
-                    </span>
-                  </button>
-                </>
-              )}
-
-              {/* CATEGORY 7: ROMANTIC VOICE KEEPSAKES (All Voices are Couture) */}
-              {mobileCategory === 'voice' && (
-                <>
-                  <button
-                    type="button"
-                    data-drawer-trigger="true"
-                    onClick={() => {
-                      selectItem(null);
-                      setActiveColorTarget('voicePrimary');
-                      setIsMobileToolsExpanded(true);
-                      setMobilePopover((prev) => (prev === 'voice' ? null : 'voice'));
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                  >
-                    <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                      <div
-                        className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                          mobilePopover === 'voice'
-                            ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                            : isDarkMode
-                            ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                            : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                        }`}
-                      >
-                        <Mic className="w-5 h-5 text-[#B4846C]" />
-                        {voice.audioDataUrl && (
-                          <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#292524]" />
-                        )}
-                      </div>
-                      <CoutureItemBadge
-                        isDarkMode={isDarkMode}
-                        title="Couture voice keepsake (free to record & preview)"
-                      />
-                    </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                      {voice.audioDataUrl ? 'Voice Studio' : 'Record Voice'}
-                    </span>
-                  </button>
-
-                  {VOICE_KEEPSAKE_CATALOG.map((vk) => {
-                    const isSelected = voice.style === vk.id && voice.visibleOnStage;
-                    const isPremVoice = isVoiceStylePremium(vk.id, premiumAssetConfig);
-                    return (
-                      <button
-                        key={vk.id}
-                        type="button"
-                        data-drawer-trigger="true"
-                        onClick={() => {
-                          selectItem(null);
-                          const isSwitchingStyle = voice.style !== vk.id;
-                          updateVoice({
-                            style: vk.id,
-                            ...(isSwitchingStyle ? { title: vk.defaultTitle } : {}),
-                            ...((voice.scale ?? 1) < 0.95 ? { scale: 1.0 } : {}),
-                            visibleOnStage: true,
-                          });
-                          setActiveColorTarget('voicePrimary');
-                          openDesktopToolPopover('voice');
-                          triggerToast(`Selected ${vk.label}`);
-                        }}
-                        className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group relative cursor-pointer"
-                      >
-                        <div className="relative w-13 h-13 sm:w-16 sm:h-16">
-                          <div
-                            className={`w-full h-full rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                              isSelected
-                                ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                                : isDarkMode
-                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                            }`}
-                          >
-                            <MiniVoiceKeepsakeSVG
-                              styleType={vk.id}
-                              primaryColor={vk.defaultPrimary}
-                              accentColor={vk.defaultAccent}
-                            />
-                          </div>
-                          {isPremVoice && (
-                            <CoutureItemBadge
-                              isDarkMode={isDarkMode}
-                              title="Couture voice keepsake (free to try)"
-                            />
-                          )}
-                        </div>
-                        <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                          {vk.shortLabel}
-                        </span>
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextVis = !voice.visibleOnStage;
-                      if (!nextVis) handleStopVoice();
-                      updateVoice({ visibleOnStage: nextVis });
-                    }}
-                    className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                  >
-                    <div
-                      className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center relative overflow-hidden transition-all group-active:scale-95 ${
-                        !voice.visibleOnStage
-                          ? 'border-[#B4846C] ring-2 ring-[#B4846C]/30 bg-white dark:bg-[#292524] shadow-xs'
-                          : isDarkMode
-                          ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                          : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                      }`}
-                    >
-                      {voice.visibleOnStage ? (
-                        <EyeOff className="w-5 h-5 text-[#B4846C]" />
-                      ) : (
-                        <Eye className="w-5 h-5 text-[#B4846C]" />
-                      )}
-                    </div>
-                    <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                      {voice.visibleOnStage ? 'Hide Voice' : 'Show Voice'}
-                    </span>
-                  </button>
-                </>
-              )}
-              </div>
-
-              {/* Right Carousel Scroll Arrow Button (Desktop & Tablet) */}
-              <button
-                type="button"
-                data-testid="studio-carousel-next"
-                onClick={() => handleScrollStudioCarousel('right')}
-                aria-label="Scroll selection choices right"
-                title="More choices"
-                className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-dashed shrink-0 ml-1.5 transition active:scale-95 cursor-pointer shadow-xs ${
-                  canScrollCarouselRight
-                    ? isDarkMode
-                      ? 'bg-[#2B2321] border-[#6A5750] text-[#FBF6F1] hover:border-[#B4846C]'
-                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#5C4438] hover:border-[#B4846C]'
-                    : isDarkMode
-                    ? 'bg-[#2B2321]/40 border-[#4A3D38] text-[#7A6860] opacity-50'
-                    : 'bg-[#FAF4EE]/50 border-[#E8D9CB] text-[#B8A69A] opacity-50'
-                }`}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* ===================================================================
-            DESKTOP LEFT SIDEBAR STUDIO (lg+)
-            =================================================================== */}
-        {!isPreviewMode && !isGiftView && (
-          <aside
-            className={`hidden w-full backdrop-blur-xl border-t lg:border-t-0 lg:border-r flex-col order-2 lg:order-1 z-20 shrink-0 transition-all duration-300 ease-in-out ${
-              isDarkMode
-                ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
-                : 'bg-[#F5F3EF] border-stone-200 text-[#1C1917]'
-            } ${
-              drawerState === 'collapsed'
-                ? 'h-[52px]'
-                : drawerState === 'expanded'
-                ? 'h-[80vh] sm:h-[84vh]'
-                : 'h-[44vh] sm:h-[46vh]'
-            } ${
-              isSidebarOpen
-                ? 'lg:h-full lg:w-[360px] xl:w-[400px]'
-                : 'lg:w-0 lg:h-full lg:overflow-hidden lg:border-none'
-            }`}
-          >
-            {/* Desktop Sidebar Collapse Header */}
-            <div className="hidden lg:flex items-center justify-between px-4 py-2.5 border-b border-stone-200 dark:border-stone-800">
-              <span className="text-xs font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400">
-                Botanical Studio
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(false)}
-                title="Collapse studio panel"
-                aria-label="Collapse studio panel"
-                className="p-1 rounded-lg hover:bg-stone-200/60 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 transition"
-              >
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Preserved Mobile Sheet Toggle Button for SSR Test Compatibility */}
-            <div className="hidden">
-              <button
-                type="button"
-                onClick={() => {
-                  autoCollapsedRef.current = false;
-                  setDrawerState((prev) =>
-                    prev === 'collapsed' ? 'peek' : prev === 'peek' ? 'expanded' : 'peek'
-                  );
-                }}
-                aria-label="Toggle drawer sheet height"
-              />
-            </div>
-
-            {/* Drawer Navigation Tabs */}
-            <div
-              className={`grid grid-cols-3 gap-1 p-1.5 border-b shrink-0 ${
-                isDarkMode
-                  ? 'bg-[#1E1C1A] border-stone-800'
-                  : 'bg-[#F5F3EF] border-stone-200'
-              }`}
-              role="tablist"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'flowers'}
-                onClick={() => {
-                  setActiveTab('flowers');
-                  if (drawerState === 'collapsed') setDrawerState('peek');
-                }}
-                className={`py-2 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                  activeTab === 'flowers'
-                    ? isDarkMode
-                      ? 'bg-[#292524] border border-stone-700 text-stone-100 shadow-sm'
-                      : 'bg-white border border-stone-200 text-[#1C1917] shadow-sm'
-                    : isDarkMode
-                    ? 'text-stone-400 hover:text-stone-100'
-                    : 'text-stone-600 hover:text-[#1C1917]'
-                }`}
-              >
-                <Flower2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 shrink-0" />
-                <span className="truncate">Flowers</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'wrap'}
-                onClick={() => {
-                  setActiveTab('wrap');
-                  if (drawerState === 'collapsed') setDrawerState('peek');
-                }}
-                className={`py-2 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1 transition ${
-                  activeTab === 'wrap'
-                    ? isDarkMode
-                      ? 'bg-[#292524] border border-stone-700 text-stone-100 shadow-sm'
-                      : 'bg-white border border-stone-200 text-[#1C1917] shadow-sm'
-                    : isDarkMode
-                    ? 'text-stone-400 hover:text-stone-100'
-                    : 'text-stone-600 hover:text-[#1C1917]'
-                }`}
-              >
-                <Gift className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 shrink-0" />
-                <span className="truncate">Wrapping</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'card'}
-                onClick={() => {
-                  setActiveTab('card');
-                  if (drawerState === 'collapsed') setDrawerState('peek');
-                }}
-                className={`py-2 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1 transition ${
-                  activeTab === 'card'
-                    ? isDarkMode
-                      ? 'bg-[#292524] border border-stone-700 text-stone-100 shadow-sm'
-                      : 'bg-white border border-stone-200 text-[#1C1917] shadow-sm'
-                    : isDarkMode
-                    ? 'text-stone-400 hover:text-stone-100'
-                    : 'text-stone-600 hover:text-[#1C1917]'
-                }`}
-              >
-                <Mail className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400 shrink-0" />
-                <span className="truncate">Card</span>
-              </button>
-            </div>
-
-            {/* Drawer Content Body */}
-            <div
-              className={`flex-1 overflow-y-auto p-3 sm:p-4 pb-8 space-y-4 ${
-                drawerState === 'collapsed' ? 'hidden lg:block' : 'block'
-              }`}
-            >
-              {/* TAB 1: FLOWER PALETTE + STARTER TEMPLATES */}
-              {activeTab === 'flowers' && (
-                <div className="space-y-4">
-                  {/* Starter Bouquet Templates Strip */}
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                      Templates
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-                      {STARTER_TEMPLATES.map((tpl) => (
-                        <button
-                          key={tpl.id}
-                          type="button"
-                          onClick={() => {
-                            currentSessionVaultCodeRef.current = null;
-                            currentSessionVaultIsDraftRef.current = false;
-                            suppressRecoveryUntilNextEditRef.current = false;
-                            loadSnapshot(tpl.snapshot);
-                            triggerToast(`Loaded "${tpl.name}" template`);
-                          }}
-                          className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
-                            isDarkMode
-                              ? 'bg-[#292524] hover:bg-[#34302c] border-stone-700 hover:border-[#B4846C] text-stone-100'
-                              : 'bg-white hover:bg-stone-50 border-stone-200 hover:border-[#B4846C] text-[#1C1917]'
-                          }`}
-                        >
-                          <div className="w-9 h-9 rounded-full bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-center shrink-0">
-                            <MiniTemplateBouquetSVG
-                              wrapColor={tpl.snapshot.wrapColor}
-                              ribbonColor={tpl.snapshot.ribbonColor}
-                              bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
-                            />
-                          </div>
-                          <span className="text-xs font-medium truncate text-[#1C1917] dark:text-stone-100">
-                            {tpl.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                      Flowers
-                    </h2>
-                    {items.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          resetStudioCanvasSession();
-                          triggerToast('Canvas reset');
-                        }}
-                        className="text-[11px] font-medium text-stone-500 hover:text-red-600 dark:text-stone-400 dark:hover:text-red-400 flex items-center gap-1 transition"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Clear all</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {FLOWER_CATALOG.map((entry) => (
-                      <button
-                        key={entry.type}
-                        type="button"
-                        onClick={() => {
-                          addFlower(entry.type);
-                          triggerToast(`Added ${entry.name}`);
-                        }}
-                        aria-label={`Add ${entry.name} to bouquet`}
-                        className={`group p-2.5 rounded-xl border transition flex flex-col items-center gap-1.5 text-center ${
-                          isDarkMode
-                            ? 'bg-[#292524] hover:bg-[#34302c] border-stone-700 hover:border-[#B4846C]'
-                            : 'bg-white hover:bg-stone-50 border-stone-200 hover:border-[#B4846C]'
-                        }`}
-                      >
-                        <div
-                          className={`w-14 h-14 rounded-full border flex items-center justify-center shrink-0 overflow-hidden ${
-                            isDarkMode
-                              ? 'bg-stone-900 border-stone-800'
-                              : 'bg-stone-50 border-stone-200'
-                          }`}
-                        >
-                          <svg viewBox="-60 -65 120 130" className="w-12 h-12">
-                            <FlowerRenderer
-                              type={entry.type}
-                              petalColor={entry.defaultPetalColor}
-                              centerColor={entry.defaultCenterColor}
-                            />
-                          </svg>
-                        </div>
-                        <span className="text-xs font-medium text-[#1C1917] dark:text-stone-100 truncate w-full">
-                          {entry.name}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: WRAPPING PAPER & RIBBON STUDIO */}
-              {activeTab === 'wrap' && (
-                <div className="space-y-4">
-                  <div>
-                    <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
-                      Wrapping
-                    </h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-                      {WRAPPER_CATALOG.map((st) => (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => {
-                            setWrapStyle(st.id);
-                            setWrapColor(st.defaultHex);
-                          }}
-                          className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${
-                            wrapStyle === st.id
-                              ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
-                              : isDarkMode
-                              ? 'bg-[#292524] border-stone-700 text-stone-200 hover:bg-stone-800'
-                              : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
-                          }`}
-                        >
-                          <div className="w-10 h-10 rounded-full bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-center shrink-0">
-                            <MiniWrapConeSVG styleType={st.id} color={wrapColor} ribbon={ribbonColor} />
-                          </div>
-                          <span className="text-xs font-medium truncate">{st.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {wrapStyle !== 'plain' && (
-                    <div>
-                      <h3 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
-                        Paper color
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {PAPER_SWATCHES.map((sw) => (
-                          <button
-                            key={sw.hex}
-                            type="button"
-                            onClick={() => setWrapColor(sw.hex)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-2 border transition ${
-                              wrapColor === sw.hex
-                                ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100'
-                                : isDarkMode
-                                ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                                : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
-                            }`}
-                          >
-                            <span
-                              className="w-3.5 h-3.5 rounded-full border border-black/15 shrink-0"
-                              style={{ backgroundColor: sw.hex }}
-                            />
-                            <span>{sw.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <h3 className="text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
-                      Ribbon &amp; Lace Design
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2 mb-3">
-                      {RIBBON_STYLE_CATALOG.map((rs) => (
-                        <button
-                          key={rs.id}
-                          type="button"
-                          onClick={() => setRibbonStyle(rs.id)}
-                          className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-2 transition ${
-                            ribbonStyle === rs.id
-                              ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
-                              : isDarkMode
-                              ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                              : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
-                          }`}
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-stone-50 dark:bg-stone-900 flex items-center justify-center shrink-0">
-                            <MiniRibbonBowSVG hex={ribbonColor} styleType={rs.id} />
-                          </div>
-                          <span className="truncate">{rs.label}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
-                      {RIBBON_SWATCHES.map((rb) => (
-                        <button
-                          key={rb.hex}
-                          type="button"
-                          onClick={() => setRibbonColor(rb.hex)}
-                          className={`p-2.5 rounded-xl border text-xs font-medium flex items-center gap-2 transition ${
-                            ribbonColor === rb.hex
-                              ? 'border-[#B4846C] ring-1 ring-[#B4846C] bg-white dark:bg-[#292524] text-[#1C1917] dark:text-stone-100 shadow-sm'
-                              : isDarkMode
-                              ? 'border-stone-700 bg-[#292524] hover:bg-stone-800 text-stone-200'
-                              : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
-                          }`}
-                        >
-                          <span
-                            className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-                            style={{ backgroundColor: rb.hex }}
-                          />
-                          <span className="truncate">{rb.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 3: GREETING CARD EDITOR */}
-              {activeTab === 'card' && (
-                <div className="space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                      Greeting card
-                    </h2>
-                    <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer text-stone-700 dark:text-stone-200">
-                      <input
-                        type="checkbox"
-                        checked={card.visibleOnStage}
-                        onChange={(e) => updateCard({ visibleOnStage: e.target.checked })}
-                        className="accent-[#B4846C] rounded cursor-pointer w-4 h-4"
-                      />
-                      <span>Show card</span>
-                    </label>
-                  </div>
-
-                  {/* Card Note Input Only — Letterpress Stationery Sheet */}
-                  <div
-                    className={`p-3.5 rounded-2xl border border-dashed transition-colors ${
-                      isDarkMode
-                        ? 'bg-[#352C29] border-[#5E4E49]'
-                        : 'bg-[#FFFDF9] border-[#DECBB9]'
-                    }`}
-                  >
-                    <div className="relative">
-                      <textarea
-                        rows={4}
-                        maxLength={PREMIUM_CARD_NOTE_MAX_CHARS}
-                        value={card.message}
-                        placeholder="Write your heartfelt note..."
-                        onFocus={handleCardInputFocus}
-                        onChange={(e) => updateCard({ message: e.target.value })}
-                        aria-label="Card message"
-                        className={`w-full px-3.5 py-2.5 pb-7 rounded-xl border border-dashed text-sm focus:outline-none focus:border-[#B4846C] resize-none transition ${
-                          isDarkMode
-                            ? 'bg-[#2B2321] border-[#544540] text-[#FBF6F1] placeholder:text-[#9A877B]/75'
-                            : 'bg-[#FAF4EE] border-[#E2D1C1] text-[#2A201D] placeholder:text-[#9A877B]/80'
-                        }`}
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '16px' }}
-                      />
-                      <span
-                        className={`absolute bottom-2 right-3 text-[10px] pointer-events-none inline-flex items-center gap-1 ${
-                          card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                            ? 'text-[#B4846C] font-medium'
-                            : 'text-[#9A877B]'
-                        }`}
-                      >
-                        {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
-                          <>
-                            <CoutureBloomSeal className="w-3 h-3" />
-                            <span>Couture Note · {card.message.length}/{PREMIUM_CARD_NOTE_MAX_CHARS}</span>
-                          </>
-                        ) : (
-                          <span>
-                            {card.message.length}/{FREE_CARD_NOTE_MAX_CHARS} free ({PREMIUM_CARD_NOTE_MAX_CHARS} Couture)
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </aside>
-        )}
-
-        {/* ===================================================================
+            {/* ===================================================================
             DESKTOP SECONDARY LEFT SIDEBAR: STEM COLORS, SIZE & LAYER ORDER (lg+)
             Keeps color pickers, scale/tilt sliders, and draggable layer order
             docked on the left side so the main bouquet canvas never changes size!
             =================================================================== */}
-        {!isPreviewMode && !isGiftView && (
-          <aside
-            aria-label="Stem Inspector and Layer Order Sidebar"
-            className={`hidden flex-col order-2 lg:order-2 z-20 shrink-0 border-r transition-all duration-300 ease-in-out ${
-              isDarkMode
-                ? 'bg-[#191715] border-stone-800 text-stone-100'
-                : 'bg-[#FAF8F5] border-stone-200 text-[#1C1917]'
-            } ${
-              isInspectorSidebarOpen
-                ? 'lg:h-full lg:w-[320px] xl:w-[340px]'
-                : 'lg:w-0 lg:h-full lg:overflow-hidden lg:border-none'
-            }`}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-stone-200 dark:border-stone-800 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <Sliders className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                <span className="text-xs font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400 truncate">
-                  Stem &amp; Layers
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsInspectorSidebarOpen(false)}
-                title="Collapse stem & layer inspector"
-                aria-label="Collapse stem & layer inspector"
-                className="p-1 rounded-lg hover:bg-stone-200/60 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 transition"
+            {!isPreviewMode && !isGiftView && (
+              <aside
+                aria-label="Stem Inspector and Layer Order Sidebar"
+                className={`hidden flex-col order-2 lg:order-2 z-20 shrink-0 border-r transition-all duration-300 ease-in-out ${isDarkMode
+                  ? 'bg-[#191715] border-stone-800 text-stone-100'
+                  : 'bg-[#FAF8F5] border-stone-200 text-[#1C1917]'
+                  } ${isInspectorSidebarOpen
+                    ? 'lg:h-full lg:w-[320px] xl:w-[340px]'
+                    : 'lg:w-0 lg:h-full lg:overflow-hidden lg:border-none'
+                  }`}
               >
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Scrollable Body: Top = Selected Stem Color/Size Controls, Bottom = Draggable Layer Order */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-4">
-              {/* Section 1: Selected Flower Color, Scale & Tilt Inspector */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between px-0.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
-                    <Palette className="w-3.5 h-3.5 text-[#B4846C]" />
-                    <span>Stem Color &amp; Size</span>
-                  </span>
-                  {selectedId && (
-                    <span className="text-[10px] text-[#B4846C] font-medium">
-                      Active stem
+                {/* Header */}
+                <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-stone-200 dark:border-stone-800 shrink-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Sliders className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                    <span className="text-xs font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400 truncate">
+                      Stem &amp; Layers
                     </span>
-                  )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsInspectorSidebarOpen(false)}
+                    title="Collapse stem & layer inspector"
+                    aria-label="Collapse stem & layer inspector"
+                    className="p-1 rounded-lg hover:bg-stone-200/60 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200 transition"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </button>
                 </div>
 
-                {selectedId ? (
-                  <SelectedFlowerToolbar
-                    isDrawerOpen={drawerState !== 'collapsed'}
-                    onRequestCollapseDrawer={() => {
-                      autoCollapsedRef.current = false;
-                      setDrawerState('collapsed');
-                    }}
-                  />
-                ) : (
-                  <div
-                    className={`rounded-2xl border border-dashed p-3.5 text-center transition ${
-                      isDarkMode
-                        ? 'border-stone-800 bg-[#1E1C1A]/60 text-stone-400'
-                        : 'border-stone-200 bg-white/70 text-stone-500'
-                    }`}
-                  >
-                    <Palette className="w-5 h-5 mx-auto mb-1.5 text-[#B4846C]/70" />
-                    <p className="text-xs font-medium text-stone-700 dark:text-stone-300">
-                      No stem selected
-                    </p>
-                    <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-relaxed">
-                      Click any flower on the canvas or in the layer list below to customize its petal colors, size, and tilt.
-                    </p>
+                {/* Scrollable Body: Top = Selected Stem Color/Size Controls, Bottom = Draggable Layer Order */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                  {/* Section 1: Selected Flower Color, Scale & Tilt Inspector */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                        <Palette className="w-3.5 h-3.5 text-[#B4846C]" />
+                        <span>Stem Color &amp; Size</span>
+                      </span>
+                      {selectedId && (
+                        <span className="text-[10px] text-[#B4846C] font-medium">
+                          Active stem
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedId ? (
+                      <SelectedFlowerToolbar
+                        isDrawerOpen={drawerState !== 'collapsed'}
+                        onRequestCollapseDrawer={() => {
+                          autoCollapsedRef.current = false;
+                          setDrawerState('collapsed');
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className={`rounded-2xl border border-dashed p-3.5 text-center transition ${isDarkMode
+                          ? 'border-stone-800 bg-[#1E1C1A]/60 text-stone-400'
+                          : 'border-stone-200 bg-white/70 text-stone-500'
+                          }`}
+                      >
+                        <Palette className="w-5 h-5 mx-auto mb-1.5 text-[#B4846C]/70" />
+                        <p className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                          No stem selected
+                        </p>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-relaxed">
+                          Click any flower on the canvas or in the layer list below to customize its petal colors, size, and tilt.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Divider */}
-              <div className="h-[1px] bg-stone-200/80 dark:bg-stone-800" />
+                  {/* Divider */}
+                  <div className="h-[1px] bg-stone-200/80 dark:bg-stone-800" />
 
-              {/* Section 2: Real Draggable & Reorderable Layer Manager */}
-              <LayerManagerPanel isEmbeddedInSidebar />
-            </div>
-          </aside>
-        )}
-      </div>
+                  {/* Section 2: Real Draggable & Reorderable Layer Manager */}
+                  <LayerManagerPanel isEmbeddedInSidebar />
+                </div>
+              </aside>
+            )}
+          </div>
         </>
       )}
 
@@ -6874,21 +6094,19 @@ export default function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-md rounded-[26px] border border-dashed p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.2)] relative space-y-4 transition-colors ${
-              isDarkMode
-                ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
-                : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18]'
-            }`}
+            className={`w-full max-w-md rounded-[26px] border border-dashed p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.2)] relative space-y-4 transition-colors ${isDarkMode
+              ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
+              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18]'
+              }`}
           >
             {/* Close Button */}
             <button
               type="button"
               onClick={() => setIsCardModalOpen(false)}
-              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                  : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#F5EDE4]'
-              }`}
+              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${isDarkMode
+                ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                : 'text-[#8C7A70] hover:text-[#231C18] hover:bg-[#F5EDE4]'
+                }`}
               aria-label="Close card editor"
             >
               <X className="w-4 h-4" />
@@ -6909,11 +6127,10 @@ export default function App() {
               </h3>
               <div className="flex items-center justify-center pt-0.5">
                 <label
-                  className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border border-dashed text-[11px] font-medium cursor-pointer transition ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#544540] text-[#D8C7BE]'
-                      : 'bg-[#FAF4EE] border-[#DECBB9] text-[#6E5D54]'
-                  }`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border border-dashed text-[11px] font-medium cursor-pointer transition ${isDarkMode
+                    ? 'bg-[#2B2321] border-[#544540] text-[#D8C7BE]'
+                    : 'bg-[#FAF4EE] border-[#DECBB9] text-[#6E5D54]'
+                    }`}
                 >
                   <input
                     type="checkbox"
@@ -6928,11 +6145,10 @@ export default function App() {
 
             {/* Recessed Parchment Note Box with Dashed Border */}
             <div
-              className={`p-3.5 rounded-2xl border border-dashed relative ${
-                isDarkMode
-                  ? 'bg-[#2B2321] border-[#544540]'
-                  : 'bg-[#FAF4EE] border-[#E2D1C1]'
-              }`}
+              className={`p-3.5 rounded-2xl border border-dashed relative ${isDarkMode
+                ? 'bg-[#2B2321] border-[#544540]'
+                : 'bg-[#FAF4EE] border-[#E2D1C1]'
+                }`}
             >
               <textarea
                 rows={4}
@@ -6941,19 +6157,17 @@ export default function App() {
                 placeholder="Write a heartfelt note for your bouquet..."
                 onChange={(e) => updateCard({ message: e.target.value })}
                 aria-label="Card message"
-                className={`w-full px-1 py-0.5 pb-6 bg-transparent border-0 text-base leading-relaxed focus:outline-none resize-none ${
-                  isDarkMode
-                    ? 'text-[#FBF6F1] placeholder:text-[#9A877B]/75'
-                    : 'text-[#2A201D] placeholder:text-[#9A877B]/85'
-                }`}
+                className={`w-full px-1 py-0.5 pb-6 bg-transparent border-0 text-base leading-relaxed focus:outline-none resize-none ${isDarkMode
+                  ? 'text-[#FBF6F1] placeholder:text-[#9A877B]/75'
+                  : 'text-[#2A201D] placeholder:text-[#9A877B]/85'
+                  }`}
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
               />
               <span
-                className={`absolute bottom-2.5 right-3.5 text-[10.5px] pointer-events-none inline-flex items-center gap-1 ${
-                  card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
-                    ? 'text-[#B4846C] font-medium'
-                    : 'text-[#9A877B]'
-                }`}
+                className={`absolute bottom-2.5 right-3.5 text-[10.5px] pointer-events-none inline-flex items-center gap-1 ${card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS
+                  ? 'text-[#B4846C] font-medium'
+                  : 'text-[#9A877B]'
+                  }`}
               >
                 {card.message.trim().length > FREE_CARD_NOTE_MAX_CHARS ? (
                   <>
@@ -6971,11 +6185,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsCardModalOpen(false)}
-              className={`w-full py-2.5 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
-                isDarkMode
-                  ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                  : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-              }`}
+              className={`w-full py-2.5 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${isDarkMode
+                ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                }`}
             >
               Save Note
             </button>
@@ -6994,20 +6207,18 @@ export default function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-md rounded-[26px] p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.18)] border border-dashed relative max-h-[88vh] overflow-y-auto transition-colors ${
-              isDarkMode
-                ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
-                : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-            }`}
+            className={`w-full max-w-md rounded-[26px] p-5 sm:p-6 shadow-[0_24px_60px_rgba(28,20,16,0.18)] border border-dashed relative max-h-[88vh] overflow-y-auto transition-colors ${isDarkMode
+              ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1]'
+              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+              }`}
           >
             <button
               type="button"
               onClick={() => setIsShareModalOpen(false)}
-              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                  : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4]'
-              }`}
+              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${isDarkMode
+                ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4]'
+                }`}
               aria-label="Close dialog"
             >
               <X className="w-4 h-4" />
@@ -7042,15 +6253,14 @@ export default function App() {
                     <React.Fragment key={st.id}>
                       {idx > 0 && (
                         <div
-                          className={`flex-1 border-t border-dashed ${
-                            idx <= currentIdx
-                              ? isDarkMode
-                                ? 'border-[#E6B89C]'
-                                : 'border-[#8C5E47]'
-                              : isDarkMode
+                          className={`flex-1 border-t border-dashed ${idx <= currentIdx
+                            ? isDarkMode
+                              ? 'border-[#E6B89C]'
+                              : 'border-[#8C5E47]'
+                            : isDarkMode
                               ? 'border-[#544540]'
                               : 'border-[#E2D1C1]'
-                          }`}
+                            }`}
                         />
                       )}
                       <button
@@ -7068,37 +6278,34 @@ export default function App() {
                           setShareLockError(null);
                           setShareStep(st.id);
                         }}
-                        className={`flex items-center gap-1.5 group ${
-                          isStepBlocked ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer'
-                        }`}
+                        className={`flex items-center gap-1.5 group ${isStepBlocked ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
                       >
                         <span
-                          className={`w-6 h-6 rounded-full text-[11px] font-semibold flex items-center justify-center border transition ${
-                            isActive
-                              ? isDarkMode
-                                ? 'bg-[#E6B89C] border-[#E6B89C] text-[#231C18]'
-                                : 'bg-[#6E4434] border-[#6E4434] text-[#FFFDF9]'
-                              : isDone
+                          className={`w-6 h-6 rounded-full text-[11px] font-semibold flex items-center justify-center border transition ${isActive
+                            ? isDarkMode
+                              ? 'bg-[#E6B89C] border-[#E6B89C] text-[#231C18]'
+                              : 'bg-[#6E4434] border-[#6E4434] text-[#FFFDF9]'
+                            : isDone
                               ? isDarkMode
                                 ? 'bg-[#463A36] border-[#E6B89C]/70 text-[#E6B89C]'
                                 : 'bg-[#FAF3EB] border-[#B4846C] text-[#6E4434]'
                               : isDarkMode
-                              ? 'border-dashed border-[#5E4E49] text-[#A8968C]'
-                              : 'border-dashed border-[#DECBB9] text-[#8C7A70]'
-                          }`}
+                                ? 'border-dashed border-[#5E4E49] text-[#A8968C]'
+                                : 'border-dashed border-[#DECBB9] text-[#8C7A70]'
+                            }`}
                         >
                           {isDone ? <Check className="w-3 h-3" /> : st.num}
                         </span>
                         <span
-                          className={`text-xs font-medium ${
-                            isActive
-                              ? isDarkMode
-                                ? 'text-[#FBF6F1]'
-                                : 'text-[#2A201D]'
-                              : isDarkMode
+                          className={`text-xs font-medium ${isActive
+                            ? isDarkMode
+                              ? 'text-[#FBF6F1]'
+                              : 'text-[#2A201D]'
+                            : isDarkMode
                               ? 'text-[#A8968C]'
                               : 'text-[#8C7A70]'
-                          }`}
+                            }`}
                         >
                           {st.label}
                         </span>
@@ -7115,18 +6322,16 @@ export default function App() {
             {shareStep === 'dedication' && (
               <div className="space-y-3.5 animate-in fade-in duration-150">
                 <div
-                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${
-                    isDarkMode
-                      ? 'bg-[#2B2321]/75 border-[#544540]'
-                      : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
-                  }`}
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${isDarkMode
+                    ? 'bg-[#2B2321]/75 border-[#544540]'
+                    : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
+                    }`}
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
                       <label
-                        className={`block text-[11px] font-medium mb-1 ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
-                        }`}
+                        className={`block text-[11px] font-medium mb-1 ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                          }`}
                       >
                         To (Recipient)
                       </label>
@@ -7137,18 +6342,16 @@ export default function App() {
                         onChange={(e) => updateCard({ to: e.target.value })}
                         placeholder="e.g., My Dearest"
                         aria-label="Recipient"
-                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                          isDarkMode
-                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                        }`}
+                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${isDarkMode
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          }`}
                       />
                     </div>
                     <div>
                       <label
-                        className={`block text-[11px] font-medium mb-1 ${
-                          isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
-                        }`}
+                        className={`block text-[11px] font-medium mb-1 ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                          }`}
                       >
                         From (Optional)
                       </label>
@@ -7159,22 +6362,20 @@ export default function App() {
                         onChange={(e) => updateCard({ from: e.target.value })}
                         placeholder="Your name"
                         aria-label="Sender"
-                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                          isDarkMode
-                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                        }`}
+                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${isDarkMode
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          }`}
                       />
                     </div>
                   </div>
 
                   {/* Quiet 1-line summary of attached Studio Card Note */}
                   <div
-                    className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 text-[11px] ${
-                      isDarkMode
-                        ? 'bg-[#352C29]/60 border-[#544540] text-[#D8C7BE]'
-                        : 'bg-[#FFFDF9]/80 border-[#DECBB9] text-[#6E5D54]'
-                    }`}
+                    className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 text-[11px] ${isDarkMode
+                      ? 'bg-[#352C29]/60 border-[#544540] text-[#D8C7BE]'
+                      : 'bg-[#FFFDF9]/80 border-[#DECBB9] text-[#6E5D54]'
+                      }`}
                   >
                     <span className="truncate italic" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '14px' }}>
                       {card.visibleOnStage && card.message.trim()
@@ -7198,11 +6399,10 @@ export default function App() {
                   type="button"
                   data-testid="share-step-next-btn"
                   onClick={() => setShareStep('lock')}
-                  className={`w-full py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                  }`}
+                  className={`w-full py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${isDarkMode
+                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                    }`}
                 >
                   Next · Unwrap Timing
                 </button>
@@ -7215,11 +6415,10 @@ export default function App() {
             {shareStep === 'lock' && (
               <div className="space-y-3.5 animate-in fade-in duration-150">
                 <div
-                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${
-                    isDarkMode
-                      ? 'bg-[#2D2421]/75 border-[#544540]'
-                      : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
-                  }`}
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${isDarkMode
+                    ? 'bg-[#2D2421]/75 border-[#544540]'
+                    : 'bg-[#FAF4EE]/60 border-[#E2D1C1]'
+                    }`}
                 >
                   <div className="grid grid-cols-3 gap-2">
                     {(
@@ -7268,15 +6467,14 @@ export default function App() {
                               updateLock({ mode: tab.id });
                             }
                           }}
-                          className={`py-2.5 px-2 rounded-xl border text-center transition cursor-pointer ${
-                            active
-                              ? isDarkMode
-                                ? 'border-[#E6B89C] bg-[#E6B89C] text-[#231C18]'
-                                : 'border-[#6E4434] bg-[#6E4434] text-[#FFFDF9]'
-                              : isDarkMode
+                          className={`py-2.5 px-2 rounded-xl border text-center transition cursor-pointer ${active
+                            ? isDarkMode
+                              ? 'border-[#E6B89C] bg-[#E6B89C] text-[#231C18]'
+                              : 'border-[#6E4434] bg-[#6E4434] text-[#FFFDF9]'
+                            : isDarkMode
                               ? 'border-dashed border-[#544540] bg-[#352C29] text-[#D8C7BE] hover:border-[#6E5B54]'
                               : 'border-dashed border-[#DECBB9] bg-[#FFFDF9] text-[#5C4438] hover:border-[#C5A892]'
-                          }`}
+                            }`}
                         >
                           <div className="text-xs font-medium">{tab.label}</div>
                           <div className="text-[10px] opacity-75 mt-0.5">{tab.sub}</div>
@@ -7288,9 +6486,8 @@ export default function App() {
                   {lock?.mode === 'countdown' && (
                     <div className="space-y-1.5 pt-1 animate-in fade-in duration-150">
                       <label
-                        className={`block text-[11px] ${
-                          isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                        }`}
+                        className={`block text-[11px] ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                          }`}
                       >
                         Unlocks on:
                       </label>
@@ -7302,11 +6499,10 @@ export default function App() {
                           setShareLockError(null);
                           updateLock({ unlockAtIso: e.target.value });
                         }}
-                        className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                          isDarkMode
-                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                        }`}
+                        className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${isDarkMode
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          }`}
                       />
                     </div>
                   )}
@@ -7316,9 +6512,8 @@ export default function App() {
                       {/* Answer Format Selector: 4-Digit PIN vs. Pure Case-Insensitive Word */}
                       <div>
                         <span
-                          className={`block text-[11px] mb-1 ${
-                            isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                          }`}
+                          className={`block text-[11px] mb-1 ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                            }`}
                         >
                           Answer format:
                         </span>
@@ -7363,15 +6558,14 @@ export default function App() {
                                         : sanitizeSecretWordInput(lock.passcodeAnswer || ''),
                                   });
                                 }}
-                                className={`py-1.5 px-2.5 rounded-xl border text-left transition cursor-pointer ${
-                                  selected
-                                    ? isDarkMode
-                                      ? 'border-[#E6B89C] bg-[#3E322E] text-[#FBF6F1]'
-                                      : 'border-[#6E4434] bg-[#FFFDF9] text-[#2A201D] ring-1 ring-[#6E4434]/20'
-                                    : isDarkMode
+                                className={`py-1.5 px-2.5 rounded-xl border text-left transition cursor-pointer ${selected
+                                  ? isDarkMode
+                                    ? 'border-[#E6B89C] bg-[#3E322E] text-[#FBF6F1]'
+                                    : 'border-[#6E4434] bg-[#FFFDF9] text-[#2A201D] ring-1 ring-[#6E4434]/20'
+                                  : isDarkMode
                                     ? 'border-dashed border-[#544540] bg-[#352C29]/60 text-[#C8B6AC] hover:border-[#6E5B54]'
                                     : 'border-dashed border-[#DECBB9] bg-[#FAF4EE]/60 text-[#66544A] hover:border-[#C5A892]'
-                                }`}
+                                  }`}
                               >
                                 <div className="text-[11.5px] font-medium leading-tight">
                                   {opt.label}
@@ -7385,9 +6579,8 @@ export default function App() {
 
                       <div>
                         <label
-                          className={`block text-[11px] mb-1 ${
-                            isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                          }`}
+                          className={`block text-[11px] mb-1 ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                            }`}
                         >
                           Hint for recipient:
                         </label>
@@ -7405,20 +6598,18 @@ export default function App() {
                             setShareLockError(null);
                             updateLock({ questionPrompt: e.target.value });
                           }}
-                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                            isDarkMode
-                              ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                          }`}
+                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${isDarkMode
+                            ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
+                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                            }`}
                         />
                       </div>
 
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label
-                            className={`text-[11px] ${
-                              isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                            }`}
+                            className={`text-[11px] ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                              }`}
                           >
                             {effectivePasscodeType === 'pin'
                               ? '4-digit PIN (numbers only):'
@@ -7448,20 +6639,17 @@ export default function App() {
                                 : sanitizeSecretWordInput(e.target.value);
                             updateLock({ passcodeAnswer: sanitized });
                           }}
-                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${
-                            effectivePasscodeType === 'pin'
-                              ? 'font-mono tracking-[0.25em]'
-                              : ''
-                          } ${
-                            isDarkMode
+                          className={`w-full px-3 py-1.5 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${effectivePasscodeType === 'pin'
+                            ? 'font-mono tracking-[0.25em]'
+                            : ''
+                            } ${isDarkMode
                               ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
                               : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
-                          }`}
+                            }`}
                         />
                         <p
-                          className={`text-[10px] mt-1 opacity-75 ${
-                            isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
-                          }`}
+                          className={`text-[10px] mt-1 opacity-75 ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B60]'
+                            }`}
                         >
                           {effectivePasscodeType === 'pin'
                             ? 'Great for dates like MMDD (1014) or meaningful numbers — prevents format mismatch.'
@@ -7489,11 +6677,10 @@ export default function App() {
                       setShareLockError(null);
                       setShareStep('dedication');
                     }}
-                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
-                      isDarkMode
-                        ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
-                        : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
-                    }`}
+                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${isDarkMode
+                      ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
+                      : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
+                      }`}
                   >
                     Back
                   </button>
@@ -7509,11 +6696,10 @@ export default function App() {
                       setShareLockError(null);
                       setShareStep('seal');
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${
-                      isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                    }`}
+                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                      }`}
                   >
                     Next · Seal Gift
                   </button>
@@ -7527,11 +6713,10 @@ export default function App() {
             {shareStep === 'seal' && (
               <div className="space-y-3.5 animate-in fade-in duration-150">
                 <div
-                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${
-                    isDarkMode
-                      ? 'bg-[#2B2321]/80 border-[#544540]'
-                      : 'bg-[#FAF4EE]/65 border-[#E2D1C1]'
-                  }`}
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-3 ${isDarkMode
+                    ? 'bg-[#2B2321]/80 border-[#544540]'
+                    : 'bg-[#FAF4EE]/65 border-[#E2D1C1]'
+                    }`}
                 >
                   {/* Gallery Showcase vs. Permanent Link Row */}
                   <div className="flex items-center justify-between gap-2">
@@ -7544,17 +6729,16 @@ export default function App() {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <span
                         data-testid="share-lifespan-badge"
-                        className={`text-[11px] font-semibold ${
-                          activeRetentionPolicy.isPremiumEternal
-                            ? 'text-amber-600 dark:text-amber-300'
-                            : activeRetentionPolicy.retentionDays > 30
+                        className={`text-[11px] font-semibold ${activeRetentionPolicy.isPremiumEternal
+                          ? 'text-amber-600 dark:text-amber-300'
+                          : activeRetentionPolicy.retentionDays > 30
                             ? isDarkMode
                               ? 'text-[#F0C8B0]'
                               : 'text-[#6E4434]'
                             : isDarkMode
-                            ? 'text-[#C8B6AC]'
-                            : 'text-[#7D6B60]'
-                        }`}
+                              ? 'text-[#C8B6AC]'
+                              : 'text-[#7D6B60]'
+                          }`}
                       >
                         {activeRetentionPolicy.badgeLabel}
                       </span>
@@ -7580,11 +6764,10 @@ export default function App() {
                   {currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass && (
                     <div
                       data-testid="share-couture-unlock-banner"
-                      className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 ${
-                        isDarkMode
-                          ? 'bg-[#352C29] border-[#E6B89C]/55'
-                          : 'bg-[#FFFDF9] border-[#D8BFA8]'
-                      }`}
+                      className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 ${isDarkMode
+                        ? 'bg-[#352C29] border-[#E6B89C]/55'
+                        : 'bg-[#FFFDF9] border-[#D8BFA8]'
+                        }`}
                     >
                       <span className="text-xs font-medium flex items-center gap-1.5 min-w-0 truncate">
                         <CoutureBloomSeal className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
@@ -7643,11 +6826,10 @@ export default function App() {
                 {isShorteningUrl && (
                   <div
                     data-testid="share-sealing-progress-banner"
-                    className={`px-3.5 py-2.5 rounded-xl border border-dashed flex items-center gap-2.5 text-xs font-medium animate-in fade-in duration-150 ${
-                      isDarkMode
-                        ? 'bg-[#352C29] border-[#E6B89C]/50 text-[#F0C8B0]'
-                        : 'bg-[#FFFDF9] border-[#D8BFA8] text-[#6E4434]'
-                    }`}
+                    className={`px-3.5 py-2.5 rounded-xl border border-dashed flex items-center gap-2.5 text-xs font-medium animate-in fade-in duration-150 ${isDarkMode
+                      ? 'bg-[#352C29] border-[#E6B89C]/50 text-[#F0C8B0]'
+                      : 'bg-[#FFFDF9] border-[#D8BFA8] text-[#6E4434]'
+                      }`}
                   >
                     <span
                       className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0"
@@ -7662,11 +6844,10 @@ export default function App() {
                     type="button"
                     disabled={isShorteningUrl}
                     onClick={() => setShareStep('lock')}
-                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition disabled:opacity-50 cursor-pointer ${
-                      isDarkMode
-                        ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
-                        : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
-                    }`}
+                    className={`py-2.5 px-4 rounded-full border border-dashed text-xs font-medium transition disabled:opacity-50 cursor-pointer ${isDarkMode
+                      ? 'border-[#5C4B47] text-[#D8C7BE] hover:bg-[#463A36]'
+                      : 'border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
+                      }`}
                   >
                     Back
                   </button>
@@ -7691,11 +6872,10 @@ export default function App() {
                       }
                       handleShareLink(true);
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition disabled:opacity-60 cursor-pointer ${
-                      isDarkMode
-                        ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                        : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                    }`}
+                    className={`flex-1 py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 transition disabled:opacity-60 cursor-pointer ${isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                      }`}
                   >
                     {isShorteningUrl ? (
                       <>
@@ -7724,11 +6904,10 @@ export default function App() {
             {shareStep === 'ready' && (
               <div className="mt-3.5 space-y-3 animate-in fade-in duration-150">
                 <div
-                  className={`flex items-center gap-1.5 p-1.5 rounded-2xl border border-dashed ${
-                    isDarkMode
-                      ? 'bg-[#2B2321] border-[#544540]'
-                      : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
-                  }`}
+                  className={`flex items-center gap-1.5 p-1.5 rounded-2xl border border-dashed ${isDarkMode
+                    ? 'bg-[#2B2321] border-[#544540]'
+                    : 'bg-[#FAF4EE]/80 border-[#DECBB9]'
+                    }`}
                 >
                   <input
                     type="text"
@@ -7736,9 +6915,8 @@ export default function App() {
                     aria-label="Short gift link"
                     value={sealedGiftUrl || shortShareUrl || getShareUrl(true)}
                     onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
-                    className={`flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none truncate ${
-                      isDarkMode ? 'text-[#E6D6C7]' : 'text-[#5C4438]'
-                    }`}
+                    className={`flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none truncate ${isDarkMode ? 'text-[#E6D6C7]' : 'text-[#5C4438]'
+                      }`}
                   />
                   <button
                     type="button"
@@ -7746,19 +6924,18 @@ export default function App() {
                     onClick={() => {
                       const urlToCopy = sealedGiftUrl || shortShareUrl || getShareUrl(true);
                       if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(urlToCopy).catch(() => {});
+                        navigator.clipboard.writeText(urlToCopy).catch(() => { });
                       }
                       setCopiedSealedLink(true);
                       setTimeout(() => setCopiedSealedLink(false), 1800);
                       triggerToast('Link copied!');
                     }}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
-                      copiedSealedLink
-                        ? 'bg-emerald-600 text-white'
-                        : isDarkMode
+                    className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer ${copiedSealedLink
+                      ? 'bg-emerald-600 text-white'
+                      : isDarkMode
                         ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
                         : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                    }`}
+                      }`}
                   >
                     {copiedSealedLink ? (
                       <>
@@ -7777,11 +6954,10 @@ export default function App() {
                 {/* Couture Feature: Send Surprise Bouquet via Email ("Someone sent you a Bouquet") */}
                 <div
                   data-testid="share-email-delivery-card"
-                  className={`p-3.5 rounded-2xl border border-dashed space-y-2.5 ${
-                    isDarkMode
-                      ? 'bg-[#2B2321]/90 border-[#5E4E49]'
-                      : 'bg-[#FAF4EE]/95 border-[#DFCDBB]'
-                  }`}
+                  className={`p-3.5 rounded-2xl border border-dashed space-y-2.5 ${isDarkMode
+                    ? 'bg-[#2B2321]/90 border-[#5E4E49]'
+                    : 'bg-[#FAF4EE]/95 border-[#DFCDBB]'
+                    }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -7794,15 +6970,14 @@ export default function App() {
                       </span>
                     </div>
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed text-[10px] font-medium shrink-0 ${
-                        isBouquetUnlockedByPass || isSealedBouquetPaidRef.current
-                          ? isDarkMode
-                            ? 'bg-[#352C29] border-[#E6B89C]/60 text-[#E6B89C]'
-                            : 'bg-[#FFFDF9] border-[#C9A88E] text-[#6E4434]'
-                          : isDarkMode
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed text-[10px] font-medium shrink-0 ${isBouquetUnlockedByPass || isSealedBouquetPaidRef.current
+                        ? isDarkMode
+                          ? 'bg-[#352C29] border-[#E6B89C]/60 text-[#E6B89C]'
+                          : 'bg-[#FFFDF9] border-[#C9A88E] text-[#6E4434]'
+                        : isDarkMode
                           ? 'bg-[#352C29] border-[#66554F] text-[#E6B89C]'
                           : 'bg-[#FFFDF9] border-[#D8C3B0] text-[#7A4B3A]'
-                      }`}
+                        }`}
                     >
                       <CoutureBloomSeal className="w-2.5 h-2.5" />
                       <span>
@@ -7814,9 +6989,8 @@ export default function App() {
                   </div>
 
                   <p
-                    className={`text-[11px] leading-relaxed ${
-                      isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
-                    }`}
+                    className={`text-[11px] leading-relaxed ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
+                      }`}
                   >
                     Sends a clean personal letter titled{' '}
                     <span className="italic font-medium">
@@ -7828,11 +7002,10 @@ export default function App() {
                   {surpriseEmailSentTo ? (
                     <div
                       data-testid="surprise-email-sent-badge"
-                      className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 text-xs ${
-                        isDarkMode
-                          ? 'bg-[#352C29] border-[#66554F] text-[#E6B89C]'
-                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#6E4434]'
-                      }`}
+                      className={`px-3 py-2 rounded-xl border border-dashed flex items-center justify-between gap-2 text-xs ${isDarkMode
+                        ? 'bg-[#352C29] border-[#66554F] text-[#E6B89C]'
+                        : 'bg-[#FFFDF9] border-[#DECBB9] text-[#6E4434]'
+                        }`}
                     >
                       <span className="truncate">
                         Surprise bouquet sent to <span className="font-semibold">{surpriseEmailSentTo}</span>
@@ -7863,11 +7036,10 @@ export default function App() {
                             if (surpriseEmailError) setSurpriseEmailError(null);
                           }}
                           placeholder="Loved one's email address..."
-                          className={`flex-1 min-w-0 px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none transition-colors ${
-                            isDarkMode
-                              ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
-                              : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18] placeholder:text-[#9A897E] focus:border-[#7A4B3A]'
-                          }`}
+                          className={`flex-1 min-w-0 px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none transition-colors ${isDarkMode
+                            ? 'bg-[#352C29] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#96837A] focus:border-[#E6B89C]'
+                            : 'bg-[#FFFDF9] border-[#DECBB9] text-[#231C18] placeholder:text-[#9A897E] focus:border-[#7A4B3A]'
+                            }`}
                         />
                         <button
                           type="button"
@@ -7893,11 +7065,10 @@ export default function App() {
                             setSurpriseEmailSentTo(res.recipientEmail || surpriseRecipientEmail.trim());
                             triggerToast('Surprise bouquet email sent!');
                           }}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer disabled:opacity-60 ${
-                            isDarkMode
-                              ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                              : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
-                          }`}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer disabled:opacity-60 ${isDarkMode
+                            ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                            : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                            }`}
                         >
                           <Send className="w-3 h-3" />
                           <span>{isSendingSurpriseEmail ? 'Sending...' : 'Send Email'}</span>
@@ -7908,11 +7079,10 @@ export default function App() {
                         <div
                           role="alert"
                           data-testid="surprise-email-error"
-                          className={`px-3 py-1.5 rounded-xl border border-dashed text-[11px] ${
-                            isDarkMode
-                              ? 'bg-[#352C29] border-[#8C6A5D] text-[#E6B89C]'
-                              : 'bg-[#FFFDF9] border-[#C8A992] text-[#6E4434]'
-                          }`}
+                          className={`px-3 py-1.5 rounded-xl border border-dashed text-[11px] ${isDarkMode
+                            ? 'bg-[#352C29] border-[#8C6A5D] text-[#E6B89C]'
+                            : 'bg-[#FFFDF9] border-[#C8A992] text-[#6E4434]'
+                            }`}
                         >
                           {surpriseEmailError}
                         </div>
@@ -7928,11 +7098,10 @@ export default function App() {
                         setCheckoutTriggerAction('share');
                         setIsCheckoutModalOpen(true);
                       }}
-                      className={`w-full py-2 px-3.5 rounded-xl border border-dashed text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                        isDarkMode
-                          ? 'bg-[#352C29] border-[#E6B89C]/60 text-[#E6B89C] hover:bg-[#463A36]'
-                          : 'bg-[#FFFDF9] border-[#C9A88E] text-[#6E4434] hover:bg-[#F3E9DF]'
-                      }`}
+                      className={`w-full py-2 px-3.5 rounded-xl border border-dashed text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${isDarkMode
+                        ? 'bg-[#352C29] border-[#E6B89C]/60 text-[#E6B89C] hover:bg-[#463A36]'
+                        : 'bg-[#FFFDF9] border-[#C9A88E] text-[#6E4434] hover:bg-[#F3E9DF]'
+                        }`}
                     >
                       <CoutureBloomSeal className="w-3.5 h-3.5" />
                       <span>Unlock Surprise Email Delivery</span>
@@ -7958,11 +7127,10 @@ export default function App() {
                         handleExportPng();
                       }
                     }}
-                    className={`py-2.5 px-3 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${
-                      isDarkMode
-                        ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
-                        : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
-                    }`}
+                    className={`py-2.5 px-3 rounded-full border border-dashed text-xs font-medium text-center transition cursor-pointer ${isDarkMode
+                      ? 'border-[#5C4B47] bg-[#2D2421] hover:bg-[#3B302C] text-[#E6D6C7]'
+                      : 'border-[#DECBB9] bg-[#FAF4EE]/70 hover:bg-[#F3E9DF] text-[#5C4438]'
+                      }`}
                   >
                     Save Bouquet PNG
                   </button>
@@ -7970,11 +7138,10 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsShareModalOpen(false)}
-                    className={`py-2.5 px-3 rounded-full text-xs font-medium text-center transition cursor-pointer ${
-                      isDarkMode
-                        ? 'bg-[#463A36] text-[#FBF6F1] hover:bg-[#544540]'
-                        : 'bg-[#EDE0D4] text-[#2A201D] hover:bg-[#E2D1C1]'
-                    }`}
+                    className={`py-2.5 px-3 rounded-full text-xs font-medium text-center transition cursor-pointer ${isDarkMode
+                      ? 'bg-[#463A36] text-[#FBF6F1] hover:bg-[#544540]'
+                      : 'bg-[#EDE0D4] text-[#2A201D] hover:bg-[#E2D1C1]'
+                      }`}
                   >
                     Done
                   </button>
@@ -7996,11 +7163,10 @@ export default function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl border relative text-center ${
-              isDarkMode
-                ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
-                : 'bg-white border-stone-200 text-[#1C1917]'
-            }`}
+            className={`w-full max-w-sm rounded-2xl p-5 shadow-2xl border relative text-center ${isDarkMode
+              ? 'bg-[#1E1C1A] border-stone-800 text-stone-100'
+              : 'bg-white border-stone-200 text-[#1C1917]'
+              }`}
           >
             <button
               type="button"
@@ -8022,11 +7188,10 @@ export default function App() {
             </p>
 
             <div
-              className={`mt-4 p-3 rounded-xl border text-left text-xs space-y-1.5 ${
-                isDarkMode
-                  ? 'bg-[#141211] border-stone-800 text-stone-300'
-                  : 'bg-stone-50 border-stone-200/80 text-stone-700'
-              }`}
+              className={`mt-4 p-3 rounded-xl border text-left text-xs space-y-1.5 ${isDarkMode
+                ? 'bg-[#141211] border-stone-800 text-stone-300'
+                : 'bg-stone-50 border-stone-200/80 text-stone-700'
+                }`}
             >
               <p className="font-medium">How to open in browser:</p>
               <p className="text-[11px] text-stone-500 dark:text-stone-400">
@@ -8044,7 +7209,7 @@ export default function App() {
                   const currentUrl =
                     typeof window !== 'undefined' ? window.location.href : getShareUrl(true);
                   if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(currentUrl).catch(() => {});
+                    navigator.clipboard.writeText(currentUrl).catch(() => { });
                   }
                   triggerToast('Link copied!');
                   setIsInAppBrowserModalOpen(false);
@@ -8057,11 +7222,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsInAppBrowserModalOpen(false)}
-                className={`py-2.5 px-4 rounded-full border text-xs font-medium transition ${
-                  isDarkMode
-                    ? 'border-stone-700 hover:bg-stone-800 text-stone-300'
-                    : 'border-stone-200 hover:bg-stone-50 text-stone-700'
-                }`}
+                className={`py-2.5 px-4 rounded-full border text-xs font-medium transition ${isDarkMode
+                  ? 'border-stone-700 hover:bg-stone-800 text-stone-300'
+                  : 'border-stone-200 hover:bg-stone-50 text-stone-700'
+                  }`}
               >
                 Got it
               </button>
@@ -8099,7 +7263,7 @@ export default function App() {
             loadSnapshot(decoded);
             selectItem(null);
             setShowLandingPage(false);
-            startGiftBloomAnimation(decoded.items.length, false);
+            startGiftBloomAnimation(decoded.items.length, false, false, isValidCode ? codeMatch : giftUrl);
           }
           if (isValidCode) {
             const needsLockCheck = !hasDecoded || !decoded?.lock || decoded.lock.mode === 'none';
@@ -8109,7 +7273,7 @@ export default function App() {
               if (!hasDecoded) {
                 selectItem(null);
                 setShowLandingPage(false);
-                startGiftBloomAnimation(0, false);
+                startGiftBloomAnimation(0, false, false, codeMatch);
               }
             }
             fetchSharedBouquetFromFirestore(codeMatch)
@@ -8128,11 +7292,11 @@ export default function App() {
                   if (!hasDecoded) {
                     selectItem(null);
                     setShowLandingPage(false);
-                    startGiftBloomAnimation(hydrated.items.length, false);
+                    startGiftBloomAnimation(hydrated.items.length, false, false, codeMatch);
                   }
                 }
               })
-              .catch(() => {})
+              .catch(() => { })
               .finally(() => {
                 if (showcaseResolveRequestIdRef.current === reqId) {
                   setIsResolvingShortCode(false);

@@ -81,15 +81,15 @@ export function computeRecipientSlideBloomState(slideProgress: number): Recipien
 
   return {
     progress: Number(clamped.toFixed(3)),
-    outerScale: Number((0.58 + eased * 0.54).toFixed(3)),
-    outerRotateDeg: Number((-16 + eased * 22).toFixed(2)),
-    midScale: Number((0.5 + eased * 0.54).toFixed(3)),
-    midRotateDeg: Number((14 - eased * 20).toFixed(2)),
-    innerScale: Number((0.44 + eased * 0.54).toFixed(3)),
-    innerRotateDeg: Number((-12 + eased * 20).toFixed(2)),
-    leafScale: Number((0.6 + eased * 0.44).toFixed(3)),
+    outerScale: Number((0.9 + eased * 0.36).toFixed(3)),
+    outerRotateDeg: Number((-12 + eased * 22).toFixed(2)),
+    midScale: Number((0.82 + eased * 0.36).toFixed(3)),
+    midRotateDeg: Number((10 - eased * 20).toFixed(2)),
+    innerScale: Number((0.76 + eased * 0.36).toFixed(3)),
+    innerRotateDeg: Number((-8 + eased * 20).toFixed(2)),
+    leafScale: Number((0.94 + eased * 0.3).toFixed(3)),
     stamenDashOffset: Number((130 * (1 - eased)).toFixed(1)),
-    auraScale: Number((0.84 + eased * 0.34).toFixed(3)),
+    auraScale: Number((0.92 + eased * 0.3).toFixed(3)),
   };
 }
 

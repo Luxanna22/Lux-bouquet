@@ -73,7 +73,7 @@ test('createOnDemandLenisDriver resets stale idle clock on wakeup so smooth scro
     targetScroll: 0,
     animatedScroll: 0,
     time: 100,
-    on: () => () => {},
+    on: () => () => { },
     raf(now: number) {
       deltas.push(Number((now - this.time).toFixed(2)));
       this.time = now;
