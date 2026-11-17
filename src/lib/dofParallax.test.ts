@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   computeForegroundPetalTransform,
   computeRecipientSlideBloomState,
+  createOnDemandLenisDriver,
   shouldContinueLenisRaf,
 } from './dofParallax';
 
@@ -59,5 +60,75 @@ test('shouldContinueLenisRaf returns true only while scrolling or easing toward 
     shouldContinueLenisRaf({ isScrolling: false, velocity: 0, targetScroll: 120, animatedScroll: 100 }),
     true
   );
+});
+
+test('createOnDemandLenisDriver resets stale idle clock on wakeup so smooth scroll never snaps in 1 frame', () => {
+  const scheduled = new Map<number, (time: number) => void>();
+  let nextId = 1;
+  const deltas: number[] = [];
+
+  const mockLenis = {
+    isScrolling: false as boolean | string,
+    velocity: 0,
+    targetScroll: 0,
+    animatedScroll: 0,
+    time: 100,
+    on: () => () => {},
+    raf(now: number) {
+      deltas.push(Number((now - this.time).toFixed(2)));
+      this.time = now;
+      this.animatedScroll += (this.targetScroll - this.animatedScroll) * 0.1;
+      if (Math.abs(this.targetScroll - this.animatedScroll) <= 0.25) {
+        this.animatedScroll = this.targetScroll;
+        this.isScrolling = false;
+      }
+    },
+  };
+
+  const listeners = new Map<string, Set<EventListener>>();
+  const mockWrapper = {
+    addEventListener(type: string, fn: EventListener) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)!.add(fn);
+    },
+    removeEventListener(type: string, fn: EventListener) {
+      listeners.get(type)?.delete(fn);
+    },
+  };
+
+  const driver = createOnDemandLenisDriver(mockLenis, mockWrapper, {
+    requestAnimationFrame: (cb) => {
+      const id = nextId++;
+      scheduled.set(id, cb);
+      return id;
+    },
+    cancelAnimationFrame: (id) => {
+      scheduled.delete(id);
+    },
+  });
+
+  // Simulate user scrolling 5000ms after the previous idle timestamp
+  mockLenis.targetScroll = 300;
+  mockLenis.isScrolling = 'smooth';
+  driver.wake();
+
+  const firstFrame = scheduled.values().next().value;
+  assert.ok(firstFrame, 'Expected rAF frame scheduled on wake');
+  scheduled.clear();
+  firstFrame(5100);
+
+  // First woken frame must see ~16.67ms delta, NOT 5000ms
+  assert.ok(deltas[0] > 15 && deltas[0] < 18, `Expected ~16.67ms delta, got ${deltas[0]}`);
+  assert.ok(mockLenis.animatedScroll < 100, 'Should ease smoothly rather than snapping to 300 in 1 frame');
+
+  // Subsequent frame uses exact elapsed frame delta
+  const secondFrame = scheduled.values().next().value;
+  assert.ok(secondFrame);
+  scheduled.clear();
+  secondFrame(5116);
+  assert.equal(deltas[1], 16);
+
+  driver.destroy();
+  assert.equal(scheduled.size, 0);
 });
 

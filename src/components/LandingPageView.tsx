@@ -27,7 +27,7 @@ import {
 import { useBouquetStore } from '../store/useBouquetStore';
 import {
   computeForegroundPetalTransform,
-  shouldContinueLenisRaf,
+  createOnDemandLenisDriver,
 } from '../lib/dofParallax';
 import {
   HeroLaceGarlandPreview,
@@ -1247,7 +1247,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.1,
+      lerp: 0.085,
+      duration: 1.25,
       smoothWheel: true,
       wheelMultiplier: 0.95,
       touchMultiplier: 1.5,
@@ -1258,41 +1259,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       applyHeroBloomProgress(e.scroll);
     });
 
-    let rafId = 0;
-    let idleFrames = 0;
-    const raf = (time: number) => {
-      lenis.raf(time);
-      if (shouldContinueLenisRaf(lenis)) {
-        idleFrames = 0;
-        rafId = requestAnimationFrame(raf);
-      } else if (idleFrames < 3) {
-        idleFrames += 1;
-        rafId = requestAnimationFrame(raf);
-      } else {
-        rafId = 0;
-      }
-    };
-
-    const wakeRaf = () => {
-      idleFrames = 0;
-      if (rafId === 0) {
-        rafId = requestAnimationFrame(raf);
-      }
-    };
-    wakeLenisRafRef.current = wakeRaf;
-
-    lenis.on('virtual-scroll', wakeRaf);
-    wrapper.addEventListener('scroll', wakeRaf, { passive: true });
-    wrapper.addEventListener('wheel', wakeRaf, { passive: true });
-    wrapper.addEventListener('touchstart', wakeRaf, { passive: true });
+    const driver = createOnDemandLenisDriver(lenis, wrapper);
+    wakeLenisRafRef.current = driver.wake;
 
     return () => {
       wakeLenisRafRef.current = null;
       window.removeEventListener('resize', updateCachedVh);
-      wrapper.removeEventListener('scroll', wakeRaf);
-      wrapper.removeEventListener('wheel', wakeRaf);
-      wrapper.removeEventListener('touchstart', wakeRaf);
-      if (rafId !== 0) cancelAnimationFrame(rafId);
+      driver.destroy();
       lenis.destroy();
       lenisRef.current = null;
     };

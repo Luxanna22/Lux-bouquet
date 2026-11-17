@@ -111,3 +111,87 @@ export function shouldContinueLenisRaf(state: LenisActivitySnapshot): boolean {
   return false;
 }
 
+export interface OnDemandLenisTarget extends LenisActivitySnapshot {
+  time: number;
+  raf: (time: number) => void;
+  on: (event: 'virtual-scroll', cb: () => void) => (() => void) | void;
+}
+
+export interface OnDemandLenisDriver {
+  wake: () => void;
+  destroy: () => void;
+}
+
+export interface OnDemandLenisScheduler {
+  requestAnimationFrame: (cb: (time: number) => void) => number;
+  cancelAnimationFrame: (id: number) => void;
+}
+
+/**
+ * Drives a Lenis instance on-demand (0 background rAF callbacks when idle) while
+ * resetting Lenis's internal `time` clock on wakeup so an idle pause never produces
+ * a multi-second deltaTime spike that snaps animations to targetScroll in 1 frame.
+ */
+export function createOnDemandLenisDriver(
+  lenis: OnDemandLenisTarget,
+  wrapper: Pick<HTMLElement, 'addEventListener' | 'removeEventListener'>,
+  scheduler: OnDemandLenisScheduler = {
+    requestAnimationFrame: (cb) => window.requestAnimationFrame(cb),
+    cancelAnimationFrame: (id) => window.cancelAnimationFrame(id),
+  }
+): OnDemandLenisDriver {
+  let rafId = 0;
+  let idleFrames = 0;
+  let wakingFromIdle = true;
+  let destroyed = false;
+
+  const raf = (time: number) => {
+    if (destroyed) return;
+    if (wakingFromIdle || !lenis.time || time - lenis.time > 64 || time < lenis.time) {
+      wakingFromIdle = false;
+      lenis.time = time - 1000 / 60;
+    }
+    lenis.raf(time);
+    if (shouldContinueLenisRaf(lenis)) {
+      idleFrames = 0;
+      rafId = scheduler.requestAnimationFrame(raf);
+    } else if (idleFrames < 3) {
+      idleFrames += 1;
+      rafId = scheduler.requestAnimationFrame(raf);
+    } else {
+      rafId = 0;
+    }
+  };
+
+  const wake = () => {
+    if (destroyed) return;
+    idleFrames = 0;
+    if (rafId === 0) {
+      wakingFromIdle = true;
+      rafId = scheduler.requestAnimationFrame(raf);
+    }
+  };
+
+  const unsubVirtualScroll = lenis.on('virtual-scroll', wake);
+  wrapper.addEventListener('scroll', wake, { passive: true });
+  wrapper.addEventListener('wheel', wake, { passive: true });
+  wrapper.addEventListener('touchstart', wake, { passive: true });
+
+  return {
+    wake,
+    destroy: () => {
+      destroyed = true;
+      if (typeof unsubVirtualScroll === 'function') {
+        unsubVirtualScroll();
+      }
+      if (rafId !== 0) {
+        scheduler.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      wrapper.removeEventListener('scroll', wake);
+      wrapper.removeEventListener('wheel', wake);
+      wrapper.removeEventListener('touchstart', wake);
+    },
+  };
+}
+

@@ -18,7 +18,7 @@ import {
   ShowcaseBouquetEntry,
   ShowcaseFrameTier,
 } from '../lib/showcaseGallery';
-import { shouldContinueLenisRaf } from '../lib/dofParallax';
+import { createOnDemandLenisDriver } from '../lib/dofParallax';
 import {
   fetchGlobalGarlandFeedFromFirestore,
   fetchSharedBouquetFromFirestore,
@@ -1291,7 +1291,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.135,
+      lerp: 0.095,
+      duration: 1.05,
       smoothWheel: true,
       wheelMultiplier: 0.95,
       touchMultiplier: 1.4,
@@ -1302,40 +1303,12 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
       applySingleLaceTransforms(e.scroll);
     });
 
-    let rafId = 0;
-    let idleFrames = 0;
-    const raf = (time: number) => {
-      lenis.raf(time);
-      if (shouldContinueLenisRaf(lenis)) {
-        idleFrames = 0;
-        rafId = requestAnimationFrame(raf);
-      } else if (idleFrames < 3) {
-        idleFrames += 1;
-        rafId = requestAnimationFrame(raf);
-      } else {
-        rafId = 0;
-      }
-    };
-
-    const wakeRaf = () => {
-      idleFrames = 0;
-      if (rafId === 0) {
-        rafId = requestAnimationFrame(raf);
-      }
-    };
-    wakeLenisRafRef.current = wakeRaf;
-
-    lenis.on('virtual-scroll', wakeRaf);
-    wrapper.addEventListener('scroll', wakeRaf, { passive: true });
-    wrapper.addEventListener('wheel', wakeRaf, { passive: true });
-    wrapper.addEventListener('touchstart', wakeRaf, { passive: true });
+    const driver = createOnDemandLenisDriver(lenis, wrapper);
+    wakeLenisRafRef.current = driver.wake;
 
     return () => {
       wakeLenisRafRef.current = null;
-      if (rafId !== 0) cancelAnimationFrame(rafId);
-      wrapper.removeEventListener('scroll', wakeRaf);
-      wrapper.removeEventListener('wheel', wakeRaf);
-      wrapper.removeEventListener('touchstart', wakeRaf);
+      driver.destroy();
       lenis.destroy();
       lenisRef.current = null;
     };
