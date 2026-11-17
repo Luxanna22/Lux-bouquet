@@ -92,3 +92,22 @@ export function computeRecipientSlideBloomState(slideProgress: number): Recipien
     auraScale: Number((0.84 + eased * 0.34).toFixed(3)),
   };
 }
+
+export interface LenisActivitySnapshot {
+  isScrolling: boolean | string;
+  velocity: number;
+  targetScroll: number;
+  animatedScroll: number;
+}
+
+/**
+ * Determines whether an on-demand Lenis rAF loop still has active motion/inertia
+ * to animate. Allows the page to drop to 0 rAF callbacks per second when idle.
+ */
+export function shouldContinueLenisRaf(state: LenisActivitySnapshot): boolean {
+  if (Boolean(state.isScrolling)) return true;
+  if (Math.abs(state.velocity) > 0.02) return true;
+  if (Math.abs(state.targetScroll - state.animatedScroll) > 0.25) return true;
+  return false;
+}
+

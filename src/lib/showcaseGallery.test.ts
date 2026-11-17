@@ -4,6 +4,7 @@ import {
   buildCuratedShowcaseBouquets,
   buildSnapshotFromShowcaseEntry,
   computeGarlandItemScrollTransform,
+  computeMountedGarlandRange,
   computeSingleLaceCarouselItemTransform,
   convertVaultBouquetToShowcaseEntry,
   evaluateCatenaryCurveY,
@@ -554,5 +555,23 @@ test('getShowcaseFrameTier separates standard free cards from Couture/paid-90d a
     editorialLabel: 'Eternal Keepsake',
   });
 });
+
+test('computeMountedGarlandRange limits heavy card illustrations to visible slots plus overscan', () => {
+  // Desktop 4 slots across 8 entries at start (scrollOffset = 0) mounts visible 0..4 + 1 overscan = 0..5
+  const desktopStart = computeMountedGarlandRange(8, 0, 4, 1);
+  assert.deepEqual(desktopStart, { startIdx: 0, endIdx: 5 });
+
+  // Mobile 2 slots across 8 entries at start only mounts 0..2 instead of all 8 cards
+  const mobileStart = computeMountedGarlandRange(8, 0, 2, 1);
+  assert.deepEqual(mobileStart, { startIdx: 0, endIdx: 2 });
+
+  // Scrolled right-to-left mid-carousel shifts window forward cleanly
+  const midScroll = computeMountedGarlandRange(8, 3, 4, 1);
+  assert.ok(midScroll.startIdx >= 1 && midScroll.endIdx === 7);
+
+  // Empty carousel safely returns an empty range
+  assert.deepEqual(computeMountedGarlandRange(0, 0, 4, 1), { startIdx: 0, endIdx: -1 });
+});
+
 
 

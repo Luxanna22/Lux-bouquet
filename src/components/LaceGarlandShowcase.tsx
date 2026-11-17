@@ -7,6 +7,7 @@ import { BrandLogoMark } from './BrandLogoMark';
 import {
   buildCuratedShowcaseBouquets,
   buildSnapshotFromShowcaseEntry,
+  computeMountedGarlandRange,
   computeSingleLaceCarouselItemTransform,
   convertVaultBouquetToShowcaseEntry,
   evaluateCatenaryCurveY,
@@ -17,6 +18,7 @@ import {
   ShowcaseBouquetEntry,
   ShowcaseFrameTier,
 } from '../lib/showcaseGallery';
+import { shouldContinueLenisRaf } from '../lib/dofParallax';
 import {
   fetchGlobalGarlandFeedFromFirestore,
   fetchSharedBouquetFromFirestore,
@@ -43,6 +45,7 @@ import {
 export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
   const [hydratedRecords, setHydratedRecords] = useState<Record<string, SharedBouquetRecord>>({});
   const [remoteFeedEntries, setRemoteFeedEntries] = useState<SavedVaultBouquet[]>([]);
+  const hydratedCodesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -85,33 +88,47 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
     if (typeof window === 'undefined') return;
     let cancelled = false;
     const eligibleFeed = filterEligiblePublicGarlandEntries(remoteFeedEntries);
+    const missingEntries = eligibleFeed.filter(
+      (v) => v.code && !hydratedCodesRef.current.has(v.code)
+    );
+    if (missingEntries.length === 0) return;
 
-    for (const v of eligibleFeed) {
-      if (!hydratedRecords[v.code]) {
-        fetchSharedBouquetFromFirestore(v.code)
-          .then((record) => {
-            if (cancelled || !record || !record.payload) return;
-            localShortCodeCache.set(v.code, record.payload);
-            try {
-              localStorage.setItem(`bq_short_${v.code}`, record.payload);
-            } catch {
-              // Ignore localStorage quota errors
-            }
-            setHydratedRecords((prev) =>
-              prev[v.code]?.payload === record.payload &&
-              prev[v.code]?.voiceAudioDataUrl === record.voiceAudioDataUrl
-                ? prev
-                : { ...prev, [v.code]: record }
-            );
-          })
-          .catch(() => {});
+    missingEntries.forEach((v) => hydratedCodesRef.current.add(v.code));
+
+    Promise.allSettled(
+      missingEntries.map(async (v) => {
+        const record = await fetchSharedBouquetFromFirestore(v.code);
+        return { code: v.code, record };
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      const batch: Record<string, SharedBouquetRecord> = {};
+      let hasAdditions = false;
+      for (const res of results) {
+        if (res.status !== 'fulfilled') continue;
+        const { code, record } = res.value;
+        if (!record || !record.payload) {
+          hydratedCodesRef.current.delete(code);
+          continue;
+        }
+        localShortCodeCache.set(code, record.payload);
+        try {
+          localStorage.setItem(`bq_short_${code}`, record.payload);
+        } catch {
+          // Ignore localStorage quota errors
+        }
+        batch[code] = record;
+        hasAdditions = true;
       }
-    }
+      if (hasAdditions) {
+        setHydratedRecords((prev) => ({ ...prev, ...batch }));
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [vaultCount, remoteFeedEntries, hydratedRecords]);
+  }, [vaultCount, remoteFeedEntries]);
 
   return useMemo(() => {
     const curated = buildCuratedShowcaseBouquets(nowMs);
@@ -420,19 +437,17 @@ const HangingCreationCard: React.FC<{
   isDarkMode: boolean;
   onUnwrap: (entry: ShowcaseBouquetEntry) => void;
   disableStaticTilt?: boolean;
-}> = React.memo(({ entry, isDarkMode, onUnwrap, disableStaticTilt }) => {
+  deferIllustration?: boolean;
+}> = React.memo(({ entry, isDarkMode, onUnwrap, disableStaticTilt, deferIllustration = false }) => {
   const tierInfo = useMemo(() => getShowcaseFrameTier(entry), [entry]);
   const isEternal = tierInfo.tier === 'eternal';
   const isHighlighted = tierInfo.isHighlighted;
 
-  // High-contrast metallic chrome + holographic rainbow prism bezel (matches polished holographic foil rim)
+  // High-contrast metallic chrome + holographic rainbow prism bezel combined in one composite layer
+  // (avoids extra mix-blend-mode full-card compositor passes on weak GPUs while preserving exact prism rim).
   const holoBezelBackground = isEternal
-    ? 'linear-gradient(126deg, #B6C2D2 0%, #F8FAFC 8%, #7EDDF0 16%, #C59EF8 25%, #DCE4EE 35%, #FFFFFF 42%, #F5A3CA 51%, #F6D574 61%, #99A7BA 71%, #7CE0BA 81%, #88B8F8 90%, #E2E8F0 100%)'
-    : 'linear-gradient(128deg, #AEBACB 0%, #F8FAFC 9%, #83DFF2 18%, #C3A0F8 28%, #CFD8E4 38%, #FFFFFF 46%, #F3A6CC 56%, #F7D87C 66%, #94A3B8 76%, #82E0BE 86%, #89BDF8 94%, #DCE4EE 100%)';
-
-  const holoSecondaryConic = isEternal
-    ? 'conic-gradient(from 32deg at 50% 50%, rgba(255,255,255,0.72) 0deg, rgba(116,220,245,0.52) 48deg, rgba(242,158,205,0.52) 105deg, rgba(255,255,255,0.8) 155deg, rgba(248,214,116,0.58) 215deg, rgba(124,226,184,0.52) 275deg, rgba(142,156,178,0.48) 325deg, rgba(255,255,255,0.72) 360deg)'
-    : 'conic-gradient(from 22deg at 50% 50%, rgba(255,255,255,0.7) 0deg, rgba(118,220,244,0.5) 54deg, rgba(196,158,248,0.5) 114deg, rgba(255,255,255,0.78) 168deg, rgba(244,162,204,0.5) 222deg, rgba(246,214,122,0.48) 278deg, rgba(126,226,186,0.48) 324deg, rgba(255,255,255,0.7) 360deg)';
+    ? 'repeating-linear-gradient(122deg, rgba(255,255,255,0.28) 0px, rgba(255,255,255,0) 1.5px, rgba(100,116,139,0.12) 9px, rgba(255,255,255,0.22) 17px, rgba(255,255,255,0) 25px), conic-gradient(from 32deg at 50% 50%, rgba(255,255,255,0.34) 0deg, rgba(116,220,245,0.26) 48deg, rgba(242,158,205,0.26) 105deg, rgba(255,255,255,0.38) 155deg, rgba(248,214,116,0.28) 215deg, rgba(124,226,184,0.26) 275deg, rgba(142,156,178,0.24) 325deg, rgba(255,255,255,0.34) 360deg), linear-gradient(126deg, #B6C2D2 0%, #F8FAFC 8%, #7EDDF0 16%, #C59EF8 25%, #DCE4EE 35%, #FFFFFF 42%, #F5A3CA 51%, #F6D574 61%, #99A7BA 71%, #7CE0BA 81%, #88B8F8 90%, #E2E8F0 100%)'
+    : 'repeating-linear-gradient(122deg, rgba(255,255,255,0.26) 0px, rgba(255,255,255,0) 1.5px, rgba(100,116,139,0.12) 9px, rgba(255,255,255,0.20) 17px, rgba(255,255,255,0) 25px), conic-gradient(from 22deg at 50% 50%, rgba(255,255,255,0.32) 0deg, rgba(118,220,244,0.24) 54deg, rgba(196,158,248,0.24) 114deg, rgba(255,255,255,0.36) 168deg, rgba(244,162,204,0.24) 222deg, rgba(246,214,122,0.24) 278deg, rgba(126,226,186,0.24) 324deg, rgba(255,255,255,0.32) 360deg), linear-gradient(128deg, #AEBACB 0%, #F8FAFC 9%, #83DFF2 18%, #C3A0F8 28%, #CFD8E4 38%, #FFFFFF 46%, #F3A6CC 56%, #F7D87C 66%, #94A3B8 76%, #82E0BE 86%, #89BDF8 94%, #DCE4EE 100%)';
 
   const cardSurfaceClass = isHighlighted
     ? isDarkMode
@@ -488,30 +503,9 @@ const HangingCreationCard: React.FC<{
             : 'rounded-[20px] sm:rounded-[24px] p-1.5 sm:p-2'
         } relative flex flex-col items-stretch justify-between overflow-hidden transition-transform duration-300 ease-out group-hover:rotate-0 group-hover:-translate-y-1 cursor-pointer focus:outline-none ${cardSurfaceClass}`}
       >
-        {/* Holographic Foil Layers + Animated Diagonal Shine + Crystal Rim Glints (Strictly Masked to Bezel) */}
-        {isHighlighted && (
+        {/* Holographic Shine Beam + Crystal Rim Glints (Skipped while card is far off-screen) */}
+        {isHighlighted && !deferIllustration && (
           <>
-            {/* Soft Spectral Conic Refraction & Chrome Rim Contrast */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background: holoSecondaryConic,
-                mixBlendMode: 'overlay',
-                opacity: isEternal ? 0.78 : 0.68,
-              }}
-            />
-
-            {/* Fine Metallic Diagonal Brushed Foil Facets & Crystal Hairlines */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  'repeating-linear-gradient(122deg, rgba(255,255,255,0.45) 0px, rgba(255,255,255,0) 1.5px, rgba(100,116,139,0.18) 9px, rgba(255,255,255,0.34) 17px, rgba(255,255,255,0) 25px)',
-              }}
-            />
-
             {/* Animated Diagonal Light Shine Sweeping Across the Metallic Bezel */}
             <div
               aria-hidden="true"
@@ -523,12 +517,13 @@ const HangingCreationCard: React.FC<{
               }}
             />
 
-            {/* Crisp Needle-Fine 4-Point Crystal Glints Pinned Along the Foil Rim */}
+            {/* Crisp Needle-Fine 4-Point Crystal Glints Pinned Along the Foil Rim (Baked SVG halo, zero CSS filter cost) */}
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
-              className="pointer-events-none absolute top-[1px] right-[17%] w-[18px] h-[18px] sab-holo-glint z-20 drop-shadow-[0_0_2px_rgba(148,163,184,0.85)]"
+              className="pointer-events-none absolute top-[1px] right-[17%] w-[18px] h-[18px] sab-holo-glint z-20"
             >
+              <circle cx="12" cy="12" r="7" fill="rgba(226,232,240,0.42)" />
               <path
                 d="M12 0.5 L12.7 11.3 L23.5 12 L12.7 12.7 L12 23.5 L11.3 12.7 L0.5 12 L11.3 11.3 Z"
                 fill="#FFFFFF"
@@ -537,9 +532,10 @@ const HangingCreationCard: React.FC<{
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
-              className="pointer-events-none absolute bottom-[5px] left-[4px] w-4 h-4 sab-holo-glint z-20 drop-shadow-[0_0_2px_rgba(148,163,184,0.85)]"
+              className="pointer-events-none absolute bottom-[5px] left-[4px] w-4 h-4 sab-holo-glint z-20"
               style={{ animationDelay: '1.15s' }}
             >
+              <circle cx="12" cy="12" r="7" fill="rgba(226,232,240,0.42)" />
               <path
                 d="M12 0.5 L12.7 11.3 L23.5 12 L12.7 12.7 L12 23.5 L11.3 12.7 L0.5 12 L11.3 11.3 Z"
                 fill="#FFFFFF"
@@ -548,9 +544,10 @@ const HangingCreationCard: React.FC<{
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
-              className="pointer-events-none absolute top-[18%] left-[1px] w-3.5 h-3.5 sab-holo-glint z-20 drop-shadow-[0_0_2px_rgba(148,163,184,0.8)]"
+              className="pointer-events-none absolute top-[18%] left-[1px] w-3.5 h-3.5 sab-holo-glint z-20"
               style={{ animationDelay: '2.1s' }}
             >
+              <circle cx="12" cy="12" r="6.5" fill="rgba(226,232,240,0.38)" />
               <path
                 d="M12 1 L12.6 11.4 L23 12 L12.6 12.6 L12 23 L11.4 12.6 L1 12 L11.4 11.4 Z"
                 fill="#FFFFFF"
@@ -571,7 +568,7 @@ const HangingCreationCard: React.FC<{
               : ''
           }`}
         >
-          {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Uncropped Full Creation Window) */}
+          {/* Bouquet + Envelope + Voice Keepsake Asset SVG (Mounted only when within visible window + overscan) */}
           <div
             className={`w-full flex-1 min-h-0 ${
               isHighlighted
@@ -580,7 +577,9 @@ const HangingCreationCard: React.FC<{
             } overflow-hidden relative p-0 ${windowClass}`}
           >
             <div className="w-full h-full">
-              <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
+              {!deferIllustration && (
+                <ShowcaseBouquetIllustrationSVG entry={entry} isDarkMode={isDarkMode} />
+              )}
             </div>
           </div>
 
@@ -590,7 +589,7 @@ const HangingCreationCard: React.FC<{
               isHighlighted
                 ? 'rounded-[10px] sm:rounded-[11px]'
                 : 'rounded-[12px] sm:rounded-[14px]'
-            } text-center shrink-0 transition-all duration-300 relative ${plateClass}`}
+            } text-center shrink-0 transition-colors duration-300 relative ${plateClass}`}
             style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
           >
             <div className="text-[14px] sm:text-[15.5px] lg:text-[16.5px] leading-[1.1] tracking-[-0.01em] truncate">
@@ -716,6 +715,13 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
     return 4;
   });
 
+  const [isSectionNearViewport, setIsSectionNearViewport] = useState(false);
+  const [mountedRange, setMountedRange] = useState<{ startIdx: number; endIdx: number }>(() =>
+    computeMountedGarlandRange(previewEntries.length, 0, visibleSlots, 1)
+  );
+  const mountedRangeRef = useRef(mountedRange);
+  mountedRangeRef.current = mountedRange;
+
   const sectionRef = useRef<HTMLElement | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const manualOffsetRef = useRef<number>(0);
@@ -734,6 +740,25 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Pause holographic foil animations until #showcase approaches the viewport
+  useEffect(() => {
+    const wrapper = scrollContainerRef.current;
+    const section = sectionRef.current;
+    if (!wrapper || !section || typeof IntersectionObserver === 'undefined') {
+      setIsSectionNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const isNear = entries.some((e) => e.isIntersecting);
+        setIsSectionNearViewport(isNear);
+      },
+      { root: wrapper, rootMargin: '180px 0px' }
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [scrollContainerRef]);
+
   const maxOffset = useMemo(
     () =>
       visibleSlots === 2
@@ -745,11 +770,30 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
   const edgeY = 6;
   const midY = visibleSlots === 2 ? 32 : visibleSlots === 3 ? 60 : 82;
 
+  const syncMountedRange = useCallback(
+    (combinedOffset: number) => {
+      const next = computeMountedGarlandRange(previewEntries.length, combinedOffset, visibleSlots, 1);
+      if (
+        next.startIdx !== mountedRangeRef.current.startIdx ||
+        next.endIdx !== mountedRangeRef.current.endIdx
+      ) {
+        mountedRangeRef.current = next;
+        setMountedRange(next);
+      }
+    },
+    [previewEntries.length, visibleSlots]
+  );
+
+  useEffect(() => {
+    syncMountedRange(scrollDrivenOffsetRef.current + manualOffsetRef.current);
+  }, [syncMountedRange]);
+
   const updateGarlandDOM = useCallback(() => {
     const count = previewEntries.length;
     const rawTotal = scrollDrivenOffsetRef.current + manualOffsetRef.current;
     // Wrap smoothly within [0, maxOffset] so both scroll and manual step/swipe cycle all creations right-to-left
     const combinedOffset = Math.max(0, Math.min(maxOffset, rawTotal));
+    syncMountedRange(combinedOffset);
     const trackWidth = sectionRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 0);
 
     for (let i = 0; i < count; i++) {
@@ -771,12 +815,16 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
           el.style.opacity = '0';
           el.style.pointerEvents = 'none';
           el.style.visibility = 'hidden';
+          el.style.willChange = 'auto';
         }
         continue;
       }
-      el.dataset.hidden = '0';
-      el.style.visibility = 'visible';
-      el.style.pointerEvents = 'auto';
+      if (el.dataset.hidden !== '0') {
+        el.dataset.hidden = '0';
+        el.style.visibility = 'visible';
+        el.style.pointerEvents = 'auto';
+        el.style.willChange = 'transform, opacity';
+      }
       if (trackWidth > 0) {
         if (el.style.left !== '0px') el.style.left = '0px';
         const xPx = (state.xPercent / 100) * trackWidth;
@@ -787,7 +835,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
       }
       el.style.opacity = String(state.opacity);
     }
-  }, [previewEntries, visibleSlots, maxOffset, edgeY, midY]);
+  }, [previewEntries, visibleSlots, maxOffset, edgeY, midY, syncMountedRange]);
 
   useEffect(() => {
     const wrapper = scrollContainerRef.current;
@@ -869,7 +917,10 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
       id="showcase"
       ref={sectionRef}
       data-testid="hero-lace-garland-section"
-      className="scroll-mt-24 relative w-full pt-5 sm:pt-8 pb-8 sm:pb-14 overflow-hidden select-none"
+      style={{ contain: 'layout style' }}
+      className={`scroll-mt-24 relative w-full pt-5 sm:pt-8 pb-8 sm:pb-14 overflow-hidden select-none ${
+        isSectionNearViewport ? '' : 'sab-holo-paused'
+      }`}
     >
       <div className="fluid-scroll-item text-center mb-1.5 sm:mb-3 px-4">
         <h2
@@ -939,6 +990,8 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
               edgeY,
               midY
             );
+            const isWithinMountWindow =
+              idx >= mountedRange.startIdx && idx <= mountedRange.endIdx;
             return (
               <div
                 key={entry.id}
@@ -953,7 +1006,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                   opacity: initial.opacity,
                   pointerEvents: initial.isVisible ? 'auto' : 'none',
                   visibility: initial.isVisible ? 'visible' : 'hidden',
-                  willChange: 'transform, opacity',
+                  willChange: initial.isVisible ? 'transform, opacity' : 'auto',
                   contain: 'layout style',
                 }}
                 className="absolute top-0 w-[166px] min-[380px]:w-[176px] sm:w-[208px] lg:w-[228px]"
@@ -963,6 +1016,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
                   isDarkMode={isDarkMode}
                   onUnwrap={onUnwrapShowcaseBouquet}
                   disableStaticTilt
+                  deferIllustration={!isWithinMountWindow}
                 />
               </div>
             );
@@ -977,7 +1031,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
           onClick={() => stepPreviewCarousel(-1)}
           aria-label="Previous shared creation"
           data-testid="hero-garland-prev"
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-dashed flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-dashed flex items-center justify-center transition-[transform,background-color] duration-200 active:scale-95 cursor-pointer shrink-0 ${
             isDarkMode
               ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
               : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
@@ -995,7 +1049,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
             }
           }}
           data-testid="explore-all-creations-btn"
-          className={`px-6 sm:px-7 py-2.5 sm:py-3 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-2 transition-all duration-300 active:scale-95 cursor-pointer no-underline shadow-[0_8px_24px_rgba(122,75,58,0.05)] ${
+          className={`px-6 sm:px-7 py-2.5 sm:py-3 rounded-full border border-dashed text-xs sm:text-[13px] font-medium inline-flex items-center gap-2 transition-[transform,background-color] duration-200 active:scale-95 cursor-pointer no-underline shadow-[0_8px_24px_rgba(122,75,58,0.05)] ${
             isDarkMode
               ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
               : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
@@ -1010,7 +1064,7 @@ export const HeroLaceGarlandPreview: React.FC<HeroLaceGarlandPreviewProps> = ({
           onClick={() => stepPreviewCarousel(1)}
           aria-label="Next shared creation"
           data-testid="hero-garland-next"
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-dashed flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-dashed flex items-center justify-center transition-[transform,background-color] duration-200 active:scale-95 cursor-pointer shrink-0 ${
             isDarkMode
               ? 'bg-[#362D2A] border-[#66554F] text-[#FBF6F1] hover:bg-[#433834]'
               : 'bg-[#FFFDF9] border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
@@ -1123,6 +1177,31 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const edgeY = 6;
   const midY = visibleSlots === 2 ? 26 : visibleSlots === 3 ? 48 : 66;
 
+  const wakeLenisRafRef = useRef<(() => void) | null>(null);
+  const [galleryMountedRange, setGalleryMountedRange] = useState<{ startIdx: number; endIdx: number }>(() =>
+    computeMountedGarlandRange(filteredEntries.length, 0, visibleSlots, 1)
+  );
+  const galleryMountedRangeRef = useRef(galleryMountedRange);
+  galleryMountedRangeRef.current = galleryMountedRange;
+
+  const syncGalleryMountedRange = useCallback(
+    (scrollOffset: number) => {
+      const next = computeMountedGarlandRange(filteredEntries.length, scrollOffset, visibleSlots, 1);
+      if (
+        next.startIdx !== galleryMountedRangeRef.current.startIdx ||
+        next.endIdx !== galleryMountedRangeRef.current.endIdx
+      ) {
+        galleryMountedRangeRef.current = next;
+        setGalleryMountedRange(next);
+      }
+    },
+    [filteredEntries.length, visibleSlots]
+  );
+
+  useEffect(() => {
+    syncGalleryMountedRange(currentOffsetRef.current);
+  }, [syncGalleryMountedRange]);
+
   const applySingleLaceTransforms = useCallback(
     (scrollTopPx: number) => {
       const progress =
@@ -1131,6 +1210,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
           : 0;
       const scrollOffset = progress * maxCarouselOffset;
       currentOffsetRef.current = scrollOffset;
+      syncGalleryMountedRange(scrollOffset);
 
       const maxSteps =
         visibleSlots === 2
@@ -1166,12 +1246,16 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             el.style.opacity = '0';
             el.style.pointerEvents = 'none';
             el.style.visibility = 'hidden';
+            el.style.willChange = 'auto';
           }
           continue;
         }
-        el.dataset.hidden = '0';
-        el.style.visibility = 'visible';
-        el.style.pointerEvents = 'auto';
+        if (el.dataset.hidden !== '0') {
+          el.dataset.hidden = '0';
+          el.style.visibility = 'visible';
+          el.style.pointerEvents = 'auto';
+          el.style.willChange = 'transform, opacity';
+        }
         if (trackWidth > 0) {
           if (el.style.left !== '0px') el.style.left = '0px';
           const xPx = (state.xPercent / 100) * trackWidth;
@@ -1183,10 +1267,19 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
         el.style.opacity = String(state.opacity);
       }
     },
-    [filteredEntries, maxCarouselOffset, totalScrollRangePx, visibleSlots, totalMobilePages, edgeY, midY]
+    [
+      filteredEntries,
+      maxCarouselOffset,
+      totalScrollRangePx,
+      visibleSlots,
+      totalMobilePages,
+      edgeY,
+      midY,
+      syncGalleryMountedRange,
+    ]
   );
 
-  // Initialize smooth Lenis scroll on the single-screen sticky viewport
+  // Initialize on-demand smooth Lenis scroll on the single-screen sticky viewport
   useEffect(() => {
     const wrapper = pageScrollWrapperRef.current;
     const content = pageScrollContentRef.current;
@@ -1198,8 +1291,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.095,
-      duration: 1.05,
+      lerp: 0.135,
       smoothWheel: true,
       wheelMultiplier: 0.95,
       touchMultiplier: 1.4,
@@ -1211,14 +1303,39 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     });
 
     let rafId = 0;
+    let idleFrames = 0;
     const raf = (time: number) => {
       lenis.raf(time);
-      rafId = requestAnimationFrame(raf);
+      if (shouldContinueLenisRaf(lenis)) {
+        idleFrames = 0;
+        rafId = requestAnimationFrame(raf);
+      } else if (idleFrames < 3) {
+        idleFrames += 1;
+        rafId = requestAnimationFrame(raf);
+      } else {
+        rafId = 0;
+      }
     };
-    rafId = requestAnimationFrame(raf);
+
+    const wakeRaf = () => {
+      idleFrames = 0;
+      if (rafId === 0) {
+        rafId = requestAnimationFrame(raf);
+      }
+    };
+    wakeLenisRafRef.current = wakeRaf;
+
+    lenis.on('virtual-scroll', wakeRaf);
+    wrapper.addEventListener('scroll', wakeRaf, { passive: true });
+    wrapper.addEventListener('wheel', wakeRaf, { passive: true });
+    wrapper.addEventListener('touchstart', wakeRaf, { passive: true });
 
     return () => {
-      cancelAnimationFrame(rafId);
+      wakeLenisRafRef.current = null;
+      if (rafId !== 0) cancelAnimationFrame(rafId);
+      wrapper.removeEventListener('scroll', wakeRaf);
+      wrapper.removeEventListener('wheel', wakeRaf);
+      wrapper.removeEventListener('touchstart', wakeRaf);
       lenis.destroy();
       lenisRef.current = null;
     };
@@ -1228,6 +1345,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   useEffect(() => {
     if (lenisRef.current) {
       lenisRef.current.scrollTo(0, { immediate: true });
+      wakeLenisRafRef.current?.();
     } else if (pageScrollWrapperRef.current) {
       pageScrollWrapperRef.current.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     }
@@ -1262,9 +1380,10 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
 
     if (lenisRef.current) {
       lenisRef.current.scrollTo(targetScrollTop, {
-        duration: 1.05,
+        duration: 0.85,
         easing: (t: number) => 1 - Math.pow(1 - t, 4),
       });
+      wakeLenisRafRef.current?.();
     } else {
       wrapper.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
     }
@@ -1295,6 +1414,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
           );
           if (lenisRef.current) {
             lenisRef.current.scrollTo(nextTop, { immediate: false });
+            wakeLenisRafRef.current?.();
           } else {
             pageScrollWrapperRef.current.scrollTop = nextTop;
           }
@@ -1507,6 +1627,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
               );
               if (lenisRef.current) {
                 lenisRef.current.scrollTo(nextTop, { immediate: false });
+                wakeLenisRafRef.current?.();
               } else {
                 pageScrollWrapperRef.current.scrollTop = nextTop;
                 applySingleLaceTransforms(nextTop);
@@ -1678,6 +1799,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                         edgeY,
                         midY
                       );
+                      const isWithinMountWindow =
+                        idx >= galleryMountedRange.startIdx && idx <= galleryMountedRange.endIdx;
                       return (
                         <div
                           key={entry.id}
@@ -1692,7 +1815,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                             opacity: initial.opacity,
                             pointerEvents: initial.isVisible ? 'auto' : 'none',
                             visibility: initial.isVisible ? 'visible' : 'hidden',
-                            willChange: 'transform, opacity',
+                            willChange: initial.isVisible ? 'transform, opacity' : 'auto',
                             contain: 'layout style paint',
                           }}
                           className="absolute top-0 w-[clamp(172px,23.5vh,214px)] lg:w-[clamp(182px,25vh,228px)]"
@@ -1701,6 +1824,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                             entry={entry}
                             isDarkMode={isDarkMode}
                             disableStaticTilt
+                            deferIllustration={!isWithinMountWindow}
                             onUnwrap={(selected) =>
                               triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
                             }

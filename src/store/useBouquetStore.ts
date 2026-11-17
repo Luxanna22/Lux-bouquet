@@ -8,6 +8,7 @@ import {
   BouquetItem,
   BouquetLayerPlane,
   getEffectiveItemPlane,
+  doBouquetItemsVisuallyOverlap,
   GreetingCardData,
   VoiceKeepsakeData,
   DEFAULT_VOICE_KEEPSAKE,
@@ -407,16 +408,17 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   },
 
   moveItemLayer: (id, direction) => {
-    const { items } = get();
+    const { items, wrapStyle } = get();
     const idx = items.findIndex((i) => i.id === id);
     if (idx === -1 || items[idx].locked) return;
     const currentItem = items[idx];
     const currentPlane = getEffectiveItemPlane(currentItem);
     let nextPlane: BouquetLayerPlane = currentPlane;
     let targetIdx = idx;
+    let crossPlaneBoundary = false;
 
     if (direction === 'front') {
-      // If inside or back, 'To Front' brings it to the top of its plane first, or steps it forward to overlay the bouquet wrapper ('front')
+      // 'To Front' steps a 'back' item into 'inside', or an 'inside' item to 'front' overlay, and brings it to top of stack
       if (currentPlane === 'back') {
         nextPlane = 'inside';
       } else if (currentPlane === 'inside') {
@@ -432,27 +434,96 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       }
       targetIdx = 0;
     } else if (direction === 'up') {
-      if (idx < items.length - 1) {
-        targetIdx = idx + 1;
+      let overlapIdx = -1;
+      let nextInPlaneIdx = -1;
+      for (let j = idx + 1; j < items.length; j += 1) {
+        if (getEffectiveItemPlane(items[j]) !== currentPlane) continue;
+        if (nextInPlaneIdx === -1) nextInPlaneIdx = j;
+        if (!items[j].hidden && doBouquetItemsVisuallyOverlap(currentItem, items[j], wrapStyle)) {
+          overlapIdx = j;
+          break;
+        }
+      }
+      if (overlapIdx !== -1) {
+        targetIdx = overlapIdx;
+      } else if (nextInPlaneIdx !== -1) {
+        targetIdx = nextInPlaneIdx;
       } else if (currentPlane === 'back') {
         nextPlane = 'inside';
+        crossPlaneBoundary = true;
       } else if (currentPlane === 'inside') {
         nextPlane = 'front';
+        crossPlaneBoundary = true;
       }
     } else if (direction === 'down') {
-      if (idx > 0) {
-        targetIdx = idx - 1;
+      let overlapIdx = -1;
+      let prevInPlaneIdx = -1;
+      for (let j = idx - 1; j >= 0; j -= 1) {
+        if (getEffectiveItemPlane(items[j]) !== currentPlane) continue;
+        if (prevInPlaneIdx === -1) prevInPlaneIdx = j;
+        if (!items[j].hidden && doBouquetItemsVisuallyOverlap(currentItem, items[j], wrapStyle)) {
+          overlapIdx = j;
+          break;
+        }
+      }
+      if (overlapIdx !== -1) {
+        targetIdx = overlapIdx;
+      } else if (prevInPlaneIdx !== -1) {
+        targetIdx = prevInPlaneIdx;
       } else if (currentPlane === 'front') {
         nextPlane = 'inside';
+        crossPlaneBoundary = true;
       } else if (currentPlane === 'inside') {
         nextPlane = 'back';
+        crossPlaneBoundary = true;
       }
     }
 
-    if (targetIdx === idx && nextPlane === currentPlane) return;
+    if (targetIdx === idx && nextPlane === currentPlane && !crossPlaneBoundary) return;
     const snap = takeSnapshot(get());
     const next = [...items];
     const [moved] = next.splice(idx, 1);
+
+    if (crossPlaneBoundary) {
+      if (direction === 'down') {
+        // Stepping down into the top (frontmost slot) of nextPlane
+        let lastInNextPlane = -1;
+        for (let k = next.length - 1; k >= 0; k -= 1) {
+          if (getEffectiveItemPlane(next[k]) === nextPlane) {
+            lastInNextPlane = k;
+            break;
+          }
+        }
+        if (lastInNextPlane !== -1) {
+          targetIdx = lastInNextPlane + 1;
+        } else if (nextPlane === 'back') {
+          targetIdx = 0;
+        } else {
+          // Entering 'inside' with no other 'inside' items: place right after any 'back' items
+          let lastBack = -1;
+          for (let k = next.length - 1; k >= 0; k -= 1) {
+            if (getEffectiveItemPlane(next[k]) === 'back') {
+              lastBack = k;
+              break;
+            }
+          }
+          targetIdx = lastBack + 1;
+        }
+      } else if (direction === 'up') {
+        // Stepping up into the bottom (backmost slot) of nextPlane
+        const firstInNextPlane = next.findIndex((i) => getEffectiveItemPlane(i) === nextPlane);
+        if (firstInNextPlane !== -1) {
+          targetIdx = firstInNextPlane;
+        } else if (nextPlane === 'front') {
+          targetIdx = next.length;
+        } else {
+          // Entering 'inside' with no other 'inside' items: place right before any 'front' items
+          const firstFront = next.findIndex((i) => getEffectiveItemPlane(i) === 'front');
+          targetIdx = firstFront !== -1 ? firstFront : next.length;
+        }
+      }
+    }
+
     const updatedMoved: BouquetItem = {
       ...moved,
       layerPlane: nextPlane,

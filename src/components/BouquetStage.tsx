@@ -7,6 +7,7 @@ import {
   typeWrapStyle,
   BouquetItem,
   getEffectiveItemPlane,
+  getStageItemDisplayTransform,
   BouquetSnapshot,
   GreetingCardData,
   FLOWER_CATALOG,
@@ -52,31 +53,6 @@ const WRAPPER_RIBBON_GEOMETRY: Record<
   cloche:     { waistY: 484, halfW: 32,  tailBottomY: 544, bowScale: 0.78 },
   koreanmesh: { waistY: 488, halfW: 94,  tailBottomY: 610, bowScale: 1.0 },
 };
-
-function getStageItemDisplayTransform(item: BouquetItem, wrap: typeWrapStyle) {
-  if (
-    wrap !== 'cloche' ||
-    getEffectiveItemPlane(item) === 'front' ||
-    (item.photoStyle && !item.clippedToBouquet)
-  ) {
-    return {
-      x: item.x,
-      y: item.y,
-      scale: item.scale,
-      rotation: item.rotation,
-    };
-  }
-  // When placed inside the Glass Cloche (bell jar), softly gather the arrangement
-  // into the crystal dome interior so blooms never collide with or pass through the glass walls
-  const dx = item.x - 300;
-  const dy = item.y - 295;
-  return {
-    x: Math.round(300 + dx * 0.64),
-    y: Math.round(Math.max(198, Math.min(392, 295 + dy * 0.7))),
-    scale: Number((item.scale * 0.82).toFixed(3)),
-    rotation: Math.round(item.rotation * 0.72),
-  };
-}
 
 /**
  * Universal Architectural Ribbon & Lace Renderer — 10 Unique Designs that adapt to every wrapper's exact waist
@@ -3920,7 +3896,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           {items.map((item) => {
             const stemRatio = item.stemLength ?? 1;
             const localBottomY =
-              wrapStyle === 'cloche'
+              wrapStyle === 'cloche' && getEffectiveItemPlane(item) !== 'front'
                 ? 38
                 : Math.round(18 + 145 * stemRatio);
             return (
@@ -5082,6 +5058,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             if (item.hidden || getEffectiveItemPlane(item) !== 'front') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
+            const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
             return (
               <g
                 key={`front-${item.id}`}
@@ -5099,7 +5076,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 }
                 style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
               >
-                <g className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}>
+                <g
+                  clipPath={
+                    !item.photoStyle && !meta?.isOther
+                      ? `url(#${idPrefix}stem-clip-${item.id})`
+                      : undefined
+                  }
+                  className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                >
                   <circle cx="0" cy="-6" r="56" fill="transparent" />
                   {item.photoStyle ? (
                     <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
@@ -5108,7 +5092,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                       type={item.type}
                       petalColor={item.petalColor}
                       centerColor={item.centerColor}
-                      hideStem={true}
+                      hideStem={Boolean(meta?.isOther)}
                     />
                   )}
                   <rect x="-62" y="-64" width="124" height="124" rx="24" fill="transparent" />

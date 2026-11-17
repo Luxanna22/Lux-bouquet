@@ -618,6 +618,149 @@ export function getEffectiveItemPlane(item: BouquetItem): BouquetLayerPlane {
   return 'inside';
 }
 
+export function getStageItemDisplayTransform(item: BouquetItem, wrap: typeWrapStyle) {
+  if (
+    wrap !== 'cloche' ||
+    getEffectiveItemPlane(item) === 'front' ||
+    (item.photoStyle && !item.clippedToBouquet)
+  ) {
+    return {
+      x: item.x,
+      y: item.y,
+      scale: item.scale,
+      rotation: item.rotation,
+    };
+  }
+  // When placed inside the Glass Cloche (bell jar), softly gather the arrangement
+  // into the crystal dome interior so blooms never collide with or pass through the glass walls
+  const dx = item.x - 300;
+  const dy = item.y - 295;
+  return {
+    x: Math.round(300 + dx * 0.64),
+    y: Math.round(Math.max(198, Math.min(392, 295 + dy * 0.7))),
+    scale: Number((item.scale * 0.82).toFixed(3)),
+    rotation: Math.round(item.rotation * 0.72),
+  };
+}
+
+interface Point2D {
+  x: number;
+  y: number;
+}
+
+function pointToSegmentDistSq(p: Point2D, a: Point2D, b: Point2D): number {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const lenSq = vx * vx + vy * vy;
+  if (lenSq <= 1e-6) {
+    const dx = p.x - a.x;
+    const dy = p.y - a.y;
+    return dx * dx + dy * dy;
+  }
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / lenSq));
+  const projX = a.x + t * vx;
+  const projY = a.y + t * vy;
+  const dx = p.x - projX;
+  const dy = p.y - projY;
+  return dx * dx + dy * dy;
+}
+
+function segmentsMinDistSq(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): number {
+  const ccw = (p1: Point2D, p2: Point2D, p3: Point2D) =>
+    (p3.y - p1.y) * (p2.x - p1.x) - (p2.y - p1.y) * (p3.x - p1.x);
+  const d1 = ccw(a1, a2, b1);
+  const d2 = ccw(a1, a2, b2);
+  const d3 = ccw(b1, b2, a1);
+  const d4 = ccw(b1, b2, a2);
+  if (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  ) {
+    return 0;
+  }
+  return Math.min(
+    pointToSegmentDistSq(a1, b1, b2),
+    pointToSegmentDistSq(a2, b1, b2),
+    pointToSegmentDistSq(b1, a1, a2),
+    pointToSegmentDistSq(b2, a1, a2)
+  );
+}
+
+function getItemVisualCollisionShape(item: BouquetItem, wrap: typeWrapStyle) {
+  const disp = getStageItemDisplayTransform(item, wrap);
+  const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+  const scale = Math.max(0.25, disp.scale || 1);
+  const rad = ((disp.rotation || 0) * Math.PI) / 180;
+  const sinR = Math.sin(rad);
+  const cosR = Math.cos(rad);
+  // Head center matches FlowerRenderer local (0, -6) rotated around item pivot
+  const headCenter: Point2D = {
+    x: disp.x + 6 * scale * sinR,
+    y: disp.y - 6 * scale * cosR,
+  };
+  const headRadius = (item.photoStyle ? 56 : 46) * scale;
+  const hasStem =
+    !item.photoStyle &&
+    !meta?.isOther &&
+    !(wrap === 'cloche' && getEffectiveItemPlane(item) !== 'front');
+  if (!hasStem) {
+    return { headCenter, headRadius, stemStart: null, stemEnd: null, stemRadius: 0 };
+  }
+  const stemRatio = Math.max(0.15, Math.min(1.35, item.stemLength ?? 1));
+  const localStemBottom = Math.min(155, Math.max(18, Math.round(18 + 145 * stemRatio)));
+  const stemStart: Point2D = { x: disp.x, y: disp.y };
+  const stemEnd: Point2D = {
+    x: disp.x - localStemBottom * scale * sinR,
+    y: disp.y + localStemBottom * scale * cosR,
+  };
+  return {
+    headCenter,
+    headRadius,
+    stemStart,
+    stemEnd,
+    stemRadius: 15 * scale,
+  };
+}
+
+export function doBouquetItemsVisuallyOverlap(
+  itemA: BouquetItem,
+  itemB: BouquetItem,
+  wrap: typeWrapStyle
+): boolean {
+  const a = getItemVisualCollisionShape(itemA, wrap);
+  const b = getItemVisualCollisionShape(itemB, wrap);
+
+  const headDistSq =
+    (a.headCenter.x - b.headCenter.x) ** 2 + (a.headCenter.y - b.headCenter.y) ** 2;
+  if (headDistSq <= (a.headRadius + b.headRadius) ** 2) return true;
+
+  if (b.stemStart && b.stemEnd) {
+    if (
+      pointToSegmentDistSq(a.headCenter, b.stemStart, b.stemEnd) <=
+      (a.headRadius + b.stemRadius) ** 2
+    ) {
+      return true;
+    }
+  }
+  if (a.stemStart && a.stemEnd) {
+    if (
+      pointToSegmentDistSq(b.headCenter, a.stemStart, a.stemEnd) <=
+      (b.headRadius + a.stemRadius) ** 2
+    ) {
+      return true;
+    }
+  }
+  if (a.stemStart && a.stemEnd && b.stemStart && b.stemEnd) {
+    if (
+      segmentsMinDistSq(a.stemStart, a.stemEnd, b.stemStart, b.stemEnd) <=
+      (a.stemRadius + b.stemRadius) ** 2
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface GreetingCardData {
   to: string;
   from: string;

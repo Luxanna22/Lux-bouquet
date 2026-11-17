@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   computeForegroundPetalTransform,
   computeRecipientSlideBloomState,
+  shouldContinueLenisRaf,
 } from './dofParallax';
 
 test('foreground petals drift outward off screen edges and fade away on scroll without scrolling up', () => {
@@ -40,3 +41,23 @@ test('recipient slide-to-bloom progresses monotonically from closed bud to full 
   assert.equal(closed.stamenDashOffset, 130);
   assert.equal(open.stamenDashOffset, 0);
 });
+
+test('shouldContinueLenisRaf returns true only while scrolling or easing toward target', () => {
+  assert.equal(
+    shouldContinueLenisRaf({ isScrolling: false, velocity: 0, targetScroll: 100, animatedScroll: 100 }),
+    false
+  );
+  assert.equal(
+    shouldContinueLenisRaf({ isScrolling: 'smooth', velocity: 0, targetScroll: 100, animatedScroll: 100 }),
+    true
+  );
+  assert.equal(
+    shouldContinueLenisRaf({ isScrolling: false, velocity: 0.4, targetScroll: 100, animatedScroll: 100 }),
+    true
+  );
+  assert.equal(
+    shouldContinueLenisRaf({ isScrolling: false, velocity: 0, targetScroll: 120, animatedScroll: 100 }),
+    true
+  );
+});
+

@@ -25,6 +25,7 @@ import {
   VOICE_KEEPSAKE_CATALOG,
   DEFAULT_BOUQUET_POSE,
   getEffectiveItemPlane,
+  doBouquetItemsVisuallyOverlap,
   FlowerType,
   VoiceKeepsakeStyle,
 } from '../types/bouquet';
@@ -260,6 +261,11 @@ test('useBouquetStore supports photocards, environment, bouquetPose, and 4-way f
 
   let state = useBouquetStore.getState();
   assert.equal(state.items.length, 3);
+  // Anchor positions deterministically so overlap stepping is tested reliably
+  store.updateItem(state.items[0].id, { x: 300, y: 300, rotation: 0, scale: 1 });
+  store.updateItem(state.items[1].id, { x: 312, y: 305, rotation: 0, scale: 1 });
+  store.updateItem(state.items[2].id, { x: 304, y: 302, rotation: 0, scale: 1 });
+  state = useBouquetStore.getState();
   const [rose, tulip, photo] = state.items;
   assert.equal(photo.photoStyle, 'polaroid');
   assert.equal(photo.photoDataUrl, 'data:image/jpeg;base64,abc123');
@@ -568,5 +574,147 @@ test('getLiveStudioCatalogCounts, buildLiveSchemaJsonLd sitelinks, and static SE
   assert.ok(webmanifest.includes(`${counts.botanicalStemCount} botanical stems`));
   assert.ok(llmsTxt.includes(`${counts.botanicalStemCount} Botanical Stems`));
 });
+
+test('doBouquetItemsVisuallyOverlap detects head, stem, and non-overlapping flower geometry accurately', () => {
+  const baseFlower = {
+    type: 'daisy' as FlowerType,
+    scale: 1,
+    rotation: 0,
+    flipX: false,
+    petalColor: '#FFFFFF',
+    centerColor: '#FACC15',
+    stemLength: 1,
+    layerPlane: 'inside' as const,
+    clippedToBouquet: true,
+  };
+
+  const greenLeft = { ...baseFlower, id: 'green', x: 245, y: 260 };
+  const pinkOverlapping = { ...baseFlower, id: 'pink', x: 222, y: 274 };
+  const whiteFarRight = { ...baseFlower, id: 'white', x: 385, y: 265 };
+  const lowerUnderGreenStem = { ...baseFlower, id: 'lower', x: 245, y: 390 };
+  const clippedShortStemLeft = { ...baseFlower, id: 'short-stem', x: 245, y: 210, stemLength: 0.25 };
+  const stemlessAccent = {
+    ...baseFlower,
+    id: 'butterfly',
+    type: 'monarchButterfly' as FlowerType,
+    x: 245,
+    y: 210,
+    layerPlane: 'front' as const,
+    clippedToBouquet: false,
+  };
+
+  assert.equal(doBouquetItemsVisuallyOverlap(pinkOverlapping, greenLeft, 'kraft'), true);
+  assert.equal(doBouquetItemsVisuallyOverlap(pinkOverlapping, whiteFarRight, 'kraft'), false);
+  // Full stem on greenLeft (y=260 + ~155 = 415) touches lower flower head at y=390
+  assert.equal(doBouquetItemsVisuallyOverlap(greenLeft, lowerUnderGreenStem, 'kraft'), true);
+  // Short stem (0.25 -> ~54px) at y=210 stops around y=264, well above y=390
+  assert.equal(doBouquetItemsVisuallyOverlap(clippedShortStemLeft, lowerUnderGreenStem, 'kraft'), false);
+  // Stemless accent at y=210 does not have a stem reaching y=390
+  assert.equal(doBouquetItemsVisuallyOverlap(stemlessAccent, lowerUnderGreenStem, 'kraft'), false);
+});
+
+test('moveItemLayer steps 1 overlapping flower at a time in 20-flower bouquets and crosses planes cleanly', () => {
+  const store = useBouquetStore.getState();
+  store.clearBouquet();
+  store.setWrapStyle('kraft');
+
+  // 1. Green daisy on the left at index 0
+  store.addFlower('daisy');
+  const greenId = useBouquetStore.getState().selectedId!;
+  store.updateItem(greenId, {
+    x: 245,
+    y: 265,
+    rotation: -6,
+    scale: 1,
+    petalColor: '#34D399',
+    stemLength: 1,
+  });
+
+  // 2. 18 white daisies clustered on the right side (indices 1..18, not overlapping left daisies)
+  const whiteIds: string[] = [];
+  for (let i = 0; i < 18; i += 1) {
+    store.addFlower('daisy');
+    const id = useBouquetStore.getState().selectedId!;
+    whiteIds.push(id);
+    store.updateItem(id, {
+      x: 375 + (i % 3) * 18,
+      y: 235 + Math.floor(i / 3) * 16,
+      rotation: 8,
+      scale: 0.95,
+      petalColor: '#FFFFFF',
+      stemLength: 0.9,
+    });
+  }
+
+  // 3. Pink daisy on the left overlapping Green daisy at index 19
+  store.addFlower('daisy');
+  const pinkId = useBouquetStore.getState().selectedId!;
+  store.updateItem(pinkId, {
+    x: 222,
+    y: 278,
+    rotation: -10,
+    scale: 1,
+    petalColor: '#F472B6',
+    stemLength: 0.55,
+  });
+
+  assert.equal(useBouquetStore.getState().items.length, 20);
+  assert.equal(useBouquetStore.getState().items[19].id, pinkId);
+
+  // Single click "Send Back 1 Layer" jumps Pink past all 18 non-overlapping White daisies directly behind Green
+  store.moveItemLayer(pinkId, 'down');
+  let items = useBouquetStore.getState().items;
+  assert.equal(items[0].id, pinkId);
+  assert.equal(items[1].id, greenId);
+  assert.equal(getEffectiveItemPlane(items[0]), 'inside');
+
+  // Single click "Bring Forward 1 Layer" jumps Pink directly back in front of Green
+  store.moveItemLayer(pinkId, 'up');
+  items = useBouquetStore.getState().items;
+  assert.equal(items[0].id, greenId);
+  assert.equal(items[1].id, pinkId);
+  assert.equal(getEffectiveItemPlane(items[1]), 'inside');
+
+  // Cluster check: add a 3rd overlapping left flower (purple) at top, step down 1 overlapping flower per click
+  store.addFlower('daisy');
+  const purpleId = useBouquetStore.getState().selectedId!;
+  store.updateItem(purpleId, {
+    x: 234,
+    y: 270,
+    rotation: -4,
+    scale: 1,
+    petalColor: '#C084FC',
+  });
+  store.moveItemLayer(purpleId, 'down');
+  items = useBouquetStore.getState().items;
+  // Purple should move immediately behind Pink (index 1), still in front of Green (index 0)
+  assert.equal(items.findIndex((i) => i.id === purpleId), 1);
+  assert.equal(items.findIndex((i) => i.id === pinkId), 2);
+
+  // Next 'down' puts Purple behind Green (index 0)
+  store.moveItemLayer(purpleId, 'down');
+  items = useBouquetStore.getState().items;
+  assert.equal(items.findIndex((i) => i.id === purpleId), 0);
+
+  // Next 'down' on Purple (now at backmost of 'inside') transitions plane from 'inside' -> 'back'
+  store.moveItemLayer(purpleId, 'down');
+  items = useBouquetStore.getState().items;
+  assert.equal(getEffectiveItemPlane(items[0]), 'back');
+
+  // Promote Pink to Most Front ('front') and verify stemLength is preserved on 'front' plane
+  store.moveItemLayer(pinkId, 'front');
+  items = useBouquetStore.getState().items;
+  const pinkFront = items.find((i) => i.id === pinkId)!;
+  assert.equal(getEffectiveItemPlane(pinkFront), 'front');
+  assert.equal(pinkFront.stemLength, 0.55);
+
+  // One click 'down' on Pink in 'front' tucks it into the top of 'inside' (not skipping past 'inside')
+  store.moveItemLayer(pinkId, 'down');
+  items = useBouquetStore.getState().items;
+  const pinkInside = items.find((i) => i.id === pinkId)!;
+  assert.equal(getEffectiveItemPlane(pinkInside), 'inside');
+  assert.equal(items[items.length - 1].id, pinkId);
+});
+
 
 

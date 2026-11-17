@@ -1280,11 +1280,11 @@ export const MiniEnvironmentSVG: React.FC<{
 };
 
 /**
- * Custom "Arrow + Box" Layer Ordering Icon requested by user:
- * - 'back'  (Most Back): Arrow pointing down into a bottom layer box + double base bar
- * - 'down'  (Back 1 Layer): Arrow pointing down beside a layer box
- * - 'up'    (Front 1 Layer): Arrow pointing up beside a layer box
- * - 'front' (Most Front): Arrow pointing up into a top layer box + double top bar
+ * Isometric Layer Ordering Icons matching reference style:
+ * - 'back'  (Most Back): 2 stacked diamond planes with downward arrow passing below
+ * - 'down'  (Back 1 Layer): 1 diamond plane with downward arrow
+ * - 'up'    (Forward 1 Layer): 1 diamond plane with upward arrow
+ * - 'front' (Most Front): 2 stacked diamond planes with upward arrow rising above
  */
 export const LayerOrderBoxIcon: React.FC<{
   direction: 'back' | 'down' | 'up' | 'front';
@@ -1292,49 +1292,105 @@ export const LayerOrderBoxIcon: React.FC<{
 }> = ({ direction, className = 'w-4 h-4' }) => {
   if (direction === 'back') {
     return (
-      <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
-        {/* Top ghost layer box */}
-        <rect x="3" y="2.5" width="7.5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4" strokeDasharray="1.8 1.4" opacity="0.55" />
-        {/* Bottom target box (Most Back) */}
-        <rect x="3" y="11" width="7.5" height="5.5" rx="1.2" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.5" />
-        {/* Bottom floor line */}
-        <line x1="2.5" y1="18.2" x2="17.5" y2="18.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        {/* Down arrow on right */}
-        <path d="M14.5,3 L14.5,15 M12,12.5 L14.5,15.2 L17,12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+        {/* Top diamond plane (gapped at front tip for clean shaft clearance) */}
+        <path
+          d="M9.5 9.6 L4 6.9 L12 3.1 L20 6.9 L14.5 9.6"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Second stacked plane underneath */}
+        <path
+          d="M4 10.7 L9.5 13.3 M14.5 13.3 L20 10.7"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Downward arrow passing to back */}
+        <path
+          d="M12 7.5 V20.5 M8.5 17 L12 20.5 L15.5 17"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
   if (direction === 'down') {
     return (
-      <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
-        {/* Layer box */}
-        <rect x="3" y="5.5" width="8" height="8" rx="1.5" fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.5" />
-        {/* Single step down arrow */}
-        <path d="M14.5,4.5 L14.5,15.5 M12,12.8 L14.5,15.5 L17,12.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+        {/* Single diamond plane (gapped at bottom tip for clean shaft clearance) */}
+        <path
+          d="M9.5 11.4 L4 8.5 L12 4.3 L20 8.5 L14.5 11.4"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Single-step downward arrow */}
+        <path
+          d="M12 8.8 V19.5 M8.5 16 L12 19.5 L15.5 16"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
   if (direction === 'up') {
     return (
-      <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
-        {/* Layer box */}
-        <rect x="3" y="6.5" width="8" height="8" rx="1.5" fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.5" />
-        {/* Single step up arrow */}
-        <path d="M14.5,15.5 L14.5,4.5 M12,7.2 L14.5,4.5 L17,7.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+        {/* Single diamond plane (gapped at top tip for clean shaft clearance) */}
+        <path
+          d="M9.5 12.6 L4 15.5 L12 19.7 L20 15.5 L14.5 12.6"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Single-step upward arrow */}
+        <path
+          d="M12 15.2 V4.5 M8.5 8 L12 4.5 L15.5 8"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
   // 'front' (Most Front)
   return (
-    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
-      {/* Top ceiling line */}
-      <line x1="2.5" y1="1.8" x2="17.5" y2="1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      {/* Top target box (Most Front) */}
-      <rect x="3" y="3.5" width="7.5" height="5.5" rx="1.2" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.5" />
-      {/* Bottom ghost layer box */}
-      <rect x="3" y="12.5" width="7.5" height="5" rx="1.2" stroke="currentColor" strokeWidth="1.4" strokeDasharray="1.8 1.4" opacity="0.55" />
-      {/* Up arrow on right */}
-      <path d="M14.5,17 L14.5,5 M12,7.5 L14.5,4.8 L17,7.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      {/* Top diamond plane (gapped at top tip for clean shaft clearance) */}
+      <path
+        d="M9.5 10.7 L4 13.4 L12 17.2 L20 13.4 L14.5 10.7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Second stacked plane underneath */}
+      <path
+        d="M4 17.1 L12 20.9 L20 17.1"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Upward arrow rising to front */}
+      <path
+        d="M12 13.3 V3.5 M8.5 7 L12 3.5 L15.5 7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 };

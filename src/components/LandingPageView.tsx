@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Lenis from 'lenis';
 import {
   Bookmark,
@@ -25,7 +25,10 @@ import {
   DEFAULT_BOUQUET_LOCK,
 } from '../types/bouquet';
 import { useBouquetStore } from '../store/useBouquetStore';
-import { computeForegroundPetalTransform } from '../lib/dofParallax';
+import {
+  computeForegroundPetalTransform,
+  shouldContinueLenisRaf,
+} from '../lib/dofParallax';
 import {
   HeroLaceGarlandPreview,
   CreationsGalleryPageView,
@@ -526,7 +529,7 @@ const HeroBouquetIllustrationSVG: React.FC<{ preset: ShowcasePreset }> = React.m
 
 /** Cohesive Scene Illustration for Step 01: Pick & Wrap */
 const StepOneSceneSVG: React.FC = React.memo(() => (
-  <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none drop-shadow-[0_5px_10px_rgba(122,75,58,0.1)]">
+  <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none">
     <circle cx="120" cy="76" r="54" fill="#FFFDF9" opacity="0.62" />
     <circle cx="120" cy="76" r="40" fill="#FDE8EF" opacity="0.65" />
 
@@ -597,7 +600,7 @@ const StepOneSceneSVG: React.FC = React.memo(() => (
 
 /** Cohesive Scene Illustration for Step 02: Voice & Note */
 const StepTwoSceneSVG: React.FC = React.memo(() => (
-  <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none drop-shadow-[0_5px_10px_rgba(122,75,58,0.1)]">
+  <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none">
     <circle cx="120" cy="74" r="54" fill="#FFFDF9" opacity="0.62" />
 
     <g>
@@ -653,7 +656,7 @@ const StepTwoSceneSVG: React.FC = React.memo(() => (
 
 /** Cohesive Scene Illustration for Step 03: Send or Time-Lock */
 const StepThreeSceneSVG: React.FC = React.memo(() => (
-  <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none drop-shadow-[0_5px_10px_rgba(122,75,58,0.1)]">
+  <svg viewBox="0 0 240 150" className="w-full h-full max-w-[210px] sm:max-w-[220px] max-h-[125px] sm:max-h-[140px] overflow-visible select-none">
     <circle cx="120" cy="76" r="54" fill="#FFFDF9" opacity="0.62" />
 
     <g>
@@ -759,6 +762,293 @@ const ThinRopeLaceDivider: React.FC<{ isDarkMode: boolean }> = React.memo(({ isD
   );
 });
 
+interface LandingNavbarProps {
+  isDarkMode: boolean;
+  vaultCount: number;
+  onToggleDarkMode: () => void;
+  onOpenVault: () => void;
+  onStartCrafting: () => void;
+  onScrollToSection: (id: string) => void;
+  onAnchorAction: (e: React.MouseEvent<HTMLAnchorElement>, action: () => void) => void;
+  scrolledListenerRef: React.MutableRefObject<((scrolled: boolean) => void) | null>;
+  initialScrolledRef: React.MutableRefObject<boolean>;
+}
+
+const LandingNavbar = memo<LandingNavbarProps>(({
+  isDarkMode,
+  vaultCount,
+  onToggleDarkMode,
+  onOpenVault,
+  onStartCrafting,
+  onScrollToSection,
+  onAnchorAction,
+  scrolledListenerRef,
+  initialScrolledRef,
+}) => {
+  const [isNavScrolled, setIsNavScrolled] = useState<boolean>(() => initialScrolledRef.current);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    scrolledListenerRef.current = setIsNavScrolled;
+    setIsNavScrolled(initialScrolledRef.current);
+    return () => {
+      if (scrolledListenerRef.current === setIsNavScrolled) {
+        scrolledListenerRef.current = null;
+      }
+    };
+  }, [scrolledListenerRef, initialScrolledRef]);
+
+  const handleMobileScrollTo = (id: string) => {
+    setIsMobileNavOpen(false);
+    onScrollToSection(id);
+  };
+
+  return (
+    <div className="sticky top-0 z-40 h-14 md:h-[58px] flex flex-col items-center pointer-events-none px-0">
+      <header
+        data-testid="landing-navbar"
+        data-nav-mode={isNavScrolled ? 'pill' : 'integrated'}
+        style={{
+          contain: 'layout style',
+          willChange: 'translate, max-width, width, border-radius',
+        }}
+        className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[auto_1fr_auto] items-center justify-between gap-2 sm:gap-3 md:gap-4 h-14 md:h-[58px] px-4 sm:px-7 overflow-hidden border border-dashed transition-[max-width,width,translate,transform,background-color,border-color,border-radius,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
+          ? `w-[calc(100%-20px)] sm:w-[calc(100%-40px)] max-w-5xl translate-y-2.5 sm:translate-y-3.5 rounded-[28px] shadow-[0_10px_30px_rgba(64,45,35,0.08)] ${isDarkMode
+            ? 'bg-[#352C29]/97 border-[#5E4E49] text-[#FBF6F1]'
+            : 'bg-[#FFFDF9]/97 border-[#D8C4B4] text-[#231C18]'
+          }`
+          : `w-full max-w-6xl translate-y-0 rounded-[0px] border-transparent shadow-[0_0_0_rgba(64,45,35,0)] ${isDarkMode
+            ? 'bg-[#2B2321]/95 border-b-[#4D3F3B]/65 text-[#FBF6F1]'
+            : 'bg-[#FDF9F5]/95 border-b-[#E6D6C6]/75 text-[#231C18]'
+          }`
+          }`}
+      >
+        {/* Zone 1: Brand Wordmark & Official Logo */}
+        <a
+          href="/"
+          onClick={(e) => onAnchorAction(e, onStartCrafting)}
+          className="flex items-center gap-2 text-left cursor-pointer group shrink-0 justify-self-start no-underline"
+        >
+          <BrandLogoMark
+            className="w-6.5 h-6.5 sm:w-7 sm:h-7 md:w-7.5 md:h-7.5 group-hover:scale-105 transition-transform duration-300 shrink-0"
+            isDarkMode={isDarkMode}
+          />
+          <span
+            className="text-[18px] min-[380px]:text-[19px] sm:text-xl md:text-[22px] font-semibold tracking-tight whitespace-nowrap shrink-0"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
+            Send A Bouquet
+          </span>
+        </a>
+
+        {/* Zone 2: Center Editorial Navigation Links — Mathematically Centered on Tablet (md: 768px+) & Desktop */}
+        <nav
+          aria-label="Primary navigation"
+          className="hidden md:flex items-center justify-center gap-5 lg:gap-8 shrink-0 justify-self-center"
+        >
+          {[
+            { id: 'how-it-works', label: 'How It Works' },
+            { id: 'showcase', label: 'Showcase' },
+            { id: 'faq', label: 'FAQ' },
+            { id: 'contact', label: 'Contact' },
+          ].map((item) => (
+            <a
+              key={item.id}
+              href={`#${item.id}`}
+              onClick={(e) => onAnchorAction(e, () => handleMobileScrollTo(item.id))}
+              className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 no-underline ${isDarkMode
+                ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
+                : 'text-[#5A463B] hover:text-[#7A4B3A]'
+                }`}
+            >
+              <span>{item.label}</span>
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute left-1/2 -bottom-0.5 h-[1.5px] w-0 -translate-x-1/2 rounded-full transition-all duration-300 group-hover:w-4/5 ${isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#7A4B3A]'
+                  }`}
+              />
+            </a>
+          ))}
+        </nav>
+
+        {/* Zone 3: Right Controls — Icon-Only Theme Toggle, Saved Bouquets & Mobile Menu Trigger */}
+        <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 justify-self-end">
+          <button
+            type="button"
+            onClick={onToggleDarkMode}
+            aria-label="Toggle theme"
+            title="Toggle theme"
+            className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${isDarkMode
+              ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
+              : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
+              }`}
+          >
+            <span key={isDarkMode ? 'sun' : 'moon'} className="block animate-theme-icon">
+              {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenVault}
+            aria-label="Saved Bouquets"
+            title="Saved Bouquets"
+            className={`h-9 ${vaultCount > 0 ? 'px-3' : 'w-9 justify-center'
+              } rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${isDarkMode
+                ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+              }`}
+          >
+            <Bookmark className="w-4 h-4 text-[#B4846C] shrink-0" />
+            {vaultCount > 0 && (
+              <span
+                className={`px-1 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${isDarkMode
+                  ? 'text-[#F0C8B0]'
+                  : 'text-[#7A4B3A]'
+                  }`}
+              >
+                {vaultCount}
+              </span>
+            )}
+          </button>
+
+          {/* Mobile & Small Tablet Editorial Menu Trigger (< 768px) — Icon-only button */}
+          <button
+            type="button"
+            onClick={() => setIsMobileNavOpen((prev) => !prev)}
+            aria-label="Toggle navigation menu"
+            title={isMobileNavOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMobileNavOpen}
+            data-testid="mobile-nav-trigger"
+            className={`md:hidden w-9 h-9 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${isMobileNavOpen
+              ? isDarkMode
+                ? 'bg-[#9A6550] border-[#B47E68] text-white'
+                : 'bg-[#7A4B3A] border-[#7A4B3A] text-white'
+              : isDarkMode
+                ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
+                : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
+              }`}
+          >
+            <svg
+              viewBox="0 0 18 18"
+              className="w-4 h-4 stroke-current"
+              fill="none"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            >
+              {isMobileNavOpen ? (
+                <>
+                  <path d="M 4.5,4.5 L 13.5,13.5" />
+                  <path d="M 13.5,4.5 L 4.5,13.5" />
+                </>
+              ) : (
+                <>
+                  <path d="M 3,6.25 L 15,6.25" />
+                  <path d="M 5.5,11.75 L 15,11.75" />
+                </>
+              )}
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile & Small Tablet Editorial Stationery Dropdown Card (< 768px) */}
+      {isMobileNavOpen && (
+        <nav
+          aria-label="Mobile navigation"
+          data-testid="mobile-nav-dropdown"
+          className={`md:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] transition-opacity duration-200 animate-hero-entrance ${isDarkMode
+            ? 'bg-[#352C29]/98 border-[#5E4E49] text-[#FBF6F1]'
+            : 'bg-[#FFFDF9]/98 border-[#D8C4B4] text-[#231C18]'
+            }`}
+        >
+          <div className="flex flex-col divide-y divide-dashed divide-[#DECBB9]/60 dark:divide-[#574843]/70">
+            {[
+              { id: 'how-it-works', num: '01', title: 'How It Works', sub: 'Pick blooms, wrap & attach a keepsake' },
+              { id: 'showcase', num: '02', title: 'Shared Creations', sub: 'Explore bouquets on the lace garland' },
+              { id: 'faq', num: '03', title: 'FAQ', sub: 'Voice notes, locks & gift links' },
+              { id: 'contact', num: '04', title: 'Get in Touch', sub: 'Write a note or flower wish' },
+            ].map((item) => (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                onClick={(e) => onAnchorAction(e, () => handleMobileScrollTo(item.id))}
+                className={`w-full py-2.5 px-2.5 flex items-center justify-between gap-3 text-left rounded-xl transition-colors cursor-pointer no-underline ${isDarkMode ? 'hover:bg-[#433834]/80' : 'hover:bg-[#FAF3EB]'
+                  }`}
+              >
+                <div className="flex items-baseline gap-2.5 min-w-0">
+                  <span
+                    className={`text-xs italic shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
+                      }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    {item.num}
+                  </span>
+                  <div className="min-w-0">
+                    <div
+                      className="text-base font-semibold leading-tight"
+                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    >
+                      {item.title}
+                    </div>
+                    <div
+                      className={`text-[11px] truncate ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B61]'
+                        }`}
+                    >
+                      {item.sub}
+                    </div>
+                  </div>
+                </div>
+                <span
+                  aria-hidden="true"
+                  className={`text-xs shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
+                    }`}
+                >
+                  →
+                </span>
+              </a>
+            ))}
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-dashed border-[#DECBB9]/70 dark:border-[#574843] flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileNavOpen(false);
+                onOpenVault();
+              }}
+              className={`flex-1 py-2.5 px-3 rounded-full border border-dashed text-xs font-medium inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${isDarkMode
+                ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1]'
+                : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438]'
+                }`}
+            >
+              <span>Saved Bouquets</span>
+              {vaultCount > 0 && (
+                <span className="font-semibold tabular-nums">({vaultCount})</span>
+              )}
+            </button>
+            <a
+              href="/studio"
+              onClick={(e) =>
+                onAnchorAction(e, () => {
+                  setIsMobileNavOpen(false);
+                  onStartCrafting();
+                })
+              }
+              className={`flex-1 py-2.5 px-3 rounded-full text-white text-xs font-medium text-center transition cursor-pointer no-underline ${isDarkMode
+                ? 'bg-[#9A6550] hover:bg-[#875642]'
+                : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                }`}
+            >
+              Craft a Bouquet
+            </a>
+          </div>
+        </nav>
+      )}
+    </div>
+  );
+});
+
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onStartCrafting,
   onPreviewShowcaseBouquet,
@@ -784,27 +1074,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [sentConfirmationEmail, setSentConfirmationEmail] = useState<string | null>(null);
   const [sentTopicLabel, setSentTopicLabel] = useState<string>('Flower Wish');
   const [copiedEmail, setCopiedEmail] = useState(false);
-  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMaintainNoteOpen, setIsMaintainNoteOpen] = useState(false);
   const [isCreationsPageOpen, setIsCreationsPageOpen] = useState(Boolean(initialCreationsPageOpen));
   const [legalModal, setLegalModal] = useState<'terms' | 'privacy' | null>(null);
-  const [isNavScrolled, setIsNavScrolled] = useState(false);
   const isNavScrolledRef = useRef(false);
+  const navScrolledListenerRef = useRef<((scrolled: boolean) => void) | null>(null);
 
   const scrollWrapperRef = useRef<HTMLDivElement | null>(null);
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
   const lenisRef = useRef<Lenis | null>(null);
+  const wakeLenisRafRef = useRef<(() => void) | null>(null);
   const isDarkModeRef = useRef<boolean>(isDarkMode);
   isDarkModeRef.current = isDarkMode;
 
   // Direct DOM refs for 120fps Scroll-Linked Blooming Watercolor & Colored Lineart Flower behind Title
+  // Split into separate composited HTML layers so Chromium never re-rasterizes SVG paths on scroll.
   const bloomRootRef = useRef<HTMLDivElement | null>(null);
-  const bloomOuterRingRef = useRef<SVGGElement | null>(null);
-  const bloomMidRingRef = useRef<SVGGElement | null>(null);
-  const bloomInnerCorollaRef = useRef<SVGGElement | null>(null);
-  const bloomBotanicalLeavesRef = useRef<SVGGElement | null>(null);
+  const bloomOuterRingRef = useRef<HTMLDivElement | null>(null);
+  const bloomMidRingRef = useRef<HTMLDivElement | null>(null);
+  const bloomInnerCorollaRef = useRef<HTMLDivElement | null>(null);
+  const bloomBotanicalLeavesRef = useRef<HTMLDivElement | null>(null);
 
-  // Direct DOM refs for Depth-of-Field Foreground Camera-Lens Petals (2.15x & 2.65x fast scroll parallax)
+  // Direct DOM refs for Depth-of-Field Foreground Camera-Lens Petals
   const fgPetalLeftRef = useRef<HTMLDivElement | null>(null);
   const fgPetalRightRef = useRef<HTMLDivElement | null>(null);
   const cachedVhRef = useRef<number>(typeof window !== 'undefined' ? window.innerHeight : 900);
@@ -813,14 +1104,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
   // Pure GPU-driven scroll bloom & foreground depth-of-field petal updater (0 React re-renders, 0 layout reads during scroll)
   const applyHeroBloomProgress = (scrollTop: number, forceSync = false) => {
-    const nextScrolled = scrollTop > 44;
+    const nextScrolled = isNavScrolledRef.current ? scrollTop > 24 : scrollTop > 48;
     if (isNavScrolledRef.current !== nextScrolled) {
       isNavScrolledRef.current = nextScrolled;
-      setIsNavScrolled(nextScrolled);
+      navScrolledListenerRef.current?.(nextScrolled);
     }
     const vh = cachedVhRef.current;
 
-    // 1. Update Foreground Depth-of-Field Camera-Lens Petals (early-exit once scrolled past fade zone)
+    // 1. Update Foreground Depth-of-Field Camera-Lens Petals (visibility: hidden once faded out past hero to avoid layout thrash)
     const p0 = computeForegroundPetalTransform(scrollTop, 0, vh, isDarkModeRef.current);
     const p1 = computeForegroundPetalTransform(scrollTop, 1, vh, isDarkModeRef.current);
     const petalsInvisible = p0.opacity <= 0.005 && p1.opacity <= 0.005;
@@ -831,17 +1122,25 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         if (fgPetalLeftRef.current) {
           fgPetalLeftRef.current.style.opacity = '0';
           fgPetalLeftRef.current.style.visibility = 'hidden';
+          fgPetalLeftRef.current.style.willChange = 'auto';
         }
         if (fgPetalRightRef.current) {
           fgPetalRightRef.current.style.opacity = '0';
           fgPetalRightRef.current.style.visibility = 'hidden';
+          fgPetalRightRef.current.style.willChange = 'auto';
         }
       }
     } else {
       if (fgPetalsHiddenRef.current || forceSync) {
         fgPetalsHiddenRef.current = false;
-        if (fgPetalLeftRef.current) fgPetalLeftRef.current.style.visibility = 'visible';
-        if (fgPetalRightRef.current) fgPetalRightRef.current.style.visibility = 'visible';
+        if (fgPetalLeftRef.current) {
+          fgPetalLeftRef.current.style.visibility = 'visible';
+          fgPetalLeftRef.current.style.willChange = 'transform, opacity';
+        }
+        if (fgPetalRightRef.current) {
+          fgPetalRightRef.current.style.visibility = 'visible';
+          fgPetalRightRef.current.style.willChange = 'transform, opacity';
+        }
       }
       if (fgPetalLeftRef.current) {
         fgPetalLeftRef.current.style.opacity = String(p0.opacity);
@@ -853,7 +1152,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       }
     }
 
-    // 2. Update Hero Background Watercolor Bloom (early-exit once scrolled past 420px)
+    // 2. Update Hero Background Watercolor Bloom (visibility: hidden once scrolled past 420px)
     const rootEl = bloomRootRef.current;
     if (!rootEl) return;
 
@@ -873,6 +1172,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         bloomHiddenRef.current = true;
         rootEl.style.opacity = '0';
         rootEl.style.visibility = 'hidden';
+        rootEl.style.willChange = 'auto';
       }
       return;
     }
@@ -880,6 +1180,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     if (bloomHiddenRef.current || forceSync) {
       bloomHiddenRef.current = false;
       rootEl.style.visibility = 'visible';
+      rootEl.style.willChange = 'transform, opacity';
     }
     rootEl.style.opacity = finalOpacity.toFixed(3);
 
@@ -891,32 +1192,32 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     if (bloomOuterRingRef.current) {
       const outerScale = 0.94 + bloomEase * 0.34;
       const outerRot = bloomEase * 24;
-      bloomOuterRingRef.current.style.transform = `translate3d(260px, 170px, 0) rotate(${outerRot.toFixed(2)}deg) scale(${outerScale.toFixed(3)})`;
+      bloomOuterRingRef.current.style.transform = `rotate(${outerRot.toFixed(2)}deg) scale(${outerScale.toFixed(3)})`;
     }
     if (bloomMidRingRef.current) {
       const midScale = 0.86 + bloomEase * 0.38;
       const midRot = -bloomEase * 18;
-      bloomMidRingRef.current.style.transform = `translate3d(260px, 170px, 0) rotate(${midRot.toFixed(2)}deg) scale(${midScale.toFixed(3)})`;
+      bloomMidRingRef.current.style.transform = `rotate(${midRot.toFixed(2)}deg) scale(${midScale.toFixed(3)})`;
     }
     if (bloomInnerCorollaRef.current) {
       const innerScale = 0.82 + bloomEase * 0.42;
       const innerRot = bloomEase * 32;
-      bloomInnerCorollaRef.current.style.transform = `translate3d(260px, 170px, 0) rotate(${innerRot.toFixed(2)}deg) scale(${innerScale.toFixed(3)})`;
+      bloomInnerCorollaRef.current.style.transform = `rotate(${innerRot.toFixed(2)}deg) scale(${innerScale.toFixed(3)})`;
     }
     if (bloomBotanicalLeavesRef.current) {
       const spreadX = 0.96 + bloomEase * 0.36;
       const spreadY = 0.96 + bloomEase * 0.22;
-      bloomBotanicalLeavesRef.current.style.transform = `translate3d(260px, 170px, 0) scale(${spreadX.toFixed(3)}, ${spreadY.toFixed(3)})`;
+      bloomBotanicalLeavesRef.current.style.transform = `scale(${spreadX.toFixed(3)}, ${spreadY.toFixed(3)})`;
     }
   };
 
-  // Re-sync bloom opacity when theme switches
-  useEffect(() => {
+  // Re-sync bloom & lens petals synchronously before paint on mount and when theme switches
+  useLayoutEffect(() => {
     const wrapper = scrollWrapperRef.current;
     applyHeroBloomProgress(wrapper ? wrapper.scrollTop : 0, true);
   }, [isDarkMode]);
 
-  // Initialize Lenis smooth water-like scrolling on the LandingPageView scroll container
+  // Initialize on-demand Lenis smooth scrolling on LandingPageView (0 background rAF when idle)
   useEffect(() => {
     const wrapper = scrollWrapperRef.current;
     const content = scrollContentRef.current;
@@ -927,14 +1228,16 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     };
     updateCachedVh();
     window.addEventListener('resize', updateCachedVh, { passive: true });
+    if (document.activeElement === document.body) {
+      wrapper.focus({ preventScroll: true });
+    }
 
     applyHeroBloomProgress(wrapper.scrollTop, true);
 
     const lenis = new Lenis({
       wrapper,
       content,
-      lerp: 0.085,
-      duration: 1.25,
+      lerp: 0.1,
       smoothWheel: true,
       wheelMultiplier: 0.95,
       touchMultiplier: 1.5,
@@ -946,21 +1249,46 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     });
 
     let rafId = 0;
+    let idleFrames = 0;
     const raf = (time: number) => {
       lenis.raf(time);
-      rafId = requestAnimationFrame(raf);
+      if (shouldContinueLenisRaf(lenis)) {
+        idleFrames = 0;
+        rafId = requestAnimationFrame(raf);
+      } else if (idleFrames < 3) {
+        idleFrames += 1;
+        rafId = requestAnimationFrame(raf);
+      } else {
+        rafId = 0;
+      }
     };
-    rafId = requestAnimationFrame(raf);
+
+    const wakeRaf = () => {
+      idleFrames = 0;
+      if (rafId === 0) {
+        rafId = requestAnimationFrame(raf);
+      }
+    };
+    wakeLenisRafRef.current = wakeRaf;
+
+    lenis.on('virtual-scroll', wakeRaf);
+    wrapper.addEventListener('scroll', wakeRaf, { passive: true });
+    wrapper.addEventListener('wheel', wakeRaf, { passive: true });
+    wrapper.addEventListener('touchstart', wakeRaf, { passive: true });
 
     return () => {
+      wakeLenisRafRef.current = null;
       window.removeEventListener('resize', updateCachedVh);
-      cancelAnimationFrame(rafId);
+      wrapper.removeEventListener('scroll', wakeRaf);
+      wrapper.removeEventListener('wheel', wakeRaf);
+      wrapper.removeEventListener('touchstart', wakeRaf);
+      if (rafId !== 0) cancelAnimationFrame(rafId);
       lenis.destroy();
       lenisRef.current = null;
     };
   }, []);
 
-  // IntersectionObserver sets data-revealed="true" (which React never overwrites when className changes on theme toggle!)
+  // IntersectionObserver sets data-revealed="true" once and immediately unobserves revealed nodes
   useEffect(() => {
     const wrapper = scrollWrapperRef.current;
     if (!wrapper) return;
@@ -971,6 +1299,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             entry.target.setAttribute('data-revealed', 'true');
+            observer.unobserve(entry.target);
           }
         });
       },
@@ -985,20 +1314,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  const scrollToSection = (id: string) => {
-    setIsMobileNavOpen(false);
+  const scrollToSection = useCallback((id: string) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (lenisRef.current) {
       lenisRef.current.scrollTo(el, {
         offset: -96,
-        duration: 1.4,
+        duration: 1.15,
         easing: (t: number) => 1 - Math.pow(1 - t, 4),
       });
+      wakeLenisRafRef.current?.();
     } else {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  };
+  }, []);
 
   // Support direct Google Sitelink / jump-to anchor hashes (#how-it-works, #showcase, #faq, #contact)
   useEffect(() => {
@@ -1025,7 +1354,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     };
   }, []);
 
-  const handleAnchorAction = (
+  const handleAnchorAction = useCallback((
     e: React.MouseEvent<HTMLAnchorElement>,
     action: () => void
   ) => {
@@ -1033,7 +1362,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       e.preventDefault();
       action();
     }
-  };
+  }, []);
 
   const preset = SHOWCASE_PRESETS[activePresetIdx] || SHOWCASE_PRESETS[0];
 
@@ -1094,9 +1423,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const scrollToTop = () => {
     if (lenisRef.current) {
       lenisRef.current.scrollTo(0, {
-        duration: 1.3,
+        duration: 1.1,
         easing: (t: number) => 1 - Math.pow(1 - t, 4),
       });
+      wakeLenisRafRef.current?.();
     } else if (scrollWrapperRef.current) {
       scrollWrapperRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1105,7 +1435,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   return (
     <div
       ref={scrollWrapperRef}
-      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-hidden transition-[background-color,color] duration-300 ease-out selection:bg-[#7A4B3A]/15 ${isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'
+      tabIndex={-1}
+      className={`animate-landing-view-enter fixed inset-0 z-50 overflow-y-auto overflow-x-clip outline-none transition-[background-color,color] duration-300 ease-out selection:bg-[#7A4B3A]/15 ${isDarkMode ? 'bg-[#2B2321] text-[#FBF6F1]' : 'bg-[#FDF9F5] text-[#231C18]'
         }`}
       style={{
         fontFamily: "'Inter', system-ui, sans-serif",
@@ -1115,8 +1446,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       {/* Fluid Water-Like Keyframes, Smooth Theme Transitions & View Switch Animations */}
       <style>{`
         @keyframes landingViewEnter {
-          0% { opacity: 0; transform: scale(0.99) translate3d(0, 6px, 0); }
-          100% { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+          0% { opacity: 0; }
+          100% { opacity: 1; }
         }
         @keyframes themeIconSpring {
           0% { opacity: 0.4; transform: rotate(-75deg) scale(0.65); }
@@ -1128,30 +1459,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         .animate-theme-icon {
           animation: themeIconSpring 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
-        @keyframes fluidFloatA {
-          0%, 100% { transform: translate3d(0, 0px, 0) rotate(-3deg); }
-          50% { transform: translate3d(0, -6px, 0) rotate(-1.5deg); }
-        }
-        @keyframes fluidFloatB {
-          0%, 100% { transform: translate3d(0, 0px, 0) rotate(3deg); }
-          50% { transform: translate3d(0, -7px, 0) rotate(1.5deg); }
-        }
-        @keyframes fluidBouquetBreathe {
-          0%, 100% { transform: translate3d(0, 0px, 0) scale(1); }
-          50% { transform: translate3d(0, -5px, 0) scale(1.012); }
-        }
         @keyframes fluidHeroEntrance {
           0% { opacity: 0; transform: translate3d(0, 22px, 0); }
           100% { opacity: 1; transform: translate3d(0, 0, 0); }
-        }
-        .animate-fluid-badge-left {
-          animation: fluidFloatA 6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-        }
-        .animate-fluid-badge-right {
-          animation: fluidFloatB 6.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-        }
-        .animate-fluid-bouquet {
-          animation: fluidBouquetBreathe 5.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
         }
         .animate-hero-entrance {
           animation: fluidHeroEntrance 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -1163,269 +1473,38 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           opacity: 0;
           transform: translate3d(0, 24px, 0);
           transition:
-            opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
-            transform 0.9s cubic-bezier(0.16, 1, 0.3, 1),
-            background-color 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-            border-color 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-            color 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+            opacity 0.78s cubic-bezier(0.16, 1, 0.3, 1),
+            transform 0.78s cubic-bezier(0.16, 1, 0.3, 1),
+            background-color 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+            border-color 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+            color 0.35s cubic-bezier(0.22, 1, 0.36, 1);
           will-change: opacity, transform;
         }
         .fluid-scroll-item[data-revealed="true"] {
           opacity: 1;
           transform: translate3d(0, 0, 0);
+          will-change: auto;
         }
         .fluid-delay-1 { transition-delay: 80ms; }
         .fluid-delay-2 { transition-delay: 160ms; }
         .fluid-delay-3 { transition-delay: 240ms; }
       `}</style>
 
-      {/* STICKY TOP NAVBAR — Integrated Page Header in Hero, Smoothly Transitions to Floating Pill on Scroll */}
-      <div
-        className={`sticky z-40 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
-          ? 'top-2.5 sm:top-3.5 px-2.5 sm:px-5 md:px-6 pt-1 sm:pt-1.5'
-          : 'top-0 px-0 pt-0'
-          }`}
-      >
-        <header
-          data-testid="landing-navbar"
-          data-nav-mode={isNavScrolled ? 'pill' : 'integrated'}
-          className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[auto_1fr_auto] items-center justify-between gap-2 sm:gap-3 md:gap-4 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
-            ? `max-w-5xl h-12 sm:h-13 md:h-14 px-3 sm:px-4 md:px-6 rounded-full border border-dashed shadow-[0_10px_30px_rgba(64,45,35,0.07)] backdrop-blur-md ${isDarkMode
-              ? 'bg-[#352C29]/94 border-[#5E4E49] text-[#FBF6F1]'
-              : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#231C18]'
-            }`
-            : `max-w-6xl h-14 sm:h-15 md:h-16 px-4 sm:px-8 rounded-none border-b border-dashed shadow-none backdrop-blur-xs ${isDarkMode
-              ? 'bg-[#2B2321]/80 border-[#4D3F3B]/65 text-[#FBF6F1]'
-              : 'bg-[#FDF9F5]/80 border-[#E6D6C6]/75 text-[#231C18]'
-            }`
-            }`}
-        >
-          {/* Zone 1: Brand Wordmark & Official Logo */}
-          <a
-            href="/"
-            onClick={(e) => handleAnchorAction(e, onStartCrafting)}
-            className="flex items-center gap-2 text-left cursor-pointer group shrink-0 justify-self-start no-underline"
-          >
-            <BrandLogoMark
-              className="w-6.5 h-6.5 sm:w-7 sm:h-7 md:w-7.5 md:h-7.5 group-hover:scale-105 transition-transform duration-300 shrink-0"
-              isDarkMode={isDarkMode}
-            />
-            <span
-              className="text-[18px] min-[380px]:text-[19px] sm:text-xl md:text-[22px] font-semibold tracking-tight whitespace-nowrap shrink-0"
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            >
-              Send A Bouquet
-            </span>
-          </a>
-
-          {/* Zone 2: Center Editorial Navigation Links — Mathematically Centered on Tablet (md: 768px+) & Desktop */}
-          <nav
-            aria-label="Primary navigation"
-            className="hidden md:flex items-center justify-center gap-5 lg:gap-8 shrink-0 justify-self-center"
-          >
-            {[
-              { id: 'how-it-works', label: 'How It Works' },
-              { id: 'showcase', label: 'Showcase' },
-              { id: 'faq', label: 'FAQ' },
-              { id: 'contact', label: 'Contact' },
-            ].map((item) => (
-              <a
-                key={item.id}
-                href={`#${item.id}`}
-                onClick={(e) => handleAnchorAction(e, () => scrollToSection(item.id))}
-                className={`group relative py-1 text-[13px] lg:text-[13.5px] font-medium transition-colors duration-300 cursor-pointer whitespace-nowrap shrink-0 no-underline ${isDarkMode
-                  ? 'text-[#DFCFC6] hover:text-[#FBF6F1]'
-                  : 'text-[#5A463B] hover:text-[#7A4B3A]'
-                  }`}
-              >
-                <span>{item.label}</span>
-                <span
-                  aria-hidden="true"
-                  className={`pointer-events-none absolute left-1/2 -bottom-0.5 h-[1.5px] w-0 -translate-x-1/2 rounded-full transition-all duration-300 group-hover:w-4/5 ${isDarkMode ? 'bg-[#E6B89C]' : 'bg-[#7A4B3A]'
-                    }`}
-                />
-              </a>
-            ))}
-          </nav>
-
-          {/* Zone 3: Right Controls — Icon-Only Theme Toggle, Saved Bouquets & Mobile Menu Trigger */}
-          <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 justify-self-end">
-            <button
-              type="button"
-              onClick={onToggleDarkMode}
-              aria-label="Toggle theme"
-              title="Toggle theme"
-              className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition-colors duration-300 cursor-pointer shrink-0 ${isDarkMode
-                ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
-                : 'bg-[#FAF4EE]/80 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
-                }`}
-            >
-              <span key={isDarkMode ? 'sun' : 'moon'} className="block animate-theme-icon">
-                {isDarkMode ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4" />}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenVault}
-              aria-label="Saved Bouquets"
-              title="Saved Bouquets"
-              className={`h-9 ${vaultCount > 0 ? 'px-3' : 'w-9 justify-center'
-                } rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1 transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${isDarkMode
-                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                }`}
-            >
-              <Bookmark className="w-4 h-4 text-[#B4846C] shrink-0" />
-              {vaultCount > 0 && (
-                <span
-                  className={`px-1 py-0.2 rounded-full text-[11px] font-semibold tabular-nums ${isDarkMode
-                    ? 'text-[#F0C8B0]'
-                    : 'text-[#7A4B3A]'
-                    }`}
-                >
-                  {vaultCount}
-                </span>
-              )}
-            </button>
-
-            {/* Mobile & Small Tablet Editorial Menu Trigger (< 768px) — Icon-only button */}
-            <button
-              type="button"
-              onClick={() => setIsMobileNavOpen((prev) => !prev)}
-              aria-label="Toggle navigation menu"
-              title={isMobileNavOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={isMobileNavOpen}
-              data-testid="mobile-nav-trigger"
-              className={`md:hidden w-9 h-9 rounded-full border border-dashed inline-flex items-center justify-center transition-all duration-300 active:scale-95 cursor-pointer shrink-0 ${isMobileNavOpen
-                ? isDarkMode
-                  ? 'bg-[#9A6550] border-[#B47E68] text-white'
-                  : 'bg-[#7A4B3A] border-[#7A4B3A] text-white'
-                : isDarkMode
-                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                }`}
-            >
-              <svg
-                viewBox="0 0 18 18"
-                className="w-4 h-4 stroke-current"
-                fill="none"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              >
-                {isMobileNavOpen ? (
-                  <>
-                    <path d="M 4.5,4.5 L 13.5,13.5" />
-                    <path d="M 13.5,4.5 L 4.5,13.5" />
-                  </>
-                ) : (
-                  <>
-                    <path d="M 3,6.25 L 15,6.25" />
-                    <path d="M 5.5,11.75 L 15,11.75" />
-                  </>
-                )}
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        {/* Mobile & Small Tablet Editorial Stationery Dropdown Card (< 768px) */}
-        {isMobileNavOpen && (
-          <nav
-            aria-label="Mobile navigation"
-            data-testid="mobile-nav-dropdown"
-            className={`md:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] backdrop-blur-xl transition-all duration-300 animate-hero-entrance ${isDarkMode
-              ? 'bg-[#352C29]/96 border-[#5E4E49] text-[#FBF6F1]'
-              : 'bg-[#FFFDF9]/98 border-[#D8C4B4] text-[#231C18]'
-              }`}
-          >
-            <div className="flex flex-col divide-y divide-dashed divide-[#DECBB9]/60 dark:divide-[#574843]/70">
-              {[
-                { id: 'how-it-works', num: '01', title: 'How It Works', sub: 'Pick blooms, wrap & attach a keepsake' },
-                { id: 'showcase', num: '02', title: 'Shared Creations', sub: 'Explore bouquets on the lace garland' },
-                { id: 'faq', num: '03', title: 'FAQ', sub: 'Voice notes, locks & gift links' },
-                { id: 'contact', num: '04', title: 'Get in Touch', sub: 'Write a note or flower wish' },
-              ].map((item) => (
-                <a
-                  key={item.id}
-                  href={`#${item.id}`}
-                  onClick={(e) => handleAnchorAction(e, () => scrollToSection(item.id))}
-                  className={`w-full py-2.5 px-2.5 flex items-center justify-between gap-3 text-left rounded-xl transition-colors cursor-pointer no-underline ${isDarkMode ? 'hover:bg-[#433834]/80' : 'hover:bg-[#FAF3EB]'
-                    }`}
-                >
-                  <div className="flex items-baseline gap-2.5 min-w-0">
-                    <span
-                      className={`text-xs italic shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A4B38]'
-                        }`}
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                    >
-                      {item.num}
-                    </span>
-                    <div className="min-w-0">
-                      <div
-                        className="text-base font-semibold leading-tight"
-                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                      >
-                        {item.title}
-                      </div>
-                      <div
-                        className={`text-[11px] truncate ${isDarkMode ? 'text-[#C2B0A6]' : 'text-[#7D6B61]'
-                          }`}
-                      >
-                        {item.sub}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    aria-hidden="true"
-                    className={`text-xs shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
-                      }`}
-                  >
-                    →
-                  </span>
-                </a>
-              ))}
-            </div>
-
-            <div className="mt-3 pt-2.5 border-t border-dashed border-[#DECBB9]/70 dark:border-[#574843] flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMobileNavOpen(false);
-                  onOpenVault();
-                }}
-                className={`flex-1 py-2.5 px-3 rounded-full border border-dashed text-xs font-medium inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${isDarkMode
-                  ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1]'
-                  : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438]'
-                  }`}
-              >
-                <span>Saved Bouquets</span>
-                {vaultCount > 0 && (
-                  <span className="font-semibold tabular-nums">({vaultCount})</span>
-                )}
-              </button>
-              <a
-                href="/studio"
-                onClick={(e) =>
-                  handleAnchorAction(e, () => {
-                    setIsMobileNavOpen(false);
-                    onStartCrafting();
-                  })
-                }
-                className={`flex-1 py-2.5 px-3 rounded-full text-white text-xs font-medium text-center transition cursor-pointer no-underline ${isDarkMode
-                  ? 'bg-[#9A6550] hover:bg-[#875642]'
-                  : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                  }`}
-              >
-                Craft a Bouquet
-              </a>
-            </div>
-          </nav>
-        )}
-      </div>
+      {/* STICKY TOP NAVBAR — Isolated memoized component (0 full-page re-renders on scroll) */}
+      <LandingNavbar
+        isDarkMode={isDarkMode}
+        vaultCount={vaultCount}
+        onToggleDarkMode={onToggleDarkMode}
+        onOpenVault={onOpenVault}
+        onStartCrafting={onStartCrafting}
+        onScrollToSection={scrollToSection}
+        onAnchorAction={handleAnchorAction}
+        scrolledListenerRef={navScrolledListenerRef}
+        initialScrolledRef={isNavScrolledRef}
+      />
 
       {/* DEPTH-OF-FIELD FOREGROUND CAMERA-LENS PETALS
-          Large out-of-focus wind-swept petals framing the outer screen edges that part outward & fade away on scroll */}
+          Mathematically feathered closest-side radial gradients — zero live blur shaders & zero dark-mode edge clipping */}
       <div
         aria-hidden="true"
         className="pointer-events-none select-none fixed inset-0 z-20 overflow-hidden"
@@ -1434,123 +1513,27 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <div
           ref={fgPetalLeftRef}
           data-testid="dof-petal-left"
-          className="absolute -left-10 sm:-left-14 md:-left-16 bottom-[3%] w-56 h-40 sm:w-76 sm:h-52 md:w-92 md:h-64"
+          className="absolute -left-14 sm:-left-16 md:-left-20 bottom-[2%] w-64 h-44 sm:w-88 sm:h-60 md:w-[420px] md:h-[280px] rounded-full"
           style={{
-            opacity: isDarkMode ? 0.42 : 0.62,
-            transform: 'translate3d(0px, 0px, 0) rotate(-10deg) scale(1.08)',
-            willChange: 'transform, opacity',
-            contain: 'layout style',
+            contain: 'layout style paint',
+            background: isDarkMode
+              ? 'radial-gradient(closest-side at 52% 48%, rgba(217, 123, 152, 0.42) 0%, rgba(229, 143, 169, 0.24) 36%, rgba(242, 172, 194, 0.08) 68%, rgba(242, 172, 194, 0) 100%), radial-gradient(closest-side at 36% 60%, rgba(217, 123, 152, 0.28) 0%, rgba(242, 172, 194, 0.09) 54%, rgba(242, 172, 194, 0) 100%)'
+              : 'radial-gradient(closest-side at 52% 48%, rgba(244, 154, 185, 0.56) 0%, rgba(248, 184, 206, 0.30) 38%, rgba(252, 214, 227, 0.10) 70%, rgba(255, 244, 248, 0) 100%), radial-gradient(closest-side at 36% 60%, rgba(244, 154, 185, 0.38) 0%, rgba(251, 208, 223, 0.14) 55%, rgba(255, 244, 248, 0) 100%)',
           }}
-        >
-          <div
-            className="w-full h-full"
-            style={{
-              filter: 'blur(12px)',
-              transform: 'translateZ(0)',
-              backfaceVisibility: 'hidden',
-            }}
-          >
-            <svg
-              viewBox="0 0 220 150"
-              className="w-full h-full overflow-visible"
-            >
-              <defs>
-                <linearGradient id="dof-lens-petal-blush" x1="12%" y1="82%" x2="88%" y2="14%">
-                  <stop
-                    offset="0%"
-                    stopColor={isDarkMode ? '#D97B98' : '#F49AB9'}
-                    stopOpacity={isDarkMode ? '0.68' : '0.82'}
-                  />
-                  <stop
-                    offset="55%"
-                    stopColor={isDarkMode ? '#F2ACC2' : '#FBD0DF'}
-                    stopOpacity={isDarkMode ? '0.54' : '0.72'}
-                  />
-                  <stop
-                    offset="100%"
-                    stopColor={isDarkMode ? '#FCE0E9' : '#FFF4F8'}
-                    stopOpacity="0.28"
-                  />
-                </linearGradient>
-              </defs>
-              <path
-                d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-                fill="url(#dof-lens-petal-blush)"
-              />
-              <path
-                d="M 28,122 Q 112,92 184,26"
-                fill="none"
-                stroke={isDarkMode ? '#FAD2DF' : '#FFF7FA'}
-                strokeWidth="2.4"
-                strokeOpacity="0.55"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-        </div>
+        />
 
         {/* Foreground Lens Petal 02 — Large Upper-Right Screen Edge (Below Navbar) */}
         <div
           ref={fgPetalRightRef}
           data-testid="dof-petal-right"
-          className="absolute -right-10 sm:-right-14 md:-right-16 top-[11%] w-60 h-44 sm:w-80 sm:h-56 md:w-96 md:h-68"
+          className="absolute -right-14 sm:-right-16 md:-right-20 top-[10%] w-68 h-48 sm:w-92 sm:h-64 md:w-[440px] md:h-[290px] rounded-full"
           style={{
-            opacity: isDarkMode ? 0.38 : 0.56,
-            transform: 'translate3d(0px, 0px, 0) rotate(-6deg) scale(1.12)',
-            willChange: 'transform, opacity',
-            contain: 'layout style',
+            contain: 'layout style paint',
+            background: isDarkMode
+              ? 'radial-gradient(closest-side at 48% 52%, rgba(223, 142, 122, 0.40) 0%, rgba(234, 165, 146, 0.22) 38%, rgba(244, 187, 168, 0.07) 68%, rgba(244, 187, 168, 0) 100%), radial-gradient(closest-side at 64% 40%, rgba(223, 142, 122, 0.26) 0%, rgba(244, 187, 168, 0.08) 54%, rgba(244, 187, 168, 0) 100%)'
+              : 'radial-gradient(closest-side at 48% 52%, rgba(245, 169, 156, 0.54) 0%, rgba(249, 193, 181, 0.28) 38%, rgba(252, 223, 216, 0.09) 70%, rgba(255, 246, 242, 0) 100%), radial-gradient(closest-side at 64% 40%, rgba(245, 169, 156, 0.34) 0%, rgba(252, 213, 204, 0.12) 55%, rgba(255, 246, 242, 0) 100%)',
           }}
-        >
-          <div
-            className="w-full h-full"
-            style={{
-              filter: 'blur(13px)',
-              transform: 'translateZ(0)',
-              backfaceVisibility: 'hidden',
-            }}
-          >
-            <svg
-              viewBox="0 0 220 150"
-              className="w-full h-full overflow-visible"
-            >
-              <defs>
-                <linearGradient id="dof-lens-petal-peach" x1="15%" y1="80%" x2="88%" y2="16%">
-                  <stop
-                    offset="0%"
-                    stopColor={isDarkMode ? '#DF8E7A' : '#F5A99C'}
-                    stopOpacity={isDarkMode ? '0.64' : '0.78'}
-                  />
-                  <stop
-                    offset="58%"
-                    stopColor={isDarkMode ? '#F4BBA8' : '#FCD5CC'}
-                    stopOpacity={isDarkMode ? '0.50' : '0.68'}
-                  />
-                  <stop
-                    offset="100%"
-                    stopColor={isDarkMode ? '#FDE6DE' : '#FFF6F2'}
-                    stopOpacity="0.24"
-                  />
-                </linearGradient>
-              </defs>
-              <path
-                d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-                fill="url(#wc-petal-peach)"
-              />
-              <path
-                d="M 18,128 C 48,72 112,48 194,16 C 206,62 184,116 128,134 C 82,146 42,138 18,128 Z"
-                fill="url(#dof-lens-petal-peach)"
-              />
-              <path
-                d="M 28,122 Q 112,92 184,26"
-                fill="none"
-                stroke={isDarkMode ? '#FDE2D6' : '#FFFDF9'}
-                strokeWidth="2.4"
-                strokeOpacity="0.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-        </div>
+        />
       </div>
 
       {/* LENIS SMOOTH SCROLL CONTENT ROOT */}
@@ -1569,62 +1552,37 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           />
 
           {/* SCROLL-LINKED WATERCOLOR & COLORED BOTANICAL LINEART BLOOMING FLOWER
-              Positioned as a botanical crest behind the headline with a soft center parchment veil for effortless text contrast */}
+              Split into 4 independent composited layers so Chromium composites cached textures at 60-120fps instead of re-rasterizing vector paths on every scroll tick */}
           <div
             ref={bloomRootRef}
+            data-testid="hero-bloom"
             aria-hidden="true"
             className="pointer-events-none select-none absolute left-1/2 top-[43%] sm:top-[44%] mt-8 z-0 w-[450px] sm:w-[720px] md:w-[820px] h-[310px] sm:h-[470px] md:h-[540px]"
             style={{
               marginTop: '2rem',
-              opacity: isDarkMode ? 0.72 : 0.88,
-              transform: 'translate3d(-50%, -63%, 0) scale(1.02)',
-              willChange: 'transform, opacity',
-              contain: 'layout style paint',
+              contain: 'layout style',
               backfaceVisibility: 'hidden',
             }}
           >
-            <svg
-              viewBox="0 0 520 340"
-              className="w-full h-full overflow-visible"
+            {/* 1. Botanical Leaf Sprigs & Delicate Colored Lineart Tendrils */}
+            <div
+              ref={bloomBotanicalLeavesRef}
+              className="pointer-events-none absolute inset-0"
+              style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
             >
-              <defs>
-                {/* Soft Watercolor Wash Gradients */}
-                <radialGradient id="wc-petal-blush" cx="50%" cy="35%" r="65%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
-                  <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
-                  <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
-                </radialGradient>
-                <radialGradient id="wc-petal-peach" cx="50%" cy="30%" r="65%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.32' : '0.66'} />
-                  <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.18' : '0.38'} />
-                  <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
-                </radialGradient>
-                <radialGradient id="wc-leaf-sage" cx="50%" cy="50%" r="60%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.58'} />
-                  <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.28'} />
-                  <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="wc-center-gold" cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.38' : '0.62'} />
-                  <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.14' : '0.20'} />
-                  <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
-                </radialGradient>
-                {/* Soft Parchment Readability Halo Over Center & Lower Petal Zone */}
-                <radialGradient id="wc-text-readability-veil" cx="50%" cy="54%" r="52%">
-                  <stop offset="0%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.68' : '0.72'} />
-                  <stop offset="58%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity={isDarkMode ? '0.36' : '0.42'} />
-                  <stop offset="100%" stopColor={isDarkMode ? '#2B2321' : '#FDF9F5'} stopOpacity="0" />
-                </radialGradient>
-              </defs>
-
-              {/* 1. Botanical Leaf Sprigs & Delicate Colored Lineart Tendrils (Spreads outward on scroll) */}
-              <g
-                ref={bloomBotanicalLeavesRef}
-                style={{
-                  transform: 'translate3d(260px, 170px, 0) scale(0.96, 0.96)',
-                  willChange: 'transform',
-                }}
-              >
+              <svg viewBox="-260 -170 520 340" className="w-full h-full overflow-visible">
+                <defs>
+                  <radialGradient id="wc-leaf-sage" cx="50%" cy="50%" r="60%">
+                    <stop offset="0%" stopColor={isDarkMode ? '#86B898' : '#E2F2E8'} stopOpacity={isDarkMode ? '0.26' : '0.58'} />
+                    <stop offset="70%" stopColor={isDarkMode ? '#5E8E70' : '#C5E3D0'} stopOpacity={isDarkMode ? '0.14' : '0.28'} />
+                    <stop offset="100%" stopColor="#6B9B7C" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient id="wc-petal-blush-leaf" cx="50%" cy="35%" r="65%">
+                    <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
+                    <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
+                    <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
+                  </radialGradient>
+                </defs>
                 {/* Left Watercolor Leaf & Lineart Veins */}
                 <path
                   d="M -55,10 C -115,-28 -175,-18 -212,18 C -170,48 -110,44 -55,10 Z"
@@ -1653,7 +1611,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 />
                 <path
                   d="M -194,-32 C -210,-46 -222,-32 -206,-22 C -196,-16 -190,-24 -194,-32 Z"
-                  fill="url(#wc-petal-blush)"
+                  fill="url(#wc-petal-blush-leaf)"
                   stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
                   strokeWidth="1.1"
                 />
@@ -1686,25 +1644,32 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 />
                 <path
                   d="M 194,-32 C 210,-46 222,-32 206,-22 C 196,-16 190,-24 194,-32 Z"
-                  fill="url(#wc-petal-blush)"
+                  fill="url(#wc-petal-blush-leaf)"
                   stroke={isDarkMode ? '#E49EB3' : '#C97A90'}
                   strokeWidth="1.1"
                 />
-              </g>
+              </svg>
+            </div>
 
-              {/* 2. Outer Ring of 8 Watercolor + Colored Lineart Peony Petals */}
-              <g
-                ref={bloomOuterRingRef}
-                style={{
-                  transform: 'translate3d(260px, 170px, 0) rotate(0deg) scale(0.94)',
-                  willChange: 'transform',
-                }}
-              >
+            {/* 2. Outer Ring of 8 Watercolor + Colored Lineart Peony Petals */}
+            <div
+              ref={bloomOuterRingRef}
+              className="pointer-events-none absolute inset-0"
+              style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
+            >
+              <svg viewBox="-260 -170 520 340" className="w-full h-full overflow-visible">
+                <defs>
+                  <radialGradient id="wc-petal-blush-outer" cx="50%" cy="35%" r="65%">
+                    <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
+                    <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
+                    <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
+                  </radialGradient>
+                </defs>
                 {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
                   <g key={`outer-petal-${angle}`} transform={`rotate(${angle})`}>
                     <path
                       d="M 0,0 C -38,-34 -52,-98 0,-126 C 52,-98 38,-34 0,0 Z"
-                      fill="url(#wc-petal-blush)"
+                      fill="url(#wc-petal-blush-outer)"
                       stroke={isDarkMode ? '#E5A3B7' : '#CD7E95'}
                       strokeWidth="1.2"
                       strokeOpacity={isDarkMode ? '0.56' : '0.66'}
@@ -1719,21 +1684,28 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     />
                   </g>
                 ))}
-              </g>
+              </svg>
+            </div>
 
-              {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals (Counter-rotates & unfolds on scroll) */}
-              <g
-                ref={bloomMidRingRef}
-                style={{
-                  transform: 'translate3d(260px, 170px, 0) rotate(0deg) scale(0.86)',
-                  willChange: 'transform',
-                }}
-              >
+            {/* 3. Middle Ring of 8 Peach-Blush Cupped Petals */}
+            <div
+              ref={bloomMidRingRef}
+              className="pointer-events-none absolute inset-0"
+              style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
+            >
+              <svg viewBox="-260 -170 520 340" className="w-full h-full overflow-visible">
+                <defs>
+                  <radialGradient id="wc-petal-peach-mid" cx="50%" cy="30%" r="65%">
+                    <stop offset="0%" stopColor={isDarkMode ? '#F7C5A8' : '#FFF0E6'} stopOpacity={isDarkMode ? '0.32' : '0.66'} />
+                    <stop offset="60%" stopColor={isDarkMode ? '#E09878' : '#FCD5CE'} stopOpacity={isDarkMode ? '0.18' : '0.38'} />
+                    <stop offset="100%" stopColor={isDarkMode ? '#9A5B42' : '#F9B4AB'} stopOpacity="0.03" />
+                  </radialGradient>
+                </defs>
                 {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
                   <g key={`mid-petal-${angle}`} transform={`rotate(${angle})`}>
                     <path
                       d="M 0,0 C -28,-26 -38,-74 0,-94 C 38,-74 28,-26 0,0 Z"
-                      fill="url(#wc-petal-peach)"
+                      fill="url(#wc-petal-peach-mid)"
                       stroke={isDarkMode ? '#E8B298' : '#C88A74'}
                       strokeWidth="1.1"
                       strokeOpacity={isDarkMode ? '0.58' : '0.68'}
@@ -1748,22 +1720,34 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     />
                   </g>
                 ))}
-              </g>
+              </svg>
+            </div>
 
-              {/* 4. Inner Corolla & Golden Botanical Stamens */}
-              <g
-                ref={bloomInnerCorollaRef}
-                style={{
-                  transform: 'translate3d(260px, 170px, 0) rotate(0deg) scale(0.82)',
-                  willChange: 'transform',
-                }}
-              >
+            {/* 4. Inner Corolla & Golden Botanical Stamens */}
+            <div
+              ref={bloomInnerCorollaRef}
+              className="pointer-events-none absolute inset-0"
+              style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
+            >
+              <svg viewBox="-260 -170 520 340" className="w-full h-full overflow-visible">
+                <defs>
+                  <radialGradient id="wc-petal-blush-inner" cx="50%" cy="35%" r="65%">
+                    <stop offset="0%" stopColor={isDarkMode ? '#F4A6BE' : '#FCE4EC'} stopOpacity={isDarkMode ? '0.32' : '0.64'} />
+                    <stop offset="55%" stopColor={isDarkMode ? '#D9829B' : '#F8BBD0'} stopOpacity={isDarkMode ? '0.20' : '0.38'} />
+                    <stop offset="100%" stopColor={isDarkMode ? '#8E4A5E' : '#F48FB1'} stopOpacity="0.04" />
+                  </radialGradient>
+                  <radialGradient id="wc-center-gold" cx="50%" cy="50%" r="55%">
+                    <stop offset="0%" stopColor="#FDE68A" stopOpacity={isDarkMode ? '0.38' : '0.62'} />
+                    <stop offset="65%" stopColor="#F59E0B" stopOpacity={isDarkMode ? '0.14' : '0.20'} />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
                 {[0, 60, 120, 180, 240, 300].map((angle) => (
                   <path
                     key={`inner-petal-${angle}`}
                     transform={`rotate(${angle})`}
                     d="M 0,0 C -18,-16 -22,-46 0,-58 C 22,-46 18,-16 0,0 Z"
-                    fill="url(#wc-petal-blush)"
+                    fill="url(#wc-petal-blush-inner)"
                     stroke={isDarkMode ? '#F0B6C8' : '#C4748B'}
                     strokeWidth="1.05"
                     strokeOpacity="0.62"
@@ -1800,17 +1784,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   strokeWidth="1.05"
                   strokeOpacity="0.68"
                 />
-              </g>
+              </svg>
+            </div>
 
-              {/* 5. Soft Readability Veil Over Inner Corolla & Lower Petal Zone so Typography & Buttons Stand Out Clearly */}
-              <ellipse
-                cx="260"
-                cy="205"
-                rx="235"
-                ry="125"
-                fill="url(#wc-text-readability-veil)"
-              />
-            </svg>
+            {/* 5. Soft Readability Veil Over Inner Corolla & Lower Petal Zone */}
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: isDarkMode
+                  ? 'radial-gradient(ellipse 46% 37% at 50% 60%, rgba(43, 35, 33, 0.68) 0%, rgba(43, 35, 33, 0.36) 58%, rgba(43, 35, 33, 0) 100%)'
+                  : 'radial-gradient(ellipse 46% 37% at 50% 60%, rgba(253, 249, 245, 0.72) 0%, rgba(253, 249, 245, 0.42) 58%, rgba(253, 249, 245, 0) 100%)',
+              }}
+            />
           </div>
 
           {/* Centered Editorial Focal Block — Clear 1 -> 2 -> 3 Visual Hierarchy */}
@@ -1887,9 +1872,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <a
                 href="#how-it-works"
                 onClick={(e) => handleAnchorAction(e, () => scrollToSection('how-it-works'))}
-                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium backdrop-blur-xs transition-all duration-300 active:scale-95 cursor-pointer whitespace-nowrap no-underline ${isDarkMode
-                  ? 'bg-[#352C29]/80 border-[#66554F] text-[#DFCFC6] hover:text-[#FBF6F1] hover:bg-[#423734]'
-                  : 'bg-[#FFFDF9]/85 border-[#D8C4B4] text-[#5C483E] hover:text-[#231C18] hover:bg-[#FAF4EE]'
+                className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-full border border-dashed text-[13px] sm:text-[13.5px] font-medium transition-colors duration-200 active:scale-95 cursor-pointer whitespace-nowrap no-underline ${isDarkMode
+                  ? 'bg-[#352C29]/92 border-[#66554F] text-[#DFCFC6] hover:text-[#FBF6F1] hover:bg-[#423734]'
+                  : 'bg-[#FFFDF9]/94 border-[#D8C4B4] text-[#5C483E] hover:text-[#231C18] hover:bg-[#FAF4EE]'
                   }`}
               >
                 See How It Works
@@ -1903,6 +1888,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {/* 3. CLEAN EDITORIAL 3-CARD "HOW IT WORKS" SECTION (Informational Only — No Redirect on Click) */}
         <section
           id="how-it-works"
+          style={{ contain: 'layout style' }}
           className="scroll-mt-24 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-10 sm:pb-12"
         >
           <div className="fluid-scroll-item text-center mb-6 sm:mb-8">
@@ -2067,6 +2053,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {/* 4. CENTERED FAQ CARD STACK (No Eyebrow) */}
         <section
           id="faq"
+          style={{ contain: 'layout style' }}
           className="scroll-mt-24 max-w-2xl mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-10 sm:pb-12"
         >
           <div className="fluid-scroll-item text-center mb-6 sm:mb-8">
@@ -2128,7 +2115,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </section>
 
         {/* 5. UNIFIED WARM BEIGE / SOFT COCOA "MAKE SOMEONE SMILE TODAY" BOTTOM CTA CONTAINER */}
-        <section className="max-w-4xl mx-auto px-4 sm:px-6 pt-2 sm:pt-4 pb-12 sm:pb-14">
+        <section style={{ contain: 'layout style' }} className="max-w-4xl mx-auto px-4 sm:px-6 pt-2 sm:pt-4 pb-12 sm:pb-14">
           <div
             className={`fluid-scroll-item rounded-[24px] sm:rounded-[28px] border border-dashed py-9 sm:py-14 px-5 sm:px-6 text-center transition-colors ${isDarkMode
               ? 'bg-[#382F2C] border-[#5E4E49]'
@@ -2198,7 +2185,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
         {/* 6. 2-COLUMN DESKTOP & TABLET/MOBILE-OPTIMIZED STATIONERY CONTACT SECTION
             Minimal, non-text-y editorial column on left + authentic ruled stationery letter paper graphic on right */}
-        <section id="contact" className="scroll-mt-24 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 pb-14 sm:pb-20">
+        <section id="contact" style={{ contain: 'layout style' }} className="scroll-mt-24 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 pb-14 sm:pb-20">
           <div className="max-w-xl lg:max-w-none mx-auto grid grid-cols-1 lg:grid-cols-12 gap-y-7 lg:gap-y-0 lg:gap-x-12 items-start">
             {/* BLOCK 1 (Desktop Top-Left, Mobile/Tablet 1st): Concise Get in Touch + Direct Email */}
             <div className="fluid-scroll-item lg:col-span-5 lg:col-start-1 lg:row-start-1 text-center lg:text-left flex flex-col items-center lg:items-start">
@@ -2739,6 +2726,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
         {/* 7. MINIMAL EDITORIAL FOOTER (With Legal: Terms & Privacy) */}
         <footer
+          style={{ contain: 'layout style' }}
           className={`border-t mt-2 transition-colors ${isDarkMode
             ? 'bg-[#261F1D] border-[#423734] text-[#D8C7BE]'
             : 'bg-[#F7EFE6]/70 border-[#EAE0D5] text-[#6E5D54]'

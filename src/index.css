@@ -221,10 +221,20 @@
   will-change: transform, opacity;
 }
 
+.sab-holo-paused .sab-holo-shine-beam,
+.sab-holo-paused .sab-holo-glint,
+[data-hidden="1"] .sab-holo-shine-beam,
+[data-hidden="1"] .sab-holo-glint {
+  animation-play-state: paused !important;
+  will-change: auto !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sab-holo-shine-beam,
   .sab-holo-glint {
     animation: none !important;
+    will-change: auto !important;
   }
 }
+
 

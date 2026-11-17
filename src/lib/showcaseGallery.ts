@@ -237,6 +237,45 @@ export function computeSingleLaceCarouselItemTransform(
 }
 
 /**
+ * Computes the inclusive [startIdx, endIdx] range of lace garland cards that are currently
+ * visible or within `overscan` slots on either side, allowing distant off-screen BouquetStage
+ * SVGs to defer mounting while preserving smooth transitions and full carousel scrolling.
+ */
+export function computeMountedGarlandRange(
+  totalCount: number,
+  scrollOffset: number,
+  visibleSlots = 4,
+  overscan = 1
+): { startIdx: number; endIdx: number } {
+  if (totalCount <= 0) {
+    return { startIdx: 0, endIdx: -1 };
+  }
+  const safeOverscan = Math.max(0, Math.floor(overscan));
+  let firstVisible = -1;
+  let lastVisible = -1;
+
+  for (let i = 0; i < totalCount; i++) {
+    const state = computeSingleLaceCarouselItemTransform(i, totalCount, scrollOffset, visibleSlots);
+    if (state.isVisible) {
+      if (firstVisible === -1) firstVisible = i;
+      lastVisible = i;
+    }
+  }
+
+  if (firstVisible === -1) {
+    const startIdx = Math.max(0, Math.min(totalCount - 1, Math.floor(scrollOffset) - safeOverscan));
+    const endIdx = Math.min(totalCount - 1, startIdx + Math.max(1, visibleSlots) + safeOverscan * 2);
+    return { startIdx, endIdx };
+  }
+
+  return {
+    startIdx: Math.max(0, firstVisible - safeOverscan),
+    endIdx: Math.min(totalCount - 1, lastVisible + safeOverscan),
+  };
+}
+
+
+/**
  * Determines whether a shared bouquet has passed its showcase lifespan window:
  * - Free bouquet (`retentionDays`: 30 default): expires after 30 days.
  * - Paid Single Unlock / 7-Day Pass (`retentionDays`: 90): gets +60 bonus days and expires after 90 days.
