@@ -390,6 +390,7 @@ export default function App() {
   const [canScrollCarouselLeft, setCanScrollCarouselLeft] = useState(false);
   const [canScrollCarouselRight, setCanScrollCarouselRight] = useState(true);
   const bloomIntervalRef = useRef<number | null>(null);
+  const showcaseResolveRequestIdRef = useRef<number>(0);
   const hasHydratedRef = useRef(false);
   const countedOpenCodeRef = useRef<string | null>(null);
   const countedCreatedCodeSetRef = useRef<Set<string>>(new Set());
@@ -1032,7 +1033,7 @@ export default function App() {
 
   const handleUnwrapGiftEntrance = useCallback(
     (forceBypassLock = false) => {
-      if (!forceBypassLock && isGiftCurrentlyLocked) {
+      if (!forceBypassLock && (isGiftCurrentlyLocked || isResolvingShortCode)) {
         return;
       }
       if (forceBypassLock) {
@@ -1061,13 +1062,22 @@ export default function App() {
         trackStudioTelemetry({ eventType: 'recipient_unwrap' });
       }
     },
-    [items.length, runStemBloomSequence, isGiftCurrentlyLocked, isPreviewMode, activeShortCode]
+    [
+      items.length,
+      runStemBloomSequence,
+      isGiftCurrentlyLocked,
+      isResolvingShortCode,
+      isPreviewMode,
+      activeShortCode,
+    ]
   );
 
   // Smoothly glides the slider to 100% so the background flower blooms open before transitioning
   const handleGlideSlideToOpen = useCallback(
     (startFrom = entranceSlideProgress, forceBypassLock = false) => {
-      if ((!forceBypassLock && isGiftCurrentlyLocked) || isEntranceUnfurling) return;
+      if ((!forceBypassLock && (isGiftCurrentlyLocked || isResolvingShortCode)) || isEntranceUnfurling) {
+        return;
+      }
       if (entranceSlideRafRef.current !== null) {
         cancelAnimationFrame(entranceSlideRafRef.current);
       }
@@ -1090,7 +1100,13 @@ export default function App() {
       };
       entranceSlideRafRef.current = requestAnimationFrame(tick);
     },
-    [entranceSlideProgress, isGiftCurrentlyLocked, isEntranceUnfurling, handleUnwrapGiftEntrance]
+    [
+      entranceSlideProgress,
+      isGiftCurrentlyLocked,
+      isResolvingShortCode,
+      isEntranceUnfurling,
+      handleUnwrapGiftEntrance,
+    ]
   );
 
   const recipientBloom = useMemo(
@@ -1306,6 +1322,8 @@ export default function App() {
     } catch {
       // Ignore history error
     }
+    showcaseResolveRequestIdRef.current += 1;
+    setIsResolvingShortCode(false);
     setActiveShortCode(null);
     resetStudioCanvasSession();
     selectItem(null);
@@ -1334,6 +1352,8 @@ export default function App() {
     } catch {
       // Ignore history error
     }
+    showcaseResolveRequestIdRef.current += 1;
+    setIsResolvingShortCode(false);
     setActiveShortCode(null);
     resetStudioCanvasSession();
     selectItem(null);
@@ -2242,10 +2262,26 @@ export default function App() {
       } else if (shareStep === 'ready') {
         setShareStep('dedication');
       }
+      return;
     }
-  }, [isShareModalOpen, shareStep, resetStudioCanvasSession]);
+    if (shareStep === 'seal') {
+      const lockCheck = validateBouquetLockConfig(lock);
+      if (!lockCheck.valid) {
+        setShareLockError(lockCheck.error || 'Please complete your lock details.');
+        setShareStep('lock');
+      }
+    }
+  }, [isShareModalOpen, shareStep, lock, resetStudioCanvasSession]);
 
   const handleShareLink = async (asGift = true, overridePass?: StudioPassRecord | null) => {
+    const lockCheck = validateBouquetLockConfig(lock);
+    if (!lockCheck.valid) {
+      setIsShorteningUrl(false);
+      setShareLockError(lockCheck.error || 'Please complete your lock details.');
+      setShareStep('lock');
+      setIsShareModalOpen(true);
+      return;
+    }
     const effectivePass = overridePass !== undefined ? overridePass : activeStudioPass;
     const devHash = getOrCreateDeviceTokenHash();
     const passVerify = verifyActiveStudioPassForAction({
@@ -2558,12 +2594,19 @@ export default function App() {
           }}
           onPreviewShowcaseBouquet={(fromCreationsPage, entry) => {
             const currentItems = useBouquetStore.getState().items;
+            const hasPreloadedLock = Boolean(
+              entry?.snapshot?.lock && entry.snapshot.lock.mode !== 'none'
+            );
             if (entry?.code) {
               setActiveShortCode(entry.code);
               if (entry.isUserCreated) {
+                const reqId = ++showcaseResolveRequestIdRef.current;
+                if (!hasPreloadedLock) {
+                  setIsResolvingShortCode(true);
+                }
                 fetchSharedBouquetFromFirestore(entry.code)
                   .then((record) => {
-                    if (!record) return;
+                    if (showcaseResolveRequestIdRef.current !== reqId || !record) return;
                     const currentSnap = useBouquetStore.getState();
                     const recordSnap = record.payload ? decodeBouquetFromHash(record.payload) : null;
                     const baseSnap: BouquetSnapshot =
@@ -2581,10 +2624,35 @@ export default function App() {
                             voice: currentSnap.voice,
                             lock: currentSnap.lock,
                           };
-                    loadSnapshot(hydrateSnapshotWithFirestoreRecord(baseSnap, record));
+                    const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, record);
+                    loadSnapshot(hydrated);
+                    setNowMs(Date.now());
+                    if (hydrated.lock && hydrated.lock.mode !== 'none') {
+                      setIsEntranceUnfurling(false);
+                      setEntranceSlideProgress(0);
+                    }
+                    if (record.payload) {
+                      localShortCodeCache.set(entry.code, record.payload);
+                      try {
+                        localStorage.setItem(`bq_short_${entry.code}`, record.payload);
+                      } catch {
+                        // Ignore storage quota
+                      }
+                    }
                   })
-                  .catch(() => {});
+                  .catch(() => {})
+                  .finally(() => {
+                    if (showcaseResolveRequestIdRef.current === reqId) {
+                      setIsResolvingShortCode(false);
+                    }
+                  });
+              } else {
+                showcaseResolveRequestIdRef.current += 1;
+                setIsResolvingShortCode(false);
               }
+            } else {
+              showcaseResolveRequestIdRef.current += 1;
+              setIsResolvingShortCode(false);
             }
             setReturnToCreationsPage(Boolean(fromCreationsPage));
             setShowLandingPage(false);
@@ -3488,6 +3556,22 @@ export default function App() {
                 </svg>
               </div>
 
+              {isResolvingShortCode && (
+                <div
+                  data-testid="recipient-resolving-indicator"
+                  className="relative z-10 mt-4 text-center px-3"
+                >
+                  <p
+                    className={`text-lg sm:text-xl italic font-normal animate-pulse ${
+                      isDarkMode ? 'text-[#DFCFC6]' : 'text-[#6E594E]'
+                    }`}
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Preparing bouquet…
+                  </p>
+                </div>
+              )}
+
               {!isResolvingShortCode && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -3930,7 +4014,7 @@ export default function App() {
                           }
                         }}
                         onPointerDown={(e) => {
-                          if (isEntranceUnfurling || isGiftCurrentlyLocked) return;
+                          if (isEntranceUnfurling || isGiftCurrentlyLocked || isResolvingShortCode) return;
                           e.stopPropagation();
                           if (entranceSlideRafRef.current !== null) {
                             cancelAnimationFrame(entranceSlideRafRef.current);
@@ -6952,6 +7036,8 @@ export default function App() {
                   const currentIdx = stepOrder.indexOf(shareStep);
                   const isActive = shareStep === st.id;
                   const isDone = idx < currentIdx;
+                  const lockValidation = validateBouquetLockConfig(lock);
+                  const isStepBlocked = st.id === 'seal' && !lockValidation.valid;
                   return (
                     <React.Fragment key={st.id}>
                       {idx > 0 && (
@@ -6970,8 +7056,21 @@ export default function App() {
                       <button
                         type="button"
                         data-testid={`share-step-tab-${st.id}`}
-                        onClick={() => setShareStep(st.id)}
-                        className="flex items-center gap-1.5 cursor-pointer group"
+                        aria-disabled={isStepBlocked}
+                        onClick={() => {
+                          if (st.id === 'seal' && !lockValidation.valid) {
+                            setShareLockError(
+                              lockValidation.error || 'Please complete your lock details.'
+                            );
+                            setShareStep('lock');
+                            return;
+                          }
+                          setShareLockError(null);
+                          setShareStep(st.id);
+                        }}
+                        className={`flex items-center gap-1.5 group ${
+                          isStepBlocked ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
                       >
                         <span
                           className={`w-6 h-6 rounded-full text-[11px] font-semibold flex items-center justify-center border transition ${
@@ -7577,6 +7676,12 @@ export default function App() {
                     data-testid="share-modal-primary-btn"
                     disabled={isShorteningUrl || !isFinalDesignChecked}
                     onClick={() => {
+                      const lockCheck = validateBouquetLockConfig(lock);
+                      if (!lockCheck.valid) {
+                        setShareLockError(lockCheck.error || 'Please complete your lock details.');
+                        setShareStep('lock');
+                        return;
+                      }
                       if (currentPremiumInspection.isPremiumBouquet && !isBouquetUnlockedByPass) {
                         setIsShareModalOpen(false);
                         setCheckoutTriggerAction('share');
@@ -7985,32 +8090,54 @@ export default function App() {
         onOpenGiftUrl={(giftUrl) => {
           const codeMatch = giftUrl.replace(/\/+$/, '').split('/').pop() || '';
           const decoded = decodeBouquetFromHash(giftUrl);
-          if (codeMatch && /^[a-zA-Z0-9_-]{7,24}$/.test(codeMatch)) {
+          const hasDecoded = Boolean(decoded && Array.isArray(decoded.items) && decoded.items.length > 0);
+          const isValidCode = Boolean(codeMatch && /^[a-zA-Z0-9_-]{7,24}$/.test(codeMatch));
+          if (isValidCode) {
             setActiveShortCode(codeMatch);
           }
-          if (decoded && Array.isArray(decoded.items) && decoded.items.length > 0) {
+          if (hasDecoded && decoded) {
             loadSnapshot(decoded);
             selectItem(null);
             setShowLandingPage(false);
             startGiftBloomAnimation(decoded.items.length, false);
           }
-          if (codeMatch && /^[a-zA-Z0-9_-]{7,24}$/.test(codeMatch)) {
+          if (isValidCode) {
+            const needsLockCheck = !hasDecoded || !decoded?.lock || decoded.lock.mode === 'none';
+            const reqId = ++showcaseResolveRequestIdRef.current;
+            if (needsLockCheck) {
+              setIsResolvingShortCode(true);
+              if (!hasDecoded) {
+                selectItem(null);
+                setShowLandingPage(false);
+                startGiftBloomAnimation(0, false);
+              }
+            }
             fetchSharedBouquetFromFirestore(codeMatch)
               .then((record) => {
-                if (!record) return;
+                if (showcaseResolveRequestIdRef.current !== reqId || !record) return;
                 const recordSnap = record.payload ? decodeBouquetFromHash(record.payload) : null;
                 const base = recordSnap || decoded;
                 if (base && Array.isArray(base.items) && base.items.length > 0) {
                   const hydrated = hydrateSnapshotWithFirestoreRecord(base, record);
                   loadSnapshot(hydrated);
-                  if (!decoded) {
+                  setNowMs(Date.now());
+                  if (hydrated.lock && hydrated.lock.mode !== 'none') {
+                    setIsEntranceUnfurling(false);
+                    setEntranceSlideProgress(0);
+                  }
+                  if (!hasDecoded) {
                     selectItem(null);
                     setShowLandingPage(false);
                     startGiftBloomAnimation(hydrated.items.length, false);
                   }
                 }
               })
-              .catch(() => {});
+              .catch(() => {})
+              .finally(() => {
+                if (showcaseResolveRequestIdRef.current === reqId) {
+                  setIsResolvingShortCode(false);
+                }
+              });
           }
         }}
         onClose={() => {

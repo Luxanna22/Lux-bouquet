@@ -75,3 +75,6 @@ src/assets/images/
 *.njsproj
 *.sln
 *.sw?
+out/
+video-context.txt
+remotion/

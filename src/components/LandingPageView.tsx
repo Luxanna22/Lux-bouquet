@@ -812,7 +812,7 @@ const LandingNavbar = memo<LandingNavbarProps>(({
           contain: 'layout style',
           willChange: 'translate, max-width, width, border-radius',
         }}
-        className={`pointer-events-auto mx-auto flex md:grid md:grid-cols-[auto_1fr_auto] items-center justify-between gap-2 sm:gap-3 md:gap-4 h-14 md:h-[58px] px-4 sm:px-7 overflow-hidden border border-dashed transition-[max-width,width,translate,transform,background-color,border-color,border-radius,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
+        className={`pointer-events-auto shrink-0 mx-auto flex md:grid md:grid-cols-[auto_1fr_auto] items-center justify-between gap-2 sm:gap-3 md:gap-4 h-14 md:h-[58px] px-4 sm:px-7 overflow-hidden border border-dashed transition-[max-width,width,translate,transform,background-color,border-color,border-radius,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isNavScrolled
           ? `w-[calc(100%-20px)] sm:w-[calc(100%-40px)] max-w-5xl translate-y-2.5 sm:translate-y-3.5 rounded-[28px] shadow-[0_10px_30px_rgba(64,45,35,0.08)] ${isDarkMode
             ? 'bg-[#352C29]/97 border-[#5E4E49] text-[#FBF6F1]'
             : 'bg-[#FFFDF9]/97 border-[#D8C4B4] text-[#231C18]'
@@ -957,12 +957,18 @@ const LandingNavbar = memo<LandingNavbarProps>(({
         <nav
           aria-label="Mobile navigation"
           data-testid="mobile-nav-dropdown"
-          className={`md:hidden pointer-events-auto mt-2.5 mx-auto max-w-sm rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] transition-opacity duration-200 animate-hero-entrance ${isDarkMode
-            ? 'bg-[#352C29]/98 border-[#5E4E49] text-[#FBF6F1]'
-            : 'bg-[#FFFDF9]/98 border-[#D8C4B4] text-[#231C18]'
+          className={`md:hidden pointer-events-auto shrink-0 w-[calc(100%-20px)] max-w-sm ${
+            isNavScrolled ? 'mt-5 sm:mt-6' : 'mt-2.5'
+          } max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-[24px] border border-dashed p-3.5 shadow-[0_18px_42px_rgba(35,28,24,0.16)] backdrop-blur-md transition-opacity duration-200 animate-hero-entrance ${isDarkMode
+            ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1]'
+            : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#231C18]'
             }`}
         >
-          <div className="flex flex-col divide-y divide-dashed divide-[#DECBB9]/60 dark:divide-[#574843]/70">
+          <div
+            className={`flex flex-col divide-y divide-dashed ${
+              isDarkMode ? 'divide-[#574843]/70' : 'divide-[#DECBB9]/60'
+            }`}
+          >
             {[
               { id: 'how-it-works', num: '01', title: 'How It Works', sub: 'Pick blooms, wrap & attach a keepsake' },
               { id: 'showcase', num: '02', title: 'Shared Creations', sub: 'Explore bouquets on the lace garland' },
@@ -1010,7 +1016,11 @@ const LandingNavbar = memo<LandingNavbarProps>(({
             ))}
           </div>
 
-          <div className="mt-3 pt-2.5 border-t border-dashed border-[#DECBB9]/70 dark:border-[#574843] flex items-center gap-2">
+          <div
+            className={`mt-3 pt-2.5 border-t border-dashed flex items-center gap-2 ${
+              isDarkMode ? 'border-[#574843]' : 'border-[#DECBB9]/70'
+            }`}
+          >
             <button
               type="button"
               onClick={() => {
