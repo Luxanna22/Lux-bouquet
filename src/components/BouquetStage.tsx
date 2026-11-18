@@ -19,6 +19,17 @@ import {
 } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
 import { useBouquetStore } from '../store/useBouquetStore';
+import {
+  buildBouquetBloomPlan,
+  evaluateWrapperReveal,
+  evaluateKeepsakeReveal,
+  evaluateStemFrame,
+  createZeroRustleState,
+  applyPointerRustleImpulse,
+  stepRustlePhysics,
+  formatPivotMotionTransform,
+  type StemRustleState,
+} from '../lib/bouquetBloomPhysics';
 
 // ============================================================================
 // MODULE 5: components/BouquetStage.tsx — INTERACTIVE POINTER-EVENTS SVG STAGE
@@ -3167,6 +3178,11 @@ export interface BouquetStageProps {
   isPreviewMode: boolean;
   isDarkMode?: boolean;
   bloomedCount?: number;
+  bloomRevealRunId?: number;
+  bloomRevealActive?: boolean;
+  isReducedMotion?: boolean;
+  onBloomCardStageReached?: () => void;
+  onBloomFinished?: () => void;
   showCardInGiftView?: boolean;
   isVoicePlaying?: boolean;
   snapshotOverride?: BouquetSnapshot;
@@ -3188,6 +3204,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   isPreviewMode,
   isDarkMode = false,
   bloomedCount,
+  bloomRevealRunId = 0,
+  bloomRevealActive,
+  isReducedMotion = false,
+  onBloomCardStageReached,
+  onBloomFinished,
   showCardInGiftView = true,
   isVoicePlaying = false,
   snapshotOverride,
@@ -3284,10 +3305,21 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     }
   }, [card.theme, card.visibleOnStage, isPreviewMode]);
 
+  const localSvgRef = useRef<SVGSVGElement | null>(null);
+  const attachSvgRef = useCallback(
+    (node: SVGSVGElement | null) => {
+      localSvgRef.current = node;
+      if (svgRef && typeof svgRef === 'object' && 'current' in svgRef) {
+        svgRef.current = node;
+      }
+    },
+    [svgRef]
+  );
+
   // Convert client pointer coordinates to SVG viewBox (-24..624 x 0..680, 648x680) coordinates
   const clientToSvgCoords = useCallback(
     (clientX: number, clientY: number) => {
-      const svg = svgRef.current;
+      const svg = (svgRef && svgRef.current) || localSvgRef.current;
       if (!svg) return { x: 300, y: 340 };
       const rect = svg.getBoundingClientRect();
       const vbX = -24;
@@ -3807,6 +3839,343 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       ? 650
       : 618;
 
+  // ============================================================================
+  // STAGED BOTANICAL UNWRAP CHOREOGRAPHY + LIVING BREEZE & INTERACTIVE RUSTLE
+  // Zero React setState per frame: writes SVG transforms directly via DOM refs.
+  // ============================================================================
+  const useLivingChoreography = isPreviewMode && !isCardThumbnail && bloomRevealActive !== undefined;
+  const bloomPlan = useMemo(
+    () => (useLivingChoreography ? buildBouquetBloomPlan(items, wrapStyle, isReducedMotion) : null),
+    [useLivingChoreography, items, wrapStyle, isReducedMotion]
+  );
+
+  const itemMotionRefs = useRef<Map<string, SVGGElement>>(new Map());
+  const clocheStemRefs = useRef<Map<string, SVGGElement>>(new Map());
+  const wrapperBackMotionRef = useRef<SVGGElement | null>(null);
+  const wrapperStemBundleMotionRef = useRef<SVGGElement | null>(null);
+  const wrapperFrontMotionRef = useRef<SVGGElement | null>(null);
+  const cardMotionRef = useRef<SVGGElement | null>(null);
+  const voiceMotionRef = useRef<SVGGElement | null>(null);
+  const rustleStateMapRef = useRef<Map<string, StemRustleState>>(new Map());
+  const lastRustlePointerRef = useRef<{ x: number; y: number; timeMs: number } | null>(null);
+  const bloomCallbacksRef = useRef({ onBloomCardStageReached, onBloomFinished });
+  bloomCallbacksRef.current = { onBloomCardStageReached, onBloomFinished };
+
+  const registerItemMotionRef = useCallback((id: string) => {
+    return (node: SVGGElement | null) => {
+      if (node) {
+        itemMotionRefs.current.set(id, node);
+      } else {
+        itemMotionRefs.current.delete(id);
+      }
+    };
+  }, []);
+
+  const registerClocheStemRef = useCallback((id: string) => {
+    return (node: SVGGElement | null) => {
+      if (node) {
+        clocheStemRefs.current.set(id, node);
+      } else {
+        clocheStemRefs.current.delete(id);
+      }
+    };
+  }, []);
+
+  const clearAllMotionTransforms = useCallback(() => {
+    const resetEl = (el: SVGGElement | null) => {
+      if (!el) return;
+      el.removeAttribute('transform');
+      el.removeAttribute('opacity');
+    };
+    resetEl(wrapperBackMotionRef.current);
+    resetEl(wrapperStemBundleMotionRef.current);
+    resetEl(wrapperFrontMotionRef.current);
+    resetEl(cardMotionRef.current);
+    resetEl(voiceMotionRef.current);
+    itemMotionRefs.current.forEach((el) => resetEl(el));
+    clocheStemRefs.current.forEach((el) => resetEl(el));
+  }, []);
+
+  useEffect(() => {
+    const svgEl = (svgRef && svgRef.current) || localSvgRef.current;
+
+    if (!useLivingChoreography || !bloomPlan) {
+      clearAllMotionTransforms();
+      rustleStateMapRef.current.clear();
+      lastRustlePointerRef.current = null;
+      if (svgEl) svgEl.setAttribute('data-bloom-phase', 'static');
+      return;
+    }
+
+    // Keep rustle state map aligned with current bouquet items
+    const validIds = new Set(bloomPlan.items.map((it) => it.id));
+    rustleStateMapRef.current.forEach((_v, k) => {
+      if (!validIds.has(k)) rustleStateMapRef.current.delete(k);
+    });
+    bloomPlan.items.forEach((it) => {
+      if (!rustleStateMapRef.current.has(it.id)) {
+        rustleStateMapRef.current.set(it.id, createZeroRustleState());
+      }
+    });
+
+    const cardAnchorX = card.x ?? 410;
+    const cardAnchorY = card.y ?? 525;
+    const voiceAnchorX = voice?.x ?? 185;
+    const voiceAnchorY = voice?.y ?? 525;
+
+    const applyFrameAt = (elapsedMs: number, liveTimeSec: number, dtSec: number) => {
+      // Beat 1: Wrapper & ribbon settle
+      const wrapEval = evaluateWrapperReveal(bloomPlan, elapsedMs);
+      const wrapTransform =
+        wrapEval.revealProgress >= 1
+          ? ''
+          : formatPivotMotionTransform(wrapEval, 300, 465);
+      const applyWrapperNode = (el: SVGGElement | null) => {
+        if (!el) return;
+        if (wrapTransform) {
+          el.setAttribute('transform', wrapTransform);
+        } else {
+          el.removeAttribute('transform');
+        }
+        el.setAttribute('opacity', String(wrapEval.opacity));
+      };
+      applyWrapperNode(wrapperBackMotionRef.current);
+      applyWrapperNode(wrapperStemBundleMotionRef.current);
+      applyWrapperNode(wrapperFrontMotionRef.current);
+
+      // Beat 2 & Beat 3 (Photocards) + Living Breeze & Rustle
+      for (let i = 0; i < bloomPlan.items.length; i++) {
+        const stem = bloomPlan.items[i];
+        const rustle = rustleStateMapRef.current.get(stem.id);
+        if (rustle && dtSec > 0 && !bloomPlan.reducedMotion) {
+          stepRustlePhysics(rustle, stem, dtSec);
+        }
+        const evalT = evaluateStemFrame(stem, elapsedMs, liveTimeSec, rustle, bloomPlan.reducedMotion);
+        const node = itemMotionRefs.current.get(stem.id);
+        if (node) {
+          if (
+            evalT.translateX === 0 &&
+            evalT.translateY === 0 &&
+            evalT.rotateDeg === 0 &&
+            evalT.scale === 1
+          ) {
+            node.removeAttribute('transform');
+          } else {
+            node.setAttribute('transform', formatPivotMotionTransform(evalT, stem.pivotX, stem.pivotY));
+          }
+          node.setAttribute('opacity', String(evalT.opacity));
+        }
+        const clocheNode = clocheStemRefs.current.get(stem.id);
+        if (clocheNode) {
+          if (
+            evalT.translateX === 0 &&
+            evalT.translateY === 0 &&
+            evalT.rotateDeg === 0 &&
+            evalT.scale === 1
+          ) {
+            clocheNode.removeAttribute('transform');
+          } else {
+            clocheNode.setAttribute('transform', formatPivotMotionTransform(evalT, 300, 484));
+          }
+          clocheNode.setAttribute('opacity', String(evalT.opacity));
+        }
+      }
+
+      // Beat 3: Greeting Card & Voice Keepsake
+      const cardNode = cardMotionRef.current;
+      if (cardNode) {
+        const cardEval = evaluateKeepsakeReveal(
+          bloomPlan.cardDelayMs,
+          bloomPlan.cardDurationMs,
+          elapsedMs,
+          bloomPlan.reducedMotion,
+          -1
+        );
+        if (cardEval.revealProgress >= 1) {
+          cardNode.removeAttribute('transform');
+        } else {
+          cardNode.setAttribute('transform', formatPivotMotionTransform(cardEval, cardAnchorX, cardAnchorY));
+        }
+        cardNode.setAttribute('opacity', String(cardEval.opacity));
+      }
+
+      const voiceNode = voiceMotionRef.current;
+      if (voiceNode) {
+        const voiceEval = evaluateKeepsakeReveal(
+          bloomPlan.voiceDelayMs,
+          bloomPlan.voiceDurationMs,
+          elapsedMs,
+          bloomPlan.reducedMotion,
+          1
+        );
+        if (voiceEval.revealProgress >= 1) {
+          voiceNode.removeAttribute('transform');
+        } else {
+          voiceNode.setAttribute('transform', formatPivotMotionTransform(voiceEval, voiceAnchorX, voiceAnchorY));
+        }
+        voiceNode.setAttribute('opacity', String(voiceEval.opacity));
+      }
+    };
+
+    // Waiting behind prelude: hold tucked t=0 pose at 0Hz CPU
+    if (!bloomRevealActive) {
+      rustleStateMapRef.current.forEach((s) => {
+        s.angleDeg = 0;
+        s.angularVel = 0;
+        s.pushX = 0;
+        s.pushY = 0;
+        s.velX = 0;
+        s.velY = 0;
+      });
+      applyFrameAt(0, 0, 0);
+      if (svgEl) svgEl.setAttribute('data-bloom-phase', 'hidden');
+      return;
+    }
+
+    // Reset rustle on fresh unwrap / replay run
+    rustleStateMapRef.current.forEach((s) => {
+      s.angleDeg = 0;
+      s.angularVel = 0;
+      s.pushX = 0;
+      s.pushY = 0;
+      s.velX = 0;
+      s.velY = 0;
+    });
+
+    let rafId = 0;
+    let startTimeMs: number | null = null;
+    let lastFrameMs: number | null = null;
+    let pausedAtMs: number | null = null;
+    let accumulatedPauseMs = 0;
+    let cardNotified = false;
+    let finishedNotified = false;
+    let cancelled = false;
+
+    if (svgEl) svgEl.setAttribute('data-bloom-phase', 'animating');
+    applyFrameAt(0, 0, 0);
+
+    const tick = (nowMs: number) => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        rafId = 0;
+        return;
+      }
+
+      if (startTimeMs === null) {
+        startTimeMs = nowMs;
+        lastFrameMs = nowMs;
+      }
+
+      const elapsedMs = Math.max(0, nowMs - startTimeMs - accumulatedPauseMs);
+      const dtSec = lastFrameMs === null ? 0.016 : Math.min(0.032, Math.max(0.001, (nowMs - lastFrameMs) / 1000));
+      lastFrameMs = nowMs;
+
+      applyFrameAt(elapsedMs, elapsedMs / 1000, dtSec);
+
+      if (!cardNotified && elapsedMs >= bloomPlan.cardDelayMs) {
+        cardNotified = true;
+        bloomCallbacksRef.current.onBloomCardStageReached?.();
+      }
+      if (!finishedNotified && elapsedMs >= bloomPlan.totalBloomMs) {
+        finishedNotified = true;
+        if (svgEl) {
+          svgEl.setAttribute('data-bloom-phase', bloomPlan.reducedMotion ? 'static' : 'living');
+        }
+        bloomCallbacksRef.current.onBloomFinished?.();
+      }
+
+      // Reduced motion settles cleanly and stops the rAF loop completely (0Hz)
+      if (bloomPlan.reducedMotion && finishedNotified) {
+        rafId = 0;
+        return;
+      }
+
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    const handleVisibilityChange = () => {
+      if (cancelled) return;
+      if (document.hidden) {
+        if (rafId !== 0) {
+          window.cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+        pausedAtMs = performance.now();
+        lastFrameMs = null;
+      } else {
+        if (pausedAtMs !== null) {
+          accumulatedPauseMs += Math.max(0, performance.now() - pausedAtMs);
+          pausedAtMs = null;
+        }
+        lastFrameMs = null;
+        if (rafId === 0 && !(bloomPlan.reducedMotion && finishedNotified)) {
+          rafId = window.requestAnimationFrame(tick);
+        }
+      }
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      cancelled = true;
+      if (rafId !== 0) {
+        window.cancelAnimationFrame(rafId);
+      }
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
+  }, [
+    useLivingChoreography,
+    bloomPlan,
+    bloomRevealActive,
+    bloomRevealRunId,
+    card.x,
+    card.y,
+    voice?.x,
+    voice?.y,
+    clearAllMotionTransforms,
+    svgRef,
+  ]);
+
+  const triggerPresentationRustle = useCallback(
+    (clientX: number, clientY: number, mode: 'move' | 'tap') => {
+      if (!useLivingChoreography || !bloomRevealActive || !bloomPlan || bloomPlan.reducedMotion) return;
+      const svgPt = clientToSvgCoords(clientX, clientY);
+      const localPt = svgToBouquetLocalCoords(svgPt.x, svgPt.y);
+      const nowMs = performance.now();
+
+      if (mode === 'tap') {
+        bloomPlan.items.forEach((stem) => {
+          const st = rustleStateMapRef.current.get(stem.id);
+          if (st) applyPointerRustleImpulse(st, stem, localPt.x, localPt.y, 0, 0, 'tap');
+        });
+        lastRustlePointerRef.current = { x: localPt.x, y: localPt.y, timeMs: nowMs };
+        return;
+      }
+
+      const prev = lastRustlePointerRef.current;
+      lastRustlePointerRef.current = { x: localPt.x, y: localPt.y, timeMs: nowMs };
+      if (!prev) return;
+      const dtSec = Math.max(0.008, (nowMs - prev.timeMs) / 1000);
+      if (dtSec > 0.25) return;
+      const vx = (localPt.x - prev.x) / dtSec;
+      const vy = (localPt.y - prev.y) / dtSec;
+
+      bloomPlan.items.forEach((stem) => {
+        const st = rustleStateMapRef.current.get(stem.id);
+        if (st) applyPointerRustleImpulse(st, stem, localPt.x, localPt.y, vx, vy, 'move');
+      });
+    },
+    [useLivingChoreography, bloomRevealActive, bloomPlan, clientToSvgCoords, svgToBouquetLocalCoords]
+  );
+
+  const visibleRenderItems =
+    !useLivingChoreography && bloomedCount !== undefined ? items.slice(0, bloomedCount) : items;
+
   const bouquetTransform = `translate(${pose.x}, ${pose.y}) rotate(${pose.rotation}) scale(${pose.scale}) translate(-300, -380)`;
   const softShadowFilter = isCardThumbnail ? undefined : `url(#${idPrefix}softShadow)`;
 
@@ -3815,7 +4184,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       className="relative w-full h-full flex items-center justify-center p-0 select-none overflow-hidden"
     >
       <svg
-        ref={svgRef as React.RefObject<SVGSVGElement>}
+        ref={attachSvgRef}
         viewBox="-24 0 648 680"
         preserveAspectRatio={isCardThumbnail ? 'xMidYMid slice' : 'xMidYMid meet'}
         className={
@@ -3825,13 +4194,26 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         }
         role="img"
         aria-label="Interactive Flower Bouquet Canvas"
-        onPointerMove={handleStagePointerMove}
+        onPointerMove={(e) => {
+          handleStagePointerMove(e);
+          if (isPreviewMode && !isCardThumbnail) {
+            triggerPresentationRustle(e.clientX, e.clientY, 'move');
+          }
+        }}
         onPointerUp={handleStagePointerUp}
-        onPointerCancel={handleStagePointerUp}
-        onPointerDown={() => {
+        onPointerLeave={() => {
+          lastRustlePointerRef.current = null;
+        }}
+        onPointerCancel={() => {
+          handleStagePointerUp();
+          lastRustlePointerRef.current = null;
+        }}
+        onPointerDown={(e) => {
           if (!isPreviewMode && !isCardThumbnail) {
             selectItem(null);
             setActiveSpecialObject(null);
+          } else if (isPreviewMode && !isCardThumbnail) {
+            triggerPresentationRustle(e.clientX, e.clientY, 'tap');
           }
         }}
       >
@@ -3964,7 +4346,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         <g transform={bouquetTransform}>
         {/* 1A. BACK ITEMS LAYER (Behind Back Wrapping Paper — items sent all the way to 'back' plane) */}
         <g>
-          {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+          {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'back') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
@@ -3972,36 +4354,42 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 key={`back-${item.id}`}
-                data-drawer-trigger={isPreviewMode ? undefined : 'true'}
-                transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
-                  item.flipX ? -disp.scale : disp.scale
-                }, ${disp.scale})`}
-                onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
-                className={
-                  isPreviewMode
-                    ? 'pointer-events-none cursor-default'
-                    : item.locked
-                    ? 'cursor-pointer'
-                    : 'cursor-grab active:cursor-grabbing'
-                }
-                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
+                ref={registerItemMotionRef(item.id)}
+                data-bloom-motion="true"
+                data-bloom-item-id={item.id}
               >
                 <g
-                  clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
-                  className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                  data-drawer-trigger={isPreviewMode ? undefined : 'true'}
+                  transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
+                    item.flipX ? -disp.scale : disp.scale
+                  }, ${disp.scale})`}
+                  onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                  className={
+                    isPreviewMode
+                      ? 'pointer-events-none cursor-default'
+                      : item.locked
+                      ? 'cursor-pointer'
+                      : 'cursor-grab active:cursor-grabbing'
+                  }
+                  style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
                 >
-                  <circle cx="0" cy="-6" r="54" fill="transparent" />
-                  {item.photoStyle ? (
-                    <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
-                  ) : (
-                    <FlowerRenderer
-                      type={item.type}
-                      petalColor={item.petalColor}
-                      centerColor={item.centerColor}
-                      hideStem={Boolean(meta?.isOther)}
-                    />
-                  )}
-                  <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
+                  <g
+                    clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
+                    className={!useLivingChoreography && bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                  >
+                    <circle cx="0" cy="-6" r="54" fill="transparent" />
+                    {item.photoStyle ? (
+                      <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
+                    ) : (
+                      <FlowerRenderer
+                        type={item.type}
+                        petalColor={item.petalColor}
+                        centerColor={item.centerColor}
+                        hideStem={Boolean(meta?.isOther)}
+                      />
+                    )}
+                    <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
+                  </g>
                 </g>
               </g>
             );
@@ -4010,6 +4398,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
         {/* 2. BACK WRAPPING PAPER LAYER (Behind Stems & Flowers — Clickable & Draggable to move/resize bouquet) */}
         {wrapStyle !== 'plain' && (
+          <g ref={wrapperBackMotionRef} data-bloom-motion="true">
           <g
             filter={softShadowFilter}
             role={isPreviewMode ? undefined : 'button'}
@@ -4364,12 +4753,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
           </g>
+          </g>
         )}
 
         {/* Gather Stems at the Bouquet Tie Point (Organic curved botanical stems for Glass Cloche; lower bundle for open sleeves) */}
         {wrapStyle === 'cloche' ? (
           <g clipPath={`url(#${idPrefix}bouquetClocheBoundsClip)`} opacity="0.94">
-            {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item, idx) => {
+            {visibleRenderItems.map((item, idx) => {
               if (item.hidden || item.photoStyle) return null;
               const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
               if (meta?.isOther || getEffectiveItemPlane(item) === 'front') return null;
@@ -4379,7 +4769,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               const midCtrlX = Math.round(300 + (disp.x - 300) * 0.36);
               const midCtrlY = Math.round(startY + (484 - startY) * 0.56);
               return (
-                <g key={`cloche-stem-${item.id}`}>
+                <g key={`cloche-stem-${item.id}`} ref={registerClocheStemRef(item.id)} data-bloom-motion="true">
                   <path
                     d={`M${disp.x},${startY} Q${midCtrlX},${midCtrlY} 300,484 Q${Math.round((300 + bottomSpreadX) / 2)},518 ${bottomSpreadX},550`}
                     stroke={idx % 2 === 0 ? '#15803d' : '#166534'}
@@ -4403,19 +4793,21 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           wrapStyle !== 'basket' &&
           wrapStyle !== 'vase' &&
           wrapStyle !== 'hatbox' && (
-            <g opacity="0.85" clipPath={`url(#${idPrefix}bouquetWrapperBoundsClip)`}>
-              <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
-              <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
-              <path d="M304,490 L315,616" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
-              <path d="M312,490 L336,612" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
-              <path d="M300,490 L300,618" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
+            <g ref={wrapperStemBundleMotionRef} data-bloom-motion="true">
+              <g opacity="0.85" clipPath={`url(#${idPrefix}bouquetWrapperBoundsClip)`}>
+                <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
+                <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
+                <path d="M304,490 L315,616" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
+                <path d="M312,490 L336,612" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
+                <path d="M300,490 L300,618" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
+              </g>
             </g>
           )
         )}
 
         {/* 3. BOUQUET FLOWERS, FOLIAGE & INSIDE-PLANE ITEMS LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
         <g clipPath={wrapStyle === 'cloche' ? `url(#${idPrefix}bouquetClocheBoundsClip)` : `url(#${idPrefix}bouquetWrapperBoundsClip)`}>
-          {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+          {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'inside') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
@@ -4423,37 +4815,43 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 key={item.id}
-                data-drawer-trigger={isPreviewMode ? undefined : 'true'}
-                transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
-                  item.flipX ? -disp.scale : disp.scale
-                }, ${disp.scale})`}
-                onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
-                className={
-                  isPreviewMode
-                    ? 'pointer-events-none cursor-default'
-                    : item.locked
-                    ? 'cursor-pointer'
-                    : 'cursor-grab active:cursor-grabbing'
-                }
-                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
+                ref={registerItemMotionRef(item.id)}
+                data-bloom-motion="true"
+                data-bloom-item-id={item.id}
               >
                 <g
-                  clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
-                  className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                  data-drawer-trigger={isPreviewMode ? undefined : 'true'}
+                  transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
+                    item.flipX ? -disp.scale : disp.scale
+                  }, ${disp.scale})`}
+                  onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                  className={
+                    isPreviewMode
+                      ? 'pointer-events-none cursor-default'
+                      : item.locked
+                      ? 'cursor-pointer'
+                      : 'cursor-grab active:cursor-grabbing'
+                  }
+                  style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
                 >
-                  {/* Invisible generous hit target for easy touch tapping */}
-                  <circle cx="0" cy="-6" r="54" fill="transparent" />
-                  {item.photoStyle ? (
-                    <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
-                  ) : (
-                    <FlowerRenderer
-                      type={item.type}
-                      petalColor={item.petalColor}
-                      centerColor={item.centerColor}
-                      hideStem={Boolean(meta?.isOther)}
-                    />
-                  )}
-                  <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
+                  <g
+                    clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
+                    className={!useLivingChoreography && bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                  >
+                    {/* Invisible generous hit target for easy touch tapping */}
+                    <circle cx="0" cy="-6" r="54" fill="transparent" />
+                    {item.photoStyle ? (
+                      <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
+                    ) : (
+                      <FlowerRenderer
+                        type={item.type}
+                        petalColor={item.petalColor}
+                        centerColor={item.centerColor}
+                        hideStem={Boolean(meta?.isOther)}
+                      />
+                    )}
+                    <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
+                  </g>
                 </g>
               </g>
             );
@@ -4461,6 +4859,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         </g>
 
         {/* 4. FRONT WRAPPING LAYER & UNIVERSAL RIBBON / LACE DESIGN (Overlaps Lower Stems — Clickable & Draggable to move/resize bouquet) */}
+        <g ref={wrapperFrontMotionRef} data-bloom-motion="true">
         <g filter={softShadowFilter}>
           <g
             role={isPreviewMode ? undefined : 'button'}
@@ -5051,10 +5450,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             </g>
           )}
         </g>
+        </g>
 
         {/* 4A. FRONT OVERLAY ITEMS & ATTACHMENTS LAYER (Floating over the front bouquet wrapper & ribbon, unclipped by wrapper bounds) */}
         <g>
-          {(bloomedCount !== undefined ? items.slice(0, bloomedCount) : items).map((item) => {
+          {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'front') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
             const disp = getStageItemDisplayTransform(item, wrapStyle);
@@ -5062,40 +5462,46 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             return (
               <g
                 key={`front-${item.id}`}
-                data-drawer-trigger={isPreviewMode ? undefined : 'true'}
-                transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
-                  item.flipX ? -disp.scale : disp.scale
-                }, ${disp.scale})`}
-                onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
-                className={
-                  isPreviewMode
-                    ? 'pointer-events-none cursor-default'
-                    : item.locked
-                    ? 'cursor-pointer'
-                    : 'cursor-grab active:cursor-grabbing'
-                }
-                style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
+                ref={registerItemMotionRef(item.id)}
+                data-bloom-motion="true"
+                data-bloom-item-id={item.id}
               >
                 <g
-                  clipPath={
-                    !item.photoStyle && !meta?.isOther
-                      ? `url(#${idPrefix}stem-clip-${item.id})`
-                      : undefined
+                  data-drawer-trigger={isPreviewMode ? undefined : 'true'}
+                  transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
+                    item.flipX ? -disp.scale : disp.scale
+                  }, ${disp.scale})`}
+                  onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                  className={
+                    isPreviewMode
+                      ? 'pointer-events-none cursor-default'
+                      : item.locked
+                      ? 'cursor-pointer'
+                      : 'cursor-grab active:cursor-grabbing'
                   }
-                  className={bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                  style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : softShadowFilter }}
                 >
-                  <circle cx="0" cy="-6" r="56" fill="transparent" />
-                  {item.photoStyle ? (
-                    <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
-                  ) : (
-                    <FlowerRenderer
-                      type={item.type}
-                      petalColor={item.petalColor}
-                      centerColor={item.centerColor}
-                      hideStem={Boolean(meta?.isOther)}
-                    />
-                  )}
-                  <rect x="-62" y="-64" width="124" height="124" rx="24" fill="transparent" />
+                  <g
+                    clipPath={
+                      !item.photoStyle && !meta?.isOther
+                        ? `url(#${idPrefix}stem-clip-${item.id})`
+                        : undefined
+                    }
+                    className={!useLivingChoreography && bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
+                  >
+                    <circle cx="0" cy="-6" r="56" fill="transparent" />
+                    {item.photoStyle ? (
+                      <BouquetPhotoCardSVG item={item} idPrefix={idPrefix} />
+                    ) : (
+                      <FlowerRenderer
+                        type={item.type}
+                        petalColor={item.petalColor}
+                        centerColor={item.centerColor}
+                        hideStem={Boolean(meta?.isOther)}
+                      />
+                    )}
+                    <rect x="-62" y="-64" width="124" height="124" rx="24" fill="transparent" />
+                  </g>
                 </g>
               </g>
             );
@@ -5248,7 +5654,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           })()}
 
         {/* 5. DRAGGABLE, ROTATABLE & RESIZABLE GREETING CARD ON BOUQUET */}
-        {card.visibleOnStage && showCardInGiftView && (() => {
+        {card.visibleOnStage && (useLivingChoreography || showCardInGiftView) && (() => {
           const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
           const cardX = card.x ?? 410;
           const cardY = card.y ?? 525;
@@ -5264,6 +5670,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             ? wrapCardCanvasLines(card.message, 25, 4)
             : [];
           return (
+            <g ref={cardMotionRef} data-bloom-motion="true">
             <g
               transform={`translate(${cardX}, ${cardY})`}
               style={{
@@ -5295,7 +5702,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     isCardThumbnail
                       ? 'pointer-events-none select-none'
                       : isPreviewMode
-                      ? 'bouquet-card-wiggle cursor-pointer select-none outline-none focus:outline-none'
+                      ? `${showCardInGiftView && !isReducedMotion ? 'bouquet-card-wiggle ' : ''}cursor-pointer select-none outline-none focus:outline-none`
                       : 'cursor-grab active:cursor-grabbing select-none outline-none focus:outline-none'
                   }
                 >
@@ -5424,6 +5831,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 </g>
               )}
             </g>
+            </g>
           );
         })()}
 
@@ -5439,6 +5847,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               interaction?.mode === 'move-voice' ||
               interaction?.mode === 'resize-voice');
           return (
+            <g ref={voiceMotionRef} data-bloom-motion="true">
             <g
               transform={`translate(${voiceX}, ${voiceY})`}
               style={{
@@ -5555,6 +5964,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   </text>
                 </g>
               )}
+            </g>
             </g>
           );
         })()}

@@ -1107,6 +1107,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
 }) => {
   const [searchQuery, setSearchQuery] = useState(() => extractGarlandQueryParam());
   const [isClosing, setIsClosing] = useState(false);
+  const isClosingRef = useRef(false);
 
   useEffect(() => {
     syncDocumentSeoMeta({ mode: 'garland' });
@@ -1363,6 +1364,8 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   };
 
   const triggerSmoothClose = (afterClose: () => void) => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
     setIsClosing(true);
     window.setTimeout(() => {
       afterClose();

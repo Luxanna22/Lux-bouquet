@@ -246,9 +246,9 @@ export const RecipientDeliveryPrelude: React.FC<RecipientDeliveryPreludeProps> =
   const laceAccent = isDarkMode ? '#E6B89C' : '#9E4757';
 
   // Hold the warm veil briefly while the luminous bloom wash swells, then cross-dissolve smoothly
-  const dialogDissolveDelayMs = isEntranceUnfurling && !isReducedMotion ? 160 : 0;
+  const dialogDissolveDelayMs = isEntranceUnfurling && !isReducedMotion ? 80 : 0;
   const dialogDissolveDurationMs = isEntranceUnfurling
-    ? Math.max(360, timings.unfurlMs - dialogDissolveDelayMs)
+    ? Math.max(280, timings.unfurlMs - dialogDissolveDelayMs)
     : 900;
 
   return (
@@ -509,15 +509,15 @@ export const RecipientDeliveryPrelude: React.FC<RecipientDeliveryPreludeProps> =
         @keyframes sab-bloom-light-wash {
           0% {
             opacity: 0;
-            transform: scale3d(0.92, 0.92, 1);
+            transform: scale3d(0.94, 0.94, 1);
           }
-          38% {
-            opacity: 0.92;
-            transform: scale3d(1.05, 1.05, 1);
+          28% {
+            opacity: 0.58;
+            transform: scale3d(1.04, 1.04, 1);
           }
           100% {
             opacity: 0;
-            transform: scale3d(1.24, 1.24, 1);
+            transform: scale3d(1.22, 1.22, 1);
           }
         }
       `}</style>
@@ -976,8 +976,8 @@ export const RecipientDeliveryPrelude: React.FC<RecipientDeliveryPreludeProps> =
               style={{
                 animation: `sab-bloom-light-wash ${timings.unfurlMs}ms ease-out forwards`,
                 background: isDarkMode
-                  ? 'radial-gradient(circle at 50% 50%, rgba(240, 200, 176, 0.42) 0%, rgba(158, 71, 87, 0.20) 42%, rgba(43, 35, 33, 0) 76%)'
-                  : 'radial-gradient(circle at 50% 50%, rgba(255, 253, 249, 0.96) 0%, rgba(252, 228, 236, 0.72) 44%, rgba(253, 249, 245, 0) 78%)',
+                  ? 'radial-gradient(circle at 50% 50%, rgba(240, 200, 176, 0.34) 0%, rgba(158, 71, 87, 0.16) 42%, rgba(43, 35, 33, 0) 76%)'
+                  : 'radial-gradient(circle at 50% 50%, rgba(255, 253, 249, 0.72) 0%, rgba(252, 228, 236, 0.44) 44%, rgba(253, 249, 245, 0) 78%)',
               }}
               className="pointer-events-none absolute inset-0 z-30"
             />

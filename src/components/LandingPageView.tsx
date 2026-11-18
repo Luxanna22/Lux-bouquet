@@ -24,7 +24,7 @@ import {
   DEFAULT_VOICE_KEEPSAKE,
   DEFAULT_BOUQUET_LOCK,
 } from '../types/bouquet';
-import { useBouquetStore } from '../store/useBouquetStore';
+import { DEFAULT_STUDIO_CARD, useBouquetStore } from '../store/useBouquetStore';
 import {
   computeForegroundPetalTransform,
   createOnDemandLenisDriver,
@@ -221,36 +221,42 @@ function applyShowcasePresetToStudio(preset: ShowcasePreset) {
     hidden: false,
   }));
 
-  store.loadSnapshot({
-    items: studioItems,
-    wrapStyle: preset.wrapStyle,
-    wrapColor: preset.wrapColor,
-    ribbonStyle: preset.ribbonStyle,
-    ribbonColor: preset.ribbonColor,
-    card: {
-      ...store.card,
-      message: preset.notePreview.replace(/[“”]/g, ''),
-      visibleOnStage: true,
+  store.loadSnapshot(
+    {
+      items: studioItems,
+      wrapStyle: preset.wrapStyle,
+      wrapColor: preset.wrapColor,
+      ribbonStyle: preset.ribbonStyle,
+      ribbonColor: preset.ribbonColor,
+      card: {
+        ...DEFAULT_STUDIO_CARD,
+        message: preset.notePreview.replace(/[“”]/g, ''),
+        visibleOnStage: true,
+      },
+      voice: {
+        ...DEFAULT_VOICE_KEEPSAKE,
+        style: preset.voiceStyle,
+        primaryColor: preset.voicePrimary,
+        accentColor: preset.voiceAccent,
+        title: preset.voiceLabel.split('·')[0].trim(),
+      },
+      lock: { ...DEFAULT_BOUQUET_LOCK },
     },
-    voice: {
-      ...(store.voice || DEFAULT_VOICE_KEEPSAKE),
-      style: preset.voiceStyle,
-      primaryColor: preset.voicePrimary,
-      accentColor: preset.voiceAccent,
-      title: preset.voiceLabel.split('·')[0].trim(),
-    },
-    lock: store.lock || { ...DEFAULT_BOUQUET_LOCK },
-  });
+    { isSharedView: false }
+  );
 }
 
 /** Converts a LaceGarlandShowcase entry into a full 600x680 Studio BouquetSnapshot (100% identical to the card preview) */
 function applyShowcaseEntryToStudio(entry: ShowcaseBouquetEntry) {
   const store = useBouquetStore.getState();
   const exactSnap = buildSnapshotFromShowcaseEntry(entry);
-  store.loadSnapshot({
-    ...exactSnap,
-    lock: exactSnap.lock || { ...DEFAULT_BOUQUET_LOCK },
-  });
+  store.loadSnapshot(
+    {
+      ...exactSnap,
+      lock: exactSnap.lock || { ...DEFAULT_BOUQUET_LOCK },
+    },
+    { isSharedView: true }
+  );
 }
 
 /** Full-Proportioned Architectural Bouquet Illustration for the Hero Vitrine (Memoized for instant theme switches) */

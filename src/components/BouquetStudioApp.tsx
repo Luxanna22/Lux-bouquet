@@ -142,7 +142,6 @@ import { BouquetVaultModal } from './BouquetVaultModal';
 import { RecipientDeliveryPrelude } from './RecipientDeliveryPrelude';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
 import {
-  computeStemBloomCadenceMs,
   DeliveryPreludeScene,
   getDeliverySceneTimings,
   hasSeenDeliveryPrelude,
@@ -365,9 +364,8 @@ export default function App() {
   const unfurlTimerRef = useRef<number | null>(null);
   const bloomDelayTimerRef = useRef<number | null>(null);
   const [isResolvingShortCode, setIsResolvingShortCode] = useState<boolean>(initialNeedsRemoteResolve);
-  const [bloomedCount, setBloomedCount] = useState<number | undefined>(
-    initialGiftMode ? 0 : undefined
-  );
+  const [bloomRevealRunId, setBloomRevealRunId] = useState<number>(0);
+  const [isBloomRevealActive, setIsBloomRevealActive] = useState<boolean>(false);
   const [showGiftCardReveal, setShowGiftCardReveal] = useState<boolean>(!initialGiftMode);
   const [isGiftBloomFinished, setIsGiftBloomFinished] = useState<boolean>(false);
   const [isRecipientGiftBoxVisible, setIsRecipientGiftBoxVisible] = useState<boolean>(false);
@@ -414,7 +412,6 @@ export default function App() {
   const studioCarouselRef = useRef<HTMLDivElement | null>(null);
   const [canScrollCarouselLeft, setCanScrollCarouselLeft] = useState(false);
   const [canScrollCarouselRight, setCanScrollCarouselRight] = useState(true);
-  const bloomIntervalRef = useRef<number | null>(null);
   const showcaseResolveRequestIdRef = useRef<number>(0);
   const hasHydratedRef = useRef(false);
   const countedOpenCodeRef = useRef<string | null>(null);
@@ -989,40 +986,23 @@ export default function App() {
   }, []);
 
   const runStemBloomSequence = useCallback(
-    (totalItems: number) => {
-      if (bloomIntervalRef.current !== null) {
-        clearInterval(bloomIntervalRef.current);
-        bloomIntervalRef.current = null;
-      }
+    (_totalItems?: number) => {
       setShowGiftCardReveal(false);
       setIsGiftBloomFinished(false);
-      setBloomedCount(0);
-      if (totalItems <= 0) {
-        setShowGiftCardReveal(true);
-        setIsGiftBloomFinished(true);
-        return;
-      }
-      let current = 0;
-      const cardRevealThreshold = Math.max(1, Math.ceil(totalItems * 0.5));
-      const cadenceMs = computeStemBloomCadenceMs(totalItems, isReducedMotion);
-      bloomIntervalRef.current = window.setInterval(() => {
-        current += 1;
-        setBloomedCount(current);
-        if (current === cardRevealThreshold) {
-          setShowGiftCardReveal(true);
-        }
-        if (current >= totalItems) {
-          if (bloomIntervalRef.current !== null) {
-            clearInterval(bloomIntervalRef.current);
-            bloomIntervalRef.current = null;
-          }
-          setShowGiftCardReveal(true);
-          setIsGiftBloomFinished(true);
-        }
-      }, cadenceMs);
+      setIsBloomRevealActive(true);
+      setBloomRevealRunId((prev) => prev + 1);
     },
-    [isReducedMotion]
+    []
   );
+
+  const handleBloomCardStageReached = useCallback(() => {
+    setShowGiftCardReveal(true);
+  }, []);
+
+  const handleBloomSequenceFinished = useCallback(() => {
+    setShowGiftCardReveal(true);
+    setIsGiftBloomFinished(true);
+  }, []);
 
   const startGiftBloomAnimation = useCallback(
     (
@@ -1031,10 +1011,6 @@ export default function App() {
       forceFullStory?: boolean,
       overrideCodeKey?: string
     ) => {
-      if (bloomIntervalRef.current !== null) {
-        clearInterval(bloomIntervalRef.current);
-        bloomIntervalRef.current = null;
-      }
       if (unfurlTimerRef.current !== null) {
         window.clearTimeout(unfurlTimerRef.current);
         unfurlTimerRef.current = null;
@@ -1088,7 +1064,7 @@ export default function App() {
       setIsRecipientGiftBoxVisible(false);
       setIsRecipientGiftModalOpen(false);
       setRecipientGiftClaimError(null);
-      setBloomedCount(0);
+      setIsBloomRevealActive(false);
 
       if (nextScene === 'threshold') {
         musicBox.start();
@@ -1158,7 +1134,7 @@ export default function App() {
       setIsEntranceUnfurling(true);
 
       const timings = getDeliverySceneTimings(isReducedMotion);
-      const stemLeadInMs = isReducedMotion ? 90 : 320;
+      const stemLeadInMs = isReducedMotion ? 60 : 260;
       bloomDelayTimerRef.current = window.setTimeout(() => {
         bloomDelayTimerRef.current = null;
         runStemBloomSequence(items.length);
@@ -1447,9 +1423,13 @@ export default function App() {
   ]);
 
   const handleExitGiftViewToEditor = useCallback(() => {
-    if (bloomIntervalRef.current !== null) {
-      clearInterval(bloomIntervalRef.current);
-      bloomIntervalRef.current = null;
+    if (unfurlTimerRef.current !== null) {
+      window.clearTimeout(unfurlTimerRef.current);
+      unfurlTimerRef.current = null;
+    }
+    if (bloomDelayTimerRef.current !== null) {
+      window.clearTimeout(bloomDelayTimerRef.current);
+      bloomDelayTimerRef.current = null;
     }
     handleStopVoice();
     setIsVoiceModalOpen(false);
@@ -1457,30 +1437,40 @@ export default function App() {
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
-    setBloomedCount(undefined);
+    setIsBloomRevealActive(false);
     setShowGiftCardReveal(true);
   }, [handleStopVoice]);
 
-  const resetStudioCanvasSession = useCallback(() => {
+  const resetStudioCanvasSession = useCallback((options?: { preserveHistory?: boolean }) => {
+    showcaseResolveRequestIdRef.current += 1;
     currentSessionVaultCodeRef.current = null;
     currentSessionVaultIsDraftRef.current = false;
     skipNextDirtyMarkRef.current = true;
     suppressRecoveryUntilNextEditRef.current = true;
     setHasUnsavedDraftChanges(false);
     clearCanvasRecoverySnapshot();
-    clearBouquet();
+    clearBouquet({ preserveHistory: Boolean(options?.preserveHistory) });
   }, [clearBouquet]);
 
   // When a recipient clicks "Craft Yours" on a shared or showcase bouquet, start a fresh empty bouquet
   // so they can never edit or overwrite the sender's shared arrangement!
   const handleCreateOwnFromShared = useCallback(() => {
-    if (bloomIntervalRef.current !== null) {
-      clearInterval(bloomIntervalRef.current);
-      bloomIntervalRef.current = null;
+    if (unfurlTimerRef.current !== null) {
+      window.clearTimeout(unfurlTimerRef.current);
+      unfurlTimerRef.current = null;
+    }
+    if (bloomDelayTimerRef.current !== null) {
+      window.clearTimeout(bloomDelayTimerRef.current);
+      bloomDelayTimerRef.current = null;
     }
     handleStopVoice();
+    setIsLetterModalOpen(false);
     setIsVoiceModalOpen(false);
     setIsReactionPopoverOpen(false);
+    setIsPasscodeUnlocked(false);
+    setPasscodeAttempt('');
+    setPasscodeError(null);
+    setPasscodeFeedback('idle');
     try {
       window.history.replaceState(null, '', '/');
     } catch {
@@ -1494,7 +1484,7 @@ export default function App() {
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
-    setBloomedCount(undefined);
+    setIsBloomRevealActive(false);
     setShowGiftCardReveal(true);
     trackStudioTelemetry({ eventType: 'recipient_to_studio' });
     triggerToast('Canvas reset');
@@ -1502,13 +1492,22 @@ export default function App() {
 
   // Returns to the Landing Page from a view-only showcase/shared bouquet and resets the studio canvas
   const handleReturnHomeFromGiftView = useCallback(() => {
-    if (bloomIntervalRef.current !== null) {
-      clearInterval(bloomIntervalRef.current);
-      bloomIntervalRef.current = null;
+    if (unfurlTimerRef.current !== null) {
+      window.clearTimeout(unfurlTimerRef.current);
+      unfurlTimerRef.current = null;
+    }
+    if (bloomDelayTimerRef.current !== null) {
+      window.clearTimeout(bloomDelayTimerRef.current);
+      bloomDelayTimerRef.current = null;
     }
     handleStopVoice();
+    setIsLetterModalOpen(false);
     setIsVoiceModalOpen(false);
     setIsReactionPopoverOpen(false);
+    setIsPasscodeUnlocked(false);
+    setPasscodeAttempt('');
+    setPasscodeError(null);
+    setPasscodeFeedback('idle');
     setIsRecipientGiftBoxVisible(false);
     setIsRecipientGiftModalOpen(false);
     try {
@@ -1524,7 +1523,7 @@ export default function App() {
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
-    setBloomedCount(undefined);
+    setIsBloomRevealActive(false);
     setShowGiftCardReveal(true);
     setShowLandingPage(true);
   }, [resetStudioCanvasSession, selectItem, handleStopVoice]);
@@ -1817,7 +1816,7 @@ export default function App() {
             pathCode || computeShortCode(encodeBouquetToCompactPayload(shared, true));
           setActiveShortCode(effectiveCode);
           skipNextDirtyMarkRef.current = true;
-          loadSnapshot(shared);
+          loadSnapshot(shared, { isSharedView: giftMode });
           selectItem(null);
           setIsResolvingShortCode(false);
           setShowLandingPage(false);
@@ -1828,9 +1827,10 @@ export default function App() {
           }
           // Always check Firestore by short code if voice audio was stripped or if a newer Firestore record exists
           if (effectiveCode) {
+            const reqId = ++showcaseResolveRequestIdRef.current;
             fetchSharedBouquetFromFirestore(effectiveCode)
               .then((docData) => {
-                if (!docData) return;
+                if (showcaseResolveRequestIdRef.current !== reqId || !docData) return;
                 const fromFirestoreSnap = docData.payload
                   ? decodeBouquetFromHash(docData.payload)
                   : null;
@@ -1842,7 +1842,7 @@ export default function App() {
                     : shared;
                 const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, docData);
                 skipNextDirtyMarkRef.current = true;
-                loadSnapshot(hydrated);
+                loadSnapshot(hydrated, { isSharedView: giftMode });
               })
               .catch(() => { });
           }
@@ -1852,6 +1852,7 @@ export default function App() {
         // If opened via a first-party short link (e.g. https://[domain]/Vu18KSuusq9133s) on a new device,
         // fetch the bouquet payload and voice recording from Firebase Firestore first, with fallback to /api/shorten?c=<code>
         if (pathCode) {
+          const reqId = ++showcaseResolveRequestIdRef.current;
           setShowLandingPage(false);
           setIsResolvingShortCode(true);
           (async () => {
@@ -1864,12 +1865,16 @@ export default function App() {
                 voiceDurationSec?: number | null;
               } | null = await fetchSharedBouquetFromFirestore(pathCode);
 
+              if (showcaseResolveRequestIdRef.current !== reqId) return;
+
               if (!data || typeof data.payload !== 'string') {
                 const r = await fetch(`/api/shorten?c=${encodeURIComponent(pathCode)}`);
                 if (r.ok) {
                   data = await r.json();
                 }
               }
+
+              if (showcaseResolveRequestIdRef.current !== reqId) return;
 
               if (data && typeof data.payload === 'string') {
                 localShortCodeCache.set(pathCode, data.payload);
@@ -1882,7 +1887,7 @@ export default function App() {
                 if (resolvedSnap && Array.isArray(resolvedSnap.items) && resolvedSnap.items.length > 0) {
                   const hydratedSnap = hydrateSnapshotWithFirestoreRecord(resolvedSnap, data);
                   skipNextDirtyMarkRef.current = true;
-                  loadSnapshot(hydratedSnap);
+                  loadSnapshot(hydratedSnap, { isSharedView: true });
                   selectItem(null);
                   startGiftBloomAnimation(hydratedSnap.items.length, false, false, pathCode);
                 }
@@ -1890,7 +1895,9 @@ export default function App() {
             } catch {
               // Fall back quietly
             } finally {
-              setIsResolvingShortCode(false);
+              if (showcaseResolveRequestIdRef.current === reqId) {
+                setIsResolvingShortCode(false);
+              }
             }
           })();
           return;
@@ -2022,7 +2029,7 @@ export default function App() {
   // Global Keyboard Shortcuts (Strictly disabled in Shared / Preview mode so recipients cannot edit stems)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isGiftView || isPreviewMode) return;
+      if (isGiftView || isPreviewMode || showLandingPage) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -2036,16 +2043,20 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
-          redo();
-          triggerToast('Redone');
-        } else {
+          if (useBouquetStore.getState().future.length > 0) {
+            redo();
+            triggerToast('Redone');
+          }
+        } else if (useBouquetStore.getState().past.length > 0) {
           undo();
           triggerToast('Undone');
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
-        redo();
-        triggerToast('Redone');
+        if (useBouquetStore.getState().future.length > 0) {
+          redo();
+          triggerToast('Redone');
+        }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelected();
@@ -2058,7 +2069,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isGiftView, isPreviewMode, undo, redo, deleteSelected, duplicateSelected, triggerToast]);
+  }, [isGiftView, isPreviewMode, showLandingPage, undo, redo, deleteSelected, duplicateSelected, triggerToast]);
 
   const performSvgPngDownload = useCallback(async () => {
     if (isInAppBrowser()) {
@@ -2348,6 +2359,9 @@ export default function App() {
 
   const handleResumeDraftFromDevice = useCallback(
     (draftPayload: string, sourceVaultCode?: string, isSourceDraft = true) => {
+      showcaseResolveRequestIdRef.current += 1;
+      setIsResolvingShortCode(false);
+      setActiveShortCode(null);
       currentSessionVaultCodeRef.current = sourceVaultCode || null;
       currentSessionVaultIsDraftRef.current = Boolean(isSourceDraft);
       suppressRecoveryUntilNextEditRef.current = false;
@@ -2678,9 +2692,7 @@ export default function App() {
         .bouquet-card-wiggle {
           transform-origin: 0px 0px;
           transform-box: view-box;
-          animation:
-            cardBloomSwingIn 0.78s cubic-bezier(0.22, 1, 0.36, 1) forwards,
-            cardGentleWiggle 2.8s ease-in-out 0.78s infinite;
+          animation: cardGentleWiggle 3.1s ease-in-out 0.65s infinite;
           transition: filter 0.2s ease;
         }
         .bouquet-card-wiggle:hover {
@@ -2710,11 +2722,11 @@ export default function App() {
           animation: stemSpringBloom 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         @keyframes giftStageEntrance {
-          0% { opacity: 0; transform: translate3d(0, 14px, 0) scale3d(0.96, 0.96, 1); }
-          100% { opacity: 1; transform: translate3d(0, 0, 0) scale3d(1, 1, 1); }
+          0% { opacity: 0; }
+          100% { opacity: 1; }
         }
         .gift-stage-entrance {
-          animation: giftStageEntrance 1.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          animation: giftStageEntrance 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
         @keyframes giftHudFloatIn {
           0% { opacity: 0; transform: translate3d(0, 6px, 0); }
@@ -2756,6 +2768,12 @@ export default function App() {
           initialCreationsPageOpen={returnToCreationsPage}
           onCloseCreationsPage={() => setReturnToCreationsPage(false)}
           onStartCrafting={() => {
+            showcaseResolveRequestIdRef.current += 1;
+            setIsResolvingShortCode(false);
+            if (useBouquetStore.getState().isSharedViewSnapshot || activeShortCode) {
+              setActiveShortCode(null);
+              resetStudioCanvasSession();
+            }
             setReturnToCreationsPage(false);
             setStudioEntranceKey((k) => k + 1);
             setCanvasRecoveryInStudioFlag(true);
@@ -2795,7 +2813,7 @@ export default function App() {
                           lock: currentSnap.lock,
                         };
                     const hydrated = hydrateSnapshotWithFirestoreRecord(baseSnap, record);
-                    loadSnapshot(hydrated);
+                    loadSnapshot(hydrated, { isSharedView: true });
                     setNowMs(Date.now());
                     if (hydrated.lock && hydrated.lock.mode !== 'none') {
                       setIsEntranceUnfurling(false);
@@ -2966,7 +2984,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        resetStudioCanvasSession();
+                        resetStudioCanvasSession({ preserveHistory: true });
                         triggerToast('Canvas reset');
                       }}
                       aria-label="Reset bouquet and start over"
@@ -3606,78 +3624,84 @@ export default function App() {
                   </div>
                 )}
 
-                <BouquetStage
-                  svgRef={svgRef}
-                  isPreviewMode={isPreviewMode || isGiftView}
-                  isDarkMode={isDarkMode}
-                  bloomedCount={isGiftView ? bloomedCount : undefined}
-                  showCardInGiftView={isGiftView ? showGiftCardReveal : true}
-                  isVoicePlaying={isVoicePlaying}
-                  onItemSelect={() => {
-                    if (isPreviewMode || isGiftView) return;
-                    setActiveColorTarget('petal');
-                    openDesktopToolPopover('stem');
-                  }}
-                  onWrapperClick={() => {
-                    if (isPreviewMode || isGiftView) return;
-                    selectItem(null);
-                    setActiveColorTarget('wrapper');
-                  }}
-                  onRibbonClick={() => {
-                    if (isPreviewMode || isGiftView) return;
-                    selectItem(null);
-                    setActiveColorTarget('ribbon');
-                  }}
-                  onCardSelect={() => {
-                    if (isPreviewMode || isGiftView) return;
-                    selectItem(null);
-                    setActiveColorTarget('card');
-                    setMobileCategory('card');
-                    setActiveTab('card');
-                    openDesktopToolPopover('card');
-                  }}
-                  onCardTagClick={() => {
-                    if (isPreviewMode || isGiftView) {
-                      if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
-                      setLetterTypedChars(0);
-                      setIsLetterModalOpen(true);
-                    } else {
+                {!(isGiftView && !isPreviewMode && isGiftCurrentlyLocked) && (
+                  <BouquetStage
+                    svgRef={svgRef}
+                    isPreviewMode={isPreviewMode || isGiftView}
+                    isDarkMode={isDarkMode}
+                    bloomRevealRunId={bloomRevealRunId}
+                    bloomRevealActive={isGiftView || isPreviewMode ? isBloomRevealActive : undefined}
+                    isReducedMotion={isReducedMotion}
+                    onBloomCardStageReached={handleBloomCardStageReached}
+                    onBloomFinished={handleBloomSequenceFinished}
+                    showCardInGiftView={isGiftView || isPreviewMode ? showGiftCardReveal : true}
+                    isVoicePlaying={isVoicePlaying}
+                    onItemSelect={() => {
+                      if (isPreviewMode || isGiftView) return;
+                      setActiveColorTarget('petal');
+                      openDesktopToolPopover('stem');
+                    }}
+                    onWrapperClick={() => {
+                      if (isPreviewMode || isGiftView) return;
+                      selectItem(null);
+                      setActiveColorTarget('wrapper');
+                    }}
+                    onRibbonClick={() => {
+                      if (isPreviewMode || isGiftView) return;
+                      selectItem(null);
+                      setActiveColorTarget('ribbon');
+                    }}
+                    onCardSelect={() => {
+                      if (isPreviewMode || isGiftView) return;
                       selectItem(null);
                       setActiveColorTarget('card');
-                      setIsMobileToolsExpanded(true);
-                      setMobilePopover('card');
                       setMobileCategory('card');
                       setActiveTab('card');
-                    }
-                  }}
-                  onVoiceSelect={() => {
-                    if (isPreviewMode || isGiftView) return;
-                    selectItem(null);
-                    setActiveColorTarget('voicePrimary');
-                    setMobileCategory('voice');
-                    openDesktopToolPopover('voice');
-                  }}
-                  onVoiceKeepsakeClick={() => {
-                    if (isPreviewMode || isGiftView) {
-                      if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
-                      setIsVoiceModalOpen(true);
-                      if (voice.audioDataUrl && !isVoicePlaying) {
-                        handleTogglePlayVoice();
+                      openDesktopToolPopover('card');
+                    }}
+                    onCardTagClick={() => {
+                      if (isPreviewMode || isGiftView) {
+                        if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                        setLetterTypedChars(0);
+                        setIsLetterModalOpen(true);
+                      } else {
+                        selectItem(null);
+                        setActiveColorTarget('card');
+                        setIsMobileToolsExpanded(true);
+                        setMobilePopover('card');
+                        setMobileCategory('card');
+                        setActiveTab('card');
                       }
-                    } else {
+                    }}
+                    onVoiceSelect={() => {
+                      if (isPreviewMode || isGiftView) return;
                       selectItem(null);
                       setActiveColorTarget('voicePrimary');
-                      setIsMobileToolsExpanded(true);
-                      setMobilePopover('voice');
                       setMobileCategory('voice');
-                    }
-                  }}
-                  onPhotoCardUploadClick={(itemId) => {
-                    if (isPreviewMode || isGiftView) return;
-                    const found = items.find((i) => i.id === itemId);
-                    triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
-                  }}
-                />
+                      openDesktopToolPopover('voice');
+                    }}
+                    onVoiceKeepsakeClick={() => {
+                      if (isPreviewMode || isGiftView) {
+                        if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                        setIsVoiceModalOpen(true);
+                        if (voice.audioDataUrl && !isVoicePlaying) {
+                          handleTogglePlayVoice();
+                        }
+                      } else {
+                        selectItem(null);
+                        setActiveColorTarget('voicePrimary');
+                        setIsMobileToolsExpanded(true);
+                        setMobilePopover('voice');
+                        setMobileCategory('voice');
+                      }
+                    }}
+                    onPhotoCardUploadClick={(itemId) => {
+                      if (isPreviewMode || isGiftView) return;
+                      const found = items.find((i) => i.id === itemId);
+                      triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
+                    }}
+                  />
+                )}
 
                 {/* ===============================================================
                 COLLAPSIBLE RIGHT-SIDE ACTION STACK (Phone & Desktop)
@@ -4747,7 +4771,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            resetStudioCanvasSession();
+                            resetStudioCanvasSession({ preserveHistory: true });
                             triggerToast('Canvas reset');
                           }}
                           className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
@@ -5611,7 +5635,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => {
-                              resetStudioCanvasSession();
+                              resetStudioCanvasSession({ preserveHistory: true });
                               triggerToast('Canvas reset');
                             }}
                             className="text-[11px] font-medium text-stone-500 hover:text-red-600 dark:text-stone-400 dark:hover:text-red-400 flex items-center gap-1 transition"
@@ -7260,7 +7284,7 @@ export default function App() {
             setActiveShortCode(codeMatch);
           }
           if (hasDecoded && decoded) {
-            loadSnapshot(decoded);
+            loadSnapshot(decoded, { isSharedView: true });
             selectItem(null);
             setShowLandingPage(false);
             startGiftBloomAnimation(decoded.items.length, false, false, isValidCode ? codeMatch : giftUrl);
@@ -7283,7 +7307,7 @@ export default function App() {
                 const base = recordSnap || decoded;
                 if (base && Array.isArray(base.items) && base.items.length > 0) {
                   const hydrated = hydrateSnapshotWithFirestoreRecord(base, record);
-                  loadSnapshot(hydrated);
+                  loadSnapshot(hydrated, { isSharedView: true });
                   setNowMs(Date.now());
                   if (hydrated.lock && hydrated.lock.mode !== 'none') {
                     setIsEntranceUnfurling(false);

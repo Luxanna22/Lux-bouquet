@@ -967,6 +967,13 @@ export async function exportSvgElementToPng(
   animatedNodes.forEach((el) => {
     el.classList.remove('stem-bloom-pop', 'bouquet-card-wiggle', 'bouquet-cord-bloom');
   });
+  const motionNodes = clone.querySelectorAll<SVGGElement>('[data-bloom-motion="true"]');
+  motionNodes.forEach((el) => {
+    el.removeAttribute('transform');
+    el.removeAttribute('opacity');
+    el.style.transform = '';
+    el.style.opacity = '';
+  });
 
   // Replace any foreignObject in the clone with SVG text to prevent canvas tainting
   const foreignObjects = clone.querySelectorAll('foreignObject');

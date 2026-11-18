@@ -716,5 +716,145 @@ test('moveItemLayer steps 1 overlapping flower at a time in 20-flower bouquets a
   assert.equal(items[items.length - 1].id, pinkId);
 });
 
+test('exiting a public or PIN-locked shared creation completely wipes stems, note, voice, lock, and undo history', () => {
+  const store = useBouquetStore.getState();
+
+  // Simulate opening a PIN-locked public shared creation (without unlocking it)
+  store.loadSnapshot(
+    {
+      items: [
+        {
+          id: 'shared-rose-1',
+          type: 'velvetBaccara',
+          layerPlane: 'inside',
+          clippedToBouquet: true,
+          x: 300,
+          y: 280,
+          scale: 1.15,
+          rotation: -8,
+          flipX: false,
+          petalColor: '#9f1239',
+          centerColor: '#fde047',
+        },
+        {
+          id: 'shared-photo-1',
+          type: 'rose',
+          photoStyle: 'polaroid',
+          photoDataUrl: 'data:image/jpeg;base64,PRIVATE_PHOTO_DATA',
+          photoCaption: 'Secret Trip',
+          layerPlane: 'front',
+          clippedToBouquet: false,
+          x: 320,
+          y: 340,
+          scale: 1,
+          rotation: 6,
+          flipX: false,
+          petalColor: '#FFFDF9',
+          centerColor: '#B4846C',
+        },
+      ],
+      wrapStyle: 'hatbox',
+      wrapColor: '#9F1239',
+      ribbonStyle: 'goldchain',
+      ribbonColor: '#F59E0B',
+      environment: 'velvetSalon',
+      bouquetPose: { x: 18, y: -12, scale: 1.12, rotation: 5 },
+      card: {
+        to: 'Private Recipient',
+        from: 'Private Sender',
+        message: 'Top secret personal love letter that must never leak to studio!',
+        visibleOnStage: true,
+        theme: 'midnight',
+        customBg: '#111827',
+        customAccent: '#F59E0B',
+        x: 380,
+        y: 500,
+        scale: 0.9,
+        rotation: 12,
+      },
+      voice: {
+        style: 'vinyl',
+        visibleOnStage: true,
+        title: 'Secret Voice Note',
+        primaryColor: '#8B5A2B',
+        accentColor: '#D4AF37',
+        audioDataUrl: 'data:audio/webm;base64,PRIVATE_VOICE_AUDIO',
+        durationSec: 24,
+        x: 200,
+        y: 510,
+        scale: 1.1,
+        rotation: -5,
+      },
+      lock: {
+        mode: 'passcode',
+        passcodeType: 'pin',
+        unlockAtIso: '',
+        questionPrompt: 'Our anniversary MMDD',
+        passcodeAnswer: '0419',
+      },
+    },
+    { isSharedView: true }
+  );
+
+  assert.equal(useBouquetStore.getState().isSharedViewSnapshot, true);
+  assert.equal(useBouquetStore.getState().past.length, 0);
+
+  // Simulate clicking "Craft Yours" or "Back" -> resets studio canvas (even if preserveHistory: true is accidentally passed!)
+  store.clearBouquet({ preserveHistory: true });
+
+  const afterClear = useBouquetStore.getState();
+  assert.equal(afterClear.items.length, 0);
+  assert.equal(afterClear.isSharedViewSnapshot, false);
+  assert.equal(afterClear.wrapStyle, 'chalice');
+  assert.equal(afterClear.environment, 'studio');
+  assert.equal(afterClear.card.to, 'My Dearest');
+  assert.equal(afterClear.card.from, 'Yours Always');
+  assert.equal(
+    afterClear.card.message,
+    'Every petal in this bouquet holds a reason why you make my world brighter.'
+  );
+  assert.equal(afterClear.card.theme, 'sealed');
+  assert.equal(afterClear.card.customBg, undefined);
+  assert.equal(afterClear.card.customAccent, undefined);
+  assert.equal(Boolean(afterClear.voice.audioDataUrl), false);
+  assert.equal(afterClear.voice.visibleOnStage, false);
+  assert.equal(afterClear.lock.mode, 'none');
+  assert.equal(afterClear.lock.passcodeAnswer, '');
+  // Undo stack MUST be empty so clicking Undo / Ctrl+Z can never resurrect the shared creation
+  assert.equal(afterClear.past.length, 0);
+  assert.equal(afterClear.future.length, 0);
+
+  // Calling undo() must be a complete no-op and leave everything clean
+  store.undo();
+  const afterUndo = useBouquetStore.getState();
+  assert.equal(afterUndo.items.length, 0);
+  assert.equal(afterUndo.card.to, 'My Dearest');
+  assert.equal(afterUndo.card.from, 'Yours Always');
+  assert.equal(Boolean(afterUndo.voice.audioDataUrl), false);
+  assert.equal(afterUndo.lock.mode, 'none');
+});
+
+test('creator-owned Start Over in Studio resets card note cleanly while preserving Undo for their own work', () => {
+  const store = useBouquetStore.getState();
+  store.clearBouquet();
+  store.addFlower('rose');
+  store.updateCard({ to: 'Mom', from: 'Alex', message: 'Happy Birthday Mom!' });
+
+  // Creator clicks Start Over in Studio (preserveHistory: true on non-shared canvas)
+  store.clearBouquet({ preserveHistory: true });
+  const cleared = useBouquetStore.getState();
+  assert.equal(cleared.items.length, 0);
+  assert.equal(cleared.card.to, 'My Dearest');
+  assert.equal(cleared.card.from, 'Yours Always');
+  assert.equal(cleared.past.length > 0, true);
+
+  // Creator can still undo their own accidental Start Over
+  store.undo();
+  const undone = useBouquetStore.getState();
+  assert.equal(undone.items.length, 1);
+  assert.equal(undone.card.to, 'Mom');
+  assert.equal(undone.card.message, 'Happy Birthday Mom!');
+});
+
 
 

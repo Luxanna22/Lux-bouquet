@@ -9,13 +9,13 @@ export interface DeliverySceneTimings {
 const STANDARD_TIMINGS: DeliverySceneTimings = {
   sealBreakMs: 4850,
   ribbonMs: 2450,
-  unfurlMs: 1550,
+  unfurlMs: 780,
 };
 
 const REDUCED_MOTION_TIMINGS: DeliverySceneTimings = {
   sealBreakMs: 2350,
   ribbonMs: 1100,
-  unfurlMs: 650,
+  unfurlMs: 360,
 };
 
 const DELIVERY_SEEN_PREFIX = 'sab_delivery_seen_v1_';

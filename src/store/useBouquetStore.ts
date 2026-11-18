@@ -34,6 +34,18 @@ import { decodeBouquetFromHash, isGiftShareHash } from '../lib/shareAndExport';
 // ============================================================================
 
 
+export const DEFAULT_STUDIO_CARD: GreetingCardData = {
+  to: 'My Dearest',
+  from: 'Yours Always',
+  message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
+  visibleOnStage: true,
+  theme: 'sealed',
+  x: 410,
+  y: 525,
+  scale: 0.72,
+  rotation: 0
+};
+
 export interface BouquetStoreState extends BouquetSnapshot {
   selectedId: string | null;
   environment: CanvasEnvironment;
@@ -43,6 +55,7 @@ export interface BouquetStoreState extends BouquetSnapshot {
   hasCustomRibbonColor: boolean;
   hasCustomCardColor: boolean;
   hasCustomVoiceColor: boolean;
+  isSharedViewSnapshot: boolean;
   past: BouquetSnapshot[];
   future: BouquetSnapshot[];
   // Actions
@@ -77,10 +90,10 @@ export interface BouquetStoreState extends BouquetSnapshot {
   lock: BouquetLockConfig;
   updateLock: (patch: Partial<BouquetLockConfig>) => void;
   randomizeBouquet: () => void;
-  clearBouquet: () => void;
+  clearBouquet: (options?: { preserveHistory?: boolean }) => void;
   undo: () => void;
   redo: () => void;
-  loadSnapshot: (snap: BouquetSnapshot) => void;
+  loadSnapshot: (snap: BouquetSnapshot, options?: { isSharedView?: boolean }) => void;
 }
 
 function takeSnapshot(state: BouquetStoreState): BouquetSnapshot {
@@ -135,6 +148,7 @@ function getInitialStoreState() {
           },
           voice: shared.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...shared.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
           lock: shared.lock ? { ...DEFAULT_BOUQUET_LOCK, ...shared.lock } : { ...DEFAULT_BOUQUET_LOCK },
+          isSharedViewSnapshot: isGiftShareHash(hash),
           selectedId: isGiftShareHash(hash)
             ? null
             : shared.items[shared.items.length - 1]?.id || null
@@ -154,19 +168,10 @@ function getInitialStoreState() {
     ribbonStyle: 'satin' as RibbonStyle,
     environment: 'studio' as CanvasEnvironment,
     bouquetPose: { ...DEFAULT_BOUQUET_POSE },
-    card: {
-      to: 'My Dearest',
-      from: 'Yours Always',
-      message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
-      visibleOnStage: true,
-      theme: 'sealed' as const,
-      x: 410,
-      y: 525,
-      scale: 0.72,
-      rotation: 0
-    },
+    card: { ...DEFAULT_STUDIO_CARD },
     voice: { ...DEFAULT_VOICE_KEEPSAKE },
     lock: { ...DEFAULT_BOUQUET_LOCK },
+    isSharedViewSnapshot: false,
     selectedId: isBrowser ? null : ('f-14' as string | null)
   };
 }
@@ -186,6 +191,7 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   hasCustomRibbonColor: false,
   hasCustomCardColor: Boolean(INITIAL_STORE_STATE.card?.customBg || INITIAL_STORE_STATE.card?.customAccent),
   hasCustomVoiceColor: false,
+  isSharedViewSnapshot: INITIAL_STORE_STATE.isSharedViewSnapshot,
   card: INITIAL_STORE_STATE.card,
   voice: INITIAL_STORE_STATE.voice,
   lock: INITIAL_STORE_STATE.lock,
@@ -847,13 +853,16 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     }));
   },
 
-  clearBouquet: () => {
-    const snap = takeSnapshot(get());
+  clearBouquet: (options) => {
+    const current = get();
+    const shouldPreserveHistory = Boolean(options?.preserveHistory) && !current.isSharedViewSnapshot;
+    const snap = shouldPreserveHistory ? takeSnapshot(current) : null;
     set((state) => ({
-      past: [...state.past.slice(-29), snap],
+      past: snap ? [...state.past.slice(-29), snap] : [],
       future: [],
       items: [],
       wrapStyle: 'chalice',
+      lastNonPlainWrapStyle: 'chalice',
       wrapColor: '#EDE0F5',
       ribbonStyle: 'satin',
       ribbonColor: '#C084FC',
@@ -863,13 +872,8 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       hasCustomRibbonColor: false,
       hasCustomCardColor: false,
       hasCustomVoiceColor: false,
-      card: {
-        ...state.card,
-        theme: 'sealed',
-        customBg: undefined,
-        customAccent: undefined,
-        visibleOnStage: true
-      },
+      isSharedViewSnapshot: false,
+      card: { ...DEFAULT_STUDIO_CARD },
       voice: { ...DEFAULT_VOICE_KEEPSAKE },
       lock: { ...DEFAULT_BOUQUET_LOCK },
       selectedId: null
@@ -910,14 +914,18 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
     });
   },
 
-  loadSnapshot: (snap) => {
+  loadSnapshot: (snap, options) => {
     set({
       ...snap,
+      items: Array.isArray(snap.items) ? snap.items.map((item) => ({ ...item })) : [],
+      lastNonPlainWrapStyle:
+        snap.wrapStyle && snap.wrapStyle !== 'plain' ? snap.wrapStyle : 'chalice',
       environment: snap.environment || 'studio',
       bouquetPose: snap.bouquetPose
         ? { ...DEFAULT_BOUQUET_POSE, ...snap.bouquetPose }
         : { ...DEFAULT_BOUQUET_POSE },
       card: {
+        ...DEFAULT_STUDIO_CARD,
         ...snap.card,
         theme: snap.card?.theme || 'sealed'
       },
@@ -925,9 +933,10 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
       hasCustomRibbonColor: false,
       hasCustomCardColor: Boolean(snap.card?.customBg || snap.card?.customAccent),
       hasCustomVoiceColor: false,
+      isSharedViewSnapshot: Boolean(options?.isSharedView),
       voice: snap.voice ? { ...DEFAULT_VOICE_KEEPSAKE, ...snap.voice } : { ...DEFAULT_VOICE_KEEPSAKE },
       lock: snap.lock ? { ...DEFAULT_BOUQUET_LOCK, ...snap.lock } : { ...DEFAULT_BOUQUET_LOCK },
-      selectedId: snap.items[0]?.id ?? null,
+      selectedId: options?.isSharedView ? null : snap.items[0]?.id ?? null,
       past: [],
       future: []
     });
