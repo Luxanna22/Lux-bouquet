@@ -123,6 +123,32 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
+function round1(v: number): number {
+  const r = Math.round(v * 10) / 10;
+  return r === 0 ? 0 : r;
+}
+
+function round2(v: number): number {
+  const r = Math.round(v * 100) / 100;
+  return r === 0 ? 0 : r;
+}
+
+function round3(v: number): number {
+  const r = Math.round(v * 1000) / 1000;
+  return r === 0 ? 0 : r;
+}
+
+function round4(v: number): number {
+  const r = Math.round(v * 10000) / 10000;
+  return r === 0 ? 0 : r;
+}
+
+/** Frame pacing interval (ms) once fully settled into calm ambient breeze (~30fps). */
+export const LIVING_BREEZE_FRAME_INTERVAL_MS = 32;
+
+/** Pointer move throttle interval (ms) for interactive rustle to avoid high-Hz layout thrash. */
+export const RUSTLE_POINTER_THROTTLE_MS = 24;
+
 /**
  * Analytic closed-form damped harmonic spring response starting at f(0)=0, f'(0)=0
  * and settling toward 1.0. For 0 < zeta < 1 it produces a silky botanical overshoot.
@@ -417,10 +443,10 @@ export function evaluateWrapperReveal(
 
   return {
     translateX: 0,
-    translateY: Number((plan.wrapperOriginY * (1 - spring)).toFixed(2)),
+    translateY: round1(plan.wrapperOriginY * (1 - spring)),
     rotateDeg: 0,
-    scale: Number((plan.wrapperOriginScale + (1 - plan.wrapperOriginScale) * spring).toFixed(4)),
-    opacity: Number(opacity.toFixed(3)),
+    scale: round4(plan.wrapperOriginScale + (1 - plan.wrapperOriginScale) * spring),
+    opacity: round3(opacity),
     revealProgress: clamp(tSec / durationSec, 0, 1),
     breezeBlend: 0,
   };
@@ -460,10 +486,10 @@ export function evaluateKeepsakeReveal(
 
   return {
     translateX: 0,
-    translateY: Number((startY * (1 - spring)).toFixed(2)),
-    rotateDeg: Number((startRot * (1 - spring)).toFixed(2)),
-    scale: Number((startScale + (1 - startScale) * spring).toFixed(4)),
-    opacity: Number(opacity.toFixed(3)),
+    translateY: round1(startY * (1 - spring)),
+    rotateDeg: round2(startRot * (1 - spring)),
+    scale: round4(startScale + (1 - startScale) * spring),
+    opacity: round3(opacity),
     revealProgress: clamp(tSec / durationSec, 0, 1),
     breezeBlend: 0,
   };
@@ -529,11 +555,11 @@ export function evaluateStemFrame(
   const scale = stem.originScale + (1 - stem.originScale) * spring;
 
   return {
-    translateX: Number(translateX.toFixed(2)),
-    translateY: Number(translateY.toFixed(2)),
-    rotateDeg: Number(rotateDeg.toFixed(2)),
-    scale: Number(scale.toFixed(4)),
-    opacity: Number(opacity.toFixed(3)),
+    translateX: round1(translateX),
+    translateY: round1(translateY),
+    rotateDeg: round2(rotateDeg),
+    scale: round4(scale),
+    opacity: round3(opacity),
     revealProgress: linearProgress,
     breezeBlend: smoothBreezeBlend,
   };
@@ -642,11 +668,26 @@ export function stepRustlePhysics(
 
 /**
  * Formats a bouquet-local SVG transform string around a custom pivot (e.g., stem base).
+ * Emits minimal SVG primitives when scale === 1 (living breeze & rustle) for fast SVG compositing.
  */
 export function formatPivotMotionTransform(
   t: EvaluatedTransform,
   pivotX: number,
   pivotY: number
 ): string {
+  const hasTranslate = t.translateX !== 0 || t.translateY !== 0;
+  const hasRotate = t.rotateDeg !== 0;
+  const hasScale = t.scale !== 1;
+
+  if (!hasTranslate && !hasRotate && !hasScale) return '';
+  if (!hasScale) {
+    if (!hasTranslate) {
+      return `rotate(${t.rotateDeg} ${pivotX} ${pivotY})`;
+    }
+    if (!hasRotate) {
+      return `translate(${t.translateX} ${t.translateY})`;
+    }
+    return `translate(${t.translateX} ${t.translateY}) rotate(${t.rotateDeg} ${pivotX} ${pivotY})`;
+  }
   return `translate(${t.translateX} ${t.translateY}) translate(${pivotX} ${pivotY}) rotate(${t.rotateDeg}) scale(${t.scale}) translate(${-pivotX} ${-pivotY})`;
 }

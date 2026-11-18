@@ -10,6 +10,7 @@ import {
   applyPointerRustleImpulse,
   stepRustlePhysics,
   getWrapperEmergenceOrigin,
+  formatPivotMotionTransform,
 } from './bouquetBloomPhysics';
 import type { BouquetItem } from '../types/bouquet';
 
@@ -173,4 +174,34 @@ test('pointer rustle impulse stays bounded under extreme flicks and decays smoot
   }
   assert.ok(maxAngle > 0.5 && maxAngle <= near.maxRustleDeg, `rustle stays bounded <= ${near.maxRustleDeg}°, got ${maxAngle}`);
   assert.equal(nearState.angleDeg, 0, 'rustle damps cleanly back to exact 0');
+});
+
+test('formatPivotMotionTransform emits compact primitives for identity and settled living sway', () => {
+  const identity = formatPivotMotionTransform(
+    { translateX: 0, translateY: 0, rotateDeg: 0, scale: 1, opacity: 1, revealProgress: 1, breezeBlend: 1 },
+    300,
+    360
+  );
+  assert.equal(identity, '', 'identity transform returns empty string');
+
+  const pureRotate = formatPivotMotionTransform(
+    { translateX: 0, translateY: 0, rotateDeg: 1.45, scale: 1, opacity: 1, revealProgress: 1, breezeBlend: 1 },
+    280,
+    380
+  );
+  assert.equal(pureRotate, 'rotate(1.45 280 380)', 'pure pivot rotation uses single SVG rotate primitive');
+
+  const swayBob = formatPivotMotionTransform(
+    { translateX: 0, translateY: 0.8, rotateDeg: -1.2, scale: 1, opacity: 1, revealProgress: 1, breezeBlend: 1 },
+    280,
+    380
+  );
+  assert.equal(swayBob, 'translate(0 0.8) rotate(-1.2 280 380)', 'living sway uses 2 primitives without scale');
+
+  const emerging = formatPivotMotionTransform(
+    { translateX: 12, translateY: 60, rotateDeg: 6, scale: 0.65, opacity: 0.8, revealProgress: 0.3, breezeBlend: 0 },
+    280,
+    380
+  );
+  assert.ok(emerging.includes('scale(0.65)'), 'emergence includes scale around stem pivot');
 });

@@ -121,7 +121,8 @@ import {
   publishBouquetToGlobalGarlandFeed,
 } from '../lib/firebase';
 import { useBouquetStore } from '../store/useBouquetStore';
-import { BouquetStage, FallingPetalsOverlay } from './BouquetStage';
+import { BouquetStage } from './BouquetStage';
+import { getEnvironmentPageBackdrop } from '../lib/environmentBackdrop';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
   MiniWrapConeSVG,
@@ -2626,14 +2627,28 @@ export default function App() {
     [premiumAssetConfig]
   );
 
+  const isActiveBouquetWorkspace =
+    (!showLandingPage || isGiftView || isPreviewMode) && !stealthGateSlug;
+  const envBackdrop = useMemo(
+    () => getEnvironmentPageBackdrop(environment, isDarkMode),
+    [environment, isDarkMode]
+  );
+
   return (
     <div
+      data-bouquet-env={isActiveBouquetWorkspace ? environment || 'studio' : undefined}
       className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isDarkMode
         ? 'dark bg-[#2B2321] text-[#FBF6F1]'
         : 'bg-[#FAFAF8] text-[#1C1917]'
         }`}
       style={{
         fontFamily: "'Inter', system-ui, sans-serif",
+        ...(isActiveBouquetWorkspace
+          ? {
+              backgroundColor: envBackdrop.pageBaseColor,
+              backgroundImage: envBackdrop.pageBackground,
+            }
+          : {}),
         ...(viewportHeight ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px` } : {})
       }}
     >
@@ -3395,9 +3410,6 @@ export default function App() {
           >
             {/* CENTER MAIN STAGE AREA (Never resizes when selecting stems) */}
             <main className="flex-1 min-h-0 min-w-0 relative flex flex-col items-center justify-center overflow-hidden order-1">
-              {/* Gentle Falling Petals Animation in Read-Only Gift View */}
-              {(isGiftView || isPreviewMode) && <FallingPetalsOverlay items={items} />}
-
               {/* ===================================================================
               GIFT ENTRANCE OVERLAY — "The Delivery" 5-Scene Couture Botanical Prelude
               =================================================================== */}
