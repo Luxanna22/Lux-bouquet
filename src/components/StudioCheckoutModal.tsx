@@ -26,6 +26,7 @@ import {
   savePendingCheckoutStorage,
   StudioPassRecord,
   StudioPassTier,
+  syncLocalKofiStarterClaimWithServer,
 } from '../lib/monetization';
 import {
   saveStudioPassToFirestore,
@@ -652,6 +653,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setIsPhEligible(cachedCheckoutCapability.isPhEligible);
       setPaymentGateway(cachedCheckoutCapability.initialGateway);
       setLaunchPromo(cachedCheckoutCapability.launchPromo ?? null);
+      setLocalDeviceClaimedKofi(
+        syncLocalKofiStarterClaimWithServer(cachedCheckoutCapability.launchPromo ?? null)
+      );
       setIsResolvingRegion(false);
       // Background-refresh capability on modal open so Founding Launch eligibility & slot count stay server-fresh
       invalidateCheckoutCapabilityCache();
@@ -660,6 +664,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         setIsPhEligible(fresh.isPhEligible);
         setPaymentGateway(fresh.initialGateway);
         setLaunchPromo(fresh.launchPromo ?? null);
+        setLocalDeviceClaimedKofi(
+          syncLocalKofiStarterClaimWithServer(fresh.launchPromo ?? null)
+        );
         if (
           storedPendingIsFreeStarter &&
           fresh.launchPromo &&
@@ -681,6 +688,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setIsPhEligible(resolved.isPhEligible);
       setPaymentGateway(resolved.initialGateway);
       setLaunchPromo(resolved.launchPromo ?? null);
+      setLocalDeviceClaimedKofi(
+        syncLocalKofiStarterClaimWithServer(resolved.launchPromo ?? null)
+      );
       if (
         storedPendingIsFreeStarter &&
         resolved.launchPromo &&

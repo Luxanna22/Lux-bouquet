@@ -1454,27 +1454,37 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
         Math.round(Number(remote.recipientGiftMaxLimit ?? remote.analytics?.recipientGiftMaxLimit))
       );
     }
-    if (typeof remote.kofiLaunchClaimedCount === 'number') {
+    if (
+      typeof remote.kofiLaunchClaimedCount === 'number' &&
+      remoteKofiResetTs >= kofiLaunchResetAtMs
+    ) {
       OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
         0,
         Math.round(remote.kofiLaunchClaimedCount)
       );
     }
-    if (typeof remote.recipientGiftClaimedCount === 'number') {
+    if (
+      typeof remote.recipientGiftClaimedCount === 'number' &&
+      remoteGiftResetTs >= recipientGiftResetAtMs
+    ) {
       OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
         0,
         Math.round(remote.recipientGiftClaimedCount)
       );
     }
   } else {
-    OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
-      Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
-      Number(remote.kofiLaunchClaimedCount ?? remote.analytics?.kofiLaunchClaimedCount ?? 0)
-    );
-    OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
-      Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
-      Number(remote.recipientGiftClaimedCount ?? remote.analytics?.recipientGiftClaimedCount ?? 0)
-    );
+    if (remoteKofiResetTs >= kofiLaunchResetAtMs) {
+      OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount = Math.max(
+        Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
+        Number(remote.kofiLaunchClaimedCount ?? remote.analytics?.kofiLaunchClaimedCount ?? 0)
+      );
+    }
+    if (remoteGiftResetTs >= recipientGiftResetAtMs) {
+      OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = Math.max(
+        Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
+        Number(remote.recipientGiftClaimedCount ?? remote.analytics?.recipientGiftClaimedCount ?? 0)
+      );
+    }
   }
 
   if (Array.isArray(remote.kofiLaunchClaimedDevices) && remoteKofiResetTs >= kofiLaunchResetAtMs) {
@@ -2459,34 +2469,54 @@ export function getFoundingLaunchPromoStatusServer(deviceTokenHash = '') {
     kofiLaunchMaxLimit: kofiMax,
     kofiLaunchClaimedCount: kofiClaimed,
     kofiLaunchRemaining: kofiRemaining,
+    kofiLaunchResetAtMs,
     deviceClaimedKofiStarter: deviceClaimedKofi,
     isKofiFreeStarterAvailable,
     recipientGiftEnabled: rgEnabled,
     recipientGiftMaxLimit: rgMax,
     recipientGiftClaimedCount: rgClaimed,
     recipientGiftRemaining: rgRemaining,
+    recipientGiftResetAtMs,
   };
 }
 
 export function updateFoundingLaunchPromoConfigServer(config = {}, nowMs = Date.now()) {
-  if (typeof config.kofiLaunchEnabled === 'boolean') {
-    OWNER_ANALYTICS_STATE.kofiLaunchEnabled = config.kofiLaunchEnabled;
+  const nextKofiEnabled =
+    typeof config.kofiLaunchEnabled === 'boolean'
+      ? config.kofiLaunchEnabled
+      : typeof config.kofiStarterEnabled === 'boolean'
+      ? config.kofiStarterEnabled
+      : undefined;
+  if (typeof nextKofiEnabled === 'boolean') {
+    OWNER_ANALYTICS_STATE.kofiLaunchEnabled = nextKofiEnabled;
   }
+
+  const nextKofiMaxLimit =
+    typeof config.kofiLaunchMaxLimit === 'number'
+      ? config.kofiLaunchMaxLimit
+      : typeof config.kofiStarterMaxLimit === 'number'
+      ? config.kofiStarterMaxLimit
+      : undefined;
   if (
-    typeof config.kofiLaunchMaxLimit === 'number' &&
-    Number.isFinite(config.kofiLaunchMaxLimit) &&
-    config.kofiLaunchMaxLimit >= 0 &&
-    config.kofiLaunchMaxLimit <= 100000
+    typeof nextKofiMaxLimit === 'number' &&
+    Number.isFinite(nextKofiMaxLimit) &&
+    nextKofiMaxLimit >= 0 &&
+    nextKofiMaxLimit <= 100000
   ) {
-    OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit = Math.round(config.kofiLaunchMaxLimit);
+    OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit = Math.round(nextKofiMaxLimit);
   }
-  if (config.resetKofiLaunchClaims === true) {
+
+  const shouldResetKofi =
+    config.resetKofiLaunchClaims === true || config.resetKofiClaimed === true;
+  if (shouldResetKofi) {
     KOFI_LAUNCH_TX_IDS.clear();
     KOFI_LAUNCH_CLAIMED_DEVICES.clear();
     for (const [key, item] of PAID_PASS_LEDGER.entries()) {
-      const refStr = String(item?.passRecord?.paymentReference || '');
+      const normKey = normalizePassKey(key);
+      const record = SERVER_PASS_STORE.get(normKey) || item?.passRecord;
+      const refStr = String(record?.paymentReference || '');
       if (item?.isFreePromo || refStr.startsWith('kfl_')) {
-        KOFI_LAUNCH_IGNORED_KEYS.add(normalizePassKey(key));
+        KOFI_LAUNCH_IGNORED_KEYS.add(normKey);
       }
     }
     kofiLaunchResetAtMs = Math.max(nowMs, kofiLaunchResetAtMs + 1);
@@ -2514,7 +2544,9 @@ export function updateFoundingLaunchPromoConfigServer(config = {}, nowMs = Date.
   ) {
     OWNER_ANALYTICS_STATE.recipientGiftMaxLimit = Math.round(config.recipientGiftMaxLimit);
   }
-  if (config.resetRecipientGiftClaims === true) {
+  const shouldResetRecipientGift =
+    config.resetRecipientGiftClaims === true || config.resetRecipientClaimed === true;
+  if (shouldResetRecipientGift) {
     RECIPIENT_GIFT_CLAIMED_DEVICES.clear();
     recipientGiftResetAtMs = Math.max(nowMs, recipientGiftResetAtMs + 1);
     OWNER_ANALYTICS_STATE.recipientGiftClaimedCount = 0;
@@ -5981,7 +6013,14 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const mutRes = await mutateAndSaveOwnerVaultServer(() =>
           updateFoundingLaunchPromoConfigServer(parsed)
         );
-        const launchPromo = mutRes?.result?.abort ? getFoundingLaunchPromoStatusServer() : mutRes?.result || getFoundingLaunchPromoStatusServer();
+        if (mutRes?.result?.abort) {
+          sendJson(res, 503, {
+            ok: false,
+            message: 'Could not reach the persistent vault to save settings. Please try again.',
+          });
+          return true;
+        }
+        const launchPromo = mutRes?.result || getFoundingLaunchPromoStatusServer();
 
         sendJson(res, 200, {
           ok: true,

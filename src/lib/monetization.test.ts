@@ -16,6 +16,7 @@ import {
   isSilentRecipientGiftPass,
   isValidPassKeyFormat,
   normalizePassKey,
+  syncLocalKofiStarterClaimWithServer,
   validateAndBindPassRedemption,
   verifyActiveStudioPassForAction,
   verifyPassIntegritySignature,
@@ -5656,6 +5657,224 @@ test('Shared Creations browse guard: browsing public gallery never receives or s
     });
     paymentLib.resetOwnerVaultMetaForTests();
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('Owner Console update_launch_promo_config resets Ko-fi & Recipient counts (canonical + legacy fields) and survives stale remote vault merges', async () => {
+  const paymentHandlerPath = '../../api/_lib/paymentHandler.js';
+  const paymentLib: any = await import(paymentHandlerPath);
+  const originalFetch = globalThis.fetch;
+
+  let persistedVaultJson = '';
+  let vaultVersion = 1;
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = (init?.method || 'GET').toUpperCase();
+    if (url.includes('/shared_bouquets/') && method === 'GET') {
+      if (!persistedVaultJson) {
+        return new Response(JSON.stringify({ error: { code: 404 } }), { status: 404 });
+      }
+      return new Response(
+        JSON.stringify({
+          updateTime: `2026-11-18T20:00:0${vaultVersion}.000Z`,
+          fields: {
+            voiceAudioDataUrl: { stringValue: persistedVaultJson },
+          },
+        }),
+        { status: 200 }
+      );
+    }
+    if (url.includes('/shared_bouquets/') && method === 'PATCH') {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      persistedVaultJson = body?.fields?.voiceAudioDataUrl?.stringValue || '';
+      vaultVersion += 1;
+      return new Response(
+        JSON.stringify({
+          updateTime: `2026-11-18T20:00:0${vaultVersion}.000Z`,
+        }),
+        { status: 200 }
+      );
+    }
+    return new Response(JSON.stringify({ error: { code: 404 } }), { status: 404 });
+  }) as typeof fetch;
+
+  const makeReq = (method: string, url: string, body?: string) => ({
+    method,
+    url,
+    headers: { 'content-type': 'application/json' },
+    on(event: string, cb: (chunk?: any) => void) {
+      if (event === 'data' && body) cb(Buffer.from(body));
+      if (event === 'end') cb();
+    },
+  });
+
+  const makeRes = () => {
+    const state = { statusCode: 200, body: '' };
+    return {
+      get statusCode() {
+        return state.statusCode;
+      },
+      set statusCode(code: number) {
+        state.statusCode = code;
+      },
+      setHeader() {},
+      end(chunk?: string) {
+        state.body = chunk || '';
+      },
+      json() {
+        return state.body ? JSON.parse(state.body) : {};
+      },
+    };
+  };
+
+  try {
+    paymentLib.resetOwnerVaultMetaForTests();
+    const devAdmin = 'dev_admin_launch_reset_01';
+    const adminToken = paymentLib.createSignedAdminSessionToken(devAdmin);
+
+    // Seed 10/30 Ko-fi claims and 14/150 recipient claims + prior claimer devices
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      kofiLaunchClaimedCount: 10,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      recipientGiftClaimedCount: 14,
+    });
+    paymentLib.KOFI_LAUNCH_CLAIMED_DEVICES.add('dev_prior_claimer_01');
+    paymentLib.RECIPIENT_GIFT_CLAIMED_DEVICES.add('dev_prior_recipient_01');
+
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchClaimedCount, 10);
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchRemaining, 20);
+
+    // 1. Canonical resetKofiLaunchClaims via POST /api/payments/verify-action
+    const resetKofiRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'update_launch_promo_config',
+          adminSessionToken: adminToken,
+          deviceTokenHash: devAdmin,
+          resetKofiLaunchClaims: true,
+        })
+      ),
+      resetKofiRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(resetKofiRes.statusCode, 200);
+    const resetKofiBody = resetKofiRes.json();
+    assert.equal(resetKofiBody.ok, true);
+    assert.equal(resetKofiBody.launchPromo.kofiLaunchClaimedCount, 0);
+    assert.equal(resetKofiBody.launchPromo.kofiLaunchRemaining, 30);
+    assert.equal(resetKofiBody.analytics.kofiLaunchClaimedCount, 0);
+    assert.equal(paymentLib.KOFI_LAUNCH_CLAIMED_DEVICES.size, 0);
+    assert.ok(Number(resetKofiBody.launchPromo.kofiLaunchResetAtMs) > 0);
+
+    // 2. Merging a STALE pre-reset remote vault snapshot must NOT resurrect old count 10
+    paymentLib.mergeRemoteOwnerVaultIntoMemory({
+      launchPromoConfigUpdatedAtMs: 1,
+      kofiLaunchResetAtMs: 0,
+      recipientGiftResetAtMs: 0,
+      kofiLaunchClaimedCount: 10,
+      kofiLaunchClaimedDevices: ['dev_stale_claimer_01'],
+      recipientGiftClaimedCount: 14,
+    });
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().kofiLaunchClaimedCount, 0);
+    assert.equal(paymentLib.KOFI_LAUNCH_CLAIMED_DEVICES.has('dev_stale_claimer_01'), false);
+
+    // 3. Legacy aliases (kofiStarterEnabled, kofiStarterMaxLimit, resetKofiClaimed, resetRecipientClaimed) also work
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchClaimedCount: 7,
+      recipientGiftClaimedCount: 9,
+    });
+    const legacyPatchRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'update_launch_promo_config',
+          adminSessionToken: adminToken,
+          deviceTokenHash: devAdmin,
+          kofiStarterEnabled: false,
+          kofiStarterMaxLimit: 45,
+          resetKofiClaimed: true,
+          resetRecipientClaimed: true,
+        })
+      ),
+      legacyPatchRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(legacyPatchRes.statusCode, 200);
+    const legacyBody = legacyPatchRes.json();
+    assert.equal(legacyBody.launchPromo.kofiLaunchEnabled, false);
+    assert.equal(legacyBody.launchPromo.kofiLaunchMaxLimit, 45);
+    assert.equal(legacyBody.launchPromo.kofiLaunchClaimedCount, 0);
+    assert.equal(legacyBody.launchPromo.kofiLaunchRemaining, 45);
+    assert.equal(legacyBody.launchPromo.recipientGiftClaimedCount, 0);
+    assert.equal(legacyBody.launchPromo.recipientGiftRemaining, 150);
+
+    // 4. Stale remote vault merge after Recipient Gift reset must NOT resurrect count 9
+    paymentLib.mergeRemoteOwnerVaultIntoMemory({
+      launchPromoConfigUpdatedAtMs: 1,
+      recipientGiftResetAtMs: 0,
+      recipientGiftClaimedCount: 9,
+      recipientGiftClaimedDevices: ['dev_stale_recipient_01'],
+    });
+    assert.equal(paymentLib.getFoundingLaunchPromoStatusServer().recipientGiftClaimedCount, 0);
+    assert.equal(paymentLib.RECIPIENT_GIFT_CLAIMED_DEVICES.has('dev_stale_recipient_01'), false);
+  } finally {
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
+    });
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('syncLocalKofiStarterClaimWithServer clears stale localStorage claim flag when server reset is newer', () => {
+  const prevWindow = (globalThis as any).window;
+  const store = new Map<string, string>();
+  (globalThis as any).window = {
+    localStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => store.set(k, v),
+      removeItem: (k: string) => store.delete(k),
+    },
+  };
+  try {
+    // Legacy claim with no timestamp (claimed prior to server reset)
+    store.set('sab_kofi_launch_starter_claimed_v1', '1');
+    const afterReset = syncLocalKofiStarterClaimWithServer({
+      deviceClaimedKofiStarter: false,
+      kofiLaunchResetAtMs: 1_794_900_000_000,
+    });
+    assert.equal(afterReset, false);
+    assert.equal(store.has('sab_kofi_launch_starter_claimed_v1'), false);
+
+    // Fresh claim AFTER the reset timestamp stays claimed even if cold server hasn't seen it yet
+    store.set('sab_kofi_launch_starter_claimed_v1', '1');
+    store.set('sab_kofi_launch_starter_claimed_at_v1', String(1_794_900_050_000));
+    const afterFreshClaim = syncLocalKofiStarterClaimWithServer({
+      deviceClaimedKofiStarter: false,
+      kofiLaunchResetAtMs: 1_794_900_000_000,
+    });
+    assert.equal(afterFreshClaim, true);
+    assert.equal(store.get('sab_kofi_launch_starter_claimed_v1'), '1');
+  } finally {
+    if (prevWindow === undefined) {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = prevWindow;
+    }
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Globe, Pause, Play, RotateCcw } from 'lucide-react';
 import {
   OwnerAnalyticsSummary,
@@ -21,12 +21,12 @@ interface OwnerOverviewSectionProps {
   onTogglePhDisabled?: (nextDisabled: boolean) => void;
   onResetIncome?: (purgeTestAndRevoked: boolean) => void;
   onUpdateLaunchPromoConfig?: (patch: {
-    kofiStarterEnabled?: boolean;
-    kofiStarterMaxLimit?: number;
-    resetKofiClaimed?: boolean;
+    kofiLaunchEnabled?: boolean;
+    kofiLaunchMaxLimit?: number;
+    resetKofiLaunchClaims?: boolean;
     recipientGiftEnabled?: boolean;
     recipientGiftMaxLimit?: number;
-    resetRecipientClaimed?: boolean;
+    resetRecipientGiftClaims?: boolean;
   }) => void;
 }
 
@@ -67,6 +67,14 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
   const [recipientLimitInput, setRecipientLimitInput] = useState<string>(() =>
     String(analytics.recipientGiftMaxLimit ?? 150)
   );
+
+  useEffect(() => {
+    setKofiLimitInput(String(analytics.kofiLaunchMaxLimit ?? 30));
+  }, [analytics.kofiLaunchMaxLimit]);
+
+  useEffect(() => {
+    setRecipientLimitInput(String(analytics.recipientGiftMaxLimit ?? 150));
+  }, [analytics.recipientGiftMaxLimit]);
 
   // Interactive Growth / Buyer Scale Simulator (Projection Sandbox — separate from recorded actuals)
   const [simDailyVisitors, setSimDailyVisitors] = useState<number>(500);
@@ -420,7 +428,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
                   disabled={isUpdatingLaunchPromo}
                   onClick={() =>
                     onUpdateLaunchPromoConfig({
-                      kofiStarterEnabled: !(analytics.kofiLaunchEnabled ?? true),
+                      kofiLaunchEnabled: !(analytics.kofiLaunchEnabled ?? true),
                     })
                   }
                   className={`px-2.5 py-1 rounded-md border text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 ${
@@ -455,7 +463,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
                   onClick={() => {
                     const parsed = Math.max(0, Math.min(10000, Math.round(Number(kofiLimitInput) || 0)));
                     setKofiLimitInput(String(parsed));
-                    onUpdateLaunchPromoConfig({ kofiStarterMaxLimit: parsed });
+                    onUpdateLaunchPromoConfig({ kofiLaunchMaxLimit: parsed });
                   }}
                   className={`px-2.5 py-1 rounded-md border text-[11px] font-medium cursor-pointer ${hairlineBorder} hover:bg-current/5`}
                 >
@@ -465,7 +473,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
                   type="button"
                   data-testid="reset-kofi-launch-claimed-btn"
                   disabled={isUpdatingLaunchPromo}
-                  onClick={() => onUpdateLaunchPromoConfig({ resetKofiClaimed: true })}
+                  onClick={() => onUpdateLaunchPromoConfig({ resetKofiLaunchClaims: true })}
                   className={`px-2.5 py-1 rounded-md border text-[11px] opacity-75 hover:opacity-100 cursor-pointer ${hairlineBorder} hover:bg-current/5`}
                 >
                   Reset 0/{analytics.kofiLaunchMaxLimit ?? 30}
@@ -541,7 +549,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
                   type="button"
                   data-testid="reset-recipient-gift-claimed-btn"
                   disabled={isUpdatingLaunchPromo}
-                  onClick={() => onUpdateLaunchPromoConfig({ resetRecipientClaimed: true })}
+                  onClick={() => onUpdateLaunchPromoConfig({ resetRecipientGiftClaims: true })}
                   className={`px-2.5 py-1 rounded-md border text-[11px] opacity-75 hover:opacity-100 cursor-pointer ${hairlineBorder} hover:bg-current/5`}
                 >
                   Reset 0/{analytics.recipientGiftMaxLimit ?? 150}

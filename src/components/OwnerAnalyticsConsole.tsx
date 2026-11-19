@@ -29,6 +29,10 @@ import { OwnerOverviewSection } from './OwnerOverviewSection';
 import { OwnerKeysSection } from './OwnerKeysSection';
 import { OwnerAiAdvisorPanel } from './OwnerAiAdvisorPanel';
 import { invalidateCheckoutCapabilityCache } from './StudioCheckoutModal';
+import {
+  clearDeviceClaimedKofiStarter,
+  clearDeviceClaimedRecipientGift,
+} from '../lib/monetization';
 
 interface StealthGateAndOwnerConsoleProps {
   gateSlug: string;
@@ -609,12 +613,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   };
 
   const handleUpdateLaunchPromoConfig = async (patch: {
-    kofiStarterEnabled?: boolean;
-    kofiStarterMaxLimit?: number;
-    resetKofiClaimed?: boolean;
+    kofiLaunchEnabled?: boolean;
+    kofiLaunchMaxLimit?: number;
+    resetKofiLaunchClaims?: boolean;
     recipientGiftEnabled?: boolean;
     recipientGiftMaxLimit?: number;
-    resetRecipientClaimed?: boolean;
+    resetRecipientGiftClaims?: boolean;
   }) => {
     if (!adminSessionToken) return;
     setIsUpdatingLaunchPromo(true);
@@ -631,9 +635,21 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       });
       const data = await res.json();
       if (res.ok && data.ok) {
+        if (patch.resetKofiLaunchClaims) {
+          clearDeviceClaimedKofiStarter();
+        }
+        if (patch.resetRecipientGiftClaims) {
+          clearDeviceClaimedRecipientGift();
+        }
         invalidateCheckoutCapabilityCache();
         handleSyncKeysResponse(data);
-        onToast('Founding Launch promo settings updated.');
+        if (patch.resetKofiLaunchClaims) {
+          onToast('Ko-fi Free Launch claims reset to 0.');
+        } else if (patch.resetRecipientGiftClaims) {
+          onToast('Recipient Gift Box claims reset to 0.');
+        } else {
+          onToast('Founding Launch promo settings updated.');
+        }
       } else {
         onToast(data.message || 'Could not update Founding Launch settings.');
       }

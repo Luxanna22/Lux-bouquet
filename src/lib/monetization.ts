@@ -1477,6 +1477,7 @@ export const FOUNDING_RECIPIENT_GIFT_MIN_STEMS = 3;
 export const FOUNDING_RECIPIENT_GIFT_MIN_NOTE_CHARS = 15;
 
 export const KOFI_STARTER_CLAIMED_STORAGE_KEY = 'sab_kofi_launch_starter_claimed_v1';
+export const KOFI_STARTER_CLAIMED_AT_STORAGE_KEY = 'sab_kofi_launch_starter_claimed_at_v1';
 export const RECIPIENT_GIFT_CLAIMED_STORAGE_KEY = 'sab_recipient_pif_gift_claimed_v1';
 
 export interface FoundingLaunchPromoStatus {
@@ -1484,12 +1485,14 @@ export interface FoundingLaunchPromoStatus {
   kofiLaunchMaxLimit: number;
   kofiLaunchClaimedCount: number;
   kofiLaunchRemaining: number;
+  kofiLaunchResetAtMs?: number;
   deviceClaimedKofiStarter: boolean;
   isKofiFreeStarterAvailable: boolean;
   recipientGiftEnabled: boolean;
   recipientGiftMaxLimit: number;
   recipientGiftClaimedCount: number;
   recipientGiftRemaining: number;
+  recipientGiftResetAtMs?: number;
 }
 
 export function hasDeviceClaimedKofiStarter(): boolean {
@@ -1501,13 +1504,54 @@ export function hasDeviceClaimedKofiStarter(): boolean {
   }
 }
 
-export function markDeviceClaimedKofiStarter(): void {
+export function getDeviceClaimedKofiStarterAtMs(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(KOFI_STARTER_CLAIMED_AT_STORAGE_KEY);
+    const parsed = raw ? Number(raw) : 0;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function markDeviceClaimedKofiStarter(nowMs: number = Date.now()): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(KOFI_STARTER_CLAIMED_STORAGE_KEY, '1');
+    window.localStorage.setItem(KOFI_STARTER_CLAIMED_AT_STORAGE_KEY, String(Math.round(nowMs)));
   } catch {
     // Ignore storage errors
   }
+}
+
+export function clearDeviceClaimedKofiStarter(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(KOFI_STARTER_CLAIMED_STORAGE_KEY);
+    window.localStorage.removeItem(KOFI_STARTER_CLAIMED_AT_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/**
+ * Reconciles the local browser Ko-fi Starter claim flag against the server's
+ * authoritative reset timestamp so an owner "Reset 0/30" cleanly unlocks
+ * devices that claimed prior to the reset.
+ */
+export function syncLocalKofiStarterClaimWithServer(
+  launchPromo?: Pick<FoundingLaunchPromoStatus, 'deviceClaimedKofiStarter' | 'kofiLaunchResetAtMs'> | null
+): boolean {
+  const claimedLocally = hasDeviceClaimedKofiStarter();
+  if (!launchPromo) return claimedLocally;
+  if (launchPromo.deviceClaimedKofiStarter) return true;
+  const resetAtMs = Number(launchPromo.kofiLaunchResetAtMs || 0);
+  if (claimedLocally && resetAtMs > 0 && getDeviceClaimedKofiStarterAtMs() < resetAtMs) {
+    clearDeviceClaimedKofiStarter();
+    return false;
+  }
+  return claimedLocally;
 }
 
 export function hasDeviceClaimedRecipientGift(): boolean {
@@ -1523,6 +1567,15 @@ export function markDeviceClaimedRecipientGift(): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(RECIPIENT_GIFT_CLAIMED_STORAGE_KEY, '1');
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function clearDeviceClaimedRecipientGift(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(RECIPIENT_GIFT_CLAIMED_STORAGE_KEY);
   } catch {
     // Ignore storage errors
   }
