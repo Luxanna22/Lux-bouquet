@@ -115,3 +115,17 @@ export function validateBouquetLockConfig(
   }
   return { valid: true };
 }
+
+export function validateDedicationRecipient(
+  to: string | null | undefined
+): LockValidationResult {
+  const trimmed = String(to || '').trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      error: "Please enter the recipient's name before continuing.",
+    };
+  }
+  return { valid: true };
+}
+

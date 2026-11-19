@@ -6,6 +6,7 @@ import {
   sanitizeSecretPinInput,
   sanitizeSecretWordInput,
   validateBouquetLockConfig,
+  validateDedicationRecipient,
 } from './lockUtils';
 
 test('sanitizeSecretPinInput enforces numerical-only 4-digit PINs', () => {
@@ -68,3 +69,15 @@ test('validateBouquetLockConfig blocks incomplete PIN or empty Secret Word', () 
   });
   assert.equal(validWord.valid, true);
 });
+
+test('validateDedicationRecipient requires a non-empty recipient name before continuing to step 2', () => {
+  assert.equal(validateDedicationRecipient('').valid, false);
+  assert.equal(validateDedicationRecipient('   ').valid, false);
+  assert.equal(validateDedicationRecipient(null).valid, false);
+  assert.equal(validateDedicationRecipient(undefined).valid, false);
+  assert.match(validateDedicationRecipient('').error || '', /recipient/i);
+
+  assert.equal(validateDedicationRecipient('Claire').valid, true);
+  assert.equal(validateDedicationRecipient('  Mom  ').valid, true);
+});
+

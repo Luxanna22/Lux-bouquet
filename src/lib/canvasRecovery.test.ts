@@ -25,8 +25,8 @@ function createBlankSnapshot(): BouquetSnapshot {
     environment: 'studio',
     bouquetPose: { ...DEFAULT_BOUQUET_POSE },
     card: {
-      to: 'My Dearest',
-      from: 'Yours Always',
+      to: '',
+      from: '',
       message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
       visibleOnStage: true,
       theme: 'sealed',

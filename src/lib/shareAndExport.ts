@@ -337,9 +337,18 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
   const cTheme = Math.max(0, SHARE_CARD_THEMES.indexOf(snapshot.card.theme));
   const cVis = snapshot.card.visibleOnStage ? 1 : 0;
   const cMeta = (cTheme * 2 + cVis).toString(36);
-  const cTo = snapshot.card.to === DEFAULT_SHARE_CARD_TO ? '!' : toBase64Url(snapshot.card.to);
+  const cTo =
+    snapshot.card.to === DEFAULT_SHARE_CARD_TO
+      ? '!'
+      : snapshot.card.to === ''
+        ? '*'
+        : toBase64Url(snapshot.card.to);
   const cFrom =
-    snapshot.card.from === DEFAULT_SHARE_CARD_FROM ? '!' : toBase64Url(snapshot.card.from);
+    snapshot.card.from === DEFAULT_SHARE_CARD_FROM
+      ? '!'
+      : snapshot.card.from === ''
+        ? '*'
+        : toBase64Url(snapshot.card.from);
   const cMsg =
     snapshot.card.message === DEFAULT_SHARE_CARD_MSG ? '!' : toBase64Url(snapshot.card.message);
   const cBg = snapshot.card.customBg ? snapshot.card.customBg.replace('#', '').toLowerCase() : '';
@@ -697,8 +706,18 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
       const cMeta = parseInt(cMetaStr, 36) || 0;
       const theme = SHARE_CARD_THEMES[Math.floor(cMeta / 2)] || 'sealed';
       const visibleOnStage = cMeta % 2 === 1;
-      const to = !cToB64 || cToB64 === '!' ? DEFAULT_SHARE_CARD_TO : fromBase64Url(cToB64);
-      const from = !cFromB64 || cFromB64 === '!' ? DEFAULT_SHARE_CARD_FROM : fromBase64Url(cFromB64);
+      const to =
+        cToB64 === '*'
+          ? ''
+          : !cToB64 || cToB64 === '!'
+            ? DEFAULT_SHARE_CARD_TO
+            : fromBase64Url(cToB64);
+      const from =
+        cFromB64 === '*'
+          ? ''
+          : !cFromB64 || cFromB64 === '!'
+            ? DEFAULT_SHARE_CARD_FROM
+            : fromBase64Url(cFromB64);
       const message =
         !cMsgB64 || cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
       const customBg = cBgHex && /^[0-9a-fA-F]{6}$/.test(cBgHex) ? `#${cBgHex}` : undefined;

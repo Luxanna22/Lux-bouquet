@@ -82,7 +82,6 @@ import {
   PHOTO_FRAME_CATALOG,
   ENVIRONMENT_CATALOG,
   ROMANTIC_SWATCHES,
-  STARTER_TEMPLATES,
   getCardThemePalette,
 } from '../types/bouquet';
 import { FlowerRenderer } from './flowers/FlowerRenderer';
@@ -108,6 +107,7 @@ import {
   sanitizeSecretPinInput,
   sanitizeSecretWordInput,
   validateBouquetLockConfig,
+  validateDedicationRecipient,
 } from '../lib/lockUtils';
 import {
   saveSharedBouquetToFirestore,
@@ -126,7 +126,6 @@ import { getEnvironmentPageBackdrop } from '../lib/environmentBackdrop';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
   MiniWrapConeSVG,
-  MiniTemplateBouquetSVG,
   MiniRibbonBowSVG,
   MiniCardShapeSVG,
   MiniVoiceKeepsakeSVG,
@@ -215,7 +214,6 @@ import {
 // ============================================================================
 
 type MobileCategory =
-  | 'templates'
   | 'wrapping'
   | 'flowers'
   | 'fillers'
@@ -337,6 +335,8 @@ export default function App() {
   const pinErrorClearTimerRef = useRef<number | null>(null);
   const pinInputRef = useRef<HTMLInputElement | null>(null);
   const [shareLockError, setShareLockError] = useState<string | null>(null);
+  const [shareDedicationError, setShareDedicationError] = useState<string | null>(null);
+  const recipientInputRef = useRef<HTMLInputElement | null>(null);
   const [isReactionPopoverOpen, setIsReactionPopoverOpen] = useState(false);
   const [selectedReactionId, setSelectedReactionId] = useState<string>('');
   const [recipientReplyText, setRecipientReplyText] = useState<string>('');
@@ -673,9 +673,9 @@ export default function App() {
   // Typewriter / Handwritten Letter Reveal Effect when the Zoomed Card Modal opens
   useEffect(() => {
     if (!isLetterModalOpen) return;
-    const toStr = `Dearest ${card.to || 'Someone Special'},`;
+    const toStr = `Dearest ${card.to.trim() || 'Someone Special'},`;
     const msgStr = card.message || 'Thinking of you with love and blossoms.';
-    const fromStr = `With love, ${card.from || 'Yours Always'}`;
+    const fromStr = card.from.trim() ? `With love, ${card.from.trim()}` : 'With love';
     const totalLen = toStr.length + msgStr.length + fromStr.length;
 
     setLetterTypedChars(0);
@@ -2472,6 +2472,7 @@ export default function App() {
       isSealedBouquetPaidRef.current = false;
       setSealedPaidPass(null);
       setSealedBouquetCode(null);
+      setShareDedicationError(null);
       if (shouldResetStudioOnShareCloseRef.current) {
         shouldResetStudioOnShareCloseRef.current = false;
         setSealedGiftUrl('');
@@ -2482,6 +2483,16 @@ export default function App() {
       }
       return;
     }
+    if (shareStep === 'lock' || shareStep === 'seal') {
+      const recipientCheck = validateDedicationRecipient(card.to);
+      if (!recipientCheck.valid) {
+        setShareDedicationError(
+          recipientCheck.error || "Please enter the recipient's name before continuing."
+        );
+        setShareStep('dedication');
+        return;
+      }
+    }
     if (shareStep === 'seal') {
       const lockCheck = validateBouquetLockConfig(lock);
       if (!lockCheck.valid) {
@@ -2489,9 +2500,19 @@ export default function App() {
         setShareStep('lock');
       }
     }
-  }, [isShareModalOpen, shareStep, lock, resetStudioCanvasSession]);
+  }, [isShareModalOpen, shareStep, card.to, lock, resetStudioCanvasSession]);
 
   const handleShareLink = async (asGift = true, overridePass?: StudioPassRecord | null) => {
+    const recipientCheck = validateDedicationRecipient(card.to);
+    if (!recipientCheck.valid) {
+      setIsShorteningUrl(false);
+      setShareDedicationError(
+        recipientCheck.error || "Please enter the recipient's name before continuing."
+      );
+      setShareStep('dedication');
+      setIsShareModalOpen(true);
+      return;
+    }
     const lockCheck = validateBouquetLockConfig(lock);
     if (!lockCheck.valid) {
       setIsShorteningUrl(false);
@@ -4140,19 +4161,21 @@ export default function App() {
                       style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                     >
                       <span className="italic opacity-75 mr-1">For</span>
-                      <span className="font-semibold tracking-tight">{card.to || 'You'}</span>
-                      <span
-                        className={`ml-1.5 sm:ml-2 text-xs sm:text-sm ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
-                          }`}
-                      >
-                        · <span className="italic">from</span>{' '}
+                      <span className="font-semibold tracking-tight">{card.to.trim() || 'You'}</span>
+                      {card.from.trim() && (
                         <span
-                          className={`font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                          className={`ml-1.5 sm:ml-2 text-xs sm:text-sm ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#8C7A70]'
                             }`}
                         >
-                          {card.from || 'Secret Admirer'}
+                          · <span className="italic">from</span>{' '}
+                          <span
+                            className={`font-semibold tracking-tight ${isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
+                              }`}
+                          >
+                            {card.from.trim()}
+                          </span>
                         </span>
-                      </span>
+                      )}
                     </div>
                   </div>
 
@@ -4685,7 +4708,6 @@ export default function App() {
                   >
                     {(
                       [
-                        { id: 'templates', label: 'Templates' },
                         { id: 'wrapping', label: 'Wrappers' },
                         { id: 'flowers', label: 'Flowers' },
                         { id: 'fillers', label: 'Fillers' },
@@ -4826,64 +4848,7 @@ export default function App() {
                     }}
                     className="flex-1 min-w-0 flex items-start gap-2 sm:gap-3 overflow-x-auto no-scrollbar pt-0.5 pb-1 pr-2 scroll-smooth"
                   >
-                    {/* CATEGORY 1: TEMPLATES */}
-                    {mobileCategory === 'templates' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetStudioCanvasSession({ preserveHistory: true });
-                            triggerToast('Canvas reset');
-                          }}
-                          className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                        >
-                          <div
-                            className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${isDarkMode
-                              ? 'bg-[#292524] border-stone-700 group-hover:border-red-400'
-                              : 'bg-stone-50/70 border-stone-200/90 group-hover:border-red-300'
-                              }`}
-                          >
-                            <RotateCcw className="w-5 h-5 text-[#B4846C] group-hover:text-red-500" />
-                          </div>
-                          <span className="text-[10.5px] sm:text-[11px] leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                            Start Over
-                          </span>
-                        </button>
-
-                        {STARTER_TEMPLATES.map((tpl) => (
-                          <button
-                            key={tpl.id}
-                            type="button"
-                            onClick={() => {
-                              currentSessionVaultCodeRef.current = null;
-                              currentSessionVaultIsDraftRef.current = false;
-                              suppressRecoveryUntilNextEditRef.current = false;
-                              loadSnapshot(tpl.snapshot);
-                              triggerToast(`Loaded ${tpl.name}`);
-                            }}
-                            className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0 w-[68px] sm:w-[74px] group cursor-pointer"
-                          >
-                            <div
-                              className={`w-13 h-13 sm:w-16 sm:h-16 rounded-full border flex items-center justify-center shadow-2xs transition-transform group-active:scale-95 ${isDarkMode
-                                ? 'bg-[#292524] border-stone-700 group-hover:border-[#B4846C]'
-                                : 'bg-stone-50/70 border-stone-200/90 group-hover:border-[#B4846C]'
-                                }`}
-                            >
-                              <MiniTemplateBouquetSVG
-                                wrapColor={tpl.snapshot.wrapColor}
-                                ribbonColor={tpl.snapshot.ribbonColor}
-                                bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
-                              />
-                            </div>
-                            <span className="text-[11px] sm:text-xs leading-4 h-4 font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap truncate w-full text-center">
-                              {tpl.name}
-                            </span>
-                          </button>
-                        ))}
-                      </>
-                    )}
-
-                    {/* CATEGORY 2: WRAPPERS (Architectural Wrapper Designs with Couture Badge) */}
+                    {/* CATEGORY 1: WRAPPERS (Architectural Wrapper Designs with Couture Badge) */}
                     {mobileCategory === 'wrapping' && (
                       <>
                         {WRAPPER_CATALOG.map((ws) => {
@@ -5648,46 +5613,9 @@ export default function App() {
                   className={`flex-1 overflow-y-auto p-3 sm:p-4 pb-8 space-y-4 ${drawerState === 'collapsed' ? 'hidden lg:block' : 'block'
                     }`}
                 >
-                  {/* TAB 1: FLOWER PALETTE + STARTER TEMPLATES */}
+                  {/* TAB 1: FLOWER PALETTE */}
                   {activeTab === 'flowers' && (
                     <div className="space-y-4">
-                      {/* Starter Bouquet Templates Strip */}
-                      <div className="space-y-2">
-                        <div className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                          Templates
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-                          {STARTER_TEMPLATES.map((tpl) => (
-                            <button
-                              key={tpl.id}
-                              type="button"
-                              onClick={() => {
-                                currentSessionVaultCodeRef.current = null;
-                                currentSessionVaultIsDraftRef.current = false;
-                                suppressRecoveryUntilNextEditRef.current = false;
-                                loadSnapshot(tpl.snapshot);
-                                triggerToast(`Loaded "${tpl.name}" template`);
-                              }}
-                              className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2.5 ${isDarkMode
-                                ? 'bg-[#292524] hover:bg-[#34302c] border-stone-700 hover:border-[#B4846C] text-stone-100'
-                                : 'bg-white hover:bg-stone-50 border-stone-200 hover:border-[#B4846C] text-[#1C1917]'
-                                }`}
-                            >
-                              <div className="w-9 h-9 rounded-full bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-center shrink-0">
-                                <MiniTemplateBouquetSVG
-                                  wrapColor={tpl.snapshot.wrapColor}
-                                  ribbonColor={tpl.snapshot.ribbonColor}
-                                  bloomColors={tpl.snapshot.items.slice(0, 3).map((i) => i.petalColor)}
-                                />
-                              </div>
-                              <span className="text-xs font-medium truncate text-[#1C1917] dark:text-stone-100">
-                                {tpl.name}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
                       <div className="flex items-center justify-between pt-1">
                         <h2 className="text-xs font-semibold text-stone-700 dark:text-stone-300">
                           Flowers
@@ -6018,9 +5946,9 @@ export default function App() {
       {isLetterModalOpen && (() => {
         const cardPalette = getCardThemePalette(card.theme, card.customBg, card.customAccent);
 
-        const toFull = `Dearest ${card.to || 'Someone Special'},`;
+        const toFull = `Dearest ${card.to.trim() || 'Someone Special'},`;
         const msgFull = card.message || 'Thinking of you with love and blossoms.';
-        const fromFull = `With love, ${card.from || 'Yours Always'}`;
+        const fromFull = card.from.trim() ? `With love, ${card.from.trim()}` : 'With love';
 
         const toVisible = toFull.slice(0, Math.min(letterTypedChars, toFull.length));
         const msgCount = Math.max(0, letterTypedChars - toFull.length);
@@ -6332,8 +6260,11 @@ export default function App() {
                   const currentIdx = stepOrder.indexOf(shareStep);
                   const isActive = shareStep === st.id;
                   const isDone = idx < currentIdx;
+                  const recipientValidation = validateDedicationRecipient(card.to);
                   const lockValidation = validateBouquetLockConfig(lock);
-                  const isStepBlocked = st.id === 'seal' && !lockValidation.valid;
+                  const isStepBlocked =
+                    ((st.id === 'lock' || st.id === 'seal') && !recipientValidation.valid) ||
+                    (st.id === 'seal' && !lockValidation.valid);
                   return (
                     <React.Fragment key={st.id}>
                       {idx > 0 && (
@@ -6353,6 +6284,15 @@ export default function App() {
                         data-testid={`share-step-tab-${st.id}`}
                         aria-disabled={isStepBlocked}
                         onClick={() => {
+                          if ((st.id === 'lock' || st.id === 'seal') && !recipientValidation.valid) {
+                            setShareDedicationError(
+                              recipientValidation.error ||
+                                "Please enter the recipient's name before continuing."
+                            );
+                            setShareStep('dedication');
+                            window.setTimeout(() => recipientInputRef.current?.focus(), 0);
+                            return;
+                          }
                           if (st.id === 'seal' && !lockValidation.valid) {
                             setShareLockError(
                               lockValidation.error || 'Please complete your lock details.'
@@ -6360,6 +6300,7 @@ export default function App() {
                             setShareStep('lock');
                             return;
                           }
+                          setShareDedicationError(null);
                           setShareLockError(null);
                           setShareStep(st.id);
                         }}
@@ -6418,18 +6359,33 @@ export default function App() {
                         className={`block text-[11px] font-medium mb-1 ${isDarkMode ? 'text-[#C8B6AC]' : 'text-[#6E5D54]'
                           }`}
                       >
-                        To (Recipient)
+                        To (Recipient) <span className="text-[#C96B59]">*</span>
                       </label>
                       <input
+                        ref={recipientInputRef}
                         type="text"
+                        required
+                        aria-required="true"
+                        aria-invalid={Boolean(shareDedicationError)}
+                        data-testid="share-recipient-input"
                         maxLength={22}
                         value={card.to}
-                        onChange={(e) => updateCard({ to: e.target.value })}
-                        placeholder="e.g., My Dearest"
+                        onChange={(e) => {
+                          updateCard({ to: e.target.value });
+                          if (shareDedicationError && e.target.value.trim()) {
+                            setShareDedicationError(null);
+                          }
+                        }}
+                        placeholder="Recipient's name"
                         aria-label="Recipient"
-                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${isDarkMode
-                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                        className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none ${shareDedicationError
+                          ? 'border-[#C96B59] focus:border-[#C96B59]'
+                          : isDarkMode
+                            ? 'border-[#5C4B47] focus:border-[#B4846C]'
+                            : 'border-[#DECBB9] focus:border-[#B4846C]'
+                          } ${isDarkMode
+                            ? 'bg-[#352C29] text-[#FBF6F1] placeholder:text-[#8E7B71]'
+                            : 'bg-[#FFFDF9] text-[#2A201D] placeholder:text-[#A59489]'
                           }`}
                       />
                     </div>
@@ -6442,18 +6398,29 @@ export default function App() {
                       </label>
                       <input
                         type="text"
+                        data-testid="share-sender-input"
                         maxLength={20}
                         value={card.from}
                         onChange={(e) => updateCard({ from: e.target.value })}
                         placeholder="Your name"
                         aria-label="Sender"
                         className={`w-full px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none focus:border-[#B4846C] ${isDarkMode
-                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1]'
-                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D]'
+                          ? 'bg-[#352C29] border-[#5C4B47] text-[#FBF6F1] placeholder:text-[#8E7B71]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9] text-[#2A201D] placeholder:text-[#A59489]'
                           }`}
                       />
                     </div>
                   </div>
+
+                  {shareDedicationError && (
+                    <p
+                      role="alert"
+                      data-testid="share-dedication-error"
+                      className="text-[11px] font-medium text-[#C96B59] dark:text-[#F09A8A] px-0.5"
+                    >
+                      {shareDedicationError}
+                    </p>
+                  )}
 
                   {/* Quiet 1-line summary of attached Studio Card Note */}
                   <div
@@ -6483,10 +6450,25 @@ export default function App() {
                 <button
                   type="button"
                   data-testid="share-step-next-btn"
-                  onClick={() => setShareStep('lock')}
-                  className={`w-full py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${isDarkMode
-                    ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
-                    : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
+                  onClick={() => {
+                    const check = validateDedicationRecipient(card.to);
+                    if (!check.valid) {
+                      setShareDedicationError(
+                        check.error || "Please enter the recipient's name before continuing."
+                      );
+                      recipientInputRef.current?.focus();
+                      return;
+                    }
+                    setShareDedicationError(null);
+                    setShareStep('lock');
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer ${!card.to.trim()
+                    ? isDarkMode
+                      ? 'bg-[#E6B89C]/55 text-[#231C18]/80 hover:bg-[#E6B89C]/70'
+                      : 'bg-[#6E4434]/60 text-[#FFFDF9]/90 hover:bg-[#6E4434]/75'
+                    : isDarkMode
+                      ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8B0]'
+                      : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#5B3729]'
                     }`}
                 >
                   Next · Unwrap Timing

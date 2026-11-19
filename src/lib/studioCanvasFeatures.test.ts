@@ -807,8 +807,8 @@ test('exiting a public or PIN-locked shared creation completely wipes stems, not
   assert.equal(afterClear.isSharedViewSnapshot, false);
   assert.equal(afterClear.wrapStyle, 'chalice');
   assert.equal(afterClear.environment, 'studio');
-  assert.equal(afterClear.card.to, 'My Dearest');
-  assert.equal(afterClear.card.from, 'Yours Always');
+  assert.equal(afterClear.card.to, '');
+  assert.equal(afterClear.card.from, '');
   assert.equal(
     afterClear.card.message,
     'Every petal in this bouquet holds a reason why you make my world brighter.'
@@ -828,8 +828,8 @@ test('exiting a public or PIN-locked shared creation completely wipes stems, not
   store.undo();
   const afterUndo = useBouquetStore.getState();
   assert.equal(afterUndo.items.length, 0);
-  assert.equal(afterUndo.card.to, 'My Dearest');
-  assert.equal(afterUndo.card.from, 'Yours Always');
+  assert.equal(afterUndo.card.to, '');
+  assert.equal(afterUndo.card.from, '');
   assert.equal(Boolean(afterUndo.voice.audioDataUrl), false);
   assert.equal(afterUndo.lock.mode, 'none');
 });
@@ -844,8 +844,8 @@ test('creator-owned Start Over in Studio resets card note cleanly while preservi
   store.clearBouquet({ preserveHistory: true });
   const cleared = useBouquetStore.getState();
   assert.equal(cleared.items.length, 0);
-  assert.equal(cleared.card.to, 'My Dearest');
-  assert.equal(cleared.card.from, 'Yours Always');
+  assert.equal(cleared.card.to, '');
+  assert.equal(cleared.card.from, '');
   assert.equal(cleared.past.length > 0, true);
 
   // Creator can still undo their own accidental Start Over
@@ -855,6 +855,48 @@ test('creator-owned Start Over in Studio resets card note cleanly while preservi
   assert.equal(undone.card.to, 'Mom');
   assert.equal(undone.card.message, 'Happy Birthday Mom!');
 });
+
+test('share payload preserves blank optional sender instead of injecting legacy default', () => {
+  const payload = encodeBouquetToCompactPayload(
+    {
+      items: [
+        {
+          id: 'r1',
+          type: 'rose',
+          x: 300,
+          y: 260,
+          scale: 1,
+          rotation: 0,
+          flipX: false,
+          petalColor: '#f43f5e',
+          centerColor: '#be123c',
+        },
+      ],
+      wrapStyle: 'chalice',
+      wrapColor: '#EDE0F5',
+      ribbonColor: '#C084FC',
+      ribbonStyle: 'satin',
+      environment: 'studio',
+      card: {
+        to: 'Maya',
+        from: '',
+        message: 'Thinking of you today!',
+        visibleOnStage: true,
+        theme: 'sealed',
+        x: 410,
+        y: 525,
+        scale: 0.72,
+        rotation: 0,
+      },
+    },
+    true
+  );
+  const decoded = decodeBouquetFromHash(payload);
+  assert.ok(decoded);
+  assert.equal(decoded.card.to, 'Maya');
+  assert.equal(decoded.card.from, '');
+});
+
 
 
 

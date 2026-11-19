@@ -8,8 +8,8 @@ import {
 export const STUDIO_CANVAS_RECOVERY_KEY = 'bouquet_studio_canvas_recovery_v1';
 
 const DEFAULT_STUDIO_CARD = {
-  to: 'My Dearest',
-  from: 'Yours Always',
+  to: '',
+  from: '',
   message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
   visibleOnStage: true,
   theme: 'sealed',

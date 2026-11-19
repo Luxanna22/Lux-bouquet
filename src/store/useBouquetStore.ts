@@ -24,7 +24,6 @@ import {
   WRAPPER_CATALOG,
   RIBBON_STYLE_CATALOG,
   VOICE_KEEPSAKE_CATALOG,
-  STARTER_TEMPLATES,
   INITIAL_ITEMS,
 } from '../types/bouquet';
 import { decodeBouquetFromHash, isGiftShareHash } from '../lib/shareAndExport';
@@ -35,8 +34,8 @@ import { decodeBouquetFromHash, isGiftShareHash } from '../lib/shareAndExport';
 
 
 export const DEFAULT_STUDIO_CARD: GreetingCardData = {
-  to: 'My Dearest',
-  from: 'Yours Always',
+  to: '',
+  from: '',
   message: 'Every petal in this bouquet holds a reason why you make my world brighter.',
   visibleOnStage: true,
   theme: 'sealed',
@@ -132,8 +131,8 @@ function getInitialStoreState() {
             ? { ...DEFAULT_BOUQUET_POSE, ...shared.bouquetPose }
             : { ...DEFAULT_BOUQUET_POSE },
           card: {
-            to: shared.card?.to ?? 'My Dearest',
-            from: shared.card?.from ?? 'Yours Always',
+            to: shared.card?.to ?? '',
+            from: shared.card?.from ?? '',
             message:
               shared.card?.message ??
               'Every petal in this bouquet holds a reason why you make my world brighter.',
