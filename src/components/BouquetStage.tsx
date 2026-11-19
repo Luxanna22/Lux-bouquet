@@ -4374,8 +4374,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           isDarkMode={isDarkMode}
           idPrefix={idPrefix}
         />
-        {/* Crisp inner rim stroke so the canvas square stays subtly legible against its blended backdrop */}
-        {!isCardThumbnail && (
+        {/* Crisp inner rim stroke so the canvas square stays subtly legible against its blended backdrop in Gift/Preview mode */}
+        {!isCardThumbnail && isPreviewMode && (
           <rect
             x="-23"
             y="1"
@@ -6601,8 +6601,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           width: 'min(100cqw, calc(100cqh * 648 / 680), 860px)',
           height: 'min(100cqh, calc(100cqw * 680 / 648), 902px)',
           borderRadius: '5.247% / 5%',
-          border: `1.5px solid ${envBackdrop.canvasBorderColor}`,
-          boxShadow: envBackdrop.canvasShadow,
+          border: isPreviewMode
+            ? `1.5px solid ${envBackdrop.canvasBorderColor}`
+            : `1px solid ${isDarkMode ? 'rgba(251, 246, 241, 0.09)' : 'rgba(28, 25, 23, 0.07)'}`,
+          boxShadow: isPreviewMode
+            ? envBackdrop.canvasShadow
+            : isDarkMode
+              ? '0 14px 36px -14px rgba(10, 7, 6, 0.42)'
+              : '0 12px 30px -14px rgba(28, 25, 23, 0.08)',
         }}
       >
         {svgStageElement}

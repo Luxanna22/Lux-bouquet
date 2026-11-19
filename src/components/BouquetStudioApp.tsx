@@ -2627,8 +2627,7 @@ export default function App() {
     [premiumAssetConfig]
   );
 
-  const isActiveBouquetWorkspace =
-    (!showLandingPage || isGiftView || isPreviewMode) && !stealthGateSlug;
+  const isGiftOrPreviewBackdrop = (isGiftView || isPreviewMode) && !stealthGateSlug;
   const envBackdrop = useMemo(
     () => getEnvironmentPageBackdrop(environment, isDarkMode),
     [environment, isDarkMode]
@@ -2636,14 +2635,14 @@ export default function App() {
 
   return (
     <div
-      data-bouquet-env={isActiveBouquetWorkspace ? environment || 'studio' : undefined}
+      data-bouquet-env={isGiftOrPreviewBackdrop ? environment || 'studio' : undefined}
       className={`min-h-[100dvh] h-[100dvh] w-full overflow-hidden flex flex-col font-sans transition-colors duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isDarkMode
         ? 'dark bg-[#2B2321] text-[#FBF6F1]'
         : 'bg-[#FAFAF8] text-[#1C1917]'
         }`}
       style={{
         fontFamily: "'Inter', system-ui, sans-serif",
-        ...(isActiveBouquetWorkspace
+        ...(isGiftOrPreviewBackdrop
           ? {
               backgroundColor: envBackdrop.pageBaseColor,
               backgroundImage: envBackdrop.pageBackground,
