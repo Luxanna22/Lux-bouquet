@@ -20,13 +20,14 @@ import {
   inspectPayloadAssetsSummaryServer,
   MAX_GARLAND_FEED_ENTRIES,
   rehydrateBouquetRecordWithAssetsServer,
+  sanitizeGarlandPreviewPayloadServer,
   stripInlineAudioFromCompactPayloadServer,
   stripInlinePhotosFromCompactPayloadServer,
 } from './_lib/bouquetAssetsHelper.js';
 
 import {
   fetchBouquetFromBlob,
-  fetchGarlandFeedStateFromBlob,
+  fetchGarlandFeedStateWithStatusFromBlob,
   isVercelBlobConfigured,
   saveBouquetToBlob,
   saveGarlandFeedToBlob,
@@ -398,9 +399,9 @@ export async function publishToGarlandFeedRest(code, payload, garlandEntry, maxR
           ? garlandEntry.replaceCode.trim()
           : null;
 
-      const cleanDraftPayload = stripInlineAudioFromCompactPayloadServer(
+      const cleanDraftPayload = sanitizeGarlandPreviewPayloadServer(
         String(garlandEntry.draftPayload || payload || '')
-      ).replace(/&l=[^&]*/g, '');
+      );
 
       const maxExistingTime = existingList.reduce(
         (max, item) => Math.max(max, Date.parse(item?.createdAt || '') || 0),
@@ -604,8 +605,12 @@ export default async function handler(req, res) {
       return;
     }
 
-    const [blobState, firestoreRes] = await Promise.all([
-      fetchGarlandFeedStateFromBlob({ useCache: true }).catch(() => null),
+    const [blobStateRes, firestoreRes] = await Promise.all([
+      fetchGarlandFeedStateWithStatusFromBlob({ useCache: true }).catch(() => ({
+        reachable: false,
+        exists: null,
+        state: null,
+      })),
       (async () => {
         try {
           const controller = new AbortController();
@@ -650,6 +655,7 @@ export default async function handler(req, res) {
       })(),
     ]);
 
+    const blobState = blobStateRes.exists ? blobStateRes.state : null;
     const blobEntries = blobState ? blobState.entries : null;
     const blobRemovedCodes = blobState?.removedCodes || [];
     const firestoreEntries = firestoreRes.entries;
@@ -676,13 +682,23 @@ export default async function handler(req, res) {
         ) {
           continue;
         }
-        const prev = byCode.get(item.code);
+        // Sanitize every public Garland entry on read so legacy entries in Blob/Firestore
+        // never leak lock secrets (`&l=...`), personal greeting card text, or inline media.
+        const safeItem = {
+          ...item,
+          lockMode: 'none',
+          draftPayload: sanitizeGarlandPreviewPayloadServer(String(item.draftPayload || '')).slice(
+            0,
+            12000
+          ),
+        };
+        const prev = byCode.get(safeItem.code);
         if (!prev) {
-          byCode.set(item.code, item);
+          byCode.set(safeItem.code, safeItem);
         } else {
           const prevTs = Date.parse(prev.createdAt || '') || 0;
-          const nextTs = Date.parse(item.createdAt || '') || 0;
-          if (nextTs > prevTs) byCode.set(item.code, item);
+          const nextTs = Date.parse(safeItem.createdAt || '') || 0;
+          if (nextTs > prevTs) byCode.set(safeItem.code, safeItem);
         }
       }
     };
@@ -693,9 +709,10 @@ export default async function handler(req, res) {
       .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0))
       .slice(0, MAX_GARLAND_FEED_ENTRIES);
 
-    // 1. If Firestore had entries not yet mirrored to Blob, backfill Blob while preserving `removedCodes`
+    // 1. If Blob was reachable and Firestore had entries not yet mirrored to Blob, backfill Blob while preserving `removedCodes`
     if (
       isVercelBlobConfigured() &&
+      blobStateRes.reachable &&
       Array.isArray(firestoreEntries) &&
       firestoreEntries.length > 0 &&
       (!Array.isArray(blobEntries) || blobEntries.length < merged.length)

@@ -481,7 +481,7 @@ export function inspectPayloadAssetsSummary(
       ? 'Yours Always'
       : fromBase64UrlSafe(cFromB64) || 'Yours Always';
   const rawMsg =
-    !cMsgB64 || cMsgB64 === '!' ? '' : fromBase64UrlSafe(cMsgB64) || '';
+    !cMsgB64 || cMsgB64 === '!' || cMsgB64 === '*' ? '' : fromBase64UrlSafe(cMsgB64) || '';
   const noteExcerpt = rawMsg.trim().slice(0, 120);
 
   // Stems & Photos

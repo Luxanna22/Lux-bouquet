@@ -1,8 +1,7 @@
 import { del as vercelDel, get as vercelGet, put as vercelPut } from '@vercel/blob';
 import {
   MAX_GARLAND_FEED_ENTRIES,
-  stripInlineAudioFromCompactPayloadServer,
-  stripInlinePhotosFromCompactPayloadServer,
+  sanitizeGarlandPreviewPayloadServer,
 } from './bouquetAssetsHelper.js';
 
 const BOUQUET_BLOB_PREFIX = 'bouquets/';
@@ -95,8 +94,31 @@ async function putJsonBlob(pathname, data) {
   }
 }
 
-async function getJsonBlob(pathname, options = {}) {
-  if (!isVercelBlobConfigured()) return null;
+function isBlobNotFoundError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  const name = String(err?.name || '').toLowerCase();
+  return (
+    name.includes('blobnotfounderror') ||
+    msg.includes('blob does not exist') ||
+    msg.includes('not found') ||
+    Number(err?.statusCode) === 404 ||
+    Number(err?.status) === 404
+  );
+}
+
+/**
+ * Reads a JSON blob while distinguishing:
+ * - `{ reachable: true, exists: true, data }` (200 OK + parsed JSON)
+ * - `{ reachable: true, exists: false, data: null }` (explicit 404 / BlobNotFound)
+ * - `{ reachable: false, exists: null, data: null }` (network/timeout/5xx/parse error)
+ *
+ * This distinction is critical across Vercel redeploys so a transient read failure on a cold start
+ * NEVER causes callers to assume the store is empty and overwrite persistent data.
+ */
+async function getJsonBlobWithStatus(pathname, options = {}) {
+  if (!isVercelBlobConfigured()) {
+    return { reachable: false, exists: null, data: null };
+  }
   const client = getBlobClient();
   const useCache = options.useCache !== undefined ? Boolean(options.useCache) : true;
   const preferredAccess = getPreferredBlobAccess();
@@ -107,24 +129,42 @@ async function getJsonBlob(pathname, options = {}) {
       access: accessMode,
       useCache,
     });
-    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    if (!result || result.statusCode === 404) {
+      return { reachable: true, exists: false, data: null };
+    }
+    if (result.statusCode !== 200 || !result.stream) {
+      return { reachable: false, exists: null, data: null };
+    }
     const text = await new Response(result.stream).text();
-    if (!text) return null;
-    return JSON.parse(text);
+    if (!text) {
+      return { reachable: false, exists: null, data: null };
+    }
+    return { reachable: true, exists: true, data: JSON.parse(text) };
   };
 
   try {
     return await attemptRead(preferredAccess);
   } catch (err) {
+    if (isBlobNotFoundError(err)) {
+      return { reachable: true, exists: false, data: null };
+    }
     if (isBlobAccessMismatchError(err)) {
       try {
         return await attemptRead(fallbackAccess);
-      } catch {
-        return null;
+      } catch (fallbackErr) {
+        if (isBlobNotFoundError(fallbackErr)) {
+          return { reachable: true, exists: false, data: null };
+        }
+        return { reachable: false, exists: null, data: null };
       }
     }
-    return null;
+    return { reachable: false, exists: null, data: null };
   }
+}
+
+async function getJsonBlob(pathname, options = {}) {
+  const res = await getJsonBlobWithStatus(pathname, options);
+  return res.exists ? res.data : null;
 }
 
 async function deleteBlobPath(pathname) {
@@ -224,35 +264,70 @@ function sanitizeGarlandRemovedCodes(codes) {
   return result.slice(-500);
 }
 
+function sanitizePublicGarlandEntry(item) {
+  if (!item || typeof item !== 'object' || typeof item.code !== 'string') return null;
+  const rawDraft = typeof item.draftPayload === 'string' ? item.draftPayload : '';
+  return {
+    ...item,
+    lockMode: 'none',
+    draftPayload: sanitizeGarlandPreviewPayloadServer(rawDraft).slice(0, 12000),
+  };
+}
+
+/**
+ * Reads the full Shared Creations Garland state from Vercel Blob (`system/garland_feed.json`)
+ * with explicit reachability status so cold starts after redeploy never overwrite existing data
+ * on transient read errors.
+ */
+export async function fetchGarlandFeedStateWithStatusFromBlob(options = {}) {
+  const res = await getJsonBlobWithStatus(GARLAND_FEED_BLOB_PATH, options);
+  if (!res.reachable) {
+    return { reachable: false, exists: null, state: null };
+  }
+  if (!res.exists || !res.data) {
+    return { reachable: true, exists: false, state: null };
+  }
+  const parsed = res.data;
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : null;
+  if (!list) {
+    return { reachable: false, exists: null, state: null };
+  }
+  const removedCodes = sanitizeGarlandRemovedCodes(
+    !Array.isArray(parsed) && Array.isArray(parsed.removedCodes) ? parsed.removedCodes : []
+  );
+  const removedSet = new Set(removedCodes);
+  const entries = list
+    .filter(
+      (item) =>
+        item &&
+        typeof item.code === 'string' &&
+        !item.code.startsWith('draft_') &&
+        !item.code.startsWith('sab_') &&
+        item.isDraft === false &&
+        item.pinToShowcase === true &&
+        !removedSet.has(item.code)
+    )
+    .map(sanitizePublicGarlandEntry)
+    .filter(Boolean);
+  return {
+    reachable: true,
+    exists: true,
+    state: {
+      entries,
+      removedCodes,
+      updatedAt: !Array.isArray(parsed) && typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
+    },
+  };
+}
+
 /**
  * Reads the full Shared Creations Garland state from Vercel Blob (`system/garland_feed.json`),
  * including `removedCodes` tombstones so bouquets unpinned/deleted during a Firestore 429 outage
  * never resurrect when Firestore recovers.
  */
 export async function fetchGarlandFeedStateFromBlob(options = {}) {
-  const parsed = await getJsonBlob(GARLAND_FEED_BLOB_PATH, options);
-  if (!parsed) return null;
-  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : null;
-  if (!list) return null;
-  const removedCodes = sanitizeGarlandRemovedCodes(
-    !Array.isArray(parsed) && Array.isArray(parsed.removedCodes) ? parsed.removedCodes : []
-  );
-  const removedSet = new Set(removedCodes);
-  const entries = list.filter(
-    (item) =>
-      item &&
-      typeof item.code === 'string' &&
-      !item.code.startsWith('draft_') &&
-      !item.code.startsWith('sab_') &&
-      item.isDraft === false &&
-      item.pinToShowcase === true &&
-      !removedSet.has(item.code)
-  );
-  return {
-    entries,
-    removedCodes,
-    updatedAt: !Array.isArray(parsed) && typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
-  };
+  const res = await fetchGarlandFeedStateWithStatusFromBlob(options);
+  return res.exists ? res.state : null;
 }
 
 /**
@@ -282,6 +357,8 @@ export async function saveGarlandFeedToBlob(entries, removedCodes = []) {
         item.pinToShowcase === true &&
         !removedSet.has(item.code)
     )
+    .map(sanitizePublicGarlandEntry)
+    .filter(Boolean)
     .slice(0, MAX_GARLAND_FEED_ENTRIES);
   return putJsonBlob(GARLAND_FEED_BLOB_PATH, {
     updatedAt: new Date().toISOString(),
@@ -293,6 +370,7 @@ export async function saveGarlandFeedToBlob(entries, removedCodes = []) {
 /**
  * Upserts a newly pinned Garland entry into Vercel Blob (`system/garland_feed.json`),
  * preserving existing `removedCodes` tombstones while clearing any tombstone for `code`.
+ * Refuses to overwrite if the existing Garland feed cannot be read cleanly (redeploy/transient safety).
  */
 export async function upsertGarlandFeedInBlob(code, payload, garlandEntry) {
   const safeCode = String(code || '').replace(/[^0-9A-Za-z_-]/g, '');
@@ -308,7 +386,11 @@ export async function upsertGarlandFeedInBlob(code, payload, garlandEntry) {
     return false;
   }
 
-  const existingState = await fetchGarlandFeedStateFromBlob({ useCache: false });
+  const existingRes = await fetchGarlandFeedStateWithStatusFromBlob({ useCache: false });
+  if (!existingRes.reachable) {
+    return false;
+  }
+  const existingState = existingRes.state;
   const existing = existingState?.entries || [];
   const nextRemoved = (existingState?.removedCodes || []).filter((c) => c !== safeCode);
 
@@ -316,9 +398,7 @@ export async function upsertGarlandFeedInBlob(code, payload, garlandEntry) {
     typeof garlandEntry.draftPayload === 'string' && garlandEntry.draftPayload.length > 3
       ? garlandEntry.draftPayload
       : String(payload || '');
-  const cleanDraftPayload = stripInlinePhotosFromCompactPayloadServer(
-    stripInlineAudioFromCompactPayloadServer(rawDraft)
-  );
+  const cleanDraftPayload = sanitizeGarlandPreviewPayloadServer(rawDraft);
   const replaceCode =
     typeof garlandEntry.replaceCode === 'string' && garlandEntry.replaceCode
       ? garlandEntry.replaceCode
@@ -335,7 +415,7 @@ export async function upsertGarlandFeedInBlob(code, payload, garlandEntry) {
         ? garlandEntry.createdAt.slice(0, 64)
         : new Date().toISOString(),
     shareUrl: String(garlandEntry.shareUrl || `/${safeCode}`).slice(0, 240),
-    lockMode: String(garlandEntry.lockMode || 'none').slice(0, 24),
+    lockMode: 'none',
     hasVoice: Boolean(garlandEntry.hasVoice),
     flowerCount: Math.max(0, Math.min(200, Number(garlandEntry.flowerCount) || 0)),
     isPremium: Boolean(garlandEntry.isPremium),
@@ -356,13 +436,18 @@ export async function upsertGarlandFeedInBlob(code, payload, garlandEntry) {
 /**
  * Removes one or more bouquet codes from the Vercel Blob Garland feed mirror
  * AND records them in `removedCodes` so stale Firestore entries never resurrect when Firestore recovers.
+ * Refuses to overwrite if the existing Garland feed cannot be read cleanly.
  */
 export async function removeCodesFromGarlandFeedInBlob(codes) {
   if (!isVercelBlobConfigured() || !Array.isArray(codes) || codes.length === 0) return false;
   const cleanCodes = sanitizeGarlandRemovedCodes(codes);
   if (cleanCodes.length === 0) return false;
   const codeSet = new Set(cleanCodes);
-  const existingState = await fetchGarlandFeedStateFromBlob({ useCache: false });
+  const existingRes = await fetchGarlandFeedStateWithStatusFromBlob({ useCache: false });
+  if (!existingRes.reachable) {
+    return false;
+  }
+  const existingState = existingRes.state;
   const existingEntries = existingState?.entries || [];
   const existingRemoved = existingState?.removedCodes || [];
   const filtered = existingEntries.filter((item) => !codeSet.has(item.code));
@@ -371,16 +456,35 @@ export async function removeCodesFromGarlandFeedInBlob(codes) {
 }
 
 /**
+ * Reads the persistent Admin Bouquet Log mirror from Vercel Blob (`system/admin_bouquet_log.json`)
+ * with explicit reachability status to prevent cold-start overwrites after redeploy.
+ */
+export async function fetchAdminBouquetLogWithStatusFromBlob() {
+  const res = await getJsonBlobWithStatus(ADMIN_LOG_BLOB_PATH, { useCache: false });
+  if (!res.reachable) {
+    return { reachable: false, exists: null, log: null };
+  }
+  if (!res.exists || !res.data || typeof res.data !== 'object') {
+    return { reachable: true, exists: false, log: null };
+  }
+  const parsed = res.data;
+  return {
+    reachable: true,
+    exists: true,
+    log: {
+      entries: Array.isArray(parsed.entries) ? parsed.entries : [],
+      deletedCodes: Array.isArray(parsed.deletedCodes) ? parsed.deletedCodes : [],
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
+    },
+  };
+}
+
+/**
  * Reads the persistent Admin Bouquet Log mirror from Vercel Blob (`system/admin_bouquet_log.json`).
  */
 export async function fetchAdminBouquetLogFromBlob() {
-  const parsed = await getJsonBlob(ADMIN_LOG_BLOB_PATH, { useCache: false });
-  if (!parsed || typeof parsed !== 'object') return null;
-  return {
-    entries: Array.isArray(parsed.entries) ? parsed.entries : [],
-    deletedCodes: Array.isArray(parsed.deletedCodes) ? parsed.deletedCodes : [],
-    updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
-  };
+  const res = await fetchAdminBouquetLogWithStatusFromBlob();
+  return res.exists ? res.log : null;
 }
 
 /**
@@ -397,14 +501,28 @@ export async function saveAdminBouquetLogToBlob(state) {
 }
 
 /**
+ * Reads the persistent Owner Admin Vault mirror from Private Vercel Blob (`system/owner_vault.json`)
+ * with explicit reachability status to prevent cold-start overwrites after redeploy.
+ */
+export async function fetchOwnerVaultWithStatusFromBlob() {
+  const res = await getJsonBlobWithStatus(OWNER_VAULT_BLOB_PATH, { useCache: false });
+  if (!res.reachable) {
+    return { reachable: false, exists: null, vault: null };
+  }
+  if (!res.exists || !res.data || typeof res.data !== 'object') {
+    return { reachable: true, exists: false, vault: null };
+  }
+  return { reachable: true, exists: true, vault: res.data };
+}
+
+/**
  * Reads the persistent Owner Admin Vault mirror from Private Vercel Blob (`system/owner_vault.json`).
  * Keeps all Admin Console controls (PHP disable, income pause, launch promo limits, custom PIN,
  * paid passes, tester vouchers, and analytics) 100% functional even during Firestore 429 outages.
  */
 export async function fetchOwnerVaultFromBlob() {
-  const parsed = await getJsonBlob(OWNER_VAULT_BLOB_PATH, { useCache: false });
-  if (!parsed || typeof parsed !== 'object') return null;
-  return parsed;
+  const res = await fetchOwnerVaultWithStatusFromBlob();
+  return res.exists ? res.vault : null;
 }
 
 /**

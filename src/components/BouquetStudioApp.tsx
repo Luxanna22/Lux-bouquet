@@ -54,6 +54,7 @@ import {
   BookOpen,
   Bookmark,
   Save,
+  Image as ImageIcon,
   ImagePlus,
   ZoomIn,
   ZoomOut,
@@ -127,6 +128,7 @@ import {
 } from '../lib/firebase';
 import { useBouquetStore } from '../store/useBouquetStore';
 import { BouquetStage } from './BouquetStage';
+import { PhotoCardZoomModal } from './PhotoCardZoomModal';
 import { getEnvironmentPageBackdrop } from '../lib/environmentBackdrop';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
@@ -384,6 +386,7 @@ export default function App() {
   const [isClaimingRecipientGift, setIsClaimingRecipientGift] = useState<boolean>(false);
   const [recipientGiftClaimError, setRecipientGiftClaimError] = useState<string | null>(null);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState(false);
+  const [activePhotoModalItemId, setActivePhotoModalItemId] = useState<string | null>(null);
   const [letterTypedChars, setLetterTypedChars] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -734,6 +737,17 @@ export default function App() {
   const selectedItem = useMemo(
     () => items.find((i) => i.id === selectedId) || null,
     [items, selectedId]
+  );
+  const visibleBloomPhotoItems = useMemo(
+    () => items.filter((i) => !i.hidden && Boolean(i.photoStyle)),
+    [items]
+  );
+  const activePhotoModalItem = useMemo(
+    () =>
+      activePhotoModalItemId
+        ? visibleBloomPhotoItems.find((i) => i.id === activePhotoModalItemId) || null
+        : null,
+    [visibleBloomPhotoItems, activePhotoModalItemId]
   );
   const selectedItemIndex = useMemo(
     () => (selectedItem ? items.findIndex((i) => i.id === selectedItem.id) : -1),
@@ -1512,6 +1526,7 @@ export default function App() {
     }
     handleStopVoice();
     setIsLetterModalOpen(false);
+    setActivePhotoModalItemId(null);
     setIsVoiceModalOpen(false);
     setIsReactionPopoverOpen(false);
     setIsPasscodeUnlocked(false);
@@ -1550,6 +1565,7 @@ export default function App() {
     }
     handleStopVoice();
     setIsLetterModalOpen(false);
+    setActivePhotoModalItemId(null);
     setIsVoiceModalOpen(false);
     setIsReactionPopoverOpen(false);
     setIsPasscodeUnlocked(false);
@@ -3902,6 +3918,11 @@ export default function App() {
                       const found = items.find((i) => i.id === itemId);
                       triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
                     }}
+                    onPhotoCardClick={(photoItem) => {
+                      if (!isPreviewMode && !isGiftView) return;
+                      if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                      setActivePhotoModalItemId(photoItem.id);
+                    }}
                     canvasZoom={!isPreviewMode && !isGiftView ? desktopCanvasZoom : 1}
                     canvasPan={!isPreviewMode && !isGiftView ? desktopCanvasPan : { x: 0, y: 0 }}
                     onCanvasPanChange={setDesktopCanvasPan}
@@ -4822,6 +4843,27 @@ export default function App() {
                         >
                           <Mail className="w-3.5 h-3.5 text-[#B4846C]" />
                           <span>Letter</span>
+                        </button>
+                        <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+                      </>
+                    )}
+
+                    {/* 1B. Open Attached Photo Keepsake(s) Action */}
+                    {visibleBloomPhotoItems.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                            setActivePhotoModalItemId(visibleBloomPhotoItems[0].id);
+                          }}
+                          className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${isDarkMode
+                            ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                            : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                            }`}
+                        >
+                          <ImageIcon className="w-3.5 h-3.5 text-[#B4846C]" />
+                          <span>{visibleBloomPhotoItems.length > 1 ? 'Photos' : 'Photo'}</span>
                         </button>
                         <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
                       </>
@@ -6532,6 +6574,21 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* =====================================================================
+          PHOTOCARD KEEPSAKE ZOOM MODAL
+          Opens when the recipient or creator clicks an attached photo on bloom,
+          matching the exact photocard frame style, colors, and caption used.
+          ===================================================================== */}
+      {activePhotoModalItem && (
+        <PhotoCardZoomModal
+          item={activePhotoModalItem}
+          allPhotoItems={visibleBloomPhotoItems}
+          isDarkMode={isDarkMode}
+          onClose={() => setActivePhotoModalItemId(null)}
+          onSelectPhoto={(nextId) => setActivePhotoModalItemId(nextId)}
+        />
+      )}
 
       {/* GREETING CARD STATIONERY NOTE MODAL (Matches Email & Letterpress Aesthetic) */}
       {isCardModalOpen && (

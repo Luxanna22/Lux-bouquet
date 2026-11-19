@@ -721,7 +721,11 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
             ? DEFAULT_SHARE_CARD_FROM
             : fromBase64Url(cFromB64);
       const message =
-        !cMsgB64 || cMsgB64 === '!' ? DEFAULT_SHARE_CARD_MSG : fromBase64Url(cMsgB64);
+        cMsgB64 === '*'
+          ? ''
+          : !cMsgB64 || cMsgB64 === '!'
+          ? DEFAULT_SHARE_CARD_MSG
+          : fromBase64Url(cMsgB64);
       const customBg = cBgHex && /^[0-9a-fA-F]{6}$/.test(cBgHex) ? `#${cBgHex}` : undefined;
       const customAccent = cAccHex && /^[0-9a-fA-F]{6}$/.test(cAccHex) ? `#${cAccHex}` : undefined;
       const parsedCX = cXStr ? parseInt(cXStr, 36) : 410;

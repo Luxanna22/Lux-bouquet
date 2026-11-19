@@ -15,10 +15,10 @@ import {
 } from './bouquetAssetsHelper.js';
 import {
   deleteBouquetFromBlob,
-  fetchAdminBouquetLogFromBlob,
+  fetchAdminBouquetLogWithStatusFromBlob,
   fetchBouquetFromBlob,
   fetchGarlandFeedFromBlob,
-  fetchOwnerVaultFromBlob,
+  fetchOwnerVaultWithStatusFromBlob,
   fetchStudioPassFromBlob,
   isVercelBlobConfigured,
   removeCodesFromGarlandFeedInBlob,
@@ -1972,7 +1972,7 @@ export async function hydratePersistentOwnerVaultServer(options = {}) {
   const allowAutoHealFirestore = options.allowAutoHealFirestore !== false;
   const blobConfigured = isVercelBlobConfigured();
 
-  const [firestoreRes, blobParsed] = await Promise.all([
+  const [firestoreRes, blobRes] = await Promise.all([
     (async () => {
       try {
         const controller = new AbortController();
@@ -2007,10 +2007,19 @@ export async function hydratePersistentOwnerVaultServer(options = {}) {
         return { reachable: false, parsed: null };
       }
     })(),
-    blobConfigured ? fetchOwnerVaultFromBlob().catch(() => null) : Promise.resolve(null),
+    blobConfigured
+      ? fetchOwnerVaultWithStatusFromBlob().catch(() => ({
+          reachable: false,
+          exists: null,
+          vault: null,
+        }))
+      : Promise.resolve({ reachable: false, exists: null, vault: null }),
   ]);
 
-  if (blobConfigured) {
+  const blobParsed = blobRes.exists ? blobRes.vault : null;
+  // CRITICAL REDEPLOY SAFETY: Only mark Blob hydrated when the read actually succeeded (200 or confirmed 404),
+  // NEVER on a transient network/5xx error, so cold-start writes can never clobber existing vault data.
+  if (blobConfigured && blobRes.reachable) {
     vaultBlobHydrated = true;
   }
 
@@ -2171,6 +2180,7 @@ const VALID_BOUQUET_CODE_REGEX = /^[a-zA-Z0-9_\-]{7,24}$/;
 export const OWNER_BOUQUET_LOG = new Map();
 export const OWNER_DELETED_BOUQUET_CODES = new Set();
 let bouquetLogRemoteExists = null;
+let bouquetLogBlobHydrated = false;
 let bouquetLogLastUpdateTime = '';
 let bouquetLogWriteQueue = Promise.resolve();
 
@@ -2184,6 +2194,7 @@ export function resetOwnerBouquetLogStateForTesting() {
   OWNER_BOUQUET_LOG.clear();
   OWNER_DELETED_BOUQUET_CODES.clear();
   bouquetLogRemoteExists = null;
+  bouquetLogBlobHydrated = false;
   bouquetLogLastUpdateTime = '';
 }
 
@@ -2497,12 +2508,15 @@ export async function hydrateOwnerBouquetLogServer(options = {}) {
   // 1. Hydrate from Private Vercel Blob mirror first (works seamlessly even if Firestore returns 429)
   if (isVercelBlobConfigured()) {
     try {
-      const blobLog = await fetchAdminBouquetLogFromBlob();
-      if (blobLog) {
-        mergeRemoteOwnerBouquetLogIntoMemory(blobLog);
-        blobLogUpdatedAtMs = Date.parse(blobLog.updatedAt || '') || 0;
-        blobHadLog = true;
-        logHydrated = true;
+      const blobRes = await fetchAdminBouquetLogWithStatusFromBlob();
+      if (blobRes.reachable) {
+        bouquetLogBlobHydrated = true;
+        if (blobRes.exists && blobRes.log) {
+          mergeRemoteOwnerBouquetLogIntoMemory(blobRes.log);
+          blobLogUpdatedAtMs = Date.parse(blobRes.log.updatedAt || '') || 0;
+          blobHadLog = true;
+          logHydrated = true;
+        }
       }
     } catch {
       // Continue to Firestore hydration
@@ -2644,18 +2658,23 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
   let blobSaved = false;
 
   try {
-    if (bouquetLogRemoteExists === null) {
+    // CRITICAL REDEPLOY SAFETY GUARD: Never overwrite the persistent Admin Bouquet Log
+    // if neither Firestore nor Vercel Blob has been cleanly hydrated yet on a cold start!
+    if (bouquetLogRemoteExists === null && !bouquetLogBlobHydrated) {
       await hydrateOwnerBouquetLogServer({
         includeGarlandBackfill: false,
         allowAutoHealFirestore: false,
       });
-      if (onBeforeRetryMerge && bouquetLogRemoteExists === true) {
+      if (onBeforeRetryMerge && (bouquetLogRemoteExists === true || bouquetLogBlobHydrated)) {
         onBeforeRetryMerge();
+      }
+      if (bouquetLogRemoteExists === null && !bouquetLogBlobHydrated) {
+        return false;
       }
     }
 
     // Always persist to Private Vercel Blob mirror (succeeds even when Firestore is returning 429)
-    if (!skipBlobWrite && isVercelBlobConfigured()) {
+    if (!skipBlobWrite && isVercelBlobConfigured() && (bouquetLogBlobHydrated || bouquetLogRemoteExists !== null)) {
       const { payloadObj } = buildPayloadObj();
       blobSaved = await saveAdminBouquetLogToBlob(payloadObj).catch(() => false);
     }
@@ -2728,11 +2747,14 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
 
 export async function mutateAndSaveOwnerBouquetLogServer(mutatorFn, options = {}) {
   return withBouquetLogWriteLock(async () => {
-    if (bouquetLogRemoteExists === null) {
+    if (bouquetLogRemoteExists === null && !bouquetLogBlobHydrated) {
       await hydrateOwnerBouquetLogServer({
         includeGarlandBackfill: false,
         allowAutoHealFirestore: false,
       });
+      if (bouquetLogRemoteExists === null && !bouquetLogBlobHydrated) {
+        return { saved: false, result: null };
+      }
     }
     let result = typeof mutatorFn === 'function' ? mutatorFn({ retry: false }) : undefined;
     const saved = await saveOwnerBouquetLogServerUnlocked({
@@ -4684,7 +4706,12 @@ export async function fetchStudioPassFromFirestoreRest(passKey) {
 
   const firestorePass = fsRes.pass;
   if (!firestorePass && !blobPass) return null;
-  if (firestorePass && !blobPass) return firestorePass;
+  if (firestorePass && !blobPass) {
+    if (isVercelBlobConfigured()) {
+      saveStudioPassToBlob(normalized, firestorePass).catch(() => {});
+    }
+    return firestorePass;
+  }
   if (!firestorePass && blobPass) {
     // Firestore recovered and is missing a pass minted/saved in Blob during 429 -> backfill Firestore!
     if (fsRes.reachable) {
@@ -6754,14 +6781,19 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       // so viral visitor pageviews never burn Blob put() ops or exhaust Firestore daily quotas!
       if (actionType === 'telemetry_event') {
         const nowMs = Date.now();
+        const needsColdHydrate =
+          vaultRemoteExists === null && !vaultBlobHydrated && nowMs - lastTelemetryHydrateMs >= 60_000;
+        if (needsColdHydrate) {
+          lastTelemetryHydrateMs = nowMs;
+          await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
+        }
         applyServerTelemetryEvent(parsed.telemetry);
         const shouldFlushFirestore =
-          nowMs - lastTelemetryFlushMs >= 60_000 ||
-          (vaultRemoteExists === null && nowMs - lastTelemetryHydrateMs >= 60_000);
+          nowMs - lastTelemetryFlushMs >= 60_000 || needsColdHydrate;
         if (shouldFlushFirestore) {
-          lastTelemetryHydrateMs = nowMs;
           lastTelemetryFlushMs = nowMs;
-          if (vaultRemoteExists === null) {
+          if (vaultRemoteExists === null && nowMs - lastTelemetryHydrateMs >= 60_000) {
+            lastTelemetryHydrateMs = nowMs;
             await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
           }
           if (vaultRemoteExists !== null) {

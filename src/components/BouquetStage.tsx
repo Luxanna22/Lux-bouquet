@@ -3199,6 +3199,7 @@ export interface BouquetStageProps {
   onWrapperClick?: () => void;
   onRibbonClick?: () => void;
   onPhotoCardUploadClick?: (itemId: string) => void;
+  onPhotoCardClick?: (item: BouquetItem) => void;
   onBouquetSelect?: () => void;
   canvasZoom?: number;
   canvasPan?: { x: number; y: number };
@@ -3228,6 +3229,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   onWrapperClick,
   onRibbonClick,
   onPhotoCardUploadClick,
+  onPhotoCardClick,
   onBouquetSelect,
   canvasZoom = 1,
   canvasPan = { x: 0, y: 0 },
@@ -4482,6 +4484,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'back') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
+            const isClickableBloomPhoto =
+              isPreviewMode && !isCardThumbnail && Boolean(item.photoStyle) && Boolean(onPhotoCardClick);
             const disp = getStageItemDisplayTransform(item, wrapStyle);
             const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
             return (
@@ -4493,18 +4497,56 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               >
                 <g
                   data-drawer-trigger={isPreviewMode ? undefined : 'true'}
+                  data-testid={isClickableBloomPhoto ? `bloom-photo-${item.id}` : undefined}
+                  role={isClickableBloomPhoto ? 'button' : undefined}
+                  tabIndex={isClickableBloomPhoto ? 0 : undefined}
+                  aria-label={
+                    isClickableBloomPhoto
+                      ? item.photoCaption?.trim()
+                        ? `View photo: ${item.photoCaption.trim()}`
+                        : 'View attached photo'
+                      : undefined
+                  }
                   transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                     item.flipX ? -disp.scale : disp.scale
                   }, ${disp.scale})`}
                   onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                  onClick={
+                    isClickableBloomPhoto
+                      ? (e) => {
+                          e.stopPropagation();
+                          onPhotoCardClick?.(item);
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    isClickableBloomPhoto
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onPhotoCardClick?.(item);
+                          }
+                        }
+                      : undefined
+                  }
                   className={
                     isPreviewMode
-                      ? 'pointer-events-none cursor-default'
+                      ? isClickableBloomPhoto
+                        ? 'cursor-pointer select-none outline-none focus:outline-none'
+                        : 'pointer-events-none cursor-default'
                       : item.locked
                       ? 'cursor-pointer'
                       : 'cursor-grab active:cursor-grabbing'
                   }
-                  style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : animatedShadowFilter }}
+                  style={{
+                    filter: isSelected
+                      ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
+                      : animatedShadowFilter,
+                    ...(isClickableBloomPhoto
+                      ? { outline: 'none', WebkitTapHighlightColor: 'transparent', WebkitTouchCallout: 'none' }
+                      : {}),
+                  }}
                 >
                   <g
                     clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
@@ -4943,6 +4985,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'inside') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
+            const isClickableBloomPhoto =
+              isPreviewMode && !isCardThumbnail && Boolean(item.photoStyle) && Boolean(onPhotoCardClick);
             const disp = getStageItemDisplayTransform(item, wrapStyle);
             const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
             return (
@@ -4954,18 +4998,56 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               >
                 <g
                   data-drawer-trigger={isPreviewMode ? undefined : 'true'}
+                  data-testid={isClickableBloomPhoto ? `bloom-photo-${item.id}` : undefined}
+                  role={isClickableBloomPhoto ? 'button' : undefined}
+                  tabIndex={isClickableBloomPhoto ? 0 : undefined}
+                  aria-label={
+                    isClickableBloomPhoto
+                      ? item.photoCaption?.trim()
+                        ? `View photo: ${item.photoCaption.trim()}`
+                        : 'View attached photo'
+                      : undefined
+                  }
                   transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                     item.flipX ? -disp.scale : disp.scale
                   }, ${disp.scale})`}
                   onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                  onClick={
+                    isClickableBloomPhoto
+                      ? (e) => {
+                          e.stopPropagation();
+                          onPhotoCardClick?.(item);
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    isClickableBloomPhoto
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onPhotoCardClick?.(item);
+                          }
+                        }
+                      : undefined
+                  }
                   className={
                     isPreviewMode
-                      ? 'pointer-events-none cursor-default'
+                      ? isClickableBloomPhoto
+                        ? 'cursor-pointer select-none outline-none focus:outline-none'
+                        : 'pointer-events-none cursor-default'
                       : item.locked
                       ? 'cursor-pointer'
                       : 'cursor-grab active:cursor-grabbing'
                   }
-                  style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : animatedShadowFilter }}
+                  style={{
+                    filter: isSelected
+                      ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
+                      : animatedShadowFilter,
+                    ...(isClickableBloomPhoto
+                      ? { outline: 'none', WebkitTapHighlightColor: 'transparent', WebkitTouchCallout: 'none' }
+                      : {}),
+                  }}
                 >
                   <g
                     clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
@@ -5590,6 +5672,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'front') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
+            const isClickableBloomPhoto =
+              isPreviewMode && !isCardThumbnail && Boolean(item.photoStyle) && Boolean(onPhotoCardClick);
             const disp = getStageItemDisplayTransform(item, wrapStyle);
             const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
             return (
@@ -5601,18 +5685,56 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               >
                 <g
                   data-drawer-trigger={isPreviewMode ? undefined : 'true'}
+                  data-testid={isClickableBloomPhoto ? `bloom-photo-${item.id}` : undefined}
+                  role={isClickableBloomPhoto ? 'button' : undefined}
+                  tabIndex={isClickableBloomPhoto ? 0 : undefined}
+                  aria-label={
+                    isClickableBloomPhoto
+                      ? item.photoCaption?.trim()
+                        ? `View photo: ${item.photoCaption.trim()}`
+                        : 'View attached photo'
+                      : undefined
+                  }
                   transform={`translate(${disp.x}, ${disp.y}) rotate(${disp.rotation}) scale(${
                     item.flipX ? -disp.scale : disp.scale
                   }, ${disp.scale})`}
                   onPointerDown={isPreviewMode ? undefined : (e) => handleItemPointerDown(e, item)}
+                  onClick={
+                    isClickableBloomPhoto
+                      ? (e) => {
+                          e.stopPropagation();
+                          onPhotoCardClick?.(item);
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    isClickableBloomPhoto
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onPhotoCardClick?.(item);
+                          }
+                        }
+                      : undefined
+                  }
                   className={
                     isPreviewMode
-                      ? 'pointer-events-none cursor-default'
+                      ? isClickableBloomPhoto
+                        ? 'cursor-pointer select-none outline-none focus:outline-none'
+                        : 'pointer-events-none cursor-default'
                       : item.locked
                       ? 'cursor-pointer'
                       : 'cursor-grab active:cursor-grabbing'
                   }
-                  style={{ filter: isSelected ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))' : animatedShadowFilter }}
+                  style={{
+                    filter: isSelected
+                      ? 'drop-shadow(0px 8px 14px rgba(180,132,108,0.35))'
+                      : animatedShadowFilter,
+                    ...(isClickableBloomPhoto
+                      ? { outline: 'none', WebkitTapHighlightColor: 'transparent', WebkitTouchCallout: 'none' }
+                      : {}),
+                  }}
                 >
                   <g
                     clipPath={

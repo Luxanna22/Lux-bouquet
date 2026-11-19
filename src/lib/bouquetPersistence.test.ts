@@ -36,7 +36,9 @@ import shortenHandler, {
   // @ts-expect-error Plain ESM API handler without .d.ts
 } from '../../api/shorten.js';
 import {
+  removeCodesFromGarlandFeedInBlob,
   setBlobClientForTesting,
+  upsertGarlandFeedInBlob,
   // @ts-expect-error Plain ESM server helper without .d.ts
 } from '../../api/_lib/blobStorage.js';
 import {
@@ -46,10 +48,12 @@ import {
   handlePaymentEndpoint,
   hydratePersistentOwnerVaultServer,
   isPhPaymentsDisabledServer,
+  mutateAndSaveOwnerVaultServer,
   OWNER_ANALYTICS_STATE,
   OWNER_BOUQUET_LOG_DOC_CODE,
   OWNER_VAULT_DOC_CODE,
   PAID_PASS_LEDGER,
+  recordBouquetInAdminLogServer,
   resetOwnerBouquetLogStateForTesting,
   resetOwnerVaultInMemoryForColdStartTests,
   // @ts-expect-error Plain ESM server handler without .d.ts
@@ -1645,6 +1649,265 @@ describe('Private Vercel Blob Failover Under Firestore 429 Quota Exhaustion', ()
         healedGarlandFs.some((e: { code: string }) => e.code === 'StaleGarland001'),
         false,
         'Firestore Garland document must be automatically reconciled to remove StaleGarland001'
+      );
+    } finally {
+      setBlobClientForTesting(null);
+      globalThis.fetch = origFetch;
+      resetOwnerVaultInMemoryForColdStartTests();
+      resetOwnerBouquetLogStateForTesting();
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+    }
+  });
+
+  it('Redeploy cold-start safety: NEVER overwrites Blob Garland, Owner Vault, or Admin Log when reads fail transiently', async () => {
+    const origFetch = globalThis.fetch;
+    const blobStore = new Map<string, string>();
+    const existingGarlandJson = JSON.stringify({
+      updatedAt: '2026-11-19T00:00:00.000Z',
+      entries: [
+        {
+          code: 'ExistingKeep01',
+          to: 'Diane',
+          from: 'Kai',
+          createdAt: '2026-11-19T00:00:00.000Z',
+          shareUrl: 'https://www.sendabouquet.online/ExistingKeep01',
+          lockMode: 'none',
+          isDraft: false,
+          pinToShowcase: true,
+          draftPayload: '#g=0.0.@0',
+        },
+      ],
+      removedCodes: [],
+    });
+    const existingVaultJson = JSON.stringify({
+      v: 1,
+      updatedAt: '2026-11-19T00:00:00.000Z',
+      phPaymentsDisabled: true,
+      phDisabledUpdatedAtMs: Date.now() - 1000,
+      analytics: { webVisits: 777, revenuePhpCentavos: 9900 },
+    });
+    const existingAdminLogJson = JSON.stringify({
+      v: 1,
+      updatedAt: '2026-11-19T00:00:00.000Z',
+      entries: [{ code: 'ExistingKeep01', to: 'Diane', from: 'Kai', createdAt: '2026-11-19T00:00:00.000Z' }],
+      deletedCodes: ['OldDeleted001'],
+    });
+    blobStore.set('system/garland_feed.json', existingGarlandJson);
+    blobStore.set('system/owner_vault.json', existingVaultJson);
+    blobStore.set('system/admin_bouquet_log.json', existingAdminLogJson);
+
+    let putCalls = 0;
+    // Simulate a transient Blob outage (get throws 503) right after a Vercel redeploy (cold start)
+    setBlobClientForTesting({
+      async put(pathname: string, body: string) {
+        putCalls += 1;
+        blobStore.set(pathname, String(body));
+        return { url: `https://private-blob.test/${pathname}`, pathname };
+      },
+      async get() {
+        throw new Error('503 Service Temporarily Unavailable');
+      },
+      async del(pathname: string) {
+        blobStore.delete(pathname);
+      },
+    });
+
+    // Simulate Firestore 429 at the same time
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+
+    try {
+      // Simulate fresh cold start after Vercel redeploy
+      resetOwnerVaultInMemoryForColdStartTests();
+      resetOwnerBouquetLogStateForTesting();
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+
+      // 1. Garland upsert & remove MUST abort rather than wiping ExistingKeep01
+      const upsertOk = await upsertGarlandFeedInBlob('NewAfterDeploy1', '#g=0.0.@0', {
+        code: 'NewAfterDeploy1',
+        to: 'Ace',
+        from: 'Cj',
+        isDraft: false,
+        pinToShowcase: true,
+        draftPayload: '#g=0.0.@0',
+      });
+      assert.equal(upsertOk, false, 'upsertGarlandFeedInBlob must abort when Blob read fails');
+
+      const removeOk = await removeCodesFromGarlandFeedInBlob(['SomeCode12345']);
+      assert.equal(removeOk, false, 'removeCodesFromGarlandFeedInBlob must abort when Blob read fails');
+
+      // 2. Owner Vault mutation MUST abort rather than writing empty analytics/toggles
+      const vaultRes = await mutateAndSaveOwnerVaultServer(() => {
+        OWNER_ANALYTICS_STATE.webVisits += 1;
+        return { ok: true };
+      });
+      assert.equal(vaultRes.saved, false, 'Owner Vault must refuse overwrite when neither Blob nor Firestore is reachable');
+
+      // 3. Admin Bouquet Log record MUST abort rather than wiping ExistingKeep01 & OldDeleted001
+      const logRes = await recordBouquetInAdminLogServer({
+        code: 'NewAfterDeploy1',
+        to: 'Ace',
+        from: 'Cj',
+        createdAt: new Date().toISOString(),
+      });
+      assert.equal(logRes.saved, false, 'Admin Bouquet Log must refuse overwrite when neither Blob nor Firestore is reachable');
+
+      assert.equal(putCalls, 0, 'ZERO Blob overwrites must happen during a cold-start read outage');
+      assert.equal(blobStore.get('system/garland_feed.json'), existingGarlandJson);
+      assert.equal(blobStore.get('system/owner_vault.json'), existingVaultJson);
+      assert.equal(blobStore.get('system/admin_bouquet_log.json'), existingAdminLogJson);
+    } finally {
+      setBlobClientForTesting(null);
+      globalThis.fetch = origFetch;
+      resetOwnerVaultInMemoryForColdStartTests();
+      resetOwnerBouquetLogStateForTesting();
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+    }
+  });
+
+  it('Public Garland feed (/api/shorten?garland=1) strictly strips lock passcodes, private card notes, and photo captions while keeping /{code} intact', async () => {
+    const origFetch = globalThis.fetch;
+    const blobStore = new Map<string, string>();
+
+    setBlobClientForTesting({
+      async put(pathname: string, body: string) {
+        blobStore.set(pathname, String(body));
+        return { url: `https://private-blob.test/${pathname}`, pathname };
+      },
+      async get(pathname: string) {
+        const val = blobStore.get(pathname);
+        if (val === undefined) return null;
+        return {
+          statusCode: 200,
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(val));
+              controller.close();
+            },
+          }),
+        };
+      },
+      async del(pathname: string) {
+        blobStore.delete(pathname);
+      },
+    });
+
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+
+    try {
+      resetOwnerVaultInMemoryForColdStartTests();
+      resetOwnerBouquetLogStateForTesting();
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+
+      const snap: BouquetSnapshot = {
+        items: [
+          {
+            id: 'rose-1',
+            type: 'rose',
+            x: 300,
+            y: 260,
+            scale: 1.1,
+            rotation: 0,
+            flipX: false,
+            petalColor: '#E11D48',
+            centerColor: '#FDE047',
+            stemLength: 1,
+            locked: false,
+            hidden: false,
+          },
+          {
+            id: 'photo-1',
+            type: 'rose',
+            x: 360,
+            y: 320,
+            scale: 1.0,
+            rotation: -6,
+            flipX: false,
+            petalColor: '#FFFDF9',
+            centerColor: '#9E4757',
+            stemLength: 1,
+            locked: false,
+            hidden: false,
+            photoStyle: 'polaroid',
+            photoCaption: 'Secret Paris Rooftop',
+            photoDataUrl: 'data:image/jpeg;base64,' + 'A'.repeat(256),
+          },
+        ],
+        wrapStyle: 'kraft',
+        wrapColor: '#DFC4A6',
+        ribbonColor: '#E11D48',
+        ribbonStyle: 'satin',
+        environment: 'studio',
+        card: {
+          to: 'Diane',
+          from: 'Kai',
+          message: 'My private anniversary note that must stay hidden until unlocked.',
+          theme: 'sealed',
+          visibleOnStage: true,
+        },
+        lock: {
+          mode: 'passcode',
+          questionPrompt: 'Where did we first meet?',
+          passcodeAnswer: 'paris2026',
+          passcodeType: 'word',
+        },
+      };
+
+      const fullPayload = encodeBouquetToCompactPayload(snap, true);
+      const code = 'SecGarland001';
+
+      // Save full bouquet + pin to Garland via Blob
+      await upsertGarlandFeedInBlob(code, fullPayload, {
+        code,
+        to: 'Diane',
+        from: 'Kai',
+        lockMode: 'passcode',
+        isDraft: false,
+        pinToShowcase: true,
+        draftPayload: fullPayload,
+      });
+
+      invalidateGarlandFeedMemoryCache();
+      const garlandReq = createMockReqRes('GET', '/api/shorten?garland=1');
+      await shortenHandler(garlandReq.req, garlandReq.res);
+      assert.equal(garlandReq.res.statusCode, 200);
+
+      const garlandJson = garlandReq.res.json();
+      const entry = garlandJson.entries.find((e: { code: string }) => e.code === code);
+      assert.ok(entry, 'Pinned entry must be returned by /api/shorten?garland=1');
+      assert.equal(entry.lockMode, 'none', 'Public Garland entry must normalize lockMode to none');
+      assert.equal(
+        String(entry.draftPayload).includes('&l='),
+        false,
+        'Public Garland draftPayload must NEVER contain &l= lock parameters or passcode answers'
+      );
+
+      // Decode the sanitized Garland draftPayload and verify zero secret leakage
+      const decodedPreview = decodeBouquetFromHash(entry.draftPayload);
+      assert.ok(decodedPreview, 'Sanitized Garland draftPayload must still decode cleanly for thumbnail rendering');
+      assert.equal(decodedPreview?.card.to, 'Diane');
+      assert.equal(decodedPreview?.card.from, 'Kai');
+      assert.equal(decodedPreview?.card.message, '', 'Private greeting card message must be stripped from public Garland feed');
+      assert.equal(decodedPreview?.lock?.mode, 'none', 'Lock mode/answer must be stripped from public Garland feed');
+      assert.equal(decodedPreview?.lock?.passcodeAnswer || '', '');
+      const previewPhoto = decodedPreview?.items.find((it) => it.photoStyle === 'polaroid');
+      assert.ok(previewPhoto, 'Photocard frame geometry should remain intact for visual thumbnail');
+      assert.equal(previewPhoto?.photoDataUrl, undefined, 'Inline photo data must be stripped from public Garland feed');
+      assert.notEqual(
+        previewPhoto?.photoCaption,
+        'Secret Paris Rooftop',
+        'Custom photo caption must be stripped from public Garland feed'
       );
     } finally {
       setBlobClientForTesting(null);

@@ -140,6 +140,56 @@ export function stripInlinePhotosFromCompactPayloadServer(payload) {
   return `${prefix}${headerPart}.${cardPart}.${slimmedStems.join('.')}${queryRest}`;
 }
 
+/**
+ * Sanitizes a compact `#g=` / `#b=` payload for the public Shared Creations Lace Garland feed:
+ * - Removes lock parameters (`&l=...`) so passcodes, secret questions, and unlock timestamps are NEVER exposed.
+ * - Removes personal greeting card text (`cMsg`) by replacing it with `*` (empty on decode) while preserving
+ *   card theme, stage visibility, colors, and recipient/sender labels (`For ...`, `From ...`).
+ * - Removes inline voice audio and inline photo base64 data & photo captions while preserving stem/wrapper/ribbon/frame geometry.
+ */
+export function sanitizeGarlandPreviewPayloadServer(payload) {
+  if (!payload || typeof payload !== 'string') return '';
+  const withoutAudioOrLock = stripInlineAudioFromCompactPayloadServer(payload).replace(
+    /&l=[^&]*/g,
+    ''
+  );
+  const ampIdx = withoutAudioOrLock.indexOf('&');
+  const mainPart = ampIdx >= 0 ? withoutAudioOrLock.slice(0, ampIdx) : withoutAudioOrLock;
+  const queryRest = ampIdx >= 0 ? withoutAudioOrLock.slice(ampIdx) : '';
+  const prefixMatch = mainPart.match(/^(#?[gb]=)(.*)$/);
+  if (!prefixMatch) return withoutAudioOrLock;
+
+  const [, prefix, dotBody] = prefixMatch;
+  const dotParts = dotBody.split('.');
+  if (dotParts.length < 2) return withoutAudioOrLock;
+
+  const [headerPart, cardPart, ...stemParts] = dotParts;
+  const cardFields = cardPart.split('~');
+  while (cardFields.length < 4) {
+    cardFields.push('!');
+  }
+  // Mask private personal greeting card message in public landing-page index (full message loads via `/{code}` after lock check)
+  cardFields[3] = '*';
+  const safeCardPart = cardFields.join('~').replace(/~+$/, '');
+
+  const slimmedStems = stemParts.map((sp) => {
+    const tildeParts = sp.split('~');
+    if (tildeParts.length >= 7 && tildeParts[6]) {
+      tildeParts[6] = '';
+    }
+    if (tildeParts.length >= 8 && tildeParts[7]) {
+      tildeParts[7] = '';
+    }
+    return tildeParts.join('~').replace(/~+$/, '');
+  });
+
+  const body =
+    slimmedStems.length > 0
+      ? `${headerPart}.${safeCardPart}.${slimmedStems.join('.')}`
+      : `${headerPart}.${safeCardPart}`;
+  return `${prefix}${body}${queryRest}`;
+}
+
 export function extractOverflowAssetsFromPayloadServer(
   code,
   payload,
@@ -372,7 +422,7 @@ export function inspectPayloadAssetsSummaryServer(payload, voiceAudioDataUrl) {
       ? 'Yours Always'
       : fromBase64UrlServer(cFromB64) || 'Yours Always';
   const rawMsg =
-    !cMsgB64 || cMsgB64 === '!' ? '' : fromBase64UrlServer(cMsgB64) || '';
+    !cMsgB64 || cMsgB64 === '!' || cMsgB64 === '*' ? '' : fromBase64UrlServer(cMsgB64) || '';
   const noteExcerpt = rawMsg.trim().slice(0, 120);
 
   let flowerCount = 0;
