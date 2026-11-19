@@ -2298,8 +2298,10 @@ export default function App() {
         incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => { });
       }
 
-      // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key
-      // and also syncs shared Garland entries to Firestore REST as a guaranteed backup!)
+      // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key,
+      // splits overflow assets for eternal Firestore persistence, logs EVERY bouquet into the Admin Bouquet Log
+      // even when not shared on the Garland, and syncs Garland entries via CAS!)
+      const photoCount = items.filter((it) => Boolean(it.photoStyle)).length;
       const shortenApiPromise = fetch('/api/shorten', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2317,6 +2319,23 @@ export default function App() {
           deviceTokenHash: devHash,
           activeSessionNonce: verifiedPass?.activeSessionNonce || null,
           pass: verifiedPass || null,
+          pinToShowcase: shouldPinToGarland,
+          bouquetMeta: {
+            to: card.to || 'Someone Special',
+            from: card.from || 'Yours',
+            noteExcerpt: (card.message || '').trim().slice(0, 120),
+            createdAt: vaultEntry.createdAt,
+            shareUrl: firstPartyUrl,
+            pinnedToGarland: shouldPinToGarland,
+            flowerCount: items.length,
+            photoCount,
+            hasVoice: Boolean(voice?.audioDataUrl),
+            voiceStyle: voice?.style || undefined,
+            wrapStyle,
+            ribbonStyle,
+            environment,
+            lockMode: lock?.mode || 'none',
+          },
           garlandEntry: shouldPinToGarland
             ? {
               ...vaultEntry,

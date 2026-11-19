@@ -234,6 +234,34 @@
         "autoReplySent",
         "createdAt"
       ]
+    },
+    "BouquetAsset": {
+      "title": "BouquetAsset",
+      "description": "Companion eternal media asset (photo or voice audio data URL) offloaded from a SharedBouquet when combined document size would approach Firestore's 1 MiB limit.",
+      "type": "object",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "description": "Unique asset identifier (e.g., <code>_voice or <code>_p0)"
+        },
+        "bouquetCode": {
+          "type": "string",
+          "description": "Short code of the owning SharedBouquet document"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Asset media kind ('photo' or 'voice')"
+        },
+        "dataUrl": {
+          "type": "string",
+          "description": "Base64 media data URL for the photo or voice recording"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when the asset was saved"
+        }
+      },
+      "required": ["assetId", "bouquetCode", "kind", "dataUrl", "createdAt"]
     }
   },
   "firestore": {
@@ -242,6 +270,12 @@
         "$ref": "#/entities/SharedBouquet"
       },
       "description": "Publicly readable and creatable shared bouquet short links so recipients can open their gift on any device without signing in."
+    },
+    "/bouquet_assets/{assetId}": {
+      "schema": {
+        "$ref": "#/entities/BouquetAsset"
+      },
+      "description": "Eternal companion media assets (overflow photos and voice recordings) referenced by shared_bouquets documents so multi-photo and voice bouquets never exceed Firestore's 1 MiB document limit."
     },
     "/studio_stats/{statId}": {
       "schema": {

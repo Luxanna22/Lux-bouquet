@@ -252,6 +252,8 @@ function itemsMatchPreset(a: BouquetItem[], b: BouquetItem[]): boolean {
       Math.round((x.stemLength ?? 1) * 100) !== Math.round((y.stemLength ?? 1) * 100) ||
       Boolean(x.flipX) !== Boolean(y.flipX) ||
       Boolean(x.hidden) !== Boolean(y.hidden) ||
+      getEffectiveItemPlane(x) !== getEffectiveItemPlane(y) ||
+      Boolean(x.clippedToBouquet) !== Boolean(y.clippedToBouquet) ||
       x.petalColor.toLowerCase() !== y.petalColor.toLowerCase() ||
       x.centerColor.toLowerCase() !== y.centerColor.toLowerCase()
     ) {
@@ -326,7 +328,7 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
       ? ''
       : snapshot.wrapColor.replace('#', '').toLowerCase();
   const rHex =
-    snapshot.ribbonColor.toLowerCase() === '#e11d48'
+    snapshot.ribbonColor.toLowerCase() === '#c084fc'
       ? ''
       : snapshot.ribbonColor.replace('#', '').toLowerCase();
   const rStyleIdx = Math.max(0, SHARE_RIBBON_STYLES.indexOf(snapshot.ribbonStyle || 'satin'));
@@ -623,7 +625,7 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
           title: vTitleB64 ? fromBase64Url(vTitleB64) : vMeta.defaultTitle,
           primaryColor: vPrimaryHex ? `#${vPrimaryHex}` : vMeta.defaultPrimary,
           accentColor: vAccentHex ? `#${vAccentHex}` : vMeta.defaultAccent,
-          audioDataUrl: vAudioB64 ? fromBase64Url(vAudioB64) : null,
+          audioDataUrl: vAudioB64 && !vAudioB64.startsWith('asset:') ? fromBase64Url(vAudioB64) : null,
           durationSec: Number(vDurStr) || 0,
           x: Number.isFinite(parsedVX) ? parsedVX : 185,
           y: Number.isFinite(parsedVY) ? parsedVY : 525,
@@ -798,7 +800,8 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
                         : pCapB64
                         ? fromBase64Url(pCapB64)
                         : photoMeta?.defaultCaption,
-                    photoDataUrl: pImgB64 ? fromBase64Url(pImgB64) : undefined,
+                    photoDataUrl:
+                      pImgB64 && !pImgB64.startsWith('asset:') ? fromBase64Url(pImgB64) : undefined,
                   }
                 : {}),
               x: Number.isFinite(x) ? x : 300,

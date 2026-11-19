@@ -10,6 +10,7 @@ import {
   KeyRound,
   Moon,
   Sun,
+  Archive,
 } from 'lucide-react';
 import {
   OwnerAnalyticsSummary,
@@ -17,6 +18,7 @@ import {
   TesterVoucherLedgerItem,
   createInitialAnalyticsSummary,
 } from '../lib/ownerAnalytics';
+import { AdminBouquetLogEntry } from '../lib/bouquetPersistence';
 import { computeRecipientSlideBloomState } from '../lib/dofParallax';
 import {
   getSavedVaultBouquets,
@@ -28,6 +30,7 @@ import { BrandLogoMark } from './BrandLogoMark';
 import { OwnerOverviewSection } from './OwnerOverviewSection';
 import { OwnerKeysSection } from './OwnerKeysSection';
 import { OwnerAiAdvisorPanel } from './OwnerAiAdvisorPanel';
+import { OwnerBouquetsSection } from './OwnerBouquetsSection';
 import { invalidateCheckoutCapabilityCache } from './StudioCheckoutModal';
 import {
   clearDeviceClaimedKofiStarter,
@@ -43,7 +46,7 @@ interface StealthGateAndOwnerConsoleProps {
   onToast: (msg: string) => void;
 }
 
-type ConsoleTab = 'web_funnel' | 'vouchers' | 'ai_advisor' | 'botanicals' | 'security_stream';
+type ConsoleTab = 'web_funnel' | 'bouquets' | 'vouchers' | 'ai_advisor' | 'botanicals' | 'security_stream';
 
 const PRETTY_LABELS: Record<string, string> = {
   rose: 'Red Rose',
@@ -162,6 +165,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [liveFirestoreStats, setLiveFirestoreStats] = useState<StudioGlobalStats | null>(null);
   const [testerVouchers, setTesterVouchers] = useState<TesterVoucherLedgerItem[]>([]);
   const [paidPasses, setPaidPasses] = useState<PaidPassLedgerItem[]>([]);
+  const [bouquetLog, setBouquetLog] = useState<AdminBouquetLogEntry[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -342,6 +346,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           if (data.analytics) setAnalytics(data.analytics);
           if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
           if (Array.isArray(data.paidPasses)) setPaidPasses(data.paidPasses);
+          if (Array.isArray(data.bouquetLog)) setBouquetLog(data.bouquetLog);
           setIsServerVerified(true);
         } else if (res.status === 401 || data.unauthorized || !data.ok) {
           setIsServerVerified(false);
@@ -372,7 +377,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
     token: string,
     nextAnalytics?: OwnerAnalyticsSummary,
     nextVouchers?: TesterVoucherLedgerItem[],
-    nextPaidPasses?: PaidPassLedgerItem[]
+    nextPaidPasses?: PaidPassLedgerItem[],
+    nextBouquetLog?: AdminBouquetLogEntry[]
   ) => {
     const start = performance.now();
     const duration = 380;
@@ -388,6 +394,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           if (nextAnalytics) setAnalytics(nextAnalytics);
           if (Array.isArray(nextVouchers)) setTesterVouchers(nextVouchers);
           if (Array.isArray(nextPaidPasses)) setPaidPasses(nextPaidPasses);
+          if (Array.isArray(nextBouquetLog)) setBouquetLog(nextBouquetLog);
           setIsServerVerified(true);
           setAdminSessionToken(token);
           try {
@@ -437,7 +444,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         data.adminSessionToken,
         data.analytics,
         data.testerVouchers,
-        data.paidPasses
+        data.paidPasses,
+        data.bouquetLog
       );
     } catch {
       setGateError('Could not verify passphrase.');
@@ -454,6 +462,14 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       if (data.analytics) setAnalytics(data.analytics as OwnerAnalyticsSummary);
       if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
       if (Array.isArray(data.paidPasses)) setPaidPasses(data.paidPasses);
+    },
+    []
+  );
+
+  const handleSyncBouquetLog = useCallback(
+    (nextLog: AdminBouquetLogEntry[], nextAnalytics?: unknown) => {
+      setBouquetLog(nextLog);
+      if (nextAnalytics) setAnalytics(nextAnalytics as OwnerAnalyticsSummary);
     },
     []
   );
@@ -1112,6 +1128,14 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       icon: BarChart3,
     },
     {
+      id: 'bouquets',
+      testId: 'owner-tab-bouquets',
+      label: 'Bouquets',
+      mobileLabel: 'Log',
+      icon: Archive,
+      count: bouquetLog.length || undefined,
+    },
+    {
       id: 'vouchers',
       testId: 'owner-tab-vouchers',
       label: 'Keys & Passes',
@@ -1329,6 +1353,21 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               onTogglePhDisabled={handleTogglePhDisabled}
               onResetIncome={handleResetIncome}
               onUpdateLaunchPromoConfig={handleUpdateLaunchPromoConfig}
+            />
+          )}
+
+          {/* TAB 1B: PERSISTENT BOUQUET ARCHIVE & LOG */}
+          {activeTab === 'bouquets' && (
+            <OwnerBouquetsSection
+              adminSessionToken={adminSessionToken}
+              deviceTokenHash={deviceTokenHash}
+              isDarkMode={isDarkMode}
+              bouquetLog={bouquetLog}
+              copiedId={copiedId}
+              formatLabel={formatLabel}
+              onCopyText={copyText}
+              onSyncBouquetLog={handleSyncBouquetLog}
+              onToast={onToast}
             />
           )}
 
@@ -1551,7 +1590,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE BOTTOM NAVIGATION DOCK */}
       <nav
-        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t grid grid-cols-5 z-20 ${
+        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t grid grid-cols-6 z-20 ${
           isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >

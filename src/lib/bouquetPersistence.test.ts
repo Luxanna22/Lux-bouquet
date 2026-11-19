@@ -1,0 +1,935 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import {
+  encodeBouquetToCompactPayload,
+  decodeBouquetFromHash,
+  hydrateSnapshotWithFirestoreRecord,
+} from './shareAndExport';
+import {
+  classifyAdminBouquetStatus,
+  collectAssetIdsFromBouquetRecord,
+  countAdminBouquetStatuses,
+  extractOverflowAssetsFromPayload,
+  extractShortCodeFromInput,
+  filterAdminBouquetLog,
+  inspectPayloadAssetsSummary,
+  isGarlandDisplayExpired,
+  rehydrateBouquetRecordWithAssets,
+  AdminBouquetLogEntry,
+} from './bouquetPersistence';
+import { isShowcaseBouquetExpired } from './showcaseGallery';
+import { BouquetSnapshot } from '../types/bouquet';
+import {
+  extractOverflowAssetsFromPayloadServer,
+  rehydrateBouquetRecordWithAssetsServer,
+  stripInlinePhotosFromCompactPayloadServer,
+  // @ts-expect-error Plain ESM server helper without .d.ts
+} from '../../api/_lib/bouquetAssetsHelper.js';
+import shortenHandler, {
+  clearShortCodeMemoryForTesting,
+  publishToGarlandFeedRest,
+  // @ts-expect-error Plain ESM API handler without .d.ts
+} from '../../api/shorten.js';
+import {
+  createSignedAdminSessionToken,
+  handlePaymentEndpoint,
+  OWNER_BOUQUET_LOG_DOC_CODE,
+  OWNER_VAULT_DOC_CODE,
+  resetOwnerBouquetLogStateForTesting,
+  // @ts-expect-error Plain ESM server handler without .d.ts
+} from '../../api/_lib/paymentHandler.js';
+
+const handleVerifyAction = (req: unknown, res: unknown) =>
+  handlePaymentEndpoint(req, res, '/api/payments/verify-action');
+
+function createMockReqRes(method: string, url: string, bodyObj?: unknown) {
+  const rawBody = bodyObj !== undefined ? JSON.stringify(bodyObj) : '';
+  const req = Readable.from(rawBody ? [Buffer.from(rawBody, 'utf8')] : []) as Readable & {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    socket: { remoteAddress: string };
+  };
+  req.method = method;
+  req.url = url;
+  req.headers = {
+    host: 'localhost:3000',
+    'content-type': 'application/json',
+    'user-agent': 'Mozilla/5.0 UnitTest',
+  };
+  req.socket = { remoteAddress: '127.0.0.1' };
+
+  let statusCode = 200;
+  const headers: Record<string, string> = {};
+  let rawOut = '';
+  const res = {
+    get statusCode() {
+      return statusCode;
+    },
+    set statusCode(code: number) {
+      statusCode = code;
+    },
+    setHeader(name: string, val: string) {
+      headers[name.toLowerCase()] = val;
+    },
+    getHeader(name: string) {
+      return headers[name.toLowerCase()];
+    },
+    end(chunk?: string) {
+      if (chunk) rawOut += String(chunk);
+    },
+    json() {
+      return rawOut ? JSON.parse(rawOut) : null;
+    },
+  };
+
+  return { req, res };
+}
+
+/**
+ * In-memory Firestore REST mock supporting GET, PATCH (with currentDocument.updateTime / exists CAS), and DELETE.
+ */
+function createMockFirestoreFetch(options?: { failFirstGarlandCas?: boolean }) {
+  const docs = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+  let versionCounter = 1;
+  let garlandCasFailRemaining = options?.failFirstGarlandCas ? 1 : 0;
+
+  const mockFetch = async (input: unknown, init?: { method?: string; body?: string }) => {
+    const urlStr = String(input);
+    const method = (init?.method || 'GET').toUpperCase();
+
+    if (urlStr.includes('is.gd')) {
+      return {
+        ok: false,
+        status: 404,
+        headers: { get: () => null },
+        json: async () => ({}),
+      } as unknown as Response;
+    }
+
+    const docMatch = urlStr.match(/\/documents\/((?:shared_bouquets|bouquet_assets|studio_passes)\/[^?]+)/);
+    if (!docMatch) {
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
+    }
+    const docKey = decodeURIComponent(docMatch[1]);
+    const urlObj = new URL(urlStr);
+    const reqUpdateTime = urlObj.searchParams.get('currentDocument.updateTime');
+    const reqExists = urlObj.searchParams.get('currentDocument.exists');
+
+    if (method === 'GET') {
+      const existing = docs.get(docKey);
+      if (!existing) {
+        return { ok: false, status: 404, json: async () => ({ error: 'NOT_FOUND' }) } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: docKey,
+          fields: existing.fields,
+          updateTime: existing.updateTime,
+        }),
+      } as unknown as Response;
+    }
+
+    if (method === 'PATCH') {
+      const existing = docs.get(docKey);
+      if (docKey === 'shared_bouquets/sab_garland_feed_v1' && garlandCasFailRemaining > 0) {
+        garlandCasFailRemaining -= 1;
+        return { ok: false, status: 412, json: async () => ({ error: 'CAS_CONFLICT' }) } as unknown as Response;
+      }
+      if (reqExists === 'false' && existing) {
+        return { ok: false, status: 409, json: async () => ({ error: 'ALREADY_EXISTS' }) } as unknown as Response;
+      }
+      if (reqUpdateTime && (!existing || existing.updateTime !== reqUpdateTime)) {
+        return { ok: false, status: 412, json: async () => ({ error: 'FAILED_PRECONDITION' }) } as unknown as Response;
+      }
+      const parsed = init?.body ? JSON.parse(init.body) : {};
+      const nextTime = `2026-11-19T00:00:${String(versionCounter).padStart(2, '0')}.000000Z`;
+      versionCounter += 1;
+      docs.set(docKey, { fields: parsed.fields || {}, updateTime: nextTime });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: docKey,
+          fields: parsed.fields || {},
+          updateTime: nextTime,
+        }),
+      } as unknown as Response;
+    }
+
+    if (method === 'DELETE') {
+      const existed = docs.delete(docKey);
+      return {
+        ok: existed,
+        status: existed ? 200 : 404,
+        json: async () => ({}),
+      } as unknown as Response;
+    }
+
+    return { ok: false, status: 405, json: async () => ({}) } as unknown as Response;
+  };
+
+  return { docs, mockFetch };
+}
+
+describe('Bouquet Eternal Persistence — Lossless Asset Encoding & Overflow Splitting', () => {
+  it('round-trips every bouquet asset losslessly including #E11D48 ribbon, layer planes, multiple photos, voice, pose, environment & lock', () => {
+    const samplePhoto1 = 'data:image/jpeg;base64,' + 'A'.repeat(240);
+    const samplePhoto2 = 'data:image/png;base64,' + 'B'.repeat(240);
+    const sampleVoice = 'data:audio/webm;base64,' + 'C'.repeat(320);
+
+    const snapshot: BouquetSnapshot = {
+      items: [
+        {
+          id: 'fl-1',
+          type: 'rose',
+          x: 245,
+          y: 260,
+          scale: 1.15,
+          rotation: -14,
+          petalColor: '#b91c1c',
+          centerColor: '#fbbf24',
+          stemLength: 0.85,
+          flipX: true,
+          layerPlane: 'back',
+          clippedToBouquet: false,
+        },
+        {
+          id: 'fl-2',
+          type: 'peony',
+          x: 340,
+          y: 230,
+          scale: 1.0,
+          rotation: 18,
+          flipX: false,
+          petalColor: '#f472b6',
+          centerColor: '#fde68a',
+          layerPlane: 'front',
+          clippedToBouquet: false,
+        },
+        {
+          id: 'ph-1',
+          type: 'rose',
+          photoStyle: 'polaroid',
+          photoCaption: 'Paris 2026',
+          photoDataUrl: samplePhoto1,
+          x: 210,
+          y: 320,
+          scale: 0.95,
+          rotation: -8,
+          flipX: false,
+          petalColor: '#ffffff',
+          centerColor: '#d4a373',
+          layerPlane: 'front',
+          clippedToBouquet: false,
+        },
+        {
+          id: 'ph-2',
+          type: 'rose',
+          photoStyle: 'cameo',
+          photoCaption: 'Forever Us',
+          photoDataUrl: samplePhoto2,
+          x: 380,
+          y: 310,
+          scale: 0.85,
+          rotation: 12,
+          flipX: false,
+          petalColor: '#fef3c7',
+          centerColor: '#b45309',
+          layerPlane: 'inside',
+          clippedToBouquet: true,
+        },
+      ],
+      wrapStyle: 'lace',
+      wrapColor: '#f5ebe0',
+      ribbonColor: '#E11D48', // Regression check: previously decoded as #C084FC!
+      ribbonStyle: 'velvet',
+      environment: 'sunlit',
+      bouquetPose: { x: 312, y: 392, scale: 1.08, rotation: -6 },
+      card: {
+        to: 'Clara',
+        from: 'Mateo',
+        message: 'For eternity — every petal, photo, and note preserved.',
+        theme: 'blush',
+        visibleOnStage: true,
+        customBg: '#fff5f7',
+        customAccent: '#be123c',
+        x: 425,
+        y: 510,
+        scale: 0.82,
+        rotation: 4,
+      },
+      voice: {
+        style: 'vinyl',
+        visibleOnStage: true,
+        title: 'Our Song',
+        primaryColor: '#1f2937',
+        accentColor: '#f43f5e',
+        audioDataUrl: sampleVoice,
+        durationSec: 18,
+        x: 170,
+        y: 500,
+        scale: 1.05,
+        rotation: -5,
+      },
+      lock: {
+        mode: 'passcode',
+        unlockAtIso: '',
+        questionPrompt: 'Where did we meet?',
+        passcodeAnswer: 'Kyoto',
+        passcodeType: 'word',
+      },
+    };
+
+    const encoded = encodeBouquetToCompactPayload(snapshot, true);
+    const decoded = decodeBouquetFromHash(encoded);
+    assert.ok(decoded, 'Encoded bouquet must decode cleanly');
+
+    // Regression fix check: classic crimson ribbon MUST remain #e11d48, NOT #C084FC!
+    assert.equal(decoded.ribbonColor.toLowerCase(), '#e11d48');
+    assert.equal(decoded.ribbonStyle, 'velvet');
+    assert.equal(decoded.wrapStyle, 'lace');
+    assert.equal(decoded.wrapColor.toLowerCase(), '#f5ebe0');
+    assert.equal(decoded.environment, 'sunlit');
+    assert.deepEqual(decoded.bouquetPose, { x: 312, y: 392, scale: 1.08, rotation: -6 });
+
+    assert.equal(decoded.items.length, 4);
+    assert.equal(decoded.items[0].layerPlane, 'back');
+    assert.equal(decoded.items[0].flipX, true);
+    assert.equal(decoded.items[1].layerPlane, 'front');
+    assert.equal(decoded.items[2].photoStyle, 'polaroid');
+    assert.equal(decoded.items[2].photoCaption, 'Paris 2026');
+    assert.equal(decoded.items[2].photoDataUrl, samplePhoto1);
+    assert.equal(decoded.items[3].photoStyle, 'cameo');
+    assert.equal(decoded.items[3].photoCaption, 'Forever Us');
+    assert.equal(decoded.items[3].photoDataUrl, samplePhoto2);
+    assert.equal(decoded.items[3].layerPlane, 'inside');
+
+    assert.equal(decoded.card.to, 'Clara');
+    assert.equal(decoded.card.from, 'Mateo');
+    assert.equal(decoded.card.message, snapshot.card.message);
+    assert.equal(decoded.card.customBg, '#fff5f7');
+    assert.equal(decoded.card.customAccent, '#be123c');
+
+    assert.equal(decoded.voice?.style, 'vinyl');
+    assert.equal(decoded.voice?.title, 'Our Song');
+    assert.equal(decoded.voice?.audioDataUrl, sampleVoice);
+    assert.equal(decoded.voice?.durationSec, 18);
+
+    assert.equal(decoded.lock?.mode, 'passcode');
+    assert.equal(decoded.lock?.questionPrompt, 'Where did we meet?');
+    assert.equal(decoded.lock?.passcodeAnswer, 'Kyoto');
+  });
+
+  it('splits heavy multi-photo + voice bouquets (>750 KB) into companion bouquet_assets and re-hydrates 100% identically on both client and server', () => {
+    const bigPhotoA = 'data:image/jpeg;base64,' + 'A'.repeat(320_000);
+    const bigPhotoB = 'data:image/jpeg;base64,' + 'B'.repeat(310_000);
+    const bigVoice = 'data:audio/webm;base64,' + 'V'.repeat(280_000);
+
+    const snapshot: BouquetSnapshot = {
+      items: [
+        {
+          id: 'p1',
+          type: 'rose',
+          photoStyle: 'polaroid',
+          photoCaption: 'Sunset',
+          photoDataUrl: bigPhotoA,
+          x: 220,
+          y: 280,
+          scale: 1,
+          rotation: 0,
+          flipX: false,
+          petalColor: '#ffffff',
+          centerColor: '#d4a373',
+        },
+        {
+          id: 'p2',
+          type: 'rose',
+          photoStyle: 'stamp',
+          photoCaption: 'Morning',
+          photoDataUrl: bigPhotoB,
+          x: 360,
+          y: 290,
+          scale: 1,
+          rotation: 5,
+          flipX: false,
+          petalColor: '#ffffff',
+          centerColor: '#d4a373',
+        },
+      ],
+      wrapStyle: 'kraft',
+      wrapColor: '#d4a373',
+      ribbonColor: '#e11d48',
+      ribbonStyle: 'satin',
+      card: {
+        to: 'Elena',
+        from: 'Noah',
+        message: 'Every memory saved forever.',
+        theme: 'cream',
+        visibleOnStage: true,
+      },
+      voice: {
+        style: 'mixtape',
+        visibleOnStage: true,
+        title: 'Love Tape',
+        primaryColor: '#374151',
+        accentColor: '#ec4899',
+        audioDataUrl: bigVoice,
+        durationSec: 42,
+      },
+    };
+
+    const fullPayload = encodeBouquetToCompactPayload(snapshot, true);
+    const code = 'HeavyBq01234567';
+
+    // Client split
+    const clientSplit = extractOverflowAssetsFromPayload(code, fullPayload, bigVoice);
+    assert.ok(clientSplit.combinedBytes <= 750_000, 'Main Firestore doc must stay safely under 750KB');
+    assert.ok(clientSplit.assets.length >= 2, 'Voice and overflow photo(s) must be split into assets');
+    assert.equal(clientSplit.voiceAudioDataUrl, `asset:${code}_voice`);
+
+    // Even before asset hydration, decodeBouquetFromHash must not throw on asset: pointers
+    const unhydratedDecoded = decodeBouquetFromHash(clientSplit.payload);
+    assert.ok(unhydratedDecoded, 'Decoder must gracefully handle unresolved asset pointers');
+
+    // Collect pointers and re-hydrate on client
+    const collectedIds = collectAssetIdsFromBouquetRecord(
+      clientSplit.payload,
+      clientSplit.voiceAudioDataUrl
+    );
+    assert.equal(collectedIds.length, clientSplit.assets.length);
+    const assetMap: Record<string, string> = {};
+    for (const a of clientSplit.assets) assetMap[a.assetId] = a.dataUrl;
+
+    const rehydrated = rehydrateBouquetRecordWithAssets(
+      clientSplit.payload,
+      clientSplit.voiceAudioDataUrl,
+      assetMap
+    );
+    assert.equal(rehydrated.voiceAudioDataUrl, bigVoice);
+    const finalDecoded = hydrateSnapshotWithFirestoreRecord(
+      decodeBouquetFromHash(rehydrated.payload)!,
+      { voiceAudioDataUrl: rehydrated.voiceAudioDataUrl }
+    );
+    assert.equal(finalDecoded.items[0].photoDataUrl, bigPhotoA);
+    assert.equal(finalDecoded.items[1].photoDataUrl, bigPhotoB);
+    assert.equal(finalDecoded.voice?.audioDataUrl, bigVoice);
+
+    // Server split & re-hydrate parity
+    const serverSplit = extractOverflowAssetsFromPayloadServer(code, fullPayload, bigVoice);
+    assert.equal(serverSplit.assets.length, clientSplit.assets.length);
+    const serverAssetMap: Record<string, string> = {};
+    for (const a of serverSplit.assets) serverAssetMap[a.assetId] = a.dataUrl;
+    const serverRehydrated = rehydrateBouquetRecordWithAssetsServer(
+      serverSplit.payload,
+      serverSplit.voiceAudioDataUrl,
+      serverAssetMap
+    );
+    assert.equal(serverRehydrated.voiceAudioDataUrl, bigVoice);
+    assert.equal(
+      decodeBouquetFromHash(serverRehydrated.payload)?.items[0].photoDataUrl,
+      bigPhotoA
+    );
+  });
+
+  it('correctly strips inline photocard data from stem tilde index 7 on the server (fixing old broken &c= regex)', () => {
+    const samplePhoto = 'data:image/jpeg;base64,' + 'Z'.repeat(5000);
+    const snapshot: BouquetSnapshot = {
+      items: [
+        {
+          id: 'p1',
+          type: 'rose',
+          photoStyle: 'polaroid',
+          photoCaption: 'Keep Caption',
+          photoDataUrl: samplePhoto,
+          x: 260,
+          y: 280,
+          scale: 1,
+          rotation: 0,
+          flipX: false,
+          petalColor: '#ffffff',
+          centerColor: '#d4a373',
+        },
+      ],
+      wrapStyle: 'kraft',
+      wrapColor: '#d4a373',
+      ribbonColor: '#e11d48',
+      card: { to: 'A', from: 'B', message: 'Hi', theme: 'cream', visibleOnStage: true },
+    };
+    const encoded = encodeBouquetToCompactPayload(snapshot, true);
+    assert.ok(encoded.length > 5000);
+    const stripped = stripInlinePhotosFromCompactPayloadServer(encoded);
+    assert.ok(stripped.length < 400, 'Server stripper must remove large base64url photo segment');
+    const decoded = decodeBouquetFromHash(stripped);
+    assert.ok(decoded);
+    assert.equal(decoded.items[0].photoCaption, 'Keep Caption');
+    assert.equal(decoded.items[0].photoDataUrl, undefined);
+  });
+});
+
+describe('Server API — Eternal Persistence, CAS Garland Preservation & Admin Bouquet Log', () => {
+  it('logs both Garland AND Private-only bouquets, persists overflow assets, survives Garland expiry, and supports verify/toggle/delete with tombstones', async () => {
+    const origFetch = globalThis.fetch;
+    const { docs, mockFetch } = createMockFirestoreFetch({ failFirstGarlandCas: true });
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    try {
+      clearShortCodeMemoryForTesting();
+      resetOwnerBouquetLogStateForTesting();
+
+      // 1. Seed a legacy bouquet in sab_garland_feed_v1 (simulating an older creation created before the Admin Log existed)
+      const legacyCode = 'LegacyGarl00001';
+      const legacyCreatedAt = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(); // 45 days old -> expired on Garland!
+      const legacyPayload = encodeBouquetToCompactPayload(
+        {
+          items: [
+            {
+              id: 'r1',
+              type: 'rose',
+              x: 300,
+              y: 260,
+              scale: 1,
+              rotation: 0,
+              flipX: false,
+              petalColor: '#e11d48',
+              centerColor: '#fbbf24',
+            },
+          ],
+          wrapStyle: 'kraft',
+          wrapColor: '#d4a373',
+          ribbonColor: '#e11d48',
+          card: { to: 'Old Friend', from: 'Alex', message: 'Still here forever!', theme: 'cream', visibleOnStage: true },
+        },
+        true
+      );
+      docs.set(`shared_bouquets/${legacyCode}`, {
+        fields: {
+          code: { stringValue: legacyCode },
+          payload: { stringValue: legacyPayload },
+          createdAt: { stringValue: legacyCreatedAt },
+          retentionDays: { integerValue: '30' },
+          isPremium: { booleanValue: false },
+        },
+        updateTime: '2026-10-01T00:00:00.000000Z',
+      });
+      docs.set('shared_bouquets/sab_garland_feed_v1', {
+        fields: {
+          code: { stringValue: 'sab_garland_feed_v1' },
+          payload: { stringValue: '#sab_garland_feed_v1' },
+          createdAt: { stringValue: '2026-11-08T00:00:00.000Z' },
+          voiceAudioDataUrl: {
+            stringValue: JSON.stringify([
+              {
+                code: legacyCode,
+                to: 'Old Friend',
+                from: 'Alex',
+                createdAt: legacyCreatedAt,
+                shareUrl: `/${legacyCode}`,
+                isDraft: false,
+                pinToShowcase: true,
+                retentionDays: 30,
+                isPremium: false,
+                draftPayload: legacyPayload,
+              },
+            ]),
+          },
+        },
+        updateTime: '2026-11-08T00:00:00.000000Z',
+      });
+
+      // Verify legacy bouquet is expired for Garland display, YET GET /api/shorten?c=LegacyGarl00001 STILL serves it eternally!
+      assert.equal(
+        isShowcaseBouquetExpired(
+          { sharedAt: legacyCreatedAt, isPremium: false, retentionDays: 30 },
+          Date.now()
+        ),
+        true
+      );
+      const getLegacy = createMockReqRes('GET', `/api/shorten?c=${legacyCode}`);
+      await shortenHandler(getLegacy.req, getLegacy.res);
+      assert.equal(getLegacy.res.statusCode, 200);
+      assert.equal(getLegacy.res.json().payload, legacyPayload);
+
+      // 2. POST a Garland-pinned bouquet (should retry CAS conflict cleanly and NOT overwrite LegacyGarl00001)
+      const garlandCode = 'GarlandNew00002';
+      const garlandPayload = encodeBouquetToCompactPayload(
+        {
+          items: [
+            {
+              id: 't1',
+              type: 'tulip',
+              x: 290,
+              y: 250,
+              scale: 1,
+              rotation: 0,
+              flipX: false,
+              petalColor: '#f43f5e',
+              centerColor: '#fde047',
+            },
+          ],
+          wrapStyle: 'tissue',
+          wrapColor: '#fce7f3',
+          ribbonColor: '#e11d48',
+          card: { to: 'Maya', from: 'Liam', message: 'Pinned to garland!', theme: 'blush', visibleOnStage: true },
+        },
+        true
+      );
+      const postGarland = createMockReqRes('POST', '/api/shorten', {
+        code: garlandCode,
+        payload: garlandPayload,
+        origin: 'https://sendabouquet.shop',
+        pinToShowcase: true,
+        bouquetMeta: {
+          to: 'Maya',
+          from: 'Liam',
+          noteExcerpt: 'Pinned to garland!',
+          flowerCount: 1,
+          photoCount: 0,
+          hasVoice: false,
+        },
+        garlandEntry: {
+          code: garlandCode,
+          to: 'Maya',
+          from: 'Liam',
+          createdAt: new Date().toISOString(),
+          shareUrl: `https://sendabouquet.shop/${garlandCode}`,
+          isDraft: false,
+          pinToShowcase: true,
+          draftPayload: garlandPayload,
+        },
+      });
+      await shortenHandler(postGarland.req, postGarland.res);
+      assert.equal(postGarland.res.statusCode, 200);
+      assert.equal(postGarland.res.json().persisted, true);
+
+      // Verify Garland feed has BOTH new AND legacy entries after CAS retry!
+      const feedRaw = (docs.get('shared_bouquets/sab_garland_feed_v1')?.fields?.voiceAudioDataUrl as { stringValue: string })?.stringValue;
+      const feedEntries = JSON.parse(feedRaw);
+      assert.equal(feedEntries.length, 2);
+      assert.ok(feedEntries.some((e: { code: string }) => e.code === legacyCode));
+      assert.ok(feedEntries.some((e: { code: string }) => e.code === garlandCode));
+
+      // 3. Mint & redeem a real Studio Pass so coutureGuard authorizes a PRIVATE-ONLY (non-Garland) Couture bouquet with heavy overflow photo + voice (>750KB)
+      const deviceHash = 'dev_owner_test_hash_12345';
+      const adminToken = createSignedAdminSessionToken(deviceHash);
+
+      const mintReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'mint_paid_pass',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        tier: 'pass_30d',
+        region: 'global',
+        label: 'QA Persistence Pass',
+        channel: 'test',
+      });
+      await handleVerifyAction(mintReq.req, mintReq.res);
+      assert.equal(mintReq.res.statusCode, 200);
+      const mintedPassKey = mintReq.res.json().pass?.passKey;
+      assert.ok(mintedPassKey, 'Minted passKey must be returned');
+
+      const redeemReq = createMockReqRes('POST', '/api/payments/redeem-pass', {
+        passKey: mintedPassKey,
+        deviceTokenHash: deviceHash,
+      });
+      await handlePaymentEndpoint(redeemReq.req, redeemReq.res, '/api/payments/redeem-pass');
+      assert.equal(redeemReq.res.statusCode, 200);
+      const redeemedPass = redeemReq.res.json().pass;
+      assert.ok(redeemedPass?.activeSessionNonce, 'Redeemed pass must carry activeSessionNonce');
+
+      const privateCode = 'PrivateMock0003';
+      const bigPhoto = 'data:image/jpeg;base64,' + 'P'.repeat(420_000);
+      const bigVoice = 'data:audio/webm;base64,' + 'M'.repeat(400_000);
+      const privatePayload = encodeBouquetToCompactPayload(
+        {
+          items: [
+            {
+              id: 'ph-big',
+              type: 'rose',
+              photoStyle: 'polaroid',
+              photoCaption: 'Secret',
+              photoDataUrl: bigPhoto,
+              x: 280,
+              y: 280,
+              scale: 1,
+              rotation: 0,
+              flipX: false,
+              petalColor: '#ffffff',
+              centerColor: '#d4a373',
+            },
+          ],
+          wrapStyle: 'kraft',
+          wrapColor: '#d4a373',
+          ribbonColor: '#e11d48',
+          card: { to: 'Mock Test', from: 'QA', message: 'Private non-garland mock', theme: 'cream', visibleOnStage: true },
+          voice: {
+            style: 'mixtape',
+            visibleOnStage: true,
+            title: 'Voice Note',
+            primaryColor: '#1f2937',
+            accentColor: '#ec4899',
+            audioDataUrl: bigVoice,
+            durationSec: 12,
+          },
+        },
+        true
+      );
+      const postPrivate = createMockReqRes('POST', '/api/shorten', {
+        code: privateCode,
+        payload: privatePayload,
+        voiceAudioDataUrl: bigVoice,
+        voiceStyle: 'mixtape',
+        voiceTitle: 'Voice Note',
+        voiceDurationSec: 12,
+        passKey: redeemedPass.passKey,
+        deviceTokenHash: deviceHash,
+        activeSessionNonce: redeemedPass.activeSessionNonce,
+        pass: redeemedPass,
+        origin: 'https://sendabouquet.shop',
+        pinToShowcase: false,
+        bouquetMeta: {
+          to: 'Mock Test',
+          from: 'QA',
+          noteExcerpt: 'Private non-garland mock',
+          flowerCount: 1,
+          photoCount: 1,
+          hasVoice: true,
+          voiceStyle: 'mixtape',
+        },
+        garlandEntry: null,
+      });
+      await shortenHandler(postPrivate.req, postPrivate.res);
+      assert.equal(postPrivate.res.statusCode, 200);
+      assert.equal(postPrivate.res.json().persisted, true);
+      assert.ok(postPrivate.res.json().assetCount >= 1, 'Heavy private bouquet must create overflow bouquet_assets');
+      assert.ok(docs.has(`bouquet_assets/${privateCode}_voice`), 'Voice asset must exist in bouquet_assets');
+
+      // Clear local memory cache and verify GET /api/shorten?c=PrivateMock0003 re-hydrates full photo + voice from Firestore!
+      clearShortCodeMemoryForTesting();
+      const getPrivate = createMockReqRes('GET', `/api/shorten?c=${privateCode}`);
+      await shortenHandler(getPrivate.req, getPrivate.res);
+      assert.equal(getPrivate.res.statusCode, 200);
+      assert.equal(getPrivate.res.json().voiceAudioDataUrl, bigVoice);
+      assert.equal(decodeBouquetFromHash(getPrivate.res.json().payload)?.items[0].photoDataUrl, bigPhoto);
+
+      // 4. Verify unauthenticated admin calls are rejected with 401
+      const unauthReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'fetch_owner_bouquet_log',
+        adminSessionToken: 'forged',
+        deviceTokenHash: 'dev_owner_1',
+      });
+      await handleVerifyAction(unauthReq.req, unauthReq.res);
+      assert.equal(unauthReq.res.statusCode, 401);
+
+      // 5. Authenticated fetch_owner_bouquet_log returns ALL 3 bouquets (Garland new, Private-only, AND backfilled Legacy!)
+      const fetchLogReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'fetch_owner_bouquet_log',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+      });
+      await handleVerifyAction(fetchLogReq.req, fetchLogReq.res);
+      assert.equal(fetchLogReq.res.statusCode, 200);
+      const logList: AdminBouquetLogEntry[] = fetchLogReq.res.json().bouquetLog;
+      assert.equal(logList.length, 3);
+      assert.ok(logList.some((b) => b.code === privateCode && b.pinnedToGarland === false));
+      assert.ok(logList.some((b) => b.code === garlandCode && b.pinnedToGarland === true));
+      assert.ok(logList.some((b) => b.code === legacyCode && b.pinnedToGarland === true));
+
+      // 6. Verify live persistence of the Private heavy bouquet via verify_owner_bouquet
+      const verifyReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'verify_owner_bouquet',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        code: privateCode,
+      });
+      await handleVerifyAction(verifyReq.req, verifyReq.res);
+      assert.equal(verifyReq.res.statusCode, 200);
+      assert.equal(verifyReq.res.json().verification.existsInFirestore, true);
+      assert.equal(verifyReq.res.json().verification.eternalLinkActive, true);
+      assert.equal(verifyReq.res.json().verification.inGarlandFeed, false);
+      assert.ok(verifyReq.res.json().verification.assetCount >= 1);
+
+      // 7. Unpin garlandCode from Garland — verify it leaves sab_garland_feed_v1 while shared_bouquets/{code} stays eternal!
+      const unpinReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'toggle_owner_bouquet_garland',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        code: garlandCode,
+        pinned: false,
+      });
+      await handleVerifyAction(unpinReq.req, unpinReq.res);
+      assert.equal(unpinReq.res.statusCode, 200);
+      assert.ok(docs.has(`shared_bouquets/${garlandCode}`), 'Unpinning must NOT delete eternal shared_bouquets doc');
+      const feedAfterUnpin = JSON.parse(
+        (docs.get('shared_bouquets/sab_garland_feed_v1')?.fields?.voiceAudioDataUrl as { stringValue: string }).stringValue
+      );
+      assert.equal(feedAfterUnpin.some((e: { code: string }) => e.code === garlandCode), false);
+
+      // 8. Admin manually deletes mock private bouquet + legacy bouquet (and tries deleting sab_* system docs which must be ignored!)
+      const delReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'delete_owner_bouquets',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        codes: [privateCode, legacyCode, 'sab_garland_feed_v1', OWNER_VAULT_DOC_CODE, OWNER_BOUQUET_LOG_DOC_CODE],
+      });
+      await handleVerifyAction(delReq.req, delReq.res);
+      assert.equal(delReq.res.statusCode, 200);
+      assert.deepEqual(delReq.res.json().deletedCodes.sort(), [legacyCode, privateCode].sort());
+      assert.equal(docs.has(`shared_bouquets/${privateCode}`), false, 'Deleted mock bouquet must be removed from Firestore');
+      assert.equal(docs.has(`bouquet_assets/${privateCode}_voice`), false, 'Companion overflow assets must be cleaned up');
+      assert.equal(docs.has(`shared_bouquets/${legacyCode}`), false);
+      assert.equal(docs.has('shared_bouquets/sab_garland_feed_v1'), true, 'System docs must never be deleted');
+
+      // Warm RAM / /tmp cache must be evicted immediately on GET after admin delete (404 without process restart)
+      const getDeletedWarm = createMockReqRes('GET', `/api/shorten?c=${privateCode}`);
+      await shortenHandler(getDeletedWarm.req, getDeletedWarm.res);
+      assert.equal(getDeletedWarm.res.statusCode, 404, 'Admin-deleted bouquet must immediately return 404 even with warm cache');
+
+      // Re-hydrating from Firestore after cold start must NOT resurrect deleted codes!
+      resetOwnerBouquetLogStateForTesting();
+      const postDeleteLogReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'fetch_owner_bouquet_log',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+      });
+      await handleVerifyAction(postDeleteLogReq.req, postDeleteLogReq.res);
+      const afterDeleteList: AdminBouquetLogEntry[] = postDeleteLogReq.res.json().bouquetLog;
+      assert.equal(afterDeleteList.length, 1);
+      assert.equal(afterDeleteList[0].code, garlandCode);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('preserves >24 shared creations in sab_garland_feed_v1 without silently evicting older creations', async () => {
+    const origFetch = globalThis.fetch;
+    const { docs, mockFetch } = createMockFirestoreFetch();
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    try {
+      for (let i = 1; i <= 30; i++) {
+        const code = `GarlKeep${String(i).padStart(6, '0')}`;
+        const ok = await publishToGarlandFeedRest(code, '#g=0.0.@0', {
+          code,
+          to: `Recipient ${i}`,
+          from: 'Atelier',
+          createdAt: new Date(Date.now() + i * 1000).toISOString(),
+          shareUrl: `https://sendabouquet.shop/${code}`,
+          isDraft: false,
+          pinToShowcase: true,
+          draftPayload: '#g=0.0.@0',
+        });
+        assert.equal(ok, true);
+      }
+
+      const feedRaw = (docs.get('shared_bouquets/sab_garland_feed_v1')?.fields?.voiceAudioDataUrl as { stringValue: string }).stringValue;
+      const entries = JSON.parse(feedRaw);
+      assert.equal(entries.length, 30, 'All 30 creations must remain in sab_garland_feed_v1 (no 24-item truncation!)');
+      assert.ok(entries.some((e: { code: string }) => e.code === 'GarlKeep000001'));
+      assert.ok(entries.some((e: { code: string }) => e.code === 'GarlKeep000030'));
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('Admin Bouquet Log Pure Helpers', () => {
+  it('classifies, counts, filters, and extracts short codes accurately', () => {
+    const now = Date.parse('2026-11-19T12:00:00.000Z');
+    const entries: AdminBouquetLogEntry[] = [
+      {
+        code: 'LiveGarland0001',
+        to: 'Sofia',
+        from: 'Marco',
+        noteExcerpt: 'Happy anniversary',
+        createdAt: '2026-11-15T12:00:00.000Z',
+        shareUrl: '/LiveGarland0001',
+        pinnedToGarland: true,
+        isPremium: false,
+        retentionDays: 30,
+        isCouture: false,
+        flowerCount: 5,
+        photoCount: 1,
+        hasVoice: false,
+        lockMode: 'none',
+        payloadBytes: 4200,
+        voiceBytes: 0,
+        assetIds: [],
+        persistedToFirestore: true,
+      },
+      {
+        code: 'ExpiredGarl0002',
+        to: 'Hannah',
+        from: 'Leo',
+        noteExcerpt: 'From last month',
+        createdAt: '2026-10-01T12:00:00.000Z',
+        shareUrl: '/ExpiredGarl0002',
+        pinnedToGarland: true,
+        isPremium: false,
+        retentionDays: 30,
+        isCouture: false,
+        flowerCount: 4,
+        photoCount: 0,
+        hasVoice: true,
+        voiceStyle: 'vinyl',
+        lockMode: 'passcode',
+        payloadBytes: 1800,
+        voiceBytes: 60000,
+        assetIds: [],
+        persistedToFirestore: true,
+      },
+      {
+        code: 'PrivateOnly0003',
+        to: 'Secret',
+        from: 'Me',
+        noteExcerpt: 'Not on garland',
+        createdAt: '2026-11-18T12:00:00.000Z',
+        shareUrl: '/PrivateOnly0003',
+        pinnedToGarland: false,
+        isPremium: true,
+        retentionDays: 36500,
+        isCouture: true,
+        flowerCount: 7,
+        photoCount: 2,
+        hasVoice: true,
+        lockMode: 'countdown',
+        payloadBytes: 9000,
+        voiceBytes: 80000,
+        assetIds: ['PrivateOnly0003_voice'],
+        persistedToFirestore: true,
+      },
+    ];
+
+    assert.equal(isGarlandDisplayExpired(entries[0], now), false);
+    assert.equal(isGarlandDisplayExpired(entries[1], now), true);
+    assert.equal(isGarlandDisplayExpired(entries[2], now), false);
+
+    assert.equal(classifyAdminBouquetStatus(entries[0], now), 'garland_live');
+    assert.equal(classifyAdminBouquetStatus(entries[1], now), 'garland_expired');
+    assert.equal(classifyAdminBouquetStatus(entries[2], now), 'private_eternal');
+
+    const counts = countAdminBouquetStatuses(entries, now);
+    assert.deepEqual(counts, {
+      all: 3,
+      garland: 1,
+      private: 1,
+      expired_garland: 1,
+      with_voice: 2,
+      with_photos: 2,
+    });
+
+    assert.equal(filterAdminBouquetLog(entries, { status: 'private' }, now).length, 1);
+    assert.equal(filterAdminBouquetLog(entries, { status: 'expired_garland' }, now).length, 1);
+    assert.equal(filterAdminBouquetLog(entries, { search: 'hannah' }, now)[0].code, 'ExpiredGarl0002');
+
+    assert.equal(extractShortCodeFromInput('https://sendabouquet.shop/Vu18KSuusq9133s?x=1'), 'Vu18KSuusq9133s');
+    assert.equal(extractShortCodeFromInput('/Vu18KSuusq9133s'), 'Vu18KSuusq9133s');
+    assert.equal(extractShortCodeFromInput('sab_garland_feed_v1'), null);
+
+    const summary = inspectPayloadAssetsSummary('#g=0.0.@0', null);
+    assert.equal(summary.flowerCount, 5);
+    assert.equal(summary.wrapStyle, 'kraft');
+  });
+});

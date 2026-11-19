@@ -3,9 +3,11 @@ import {
   getFirestore,
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  runTransaction
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { BouquetSnapshot, SavedVaultBouquet } from '../types/bouquet';
@@ -13,9 +15,27 @@ import {
   stripInlineAudioFromCompactPayload,
   stripInlinePhotosFromCompactPayload
 } from './shareAndExport';
+import {
+  collectAssetIdsFromBouquetRecord,
+  extractOverflowAssetsFromPayload,
+  MAX_GARLAND_FEED_ENTRIES,
+  rehydrateBouquetRecordWithAssets,
+} from './bouquetPersistence';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+if (typeof window !== 'undefined') {
+  (async function testConnection() {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        console.error('Please check your Firebase configuration.');
+      }
+    }
+  })();
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -174,14 +194,13 @@ export async function saveSharedBouquetToFirestore(
   snapshot?: BouquetSnapshot,
   retentionMeta?: { isPremium?: boolean; retentionDays?: number }
 ): Promise<boolean> {
-  if (!code || !CODE_REGEX.test(code)) return false;
+  if (!code || !CODE_REGEX.test(code) || code.startsWith('sab_')) return false;
   if (!payload || payload.length < 3) return false;
 
   const voice = snapshot?.voice;
   const cleanPayload = voice?.audioDataUrl
     ? stripInlineAudioFromCompactPayload(payload)
     : payload;
-  if (cleanPayload.length > 900000) return false;
 
   const docPath = `shared_bouquets/${code}`;
   const docRef = doc(db, 'shared_bouquets', code);
@@ -192,11 +211,40 @@ export async function saveSharedBouquetToFirestore(
       ? (existingSnap.data() as Partial<SharedBouquetRecord>)
       : null;
 
+    const createdAt =
+      existingData && typeof existingData.createdAt === 'string' && existingData.createdAt.length >= 10
+        ? existingData.createdAt
+        : new Date().toISOString();
+
+    // Automatically offload overflow voice/photos into eternal companion `bouquet_assets/{assetId}` docs
+    // whenever combined document size would approach Firestore's 1 MiB ceiling.
+    const split = extractOverflowAssetsFromPayload(
+      code,
+      cleanPayload,
+      voice?.audioDataUrl || existingData?.voiceAudioDataUrl || undefined,
+      { createdAt }
+    );
+    if (split.payload.length > 900000) return false;
+
+    if (split.assets.length > 0) {
+      await Promise.all(
+        split.assets.map((asset) =>
+          setDoc(doc(db, 'bouquet_assets', asset.assetId), {
+            assetId: asset.assetId,
+            bouquetCode: asset.bouquetCode,
+            kind: asset.kind,
+            dataUrl: asset.dataUrl,
+            createdAt: asset.createdAt,
+          })
+        )
+      );
+    }
+
     const record = sanitizeRecordForFirestore(
       existingData,
       {
-        payload: cleanPayload,
-        voiceAudioDataUrl: voice?.audioDataUrl || undefined,
+        payload: split.payload,
+        voiceAudioDataUrl: split.voiceAudioDataUrl,
         voiceStyle: voice?.style,
         voiceTitle: voice?.title,
         voiceDurationSec: voice?.durationSec,
@@ -204,6 +252,7 @@ export async function saveSharedBouquetToFirestore(
         voicePlayCount: existingData?.voicePlayCount ?? 0,
         isPremium: retentionMeta?.isPremium ?? existingData?.isPremium,
         retentionDays: retentionMeta?.retentionDays ?? existingData?.retentionDays,
+        createdAt,
       },
       code
     );
@@ -232,7 +281,39 @@ export async function fetchSharedBouquetFromFirestore(
     if (!snap.exists()) return null;
     const data = snap.data() as SharedBouquetRecord;
     if (!data || typeof data.payload !== 'string') return null;
-    return data;
+
+    const assetIds = collectAssetIdsFromBouquetRecord(data.payload, data.voiceAudioDataUrl);
+    if (assetIds.length === 0) {
+      return data;
+    }
+
+    const assetMap: Record<string, string> = {};
+    const assetSnaps = await Promise.all(
+      assetIds.map((assetId) =>
+        getDoc(doc(db, 'bouquet_assets', assetId)).catch(() => null)
+      )
+    );
+    assetSnaps.forEach((assetSnap, idx) => {
+      if (assetSnap && assetSnap.exists()) {
+        const assetData = assetSnap.data() as { dataUrl?: unknown };
+        if (typeof assetData?.dataUrl === 'string' && assetData.dataUrl.length > 0) {
+          assetMap[assetIds[idx]] = assetData.dataUrl;
+        }
+      }
+    });
+
+    const rehydrated = rehydrateBouquetRecordWithAssets(
+      data.payload,
+      data.voiceAudioDataUrl,
+      assetMap
+    );
+    return {
+      ...data,
+      payload: rehydrated.payload,
+      ...(rehydrated.voiceAudioDataUrl
+        ? { voiceAudioDataUrl: rehydrated.voiceAudioDataUrl }
+        : {}),
+    };
   } catch (error) {
     if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
       handleFirestoreError(error, OperationType.GET, docPath);
@@ -585,6 +666,7 @@ export async function publishBouquetToGlobalGarlandFeed(
     !entry ||
     !entry.code ||
     entry.code.startsWith('draft_') ||
+    entry.code.startsWith('sab_') ||
     entry.isDraft !== false ||
     entry.pinToShowcase !== true ||
     typeof entry.shareUrl !== 'string' ||
@@ -594,123 +676,136 @@ export async function publishBouquetToGlobalGarlandFeed(
   }
   try {
     const feedDocRef = doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE);
-    const snap = await getDoc(feedDocRef);
-    const snapData = snap.exists() ? (snap.data() as Partial<SharedBouquetRecord>) : null;
-    const preservedCreatedAt =
-      snapData && typeof snapData.createdAt === 'string' && snapData.createdAt.length >= 10
-        ? snapData.createdAt
-        : GARLAND_FEED_IMMUTABLE_CREATED_AT;
-    const preservedPayload =
-      snapData && typeof snapData.payload === 'string' && snapData.payload.length >= 3
-        ? snapData.payload
-        : GARLAND_FEED_IMMUTABLE_PAYLOAD;
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(feedDocRef);
+      const snapData = snap.exists() ? (snap.data() as Partial<SharedBouquetRecord>) : null;
+      const preservedCreatedAt =
+        snapData && typeof snapData.createdAt === 'string' && snapData.createdAt.length >= 10
+          ? snapData.createdAt
+          : GARLAND_FEED_IMMUTABLE_CREATED_AT;
+      const preservedPayload =
+        snapData && typeof snapData.payload === 'string' && snapData.payload.length >= 3
+          ? snapData.payload
+          : GARLAND_FEED_IMMUTABLE_PAYLOAD;
 
-    const existing = parseGarlandFeedData(snapData);
-    const maxExistingTime = existing.reduce(
-      (max, item) => Math.max(max, Date.parse(item?.createdAt || '') || 0),
-      0
-    );
-    const entryTime = Date.parse(entry.createdAt || '') || 0;
-    const normalizedCreatedAt = new Date(
-      Math.max(entryTime, Date.now(), maxExistingTime + 1000)
-    ).toISOString();
+      const existing = parseGarlandFeedData(snapData);
+      const maxExistingTime = existing.reduce(
+        (max, item) => Math.max(max, Date.parse(item?.createdAt || '') || 0),
+        0
+      );
+      const entryTime = Date.parse(entry.createdAt || '') || 0;
+      const normalizedCreatedAt = new Date(
+        Math.max(entryTime, Date.now(), maxExistingTime + 1000)
+      ).toISOString();
 
-    const compactEntry: SavedVaultBouquet = {
-      ...entry,
-      createdAt: normalizedCreatedAt,
-      lockMode: 'none',
-      isDraft: false,
-      pinToShowcase: true,
-      draftPayload: stripInlineAudioAndLockFromPayload(entry.draftPayload),
-    };
-    const filtered = existing.filter(
-      (b) => b.code !== compactEntry.code && (!replaceCode || b.code !== replaceCode)
-    );
-    let merged = deduplicateVaultList([compactEntry, ...filtered], true).slice(0, 24);
-    let jsonStr = JSON.stringify(merged);
+      // Store a lightweight index entry in `sab_garland_feed_v1` (photos & voice stay full-res in `shared_bouquets/{code}` + `bouquet_assets/*`)
+      const compactEntry: SavedVaultBouquet = {
+        ...entry,
+        createdAt: normalizedCreatedAt,
+        lockMode: 'none',
+        isDraft: false,
+        pinToShowcase: true,
+        draftPayload: stripInlineAudioAndLockFromPayload(entry.draftPayload),
+      };
+      const filtered = existing.filter(
+        (b) => b.code !== compactEntry.code && (!replaceCode || b.code !== replaceCode)
+      );
+      let merged = deduplicateVaultList([compactEntry, ...filtered], true).slice(
+        0,
+        MAX_GARLAND_FEED_ENTRIES
+      );
 
-    // If multiple photo-heavy bouquets push the feed index over 720KB, strip inline photo base64
-    // from older feed index summaries (full photos & voice remain stored in `shared_bouquets/{code}`)
-    if (jsonStr.length > 720_000) {
+      // Keep feed index compact so up to 250 shared creations persist cleanly without evicting older gifts
       merged = merged.map((item, idx) => ({
         ...item,
         draftPayload:
           idx < 3
             ? stripInlineAudioAndLockFromPayload(item.draftPayload)
-            : stripInlinePhotosFromCompactPayload(item.draftPayload),
+            : stripInlinePhotosFromCompactPayload(stripInlineAudioAndLockFromPayload(item.draftPayload)),
       }));
-      jsonStr = JSON.stringify(merged);
-    }
-    if (jsonStr.length > 880_000) {
-      merged = merged.map((item) => ({
-        ...item,
-        draftPayload: stripInlinePhotosFromCompactPayload(item.draftPayload),
-      }));
-      jsonStr = JSON.stringify(merged);
-    }
-    if (jsonStr.length > 880_000) return false;
+      let jsonStr = JSON.stringify(merged);
 
-    await setDoc(feedDocRef, {
-      code: GARLAND_FEED_DOC_CODE,
-      payload: preservedPayload,
-      createdAt: preservedCreatedAt,
-      voiceAudioDataUrl: jsonStr,
+      if (jsonStr.length > 680_000) {
+        merged = merged.map((item) => ({
+          ...item,
+          draftPayload: stripInlinePhotosFromCompactPayload(
+            stripInlineAudioAndLockFromPayload(item.draftPayload)
+          ),
+        }));
+        jsonStr = JSON.stringify(merged);
+      }
+      if (jsonStr.length > 860_000) {
+        while (merged.length > 20 && jsonStr.length > 860_000) {
+          merged.pop();
+          jsonStr = JSON.stringify(merged);
+        }
+      }
+      if (jsonStr.length > 880_000) return false;
+
+      tx.set(feedDocRef, {
+        code: GARLAND_FEED_DOC_CODE,
+        payload: preservedPayload,
+        createdAt: preservedCreatedAt,
+        voiceAudioDataUrl: jsonStr,
+      });
+      return true;
     });
-    return true;
   } catch {
     return false;
   }
 }
 
 /**
- * Deletes a bouquet from Firestore (`shared_bouquets/{code}`) and removes it from
- * the global Lace Garland feed (`sab_garland_feed_v1`) when the user deletes it.
+ * Deletes a bouquet from Firestore (`shared_bouquets/{code}` + any companion `bouquet_assets`)
+ * and removes it from the global Lace Garland feed (`sab_garland_feed_v1`).
+ * Protected against ever deleting `sab_*` system records.
  */
 export async function removeBouquetFromFirestoreAndGarland(code: string): Promise<void> {
-  if (!code || !CODE_REGEX.test(code) || code === GARLAND_FEED_DOC_CODE) return;
+  if (!code || !CODE_REGEX.test(code) || code.startsWith('sab_')) return;
   try {
-    await deleteDoc(doc(db, 'shared_bouquets', code)).catch(() => {});
+    const docRef = doc(db, 'shared_bouquets', code);
+    const snap = await getDoc(docRef).catch(() => null);
+    if (snap && snap.exists()) {
+      const data = snap.data() as Partial<SharedBouquetRecord>;
+      const assetIds = collectAssetIdsFromBouquetRecord(data.payload, data.voiceAudioDataUrl);
+      if (assetIds.length > 0) {
+        await Promise.all(
+          assetIds.map((assetId) => deleteDoc(doc(db, 'bouquet_assets', assetId)).catch(() => {}))
+        );
+      }
+    }
+    await deleteDoc(docRef).catch(() => {});
   } catch {
     // Ignore if document doesn't exist
   }
   try {
     const feedDocRef = doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE);
-    const snap = await getDoc(feedDocRef);
-    if (!snap.exists()) return;
-    const snapData = snap.data() as Partial<SharedBouquetRecord>;
-    if (!snapData?.voiceAudioDataUrl) return;
-    const parsed = JSON.parse(snapData.voiceAudioDataUrl);
-    if (!Array.isArray(parsed)) return;
-    const existing = deduplicateVaultList(
-      parsed.filter(
-        (item) =>
-          item &&
-          typeof item.code === 'string' &&
-          !item.code.startsWith('draft_') &&
-          item.isDraft === false &&
-          item.pinToShowcase === true
-      )
-    );
-    const filtered = existing.filter((b) => b.code !== code);
-    if (filtered.length !== existing.length) {
-      const jsonStr = JSON.stringify(filtered);
-      if (jsonStr.length <= 880_000) {
-        const preservedCreatedAt =
-          typeof snapData.createdAt === 'string' && snapData.createdAt.length >= 10
-            ? snapData.createdAt
-            : GARLAND_FEED_IMMUTABLE_CREATED_AT;
-        const preservedPayload =
-          typeof snapData.payload === 'string' && snapData.payload.length >= 3
-            ? snapData.payload
-            : GARLAND_FEED_IMMUTABLE_PAYLOAD;
-        await setDoc(feedDocRef, {
-          code: GARLAND_FEED_DOC_CODE,
-          payload: preservedPayload,
-          createdAt: preservedCreatedAt,
-          voiceAudioDataUrl: jsonStr,
-        });
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(feedDocRef);
+      if (!snap.exists()) return;
+      const snapData = snap.data() as Partial<SharedBouquetRecord>;
+      const existing = parseGarlandFeedData(snapData);
+      const filtered = existing.filter((b) => b.code !== code);
+      if (filtered.length !== existing.length) {
+        const jsonStr = JSON.stringify(filtered);
+        if (jsonStr.length <= 880_000) {
+          const preservedCreatedAt =
+            typeof snapData.createdAt === 'string' && snapData.createdAt.length >= 10
+              ? snapData.createdAt
+              : GARLAND_FEED_IMMUTABLE_CREATED_AT;
+          const preservedPayload =
+            typeof snapData.payload === 'string' && snapData.payload.length >= 3
+              ? snapData.payload
+              : GARLAND_FEED_IMMUTABLE_PAYLOAD;
+          tx.set(feedDocRef, {
+            code: GARLAND_FEED_DOC_CODE,
+            payload: preservedPayload,
+            createdAt: preservedCreatedAt,
+            voiceAudioDataUrl: jsonStr,
+          });
+        }
       }
-    }
+    });
   } catch {
     // Ignore background feed cleanup errors
   }

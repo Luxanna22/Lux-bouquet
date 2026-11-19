@@ -149,5 +149,33 @@ export const DIRTY_DOZEN_TEST_CASES: SecurityAssertionCase[] = [
       createdAt: '2099-01-01T00:00:00.000Z'
     },
     expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 13,
+    name: 'System Record Deletion Protection (sab_*)',
+    operation: 'delete',
+    path: '/shared_bouquets/sab_garland_feed_v1',
+    expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 14,
+    name: 'Unauthorized Bouquet Assets Collection Listing',
+    operation: 'list',
+    path: '/bouquet_assets',
+    expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 15,
+    name: 'Invalid Bouquet Asset Kind Injection',
+    operation: 'create',
+    path: '/bouquet_assets/AbCdEf123456789_p0',
+    payload: {
+      assetId: 'AbCdEf123456789_p0',
+      bouquetCode: 'AbCdEf123456789',
+      kind: 'script',
+      dataUrl: 'data:text/javascript;base64,YWxlcnQoMSk=',
+      createdAt: '2026-11-07T08:00:00.000Z'
+    },
+    expected: 'PERMISSION_DENIED'
   }
 ];

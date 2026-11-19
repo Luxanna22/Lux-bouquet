@@ -51,6 +51,36 @@ service cloud.firestore {
       return code is string && code.size() >= 7 && code.size() <= 24 && code.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isSystemRecordCode(code) {
+      return code is string && code.matches('^sab_.*');
+    }
+
+    function isValidAssetId(assetId) {
+      return assetId is string && assetId.size() >= 8 && assetId.size() <= 48 && assetId.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidBouquetAsset(data, assetId) {
+      let allowedKeys = [
+        'assetId',
+        'bouquetCode',
+        'kind',
+        'dataUrl',
+        'createdAt'
+      ];
+      return data.keys().hasAll(allowedKeys) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.assetId == assetId &&
+        isValidShortCode(data.bouquetCode) &&
+        !isSystemRecordCode(data.bouquetCode) &&
+        (data.kind == 'photo' || data.kind == 'voice') &&
+        data.dataUrl is string &&
+        data.dataUrl.size() >= 10 &&
+        data.dataUrl.size() <= 850000 &&
+        data.createdAt is string &&
+        data.createdAt.size() >= 10 &&
+        data.createdAt.size() <= 64;
+    }
+
     function isValidSharedBouquet(data, code) {
       let allowedKeys = [
         'code',
@@ -180,14 +210,29 @@ service cloud.firestore {
       allow get: if isValidShortCode(code);
       allow list: if false;
 
-      // Anyone can register a valid short link payload; updates preserve immutable code/createdAt and allow draft/creation updates
+      // Anyone can register a valid short link payload; updates preserve immutable code/createdAt and protect sab_* system docs
       allow create: if isValidShortCode(code) && isValidSharedBouquet(request.resource.data, code);
       allow update: if isValidShortCode(code) &&
         isValidSharedBouquet(request.resource.data, code) &&
         request.resource.data.code == resource.data.code &&
         (code == 'sab_garland_feed_v1' || request.resource.data.createdAt == resource.data.createdAt) &&
-        (code != 'sab_garland_feed_v1' || request.resource.data.payload == resource.data.payload);
-      allow delete: if isValidShortCode(code) && code != 'sab_garland_feed_v1';
+        (!isSystemRecordCode(code) || request.resource.data.payload == resource.data.payload);
+      // System docs (sab_garland_feed_v1, sab_ov_*, sab_bqlog_*) can NEVER be deleted
+      allow delete: if isValidShortCode(code) && !isSystemRecordCode(code);
+    }
+
+    match /bouquet_assets/{assetId} {
+      // Companion eternal media assets (overflow photos & voice notes) referenced by shared_bouquets/{code}
+      allow get: if isValidAssetId(assetId);
+      allow list: if false;
+      allow create: if isValidAssetId(assetId) && isValidBouquetAsset(request.resource.data, assetId);
+      allow update: if isValidAssetId(assetId) &&
+        isValidBouquetAsset(request.resource.data, assetId) &&
+        request.resource.data.assetId == resource.data.assetId &&
+        request.resource.data.bouquetCode == resource.data.bouquetCode &&
+        request.resource.data.kind == resource.data.kind &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isValidAssetId(assetId);
     }
 
     match /studio_stats/{statId} {

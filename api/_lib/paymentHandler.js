@@ -6,11 +6,22 @@ import {
   sanitizeJsonValue,
 } from './securityGuard.js';
 import { runOwnerAnalyticsAi } from './ownerAiHandler.js';
+import {
+  collectAssetIdsFromBouquetRecordServer,
+  inspectPayloadAssetsSummaryServer,
+  MAX_GARLAND_FEED_ENTRIES,
+  stripInlineAudioFromCompactPayloadServer,
+  stripInlinePhotosFromCompactPayloadServer,
+} from './bouquetAssetsHelper.js';
 
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
 const FIRESTORE_PASSES_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/studio_passes`;
 const FIRESTORE_SHARED_BOUQUETS_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/shared_bouquets`;
+const FIRESTORE_BOUQUET_ASSETS_URL = `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/${FIRESTORE_DB_ID}/documents/bouquet_assets`;
+const GARLAND_FEED_DOC_CODE = 'sab_garland_feed_v1';
+const GARLAND_FEED_IMMUTABLE_CREATED_AT = '2026-11-08T00:00:00.000Z';
+const GARLAND_FEED_IMMUTABLE_PAYLOAD = '#sab_garland_feed_v1';
 
 // Deterministic HMAC-derived Firestore document code for persistent Owner Analytics, Vouchers, Revenue & PIN across Vercel deploys
 export const OWNER_VAULT_DOC_CODE = `sab_ov_${crypto
@@ -20,6 +31,15 @@ export const OWNER_VAULT_DOC_CODE = `sab_ov_${crypto
   .slice(0, 14)}`;
 const OWNER_VAULT_IMMUTABLE_CREATED_AT = '2026-11-08T00:00:00.000Z';
 const OWNER_VAULT_IMMUTABLE_PAYLOAD = '#sab_owner_vault_v1';
+
+// Deterministic HMAC-derived Firestore document code for persistent Admin Bouquet Log (all bouquets, Garland + private)
+export const OWNER_BOUQUET_LOG_DOC_CODE = `sab_bqlog_${crypto
+  .createHmac('sha256', 'sab-persistent-owner-bouquet-log-2026-v1')
+  .update('sab_owner_persistent_bouquet_log_v1')
+  .digest('hex')
+  .slice(0, 12)}`;
+const OWNER_BOUQUET_LOG_IMMUTABLE_CREATED_AT = '2026-11-19T00:00:00.000Z';
+const OWNER_BOUQUET_LOG_IMMUTABLE_PAYLOAD = '#sab_owner_bouquet_log_v1';
 
 const CLIENT_SIGNATURE_SALT = 'sab-pass-integrity-2026-v1';
 const PASS_KEY_REGEX = /^BLOOM-[A-Z2-9]{4}-[A-Z2-9]{4}$/;
@@ -2039,6 +2059,944 @@ export async function mutateAndSaveOwnerVaultServer(mutatorFn, options = {}) {
     }
     return { saved, result };
   });
+}
+
+// ============================================================================
+// PERSISTENT ADMIN BOUQUET LOG (TRACKS EVERY BOUQUET: GARLAND + PRIVATE-ONLY)
+// ============================================================================
+
+const VALID_BOUQUET_CODE_REGEX = /^[a-zA-Z0-9_\-]{7,24}$/;
+export const OWNER_BOUQUET_LOG = new Map();
+export const OWNER_DELETED_BOUQUET_CODES = new Set();
+let bouquetLogRemoteExists = null;
+let bouquetLogLastUpdateTime = '';
+let bouquetLogWriteQueue = Promise.resolve();
+
+function withBouquetLogWriteLock(fn) {
+  const next = bouquetLogWriteQueue.then(fn, fn);
+  bouquetLogWriteQueue = next.catch(() => {});
+  return next;
+}
+
+export function resetOwnerBouquetLogStateForTesting() {
+  OWNER_BOUQUET_LOG.clear();
+  OWNER_DELETED_BOUQUET_CODES.clear();
+  bouquetLogRemoteExists = null;
+  bouquetLogLastUpdateTime = '';
+}
+
+function normalizeAdminBouquetLogEntry(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const code = String(raw.code || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 24);
+  if (!code || !VALID_BOUQUET_CODE_REGEX.test(code) || code.startsWith('sab_')) return null;
+
+  const retentionDays =
+    typeof raw.retentionDays === 'number' && Number.isFinite(raw.retentionDays)
+      ? Math.max(1, Math.min(36500, Math.round(raw.retentionDays)))
+      : raw.isPremium
+      ? 36500
+      : 30;
+  const createdAt =
+    typeof raw.createdAt === 'string' && raw.createdAt.length >= 10
+      ? raw.createdAt.slice(0, 64)
+      : new Date().toISOString();
+
+  const lockMode =
+    raw.lockMode === 'countdown' || raw.lockMode === 'passcode' ? raw.lockMode : 'none';
+
+  const assetIds = Array.isArray(raw.assetIds)
+    ? Array.from(
+        new Set(
+          raw.assetIds
+            .map((a) => String(a || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 48))
+            .filter((a) => a.length >= 8)
+        )
+      ).slice(0, 30)
+    : [];
+
+  return {
+    code,
+    to: String(raw.to || 'Someone Special').trim().slice(0, 80) || 'Someone Special',
+    from: String(raw.from || 'Yours Always').trim().slice(0, 80) || 'Yours Always',
+    noteExcerpt: String(raw.noteExcerpt || '').trim().slice(0, 120),
+    createdAt,
+    shareUrl: String(raw.shareUrl || `/${code}`).trim().slice(0, 240),
+    pinnedToGarland: Boolean(raw.pinnedToGarland),
+    isPremium: Boolean(raw.isPremium || retentionDays >= 36500),
+    retentionDays,
+    isCouture: Boolean(raw.isCouture),
+    flowerCount:
+      typeof raw.flowerCount === 'number' && Number.isFinite(raw.flowerCount)
+        ? Math.max(0, Math.min(200, Math.round(raw.flowerCount)))
+        : 0,
+    photoCount:
+      typeof raw.photoCount === 'number' && Number.isFinite(raw.photoCount)
+        ? Math.max(0, Math.min(50, Math.round(raw.photoCount)))
+        : 0,
+    hasVoice: Boolean(raw.hasVoice),
+    voiceStyle:
+      typeof raw.voiceStyle === 'string' && raw.voiceStyle.trim()
+        ? raw.voiceStyle.trim().slice(0, 32)
+        : undefined,
+    wrapStyle:
+      typeof raw.wrapStyle === 'string' && raw.wrapStyle.trim()
+        ? raw.wrapStyle.trim().slice(0, 32)
+        : undefined,
+    ribbonStyle:
+      typeof raw.ribbonStyle === 'string' && raw.ribbonStyle.trim()
+        ? raw.ribbonStyle.trim().slice(0, 32)
+        : undefined,
+    environment:
+      typeof raw.environment === 'string' && raw.environment.trim()
+        ? raw.environment.trim().slice(0, 32)
+        : undefined,
+    lockMode,
+    payloadBytes:
+      typeof raw.payloadBytes === 'number' && Number.isFinite(raw.payloadBytes)
+        ? Math.max(0, Math.round(raw.payloadBytes))
+        : 0,
+    voiceBytes:
+      typeof raw.voiceBytes === 'number' && Number.isFinite(raw.voiceBytes)
+        ? Math.max(0, Math.round(raw.voiceBytes))
+        : 0,
+    assetIds,
+    persistedToFirestore: Boolean(raw.persistedToFirestore !== false),
+    source:
+      raw.source === 'garland_backfill' || raw.source === 'manual_verify'
+        ? raw.source
+        : 'shorten',
+    ...(typeof raw.openCount === 'number' && Number.isFinite(raw.openCount)
+      ? { openCount: Math.max(0, Math.round(raw.openCount)) }
+      : {}),
+    ...(typeof raw.voicePlayCount === 'number' && Number.isFinite(raw.voicePlayCount)
+      ? { voicePlayCount: Math.max(0, Math.round(raw.voicePlayCount)) }
+      : {}),
+    ...(typeof raw.hasReaction === 'boolean' ? { hasReaction: raw.hasReaction } : {}),
+    ...(typeof raw.recipientReply === 'string' && raw.recipientReply.trim()
+      ? { recipientReply: raw.recipientReply.trim().slice(0, 140) }
+      : {}),
+    ...(typeof raw.lastVerifiedAt === 'string' && raw.lastVerifiedAt.length >= 10
+      ? { lastVerifiedAt: raw.lastVerifiedAt.slice(0, 64) }
+      : {}),
+    ...(typeof raw.existsInFirestore === 'boolean'
+      ? { existsInFirestore: raw.existsInFirestore }
+      : {}),
+  };
+}
+
+function mergeBouquetLogEntryInMemory(incoming, options = {}) {
+  const norm = normalizeAdminBouquetLogEntry(incoming);
+  if (!norm) return null;
+  if (!options.forceUnDelete && OWNER_DELETED_BOUQUET_CODES.has(norm.code)) {
+    return null;
+  }
+  if (options.forceUnDelete) {
+    OWNER_DELETED_BOUQUET_CODES.delete(norm.code);
+  }
+  const existing = OWNER_BOUQUET_LOG.get(norm.code);
+  if (!existing) {
+    OWNER_BOUQUET_LOG.set(norm.code, norm);
+    return norm;
+  }
+  const merged = {
+    ...existing,
+    ...norm,
+    // Keep earliest createdAt so Garland expiry calculation remains truthful
+    createdAt:
+      Date.parse(existing.createdAt || '') > 0 &&
+      (Date.parse(existing.createdAt) < Date.parse(norm.createdAt || '') || !norm.createdAt)
+        ? existing.createdAt
+        : norm.createdAt,
+    pinnedToGarland:
+      options.overridePinned !== undefined
+        ? Boolean(options.overridePinned)
+        : options.fromBackfill
+        ? true
+        : norm.pinnedToGarland || existing.pinnedToGarland,
+    assetIds: Array.from(new Set([...(existing.assetIds || []), ...(norm.assetIds || [])])).slice(
+      0,
+      30
+    ),
+    photoCount: Math.max(existing.photoCount || 0, norm.photoCount || 0),
+    flowerCount: norm.flowerCount || existing.flowerCount || 0,
+    hasVoice: Boolean(norm.hasVoice || existing.hasVoice),
+    payloadBytes: Math.max(existing.payloadBytes || 0, norm.payloadBytes || 0),
+    voiceBytes: Math.max(existing.voiceBytes || 0, norm.voiceBytes || 0),
+    persistedToFirestore: Boolean(norm.persistedToFirestore || existing.persistedToFirestore),
+    openCount:
+      typeof norm.openCount === 'number'
+        ? Math.max(existing.openCount || 0, norm.openCount)
+        : existing.openCount,
+    voicePlayCount:
+      typeof norm.voicePlayCount === 'number'
+        ? Math.max(existing.voicePlayCount || 0, norm.voicePlayCount)
+        : existing.voicePlayCount,
+    hasReaction:
+      typeof norm.hasReaction === 'boolean'
+        ? norm.hasReaction || Boolean(existing.hasReaction)
+        : existing.hasReaction,
+    recipientReply: norm.recipientReply || existing.recipientReply,
+    lastVerifiedAt: norm.lastVerifiedAt || existing.lastVerifiedAt,
+    existsInFirestore:
+      typeof norm.existsInFirestore === 'boolean'
+        ? norm.existsInFirestore
+        : existing.existsInFirestore,
+  };
+  OWNER_BOUQUET_LOG.set(norm.code, merged);
+  return merged;
+}
+
+export function serializeOwnerBouquetLogList() {
+  return Array.from(OWNER_BOUQUET_LOG.values())
+    .filter((entry) => entry && !OWNER_DELETED_BOUQUET_CODES.has(entry.code))
+    .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
+}
+
+function mergeRemoteOwnerBouquetLogIntoMemory(remote) {
+  if (!remote || typeof remote !== 'object') return;
+  if (Array.isArray(remote.deletedCodes)) {
+    for (const c of remote.deletedCodes) {
+      const safe = String(c || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 24);
+      if (safe && VALID_BOUQUET_CODE_REGEX.test(safe)) {
+        OWNER_DELETED_BOUQUET_CODES.add(safe);
+        OWNER_BOUQUET_LOG.delete(safe);
+      }
+    }
+  }
+  if (Array.isArray(remote.entries)) {
+    for (const entry of remote.entries) {
+      mergeBouquetLogEntryInMemory(entry);
+    }
+  }
+}
+
+async function fetchGarlandFeedDocRest() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${GARLAND_FEED_DOC_CODE}`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (resp.status === 404) {
+      return { exists: false, updateTime: '', createdAt: GARLAND_FEED_IMMUTABLE_CREATED_AT, payload: GARLAND_FEED_IMMUTABLE_PAYLOAD, entries: [] };
+    }
+    if (!resp.ok) return null;
+    const docJson = await resp.json().catch(() => null);
+    if (!docJson || typeof docJson !== 'object') return null;
+    const exFields = docJson.fields || {};
+    let entries = [];
+    if (exFields.voiceAudioDataUrl?.stringValue) {
+      try {
+        const parsed = JSON.parse(exFields.voiceAudioDataUrl.stringValue);
+        if (Array.isArray(parsed)) {
+          entries = parsed.filter(
+            (item) =>
+              item &&
+              typeof item.code === 'string' &&
+              !item.code.startsWith('draft_') &&
+              !item.code.startsWith('sab_') &&
+              item.isDraft === false &&
+              item.pinToShowcase === true
+          );
+        }
+      } catch {
+        entries = [];
+      }
+    }
+    return {
+      exists: true,
+      updateTime: typeof docJson.updateTime === 'string' ? docJson.updateTime : '',
+      createdAt:
+        exFields.createdAt?.stringValue && exFields.createdAt.stringValue.length >= 10
+          ? exFields.createdAt.stringValue
+          : GARLAND_FEED_IMMUTABLE_CREATED_AT,
+      payload:
+        exFields.payload?.stringValue && exFields.payload.stringValue.length >= 3
+          ? exFields.payload.stringValue
+          : GARLAND_FEED_IMMUTABLE_PAYLOAD,
+      entries,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function mutateGarlandFeedDocCasRest(mutatorFn, maxRetries = 3) {
+  const feedUrl = `${FIRESTORE_SHARED_BOUQUETS_URL}/${GARLAND_FEED_DOC_CODE}`;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const current = await fetchGarlandFeedDocRest();
+    if (!current) return false;
+
+    const nextEntries = mutatorFn(current.entries || []);
+    if (!Array.isArray(nextEntries)) return false;
+
+    const capped = nextEntries.slice(0, MAX_GARLAND_FEED_ENTRIES);
+    let jsonStr = JSON.stringify(capped);
+    if (jsonStr.length > 720_000) {
+      for (let i = 0; i < capped.length; i++) {
+        capped[i] = {
+          ...capped[i],
+          draftPayload: stripInlinePhotosFromCompactPayloadServer(
+            stripInlineAudioFromCompactPayloadServer(capped[i].draftPayload || '')
+          ),
+        };
+      }
+      jsonStr = JSON.stringify(capped);
+    }
+    if (jsonStr.length > 880_000) return false;
+
+    const fields = {
+      code: { stringValue: GARLAND_FEED_DOC_CODE },
+      payload: { stringValue: current.payload },
+      createdAt: { stringValue: current.createdAt },
+      voiceAudioDataUrl: { stringValue: jsonStr },
+    };
+
+    let writeUrl = feedUrl;
+    if (current.exists && current.updateTime) {
+      writeUrl = `${feedUrl}?currentDocument.updateTime=${encodeURIComponent(current.updateTime)}`;
+    } else if (!current.exists) {
+      writeUrl = `${feedUrl}?currentDocument.exists=false`;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const resp = await fetch(writeUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (resp.ok) return true;
+      if ((resp.status === 409 || resp.status === 412) && attempt < maxRetries) {
+        continue;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function hydrateOwnerBouquetLogServer(options = {}) {
+  const includeGarlandBackfill = options.includeGarlandBackfill !== false;
+  let logHydrated = false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(
+      `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_BOUQUET_LOG_DOC_CODE)}`,
+      { method: 'GET', signal: controller.signal }
+    );
+    clearTimeout(timer);
+    if (resp.status === 404) {
+      bouquetLogRemoteExists = false;
+      bouquetLogLastUpdateTime = '';
+      logHydrated = true;
+    } else if (resp.ok) {
+      const docJson = await resp.json().catch(() => null);
+      if (docJson && typeof docJson === 'object') {
+        bouquetLogRemoteExists = true;
+        bouquetLogLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
+        const rawJson = docJson?.fields?.voiceAudioDataUrl?.stringValue;
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(rawJson);
+            mergeRemoteOwnerBouquetLogIntoMemory(parsed);
+          } catch {
+            // Ignore malformed JSON
+          }
+        }
+        logHydrated = true;
+      }
+    }
+  } catch {
+    // Keep current in-memory log
+  }
+
+  // Backfill any pre-existing bouquets from `sab_garland_feed_v1` that were shared before the Admin Log existed
+  if (includeGarlandBackfill) {
+    const garlandDoc = await fetchGarlandFeedDocRest();
+    if (garlandDoc && Array.isArray(garlandDoc.entries)) {
+      for (const item of garlandDoc.entries) {
+        if (!item || typeof item.code !== 'string') continue;
+        if (OWNER_DELETED_BOUQUET_CODES.has(item.code)) continue;
+        const summary = inspectPayloadAssetsSummaryServer(item.draftPayload || '', null);
+        mergeBouquetLogEntryInMemory(
+          {
+            code: item.code,
+            to: item.to || item.recipientName || summary.to,
+            from: item.from || item.senderName || summary.from,
+            noteExcerpt: summary.noteExcerpt,
+            createdAt: item.createdAt || new Date().toISOString(),
+            shareUrl: item.shareUrl || `/${item.code}`,
+            pinnedToGarland: true,
+            isPremium: Boolean(item.isPremium),
+            retentionDays:
+              typeof item.retentionDays === 'number'
+                ? item.retentionDays
+                : item.isPremium
+                ? 36500
+                : 30,
+            isCouture: Boolean(item.isPremium || (item.retentionDays && item.retentionDays >= 90)),
+            flowerCount:
+              typeof item.flowerCount === 'number' && item.flowerCount > 0
+                ? item.flowerCount
+                : summary.flowerCount,
+            photoCount: summary.photoCount,
+            hasVoice: Boolean(item.hasVoice || summary.hasVoice),
+            voiceStyle: summary.voiceStyle,
+            wrapStyle: summary.wrapStyle,
+            ribbonStyle: summary.ribbonStyle,
+            environment: summary.environment,
+            lockMode: item.lockMode || summary.lockMode,
+            payloadBytes: summary.payloadBytes,
+            voiceBytes: 0,
+            assetIds: [],
+            persistedToFirestore: true,
+            source: 'garland_backfill',
+          },
+          { fromBackfill: true }
+        );
+      }
+    }
+  }
+
+  return logHydrated;
+}
+
+async function saveOwnerBouquetLogServerUnlocked(options = {}) {
+  const maxRetries = Math.max(0, Math.min(5, Number(options.maxRetries ?? 3)));
+  const onBeforeRetryMerge =
+    typeof options.onBeforeRetryMerge === 'function' ? options.onBeforeRetryMerge : null;
+
+  try {
+    if (bouquetLogRemoteExists === null) {
+      await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+      if (onBeforeRetryMerge && bouquetLogRemoteExists === true) {
+        onBeforeRetryMerge();
+      }
+      if (bouquetLogRemoteExists === null) {
+        return false;
+      }
+    }
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const entries = serializeOwnerBouquetLogList().slice(0, 1200);
+      const deletedCodes = Array.from(OWNER_DELETED_BOUQUET_CODES).slice(-1000);
+      let payloadObj = {
+        v: 1,
+        updatedAt: new Date().toISOString(),
+        entries,
+        deletedCodes,
+      };
+      let jsonStr = JSON.stringify(payloadObj);
+      while (payloadObj.entries.length > 50 && jsonStr.length > 860_000) {
+        payloadObj.entries.pop();
+        jsonStr = JSON.stringify(payloadObj);
+      }
+      if (jsonStr.length > 880_000) return false;
+
+      const fields = {
+        code: { stringValue: OWNER_BOUQUET_LOG_DOC_CODE },
+        payload: { stringValue: OWNER_BOUQUET_LOG_IMMUTABLE_PAYLOAD },
+        createdAt: { stringValue: OWNER_BOUQUET_LOG_IMMUTABLE_CREATED_AT },
+        voiceAudioDataUrl: { stringValue: jsonStr },
+      };
+
+      const baseDocUrl = `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_BOUQUET_LOG_DOC_CODE)}`;
+      let writeUrl = baseDocUrl;
+      if (bouquetLogRemoteExists === true && bouquetLogLastUpdateTime) {
+        writeUrl = `${baseDocUrl}?currentDocument.updateTime=${encodeURIComponent(bouquetLogLastUpdateTime)}`;
+      } else if (bouquetLogRemoteExists === false) {
+        writeUrl = `${baseDocUrl}?currentDocument.exists=false`;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const resp = await fetch(writeUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (resp.ok) {
+        const savedDoc = await resp.json().catch(() => null);
+        bouquetLogRemoteExists = true;
+        if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
+          bouquetLogLastUpdateTime = savedDoc.updateTime;
+        }
+        return true;
+      }
+
+      if ((resp.status === 409 || resp.status === 412) && attempt < maxRetries) {
+        const hydrated = await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+        if (!hydrated && bouquetLogRemoteExists === null) {
+          return false;
+        }
+        if (onBeforeRetryMerge) {
+          onBeforeRetryMerge();
+        }
+        continue;
+      }
+      return false;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export async function mutateAndSaveOwnerBouquetLogServer(mutatorFn, options = {}) {
+  return withBouquetLogWriteLock(async () => {
+    if (bouquetLogRemoteExists === null) {
+      await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+    }
+    let result = typeof mutatorFn === 'function' ? mutatorFn({ retry: false }) : undefined;
+    const saved = await saveOwnerBouquetLogServerUnlocked({
+      ...options,
+      onBeforeRetryMerge: () => {
+        if (typeof mutatorFn === 'function') {
+          result = mutatorFn({ retry: true });
+        }
+      },
+    });
+    return { saved, result };
+  });
+}
+
+/**
+ * Persistently records ANY shared bouquet (both Garland-pinned AND private non-Garland links)
+ * in the Owner Admin Bouquet Log so the owner can inspect, verify, and manage all creations.
+ */
+export async function recordBouquetInAdminLogServer(entryInput) {
+  const norm = normalizeAdminBouquetLogEntry(entryInput);
+  if (!norm) return { saved: false, entry: null };
+
+  const { saved, result } = await mutateAndSaveOwnerBouquetLogServer(() =>
+    mergeBouquetLogEntryInMemory(norm, {
+      forceUnDelete: true,
+      overridePinned: norm.pinnedToGarland,
+    })
+  );
+  return { saved, entry: result || norm };
+}
+
+/**
+ * Permanently deletes one or more bouquets (e.g. mock/test bouquets) from:
+ * 1. Companion `bouquet_assets/{assetId}` documents
+ * 2. `shared_bouquets/{code}` documents
+ * 3. `shared_bouquets/sab_garland_feed_v1` (via CAS)
+ * 4. The persistent Admin Bouquet Log (with tombstones so deleted codes never resurrect)
+ */
+export async function deleteBouquetsFromFirestoreAndGarlandServer(rawCodes) {
+  const validCodes = Array.from(
+    new Set(
+      (Array.isArray(rawCodes) ? rawCodes : [])
+        .map((c) => String(c || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 24))
+        .filter((c) => c && VALID_BOUQUET_CODE_REGEX.test(c) && !c.startsWith('sab_'))
+    )
+  ).slice(0, 50);
+
+  if (validCodes.length === 0) {
+    return { deletedCodes: [], firestoreDeletedCount: 0, garlandUpdated: false };
+  }
+
+  let firestoreDeletedCount = 0;
+
+  for (const code of validCodes) {
+    const loggedEntry = OWNER_BOUQUET_LOG.get(code);
+    const assetIds = new Set(Array.isArray(loggedEntry?.assetIds) ? loggedEntry.assetIds : []);
+
+    // 1. Inspect existing `shared_bouquets/{code}` to find any companion overflow `bouquet_assets/*`
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const getResp = await fetch(
+        `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`,
+        { method: 'GET', signal: controller.signal }
+      );
+      clearTimeout(timer);
+      if (getResp.ok) {
+        const docJson = await getResp.json().catch(() => null);
+        const f = docJson?.fields || {};
+        const discoveredAssets = collectAssetIdsFromBouquetRecordServer(
+          f.payload?.stringValue || '',
+          f.voiceAudioDataUrl?.stringValue || null
+        );
+        for (const aid of discoveredAssets) assetIds.add(aid);
+      }
+    } catch {
+      // Proceed with deletion even if GET fails
+    }
+
+    // 2. Delete companion `bouquet_assets/{assetId}`
+    for (const assetId of assetIds) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        await fetch(`${FIRESTORE_BOUQUET_ASSETS_URL}/${encodeURIComponent(assetId)}`, {
+          method: 'DELETE',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+      } catch {
+        // Ignore individual asset deletion errors
+      }
+    }
+
+    // 3. Delete `shared_bouquets/{code}`
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const delResp = await fetch(
+        `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`,
+        { method: 'DELETE', signal: controller.signal }
+      );
+      clearTimeout(timer);
+      if (delResp.ok || delResp.status === 404) {
+        firestoreDeletedCount += 1;
+      }
+    } catch {
+      // Continue deleting remaining codes
+    }
+  }
+
+  // 4. Remove all deleted codes from `sab_garland_feed_v1` via CAS
+  const deleteSet = new Set(validCodes);
+  const garlandUpdated = await mutateGarlandFeedDocCasRest((existing) =>
+    existing.filter((item) => item && !deleteSet.has(item.code))
+  );
+
+  // 5. Tombstone & remove from persistent Admin Bouquet Log via CAS
+  await mutateAndSaveOwnerBouquetLogServer(() => {
+    for (const code of validCodes) {
+      OWNER_DELETED_BOUQUET_CODES.add(code);
+      OWNER_BOUQUET_LOG.delete(code);
+    }
+  });
+
+  return {
+    deletedCodes: validCodes,
+    firestoreDeletedCount,
+    garlandUpdated,
+  };
+}
+
+/**
+ * Pins or unpins a bouquet on the public Shared Creations Lace Garland (`sab_garland_feed_v1`)
+ * WITHOUT touching its eternal `shared_bouquets/{code}` link!
+ */
+export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
+  const code = String(rawCode || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 24);
+  if (!code || !VALID_BOUQUET_CODE_REGEX.test(code) || code.startsWith('sab_')) {
+    return { ok: false, message: 'Invalid bouquet code.' };
+  }
+
+  const nextPinned = Boolean(pinned);
+  await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+
+  if (!nextPinned) {
+    await mutateGarlandFeedDocCasRest((existing) =>
+      existing.filter((item) => item && item.code !== code)
+    );
+    await mutateAndSaveOwnerBouquetLogServer(() => {
+      const existing = OWNER_BOUQUET_LOG.get(code);
+      if (existing) {
+        OWNER_BOUQUET_LOG.set(code, { ...existing, pinnedToGarland: false });
+      }
+    });
+    return { ok: true, code, pinned: false };
+  }
+
+  // Pinning back onto the Garland: fetch canonical payload from `shared_bouquets/{code}`
+  let docFields = null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const docJson = await resp.json().catch(() => null);
+      docFields = docJson?.fields || null;
+    }
+  } catch {
+    docFields = null;
+  }
+
+  const rawPayload = docFields?.payload?.stringValue || '';
+  if (!rawPayload) {
+    return {
+      ok: false,
+      message: 'Bouquet document was not found in Firestore, so it cannot be pinned to the Garland.',
+    };
+  }
+
+  const summary = inspectPayloadAssetsSummaryServer(
+    rawPayload,
+    docFields?.voiceAudioDataUrl?.stringValue || null
+  );
+  const existingLog = OWNER_BOUQUET_LOG.get(code);
+  const cleanDraftPayload = stripInlinePhotosFromCompactPayloadServer(
+    stripInlineAudioFromCompactPayloadServer(rawPayload)
+  ).replace(/&l=[^&]*/g, '');
+
+  const createdAt =
+    existingLog?.createdAt ||
+    docFields?.createdAt?.stringValue ||
+    new Date().toISOString();
+  const isPremium = Boolean(
+    docFields?.isPremium?.booleanValue ?? existingLog?.isPremium ?? false
+  );
+  const retentionDays =
+    docFields?.retentionDays?.integerValue !== undefined
+      ? Number(docFields.retentionDays.integerValue)
+      : existingLog?.retentionDays || (isPremium ? 36500 : 30);
+
+  const garlandItem = {
+    code,
+    to: existingLog?.to || summary.to || 'Someone Special',
+    from: existingLog?.from || summary.from || 'Yours',
+    recipientName: existingLog?.to || summary.to || 'Someone Special',
+    senderName: existingLog?.from || summary.from || 'Yours',
+    createdAt,
+    shareUrl: existingLog?.shareUrl || `/${code}`,
+    lockMode: 'none',
+    hasVoice: Boolean(existingLog?.hasVoice || summary.hasVoice),
+    flowerCount: existingLog?.flowerCount || summary.flowerCount || 1,
+    isPremium,
+    retentionDays,
+    isDraft: false,
+    pinToShowcase: true,
+    draftPayload: cleanDraftPayload,
+  };
+
+  await mutateGarlandFeedDocCasRest((existing) => [
+    garlandItem,
+    ...existing.filter((item) => item && item.code !== code),
+  ]);
+
+  await mutateAndSaveOwnerBouquetLogServer(() => {
+    mergeBouquetLogEntryInMemory(
+      {
+        ...(existingLog || {}),
+        code,
+        to: garlandItem.to,
+        from: garlandItem.from,
+        noteExcerpt: existingLog?.noteExcerpt || summary.noteExcerpt,
+        createdAt,
+        shareUrl: garlandItem.shareUrl,
+        pinnedToGarland: true,
+        isPremium,
+        retentionDays,
+        flowerCount: garlandItem.flowerCount,
+        photoCount: Math.max(existingLog?.photoCount || 0, summary.photoCount),
+        hasVoice: garlandItem.hasVoice,
+        voiceStyle: existingLog?.voiceStyle || summary.voiceStyle,
+        wrapStyle: existingLog?.wrapStyle || summary.wrapStyle,
+        ribbonStyle: existingLog?.ribbonStyle || summary.ribbonStyle,
+        environment: existingLog?.environment || summary.environment,
+        lockMode: existingLog?.lockMode || summary.lockMode,
+        payloadBytes: rawPayload.length,
+        voiceBytes: docFields?.voiceAudioDataUrl?.stringValue?.length || 0,
+        assetIds: collectAssetIdsFromBouquetRecordServer(
+          rawPayload,
+          docFields?.voiceAudioDataUrl?.stringValue || null
+        ),
+        persistedToFirestore: true,
+        existsInFirestore: true,
+      },
+      { forceUnDelete: true, overridePinned: true }
+    );
+  });
+
+  return { ok: true, code, pinned: true };
+}
+
+/**
+ * Live-verifies a bouquet code directly against Firestore (`shared_bouquets/{code}` + any companion
+ * `bouquet_assets/{assetId}` + `sab_garland_feed_v1`) and imports/updates it in the Admin Bouquet Log.
+ */
+export async function verifyBouquetPersistenceServer(rawCode) {
+  const code = String(rawCode || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 24);
+  if (!code || !VALID_BOUQUET_CODE_REGEX.test(code) || code.startsWith('sab_')) {
+    return {
+      ok: false,
+      code,
+      existsInFirestore: false,
+      eternalLinkActive: false,
+      inGarlandFeed: false,
+      assetCount: 0,
+      missingAssetIds: [],
+      message: 'Please enter a valid bouquet short code or URL.',
+    };
+  }
+
+  let docJson = null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (resp.ok) {
+      docJson = await resp.json().catch(() => null);
+    }
+  } catch {
+    docJson = null;
+  }
+
+  const garlandDoc = await fetchGarlandFeedDocRest();
+  const inGarlandFeed = Boolean(
+    garlandDoc && Array.isArray(garlandDoc.entries) && garlandDoc.entries.some((e) => e?.code === code)
+  );
+
+  const nowIso = new Date().toISOString();
+  const fields = docJson?.fields || null;
+  const rawPayload = fields?.payload?.stringValue || '';
+
+  if (!fields || !rawPayload) {
+    // Mark in log if tracked so owner sees it's missing from Firestore
+    await mutateAndSaveOwnerBouquetLogServer(() => {
+      const existing = OWNER_BOUQUET_LOG.get(code);
+      if (existing) {
+        OWNER_BOUQUET_LOG.set(code, {
+          ...existing,
+          existsInFirestore: false,
+          persistedToFirestore: false,
+          lastVerifiedAt: nowIso,
+        });
+      }
+    });
+    return {
+      ok: true,
+      code,
+      existsInFirestore: false,
+      eternalLinkActive: false,
+      inGarlandFeed,
+      assetCount: 0,
+      missingAssetIds: [],
+      message: `No Firestore record found for "${code}".`,
+    };
+  }
+
+  const voiceField = fields.voiceAudioDataUrl?.stringValue || '';
+  const assetIds = collectAssetIdsFromBouquetRecordServer(rawPayload, voiceField);
+  const missingAssetIds = [];
+  let totalAssetBytes = 0;
+
+  if (assetIds.length > 0) {
+    const checks = await Promise.all(
+      assetIds.map(async (assetId) => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3500);
+          const aResp = await fetch(
+            `${FIRESTORE_BOUQUET_ASSETS_URL}/${encodeURIComponent(assetId)}`,
+            { method: 'GET', signal: controller.signal }
+          );
+          clearTimeout(timer);
+          if (!aResp.ok) return { assetId, ok: false, bytes: 0 };
+          const aJson = await aResp.json().catch(() => null);
+          const d = aJson?.fields?.dataUrl?.stringValue || '';
+          return { assetId, ok: d.length > 0, bytes: d.length };
+        } catch {
+          return { assetId, ok: false, bytes: 0 };
+        }
+      })
+    );
+    for (const c of checks) {
+      if (!c.ok) missingAssetIds.push(c.assetId);
+      else totalAssetBytes += c.bytes;
+    }
+  }
+
+  const summary = inspectPayloadAssetsSummaryServer(rawPayload, voiceField || null);
+  const openCount =
+    fields.openCount?.integerValue !== undefined ? Number(fields.openCount.integerValue) : 0;
+  const voicePlayCount =
+    fields.voicePlayCount?.integerValue !== undefined
+      ? Number(fields.voicePlayCount.integerValue)
+      : 0;
+  const hasReaction = Boolean(fields.reaction?.stringValue || fields.recipientReply?.stringValue);
+  const recipientReply = fields.recipientReply?.stringValue || '';
+  const isPremium = Boolean(fields.isPremium?.booleanValue);
+  const retentionDays =
+    fields.retentionDays?.integerValue !== undefined
+      ? Number(fields.retentionDays.integerValue)
+      : isPremium
+      ? 36500
+      : 30;
+  const createdAt = fields.createdAt?.stringValue || nowIso;
+
+  const { result: savedEntry } = await mutateAndSaveOwnerBouquetLogServer(() =>
+    mergeBouquetLogEntryInMemory(
+      {
+        code,
+        to: summary.to,
+        from: summary.from,
+        noteExcerpt: summary.noteExcerpt,
+        createdAt,
+        shareUrl: `/${code}`,
+        pinnedToGarland: inGarlandFeed,
+        isPremium,
+        retentionDays,
+        isCouture: Boolean(isPremium || retentionDays >= 90),
+        flowerCount: summary.flowerCount,
+        photoCount: summary.photoCount,
+        hasVoice: summary.hasVoice || Boolean(fields.voiceStyle?.stringValue),
+        voiceStyle: fields.voiceStyle?.stringValue || summary.voiceStyle,
+        wrapStyle: summary.wrapStyle,
+        ribbonStyle: summary.ribbonStyle,
+        environment: summary.environment,
+        lockMode: summary.lockMode,
+        payloadBytes: rawPayload.length + totalAssetBytes,
+        voiceBytes: voiceField.length,
+        assetIds,
+        persistedToFirestore: missingAssetIds.length === 0,
+        existsInFirestore: true,
+        openCount,
+        voicePlayCount,
+        hasReaction,
+        recipientReply,
+        lastVerifiedAt: nowIso,
+        source: OWNER_BOUQUET_LOG.has(code) ? OWNER_BOUQUET_LOG.get(code).source : 'manual_verify',
+      },
+      { forceUnDelete: true, overridePinned: inGarlandFeed }
+    )
+  );
+
+  return {
+    ok: true,
+    code,
+    existsInFirestore: true,
+    eternalLinkActive: missingAssetIds.length === 0,
+    inGarlandFeed,
+    assetCount: assetIds.length,
+    missingAssetIds,
+    openCount,
+    voicePlayCount,
+    hasReaction,
+    payloadBytes: rawPayload.length + totalAssetBytes,
+    voiceBytes: voiceField.length,
+    entry: savedEntry,
+    message:
+      missingAssetIds.length === 0
+        ? `Verified live in Firestore (${assetIds.length} companion asset${assetIds.length === 1 ? '' : 's'}) — eternal link active.`
+        : `Bouquet exists, but ${missingAssetIds.length} companion asset(s) missing.`,
+  };
 }
 
 function resolvePaidPassCatalogMeta(tier, region) {
@@ -5543,7 +6501,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
 
         const adminSessionToken = createSignedAdminSessionToken(deviceTokenHash || 'anon');
-        await syncRealAnalyticsSnapshotServer();
+        await Promise.all([
+          syncRealAnalyticsSnapshotServer(),
+          hydrateOwnerBouquetLogServer({ includeGarlandBackfill: true }),
+        ]);
         await mutateAndSaveOwnerVaultServer(() => {
           pushAnalyticsEventServer(
             'security',
@@ -5559,6 +6520,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),
+          bouquetLog: serializeOwnerBouquetLogList(),
         });
         return true;
       }
@@ -5575,13 +6537,17 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           });
           return true;
         }
-        await syncRealAnalyticsSnapshotServer();
+        await Promise.all([
+          syncRealAnalyticsSnapshotServer(),
+          hydrateOwnerBouquetLogServer({ includeGarlandBackfill: true }),
+        ]);
         await savePersistentOwnerVaultServer();
         sendJson(res, 200, {
           ok: true,
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),
+          bouquetLog: serializeOwnerBouquetLogList(),
         });
         return true;
       }
@@ -6028,6 +6994,127 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           analytics: OWNER_ANALYTICS_STATE,
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),
+        });
+        return true;
+      }
+
+      // 4G-2b. Fetch Persistent Admin Bouquet Log (all bouquets: Garland + Private-Only)
+      if (actionType === 'fetch_owner_bouquet_log') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+        await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: true });
+        sendJson(res, 200, {
+          ok: true,
+          bouquetLog: serializeOwnerBouquetLogList(),
+        });
+        return true;
+      }
+
+      // 4G-2c. Delete One or Multiple Bouquets (e.g. Mock/Test Bouquets) from Firestore, Garland & Admin Log
+      if (actionType === 'delete_owner_bouquets') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+        const rawCodes = Array.isArray(parsed.codes)
+          ? parsed.codes
+          : typeof parsed.code === 'string'
+          ? [parsed.code]
+          : [];
+        const delResult = await deleteBouquetsFromFirestoreAndGarlandServer(rawCodes);
+        if (delResult.deletedCodes.length > 0) {
+          await mutateAndSaveOwnerVaultServer(() => {
+            pushAnalyticsEventServer(
+              'security',
+              'owner_bouquet_deleted',
+              `Owner deleted ${delResult.deletedCodes.length} bouquet${delResult.deletedCodes.length === 1 ? '' : 's'} from Firestore & Garland`,
+              'desktop',
+              'INTL'
+            );
+          }).catch(() => {});
+        }
+        sendJson(res, 200, {
+          ok: true,
+          deletedCodes: delResult.deletedCodes,
+          firestoreDeletedCount: delResult.firestoreDeletedCount,
+          garlandUpdated: delResult.garlandUpdated,
+          bouquetLog: serializeOwnerBouquetLogList(),
+          analytics: OWNER_ANALYTICS_STATE,
+        });
+        return true;
+      }
+
+      // 4G-2d. Toggle Garland Visibility Without Touching Eternal Link
+      if (actionType === 'toggle_owner_bouquet_garland') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+        const toggleResult = await setBouquetGarlandVisibilityServer(
+          parsed.code,
+          Boolean(parsed.pinned)
+        );
+        if (!toggleResult.ok) {
+          sendJson(res, 400, {
+            ok: false,
+            message: toggleResult.message || 'Could not update Garland visibility.',
+            bouquetLog: serializeOwnerBouquetLogList(),
+          });
+          return true;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          code: toggleResult.code,
+          pinned: toggleResult.pinned,
+          bouquetLog: serializeOwnerBouquetLogList(),
+        });
+        return true;
+      }
+
+      // 4G-2e. Live-Verify & Optionally Import Any Bouquet Code from Firestore
+      if (actionType === 'verify_owner_bouquet') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+        const verification = await verifyBouquetPersistenceServer(parsed.code);
+        if (!verification.ok) {
+          sendJson(res, 400, {
+            ok: false,
+            message: verification.message || 'Invalid bouquet code.',
+          });
+          return true;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          verification,
+          bouquetLog: serializeOwnerBouquetLogList(),
         });
         return true;
       }

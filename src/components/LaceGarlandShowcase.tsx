@@ -195,7 +195,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
           userEntries.length
         )
       );
-      if (userEntries.length >= 16) break;
+      if (userEntries.length >= 200) break;
     }
 
     const userCodes = new Set<string>(userEntries.map((u) => u.code));

@@ -10,7 +10,6 @@ import { SavedVaultBouquet } from '../types/bouquet';
 import {
   getSavedVaultBouquets,
   removeBouquetFromLocalVault,
-  removeBouquetFromFirestoreAndGarland,
   fetchSharedBouquetFromFirestore,
   SharedBouquetRecord,
 } from '../lib/firebase';
@@ -76,9 +75,10 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
   };
 
   const handleDelete = (code: string) => {
+    // Only remove from this device's local history — never delete shared_bouquets/{code} from Firestore,
+    // so eternal recipient links always stay live forever.
     const next = removeBouquetFromLocalVault(code);
     setVault(next);
-    removeBouquetFromFirestoreAndGarland(code).catch(() => {});
   };
 
   const formatShortDate = (iso?: string) => {
@@ -344,8 +344,12 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleDelete(entry.code)}
-                        title="Remove from saved bouquets"
-                        aria-label={`Remove bouquet for ${recipientDisplay}`}
+                        title={
+                          entry.isDraft
+                            ? 'Delete saved draft from this device'
+                            : 'Remove from this device (shared link stays live forever)'
+                        }
+                        aria-label={`Remove bouquet for ${recipientDisplay} from this device`}
                         className={`p-1 rounded-full transition cursor-pointer ${
                           isDarkMode
                             ? 'text-[#A69288] hover:text-rose-300 hover:bg-[#3F332F]'
