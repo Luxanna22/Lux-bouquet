@@ -24,6 +24,7 @@ import {
   Check,
   RotateCw,
   Maximize2,
+  Minus,
   Plus,
   Send,
   X,
@@ -54,6 +55,10 @@ import {
   Bookmark,
   Save,
   ImagePlus,
+  ZoomIn,
+  ZoomOut,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import {
   FlowerType,
@@ -409,6 +414,8 @@ export default function App() {
     }
   });
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
+  const [desktopCanvasZoom, setDesktopCanvasZoom] = useState<number>(1);
+  const [desktopCanvasPan, setDesktopCanvasPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [toast, setToast] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const slideDrawerRef = useRef<HTMLElement | null>(null);
@@ -417,6 +424,33 @@ export default function App() {
   const letterBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const studioCarouselRef = useRef<HTMLDivElement | null>(null);
   const [canScrollCarouselLeft, setCanScrollCarouselLeft] = useState(false);
+
+  const DESKTOP_ZOOM_MIN = 0.75;
+  const DESKTOP_ZOOM_MAX = 2.25;
+  const DESKTOP_ZOOM_STEP = 0.25;
+
+  const updateDesktopCanvasZoom = useCallback((nextZoom: number) => {
+    const clamped = Math.max(
+      DESKTOP_ZOOM_MIN,
+      Math.min(DESKTOP_ZOOM_MAX, Math.round(nextZoom * 100) / 100)
+    );
+    setDesktopCanvasZoom(clamped);
+    if (clamped <= 1) {
+      setDesktopCanvasPan({ x: 0, y: 0 });
+    }
+  }, []);
+
+  const resetDesktopCanvasZoom = useCallback(() => {
+    setDesktopCanvasZoom(1);
+    setDesktopCanvasPan({ x: 0, y: 0 });
+  }, []);
+
+  useEffect(() => {
+    if (isPreviewMode || isGiftView) {
+      setDesktopCanvasZoom(1);
+      setDesktopCanvasPan({ x: 0, y: 0 });
+    }
+  }, [isPreviewMode, isGiftView]);
   const [canScrollCarouselRight, setCanScrollCarouselRight] = useState(true);
   const showcaseResolveRequestIdRef = useRef<number>(0);
   const hasHydratedRef = useRef(false);
@@ -675,7 +709,7 @@ export default function App() {
     if (!isLetterModalOpen) return;
     const toStr = `Dearest ${card.to.trim() || 'Someone Special'},`;
     const msgStr = card.message || 'Thinking of you with love and blossoms.';
-    const fromStr = card.from.trim() ? `With love, ${card.from.trim()}` : 'With love';
+    const fromStr = card.from.trim();
     const totalLen = toStr.length + msgStr.length + fromStr.length;
 
     setLetterTypedChars(0);
@@ -3609,6 +3643,16 @@ export default function App() {
 
               {/* Interactive SVG Bouquet Stage (Always 100% height, zero layout shift; emerges seamlessly during Scene 5 light wash) */}
               <div
+                onWheel={(e) => {
+                  if (isPreviewMode || isGiftView || showLandingPage) return;
+                  if (!(e.ctrlKey || e.metaKey)) return;
+                  if (typeof window !== 'undefined' && !window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+                    return;
+                  }
+                  e.preventDefault();
+                  const delta = e.deltaY < 0 ? 0.15 : -0.15;
+                  updateDesktopCanvasZoom(desktopCanvasZoom + delta);
+                }}
                 className={`flex-1 w-full h-full min-h-0 flex items-center justify-center relative touch-none ${
                   (isGiftView || isPreviewMode) && isGiftEntranceOpen && !isEntranceUnfurling
                     ? 'opacity-0 pointer-events-none'
@@ -3617,37 +3661,76 @@ export default function App() {
                     : ''
                 }`}
               >
-                {/* Mobile-Only (< sm) Floating Top Selected-Item Bar (Positioned right under top navbar; never moves or resizes the main canvas) */}
+                {/* Mobile-Only (< sm) Floating Top Selected-Item Bar: One-Tap Resize (-/+), Flip, Layers & Delete */}
                 {!isPreviewMode && !isGiftView && selectedItem && !selectedItem.hidden && (
                   <div
                     role="toolbar"
                     aria-label="Mobile selected item quick controls"
-                    className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.25rem)] max-w-[356px] flex sm:hidden items-center justify-between gap-2 px-3 py-1 rounded-full border border-dashed shadow-[0_8px_24px_rgba(35,28,24,0.10)] backdrop-blur-md pointer-events-auto ${isDarkMode
-                      ? 'bg-[#2B2321]/92 border-[#5E4E49] text-[#FBF6F1]'
-                      : 'bg-[#FFFDF9]/92 border-[#DECBB9] text-[#2A201D]'
+                    className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1rem)] max-w-[372px] flex sm:hidden items-center justify-between gap-1 px-2 py-1 rounded-2xl border shadow-[0_8px_24px_rgba(35,28,24,0.12)] backdrop-blur-md pointer-events-auto overflow-x-auto no-scrollbar ${isDarkMode
+                      ? 'bg-[#25201E]/95 border-[#524540] text-[#FBF6F1]'
+                      : 'bg-[#FFFDF9]/95 border-[#DFCFC0] text-[#2A201D]'
                       }`}
                   >
-                    <span className="text-[11.5px] font-medium truncate text-[#6E5D54] dark:text-[#D8C7BE] pl-0.5">
-                      {selectedItem.photoStyle
-                        ? selectedItem.photoStyle === 'raw'
-                          ? 'Photo'
-                          : PHOTO_FRAME_CATALOG.find((p) => p.id === selectedItem.photoStyle)?.shortLabel || 'Photocard'
-                        : selectedMeta?.shortName || 'Stem'}
-                    </span>
-
+                    {/* Quick Resize Stepper (Size − / % / +) — effortless mobile alternative to dragging the corner handle */}
                     <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
-                        disabled={
-                          Boolean(selectedItem.locked) ||
-                          (selectedItemIndex <= 0 && getEffectiveItemPlane(selectedItem) === 'back')
+                        disabled={Boolean(selectedItem.locked) || selectedItem.scale <= 0.36}
+                        onClick={() =>
+                          updateItem(
+                            selectedItem.id,
+                            { scale: Number(Math.max(0.35, selectedItem.scale - 0.12).toFixed(2)) },
+                            true
+                          )
                         }
-                        onClick={() => moveItemLayer(selectedItem.id, 'back')}
-                        title="Send Behind / Inside Bouquet"
-                        aria-label="Send to Most Back"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                        title="Shrink item"
+                        aria-label="Decrease size"
+                        className="w-8 h-8 rounded-xl inline-flex items-center justify-center bg-[#B4846C]/12 text-[#8C5E48] dark:text-[#E7C2AD] hover:bg-[#B4846C]/22 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
-                        <LayerOrderBoxIcon direction="back" className="w-3.5 h-3.5 text-[#B4846C]" />
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span
+                        className="min-w-[36px] text-center text-[11px] font-semibold tabular-nums text-[#5C4B43] dark:text-[#E4D5CC]"
+                        aria-label={`Size ${Math.round(selectedItem.scale * 100)} percent`}
+                      >
+                        {Math.round(selectedItem.scale * 100)}%
+                      </span>
+                      <button
+                        type="button"
+                        disabled={Boolean(selectedItem.locked) || selectedItem.scale >= 2.48}
+                        onClick={() =>
+                          updateItem(
+                            selectedItem.id,
+                            { scale: Number(Math.min(2.5, selectedItem.scale + 0.12).toFixed(2)) },
+                            true
+                          )
+                        }
+                        title="Enlarge item"
+                        aria-label="Increase size"
+                        className="w-8 h-8 rounded-xl inline-flex items-center justify-center bg-[#B4846C]/12 text-[#8C5E48] dark:text-[#E7C2AD] hover:bg-[#B4846C]/22 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <span
+                      aria-hidden="true"
+                      className={`w-[1px] h-4 shrink-0 ${isDarkMode ? 'bg-[#4A3D38]' : 'bg-[#E5D6C7]'}`}
+                    />
+
+                    {/* Flip, Layer Order & Optional Photo Controls */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        disabled={Boolean(selectedItem.locked)}
+                        onClick={() =>
+                          updateItem(selectedItem.id, { flipX: !selectedItem.flipX }, true)
+                        }
+                        title="Flip horizontally"
+                        aria-label="Flip item horizontally"
+                        className="w-8 h-8 rounded-xl inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer text-[#6E5D54] dark:text-[#D8C7BE]"
+                      >
+                        <FlipHorizontal className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
@@ -3658,7 +3741,7 @@ export default function App() {
                         onClick={() => moveItemLayer(selectedItem.id, 'down')}
                         title="Send Back 1 Layer"
                         aria-label="Send Back 1 Layer"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                        className="w-8 h-8 rounded-xl inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
                         <LayerOrderBoxIcon direction="down" className="w-3.5 h-3.5 text-[#B4846C]" />
                       </button>
@@ -3672,32 +3755,13 @@ export default function App() {
                         onClick={() => moveItemLayer(selectedItem.id, 'up')}
                         title="Bring Forward 1 Layer"
                         aria-label="Bring Forward 1 Layer"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
+                        className="w-8 h-8 rounded-xl inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
                       >
                         <LayerOrderBoxIcon direction="up" className="w-3.5 h-3.5 text-[#B4846C]" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          Boolean(selectedItem.locked) ||
-                          (selectedItemIndex >= items.length - 1 &&
-                            getEffectiveItemPlane(selectedItem) === 'front')
-                        }
-                        onClick={() => moveItemLayer(selectedItem.id, 'front')}
-                        title="Bring to Overlay / Front of Bouquet"
-                        aria-label="Bring to Most Front"
-                        className="w-7 h-7 rounded-full inline-flex items-center justify-center hover:bg-[#B4846C]/15 disabled:opacity-30 active:scale-95 transition cursor-pointer"
-                      >
-                        <LayerOrderBoxIcon direction="front" className="w-3.5 h-3.5 text-[#B4846C]" />
                       </button>
 
                       {selectedItem.photoStyle && (
                         <>
-                          <span
-                            aria-hidden="true"
-                            className={`w-[1px] h-3.5 mx-0.5 ${isDarkMode ? 'bg-[#52433E]' : 'bg-[#E2D1C1]'
-                              }`}
-                          />
                           <button
                             type="button"
                             disabled={Boolean(selectedItem.locked)}
@@ -3723,7 +3787,7 @@ export default function App() {
                                 : 'Clip photo to bouquet'
                             }
                             aria-pressed={getEffectiveItemPlane(selectedItem) === 'inside'}
-                            className={`h-6.5 px-2 rounded-full text-[10px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer ${getEffectiveItemPlane(selectedItem) === 'inside'
+                            className={`h-8 px-2 rounded-xl text-[10.5px] font-medium inline-flex items-center gap-1 active:scale-95 transition cursor-pointer whitespace-nowrap ${getEffectiveItemPlane(selectedItem) === 'inside'
                               ? 'bg-[#B4846C] text-white'
                               : 'text-[#B4846C] bg-[#B4846C]/10 hover:bg-[#B4846C]/20'
                               }`}
@@ -3742,12 +3806,22 @@ export default function App() {
                             }
                             title={selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
                             aria-label="Upload photo into photocard"
-                            className="w-7 h-7 rounded-full inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
+                            className="w-8 h-8 rounded-xl inline-flex items-center justify-center bg-[#B4846C] text-white hover:bg-[#9F7058] active:scale-95 transition cursor-pointer"
                           >
                             <ImagePlus className="w-3.5 h-3.5" />
                           </button>
                         </>
                       )}
+
+                      <button
+                        type="button"
+                        onClick={() => deleteSelected()}
+                        title="Remove selected item"
+                        aria-label="Remove selected item"
+                        className="w-8 h-8 rounded-xl inline-flex items-center justify-center text-rose-600 dark:text-rose-400 hover:bg-rose-500/12 active:scale-95 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3828,129 +3902,316 @@ export default function App() {
                       const found = items.find((i) => i.id === itemId);
                       triggerPhotoFilePicker(itemId, found?.photoStyle || 'polaroid');
                     }}
+                    canvasZoom={!isPreviewMode && !isGiftView ? desktopCanvasZoom : 1}
+                    canvasPan={!isPreviewMode && !isGiftView ? desktopCanvasPan : { x: 0, y: 0 }}
+                    onCanvasPanChange={setDesktopCanvasPan}
                   />
                 )}
 
                 {/* ===============================================================
-                COLLAPSIBLE RIGHT-SIDE ACTION STACK (Phone & Desktop)
-                Collapses the right-side tools down to the Eye button capsule.
-                Clicking an active tool icon again immediately slides the side
-                drawer closed.
+                DESKTOP-ONLY CANVAS ZOOM CONTROL (Hidden on mobile & touch tablets
+                where users pinch-zoom the canvas natively)
+                =============================================================== */}
+                {!isGiftView && !isPreviewMode && !showLandingPage && (
+                  <div
+                    role="group"
+                    aria-label="Desktop canvas zoom controls"
+                    className={`hidden md:[@media(hover:hover)_and_(pointer:fine)]:inline-flex items-center gap-0.5 absolute bottom-3 z-30 rounded-full border backdrop-blur-xl px-1.5 py-1 shadow-[0_6px_22px_rgba(42,32,29,0.08)] transition-[left] duration-200 ease-out ${
+                      mobilePopover === 'layers' ? 'left-[334px]' : 'left-4'
+                    } ${
+                      isDarkMode
+                        ? 'bg-[#2A2320]/92 border-[#4E403B] text-[#FBF6F1]'
+                        : 'bg-[#FFFDF9]/94 border-[#E5D7C8] text-[#3B2F2B]'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => updateDesktopCanvasZoom(desktopCanvasZoom - DESKTOP_ZOOM_STEP)}
+                      disabled={desktopCanvasZoom <= DESKTOP_ZOOM_MIN}
+                      aria-label="Zoom out canvas"
+                      title="Zoom out (Ctrl + Scroll)"
+                      className={`w-7 h-7 rounded-full inline-flex items-center justify-center transition cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+                        isDarkMode ? 'hover:bg-[#3D332F]' : 'hover:bg-[#F4EAE1]'
+                      }`}
+                    >
+                      <ZoomOut className="w-3.5 h-3.5 text-[#9A6F59]" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={resetDesktopCanvasZoom}
+                      aria-label={`Canvas zoom ${Math.round(desktopCanvasZoom * 100)} percent — click to reset`}
+                      title={desktopCanvasZoom !== 1 ? 'Click to reset zoom to 100%' : 'Canvas zoom 100%'}
+                      className={`min-w-[46px] h-7 px-2 rounded-full text-[11.5px] font-semibold tabular-nums transition cursor-pointer whitespace-nowrap ${
+                        desktopCanvasZoom !== 1
+                          ? isDarkMode
+                            ? 'bg-[#463731] text-[#F7E5D8] hover:bg-[#54423B]'
+                            : 'bg-[#F4EAE1] text-[#5C3D2E] hover:bg-[#EADBD0]'
+                          : isDarkMode
+                            ? 'text-[#D6C5BA] hover:bg-[#3D332F]'
+                            : 'text-[#6A574D] hover:bg-[#F5EFE8]'
+                      }`}
+                    >
+                      {Math.round(desktopCanvasZoom * 100)}%
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => updateDesktopCanvasZoom(desktopCanvasZoom + DESKTOP_ZOOM_STEP)}
+                      disabled={desktopCanvasZoom >= DESKTOP_ZOOM_MAX}
+                      aria-label="Zoom in canvas"
+                      title="Zoom in (Ctrl + Scroll)"
+                      className={`w-7 h-7 rounded-full inline-flex items-center justify-center transition cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+                        isDarkMode ? 'hover:bg-[#3D332F]' : 'hover:bg-[#F4EAE1]'
+                      }`}
+                    >
+                      <ZoomIn className="w-3.5 h-3.5 text-[#9A6F59]" />
+                    </button>
+                  </div>
+                )}
+
+                {/* ===============================================================
+                UNIFIED RIGHT-SIDE STUDIO TOOL DOCK (Desktop & Mobile)
+                Single cohesive translucent surface with clear visual hierarchy:
+                1. Quiet Header / Collapse toggle
+                2. Design Tools (Colors, Size & Tilt, Layers)
+                3. Keepsakes (Write/Edit note, Add/Saved voice, Mobile Music)
+                4. Emphasized Preview action at bottom
                 =============================================================== */}
                 {!isGiftView && !isPreviewMode && !showLandingPage && (
                   <div
                     ref={floatingToolStackRef}
-                    className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3 z-40 max-h-[calc(100%-0.5rem)] flex flex-col items-center justify-end gap-1.5"
+                    className="absolute right-2 sm:right-3.5 bottom-2 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 z-40 max-h-[calc(100%-0.75rem)] flex flex-col items-end justify-end sm:justify-center"
                   >
-                    {isMobileToolsExpanded && (
-                      <div className="flex flex-col items-center gap-1.5 overflow-y-auto no-scrollbar py-0.5 px-0.5 animate-in fade-in duration-150">
+                    {/* DESKTOP UNIFIED DOCK (sm and up) */}
+                    <nav
+                      aria-label="Studio tools"
+                      className={`hidden sm:flex flex-col items-stretch rounded-2xl border backdrop-blur-xl shadow-[0_10px_28px_rgba(42,32,29,0.09)] transition-all duration-200 overflow-hidden ${
+                        isMobileToolsExpanded ? 'w-[144px] p-1.5' : 'w-[116px] p-1.5'
+                      } ${
+                        isDarkMode
+                          ? 'bg-[#26201D]/94 border-[#4A3D38] text-[#F5ECE6]'
+                          : 'bg-[#FFFDF9]/95 border-[#E6D9CB] text-[#3B2F2B]'
+                      }`}
+                    >
+                      {/* Quiet Dock Header + Collapse/Expand */}
+                      <div className="flex items-center justify-between gap-1 px-2 pt-0.5 pb-1.5">
+                        <span
+                          className={`text-[10px] font-semibold uppercase tracking-[0.12em] select-none ${
+                            isDarkMode ? 'text-[#9F8B7F]' : 'text-[#9C8678]'
+                          }`}
+                        >
+                          Studio
+                        </span>
                         <button
                           type="button"
-                          onClick={() => handleMobileFloatingTool('color')}
-                          aria-pressed={mobilePopover === 'color'}
-                          aria-label="Open Unified Color Picker"
-                          title={mobilePopover === 'color' ? 'Hide Color Picker Drawer' : 'Colors (Petals, Wrapper, Ribbon, Card & Voice)'}
-                          className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'color'
-                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                            : isDarkMode
-                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                            }`}
+                          onClick={() => {
+                            setIsMobileToolsExpanded((prev) => {
+                              const next = !prev;
+                              if (!next) setMobilePopover(null);
+                              return next;
+                            });
+                          }}
+                          aria-expanded={isMobileToolsExpanded}
+                          aria-label={
+                            isMobileToolsExpanded
+                              ? 'Hide canvas tools'
+                              : 'Show canvas tools (Colors, Size, Layers, Note, Voice)'
+                          }
+                          title={isMobileToolsExpanded ? 'Collapse tools' : 'Expand tools'}
+                          className={`w-6 h-6 rounded-lg inline-flex items-center justify-center transition cursor-pointer ${
+                            isDarkMode
+                              ? 'text-[#B5A094] hover:bg-[#3A302C] hover:text-white'
+                              : 'text-[#8C7567] hover:bg-[#F3EAE2] hover:text-[#3B2F2B]'
+                          }`}
                         >
-                          <Palette className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMobileFloatingTool('stem')}
-                          aria-pressed={mobilePopover === 'stem'}
-                          aria-label="Open Stem Length, Size & Tilt Settings"
-                          title={mobilePopover === 'stem' ? 'Hide Stem Settings Drawer' : 'Stem Settings (Length, Size & Tilt)'}
-                          className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'stem'
-                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                            : isDarkMode
-                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                            }`}
-                        >
-                          <Sliders className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMobileFloatingTool('layers')}
-                          aria-pressed={mobilePopover === 'layers'}
-                          aria-label="Open Layer Order Manager"
-                          title={mobilePopover === 'layers' ? 'Hide Layer Order Drawer' : 'Layer Order (Drag to reorder, Lock & Hide)'}
-                          className={`w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'layers'
-                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                            : isDarkMode
-                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                            }`}
-                        >
-                          <Layers className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMobileFloatingTool('card')}
-                          aria-pressed={mobilePopover === 'card'}
-                          aria-label="Edit greeting card"
-                          title={mobilePopover === 'card' ? 'Hide Greeting Card Drawer' : 'Edit Greeting Card'}
-                          className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'card'
-                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                            : isDarkMode
-                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                            }`}
-                        >
-                          <PenLine className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMobileFloatingTool('voice')}
-                          aria-pressed={mobilePopover === 'voice'}
-                          aria-label="Open Voice Keepsake Recorder"
-                          title={mobilePopover === 'voice' ? 'Hide Voice Recorder Drawer' : 'Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)'}
-                          className={`relative w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${mobilePopover === 'voice'
-                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                            : isDarkMode
-                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                            }`}
-                        >
-                          <Mic className="w-4 h-4" />
-                          {voice.audioDataUrl && (
-                            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
+                          {isMobileToolsExpanded ? (
+                            <PanelRightClose className="w-3.5 h-3.5" />
+                          ) : (
+                            <PanelRightOpen className="w-3.5 h-3.5" />
                           )}
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={handleToggleMusic}
-                          aria-pressed={isMusicPlaying}
-                          aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
-                          title={isMusicPlaying ? 'Pause music' : 'Play music'}
-                          className={`sm:hidden w-9 h-9 shrink-0 rounded-full border shadow-sm flex items-center justify-center active:scale-95 transition ${isMusicPlaying
-                            ? 'bg-[#B4846C] text-white border-[#B4846C] ring-2 ring-[#B4846C]/30'
-                            : isDarkMode
-                              ? 'bg-[#1E1C1A]/95 border-stone-700 text-[#B4846C]'
-                              : 'bg-white/95 border-stone-200/90 text-[#B4846C]'
-                            }`}
-                        >
-                          {isMusicPlaying ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                        </button>
                       </div>
-                    )}
 
-                    {/* Bottom Capsule: Collapse/Expand Toggle + Eye (Preview Bloom) */}
-                    <div
-                      className={`flex flex-col items-center shrink-0 rounded-full border shadow-sm backdrop-blur-md p-0.5 transition-all ${isDarkMode
-                        ? 'bg-[#1E1C1A]/95 border-stone-700'
-                        : 'bg-white/95 border-stone-200/90'
+                      {isMobileToolsExpanded && (
+                        <>
+                          {/* Group 1: Arrange & Style */}
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('color')}
+                              aria-pressed={mobilePopover === 'color'}
+                              aria-label="Colors — Petals, Wrapper, Ribbon, Card and Voice"
+                              title="Colors (Petals, Wrapper, Ribbon, Card & Voice)"
+                              className={`w-full h-8 px-2.5 rounded-xl flex items-center gap-2.5 text-xs transition cursor-pointer whitespace-nowrap ${
+                                mobilePopover === 'color'
+                                  ? 'bg-[#B4846C] text-white font-semibold shadow-xs'
+                                  : isDarkMode
+                                    ? 'text-[#EFE4DC] font-medium hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] font-medium hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Palette
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  mobilePopover === 'color' ? 'text-white' : 'text-[#B4846C]'
+                                }`}
+                              />
+                              <span>Colors</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('stem')}
+                              aria-pressed={mobilePopover === 'stem'}
+                              aria-label="Resize and tilt — Stem length, size and angle"
+                              title="Stem Settings (Length, Size & Tilt)"
+                              className={`w-full h-8 px-2.5 rounded-xl flex items-center gap-2.5 text-xs transition cursor-pointer whitespace-nowrap ${
+                                mobilePopover === 'stem'
+                                  ? 'bg-[#B4846C] text-white font-semibold shadow-xs'
+                                  : isDarkMode
+                                    ? 'text-[#EFE4DC] font-medium hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] font-medium hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Sliders
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  mobilePopover === 'stem' ? 'text-white' : 'text-[#B4846C]'
+                                }`}
+                              />
+                              <span>Size &amp; Tilt</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('layers')}
+                              aria-pressed={mobilePopover === 'layers'}
+                              aria-label="Layers — Reorder, lock and hide stems"
+                              title="Layer Order (Drag to reorder, Lock & Hide)"
+                              className={`w-full h-8 px-2.5 rounded-xl flex items-center gap-2.5 text-xs transition cursor-pointer whitespace-nowrap ${
+                                mobilePopover === 'layers'
+                                  ? 'bg-[#B4846C] text-white font-semibold shadow-xs'
+                                  : isDarkMode
+                                    ? 'text-[#EFE4DC] font-medium hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] font-medium hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Layers
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  mobilePopover === 'layers' ? 'text-white' : 'text-[#B4846C]'
+                                }`}
+                              />
+                              <span>Layers</span>
+                            </button>
+                          </div>
+
+                          {/* Subtle Divider + Keepsakes Group */}
+                          <div
+                            className={`my-1.5 mx-2 h-px ${
+                              isDarkMode ? 'bg-[#3D322E]' : 'bg-[#EFE5DB]'
+                            }`}
+                          />
+
+                          <span
+                            className={`px-2 pb-1 text-[9.5px] font-semibold uppercase tracking-[0.12em] select-none ${
+                              isDarkMode ? 'text-[#8F7B6F]' : 'text-[#A58F80]'
+                            }`}
+                          >
+                            Keepsakes
+                          </span>
+
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('card')}
+                              aria-pressed={mobilePopover === 'card'}
+                              aria-label="Write note — Edit greeting card"
+                              title="Write or Edit Greeting Card Note"
+                              className={`w-full h-8 px-2.5 rounded-xl flex items-center justify-between gap-2 text-xs transition cursor-pointer whitespace-nowrap ${
+                                mobilePopover === 'card'
+                                  ? 'bg-[#B4846C] text-white font-semibold shadow-xs'
+                                  : isDarkMode
+                                    ? 'text-[#EFE4DC] font-medium hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] font-medium hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <PenLine
+                                  className={`w-3.5 h-3.5 shrink-0 ${
+                                    mobilePopover === 'card' ? 'text-white' : 'text-[#B4846C]'
+                                  }`}
+                                />
+                                <span>{card.message?.trim() ? 'Edit note' : 'Write note'}</span>
+                              </span>
+                              {card.message?.trim() && mobilePopover !== 'card' && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#B4846C] shrink-0" />
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('voice')}
+                              aria-pressed={mobilePopover === 'voice'}
+                              aria-label="Add voice — Record voice keepsake"
+                              title="Voice Keepsake (Record Mixtape, Vinyl, Plushie, Music Box)"
+                              className={`w-full h-8 px-2.5 rounded-xl flex items-center justify-between gap-2 text-xs transition cursor-pointer whitespace-nowrap ${
+                                mobilePopover === 'voice'
+                                  ? 'bg-[#B4846C] text-white font-semibold shadow-xs'
+                                  : isDarkMode
+                                    ? 'text-[#EFE4DC] font-medium hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] font-medium hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <Mic
+                                  className={`w-3.5 h-3.5 shrink-0 ${
+                                    mobilePopover === 'voice' ? 'text-white' : 'text-[#B4846C]'
+                                  }`}
+                                />
+                                <span>{voice.audioDataUrl ? 'Voice saved' : 'Add voice'}</span>
+                              </span>
+                              {voice.audioDataUrl && (
+                                <span
+                                  className={`w-2 h-2 rounded-full shrink-0 ${
+                                    mobilePopover === 'voice' ? 'bg-white' : 'bg-rose-500'
+                                  }`}
+                                />
+                              )}
+                            </button>
+                          </div>
+
+                          <div
+                            className={`my-1.5 mx-2 h-px ${
+                              isDarkMode ? 'bg-[#3D322E]' : 'bg-[#EFE5DB]'
+                            }`}
+                          />
+                        </>
+                      )}
+
+                      {/* Primary Dock Action: Preview Gift Bloom */}
+                      <button
+                        type="button"
+                        onClick={() => startGiftBloomAnimation(items.length, true)}
+                        aria-label="Preview gift bloom"
+                        title="Preview Gift Bloom"
+                        className={`w-full h-9 px-2.5 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold active:scale-[0.98] transition cursor-pointer whitespace-nowrap ${
+                          isDarkMode
+                            ? 'bg-[#463731] hover:bg-[#55433C] border-[#614D45] text-[#FBF6F1]'
+                            : 'bg-[#F4EAE1] hover:bg-[#EADBD0] border-[#E3CFC0] text-[#4A3226]'
                         }`}
+                      >
+                        <Eye className="w-3.5 h-3.5 shrink-0 text-[#B4846C]" />
+                        <span>Preview</span>
+                      </button>
+                    </nav>
+
+                    {/* MOBILE UNIFIED RAIL (< sm) */}
+                    <nav
+                      aria-label="Mobile studio tools"
+                      className={`flex sm:hidden flex-col items-stretch w-[54px] rounded-2xl border backdrop-blur-xl shadow-[0_8px_22px_rgba(42,32,29,0.10)] p-1 transition-all overflow-y-auto no-scrollbar ${
+                        isDarkMode
+                          ? 'bg-[#241E1C]/94 border-[#4A3D38] text-[#F5ECE6]'
+                          : 'bg-[#FFFDF9]/95 border-[#E6D9CB] text-[#3B2F2B]'
+                      }`}
                     >
                       <button
                         type="button"
@@ -3964,39 +4225,163 @@ export default function App() {
                         aria-expanded={isMobileToolsExpanded}
                         aria-label={
                           isMobileToolsExpanded
-                            ? 'Collapse canvas tools down to eye button'
-                            : 'Expand canvas tools (Colors, Stem, Layers, Card, Voice)'
+                            ? 'Hide canvas tools'
+                            : 'Show canvas tools (Colors, Size, Layers, Note, Voice)'
                         }
-                        title={isMobileToolsExpanded ? 'Collapse Tools' : 'More Tools (Colors, Stem, Layers, Card, Voice)'}
-                        className={`relative w-9 h-7 rounded-t-full flex items-center justify-center active:scale-95 transition ${isMobileToolsExpanded
-                          ? 'text-stone-500 dark:text-stone-400 hover:text-[#1C1917] dark:hover:text-white'
-                          : 'text-[#B4846C]'
-                          }`}
+                        className={`w-full h-6 rounded-xl flex items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                          isMobileToolsExpanded
+                            ? isDarkMode
+                              ? 'text-[#A89488] hover:text-white'
+                              : 'text-[#9A8577] hover:text-[#3B2F2B]'
+                            : 'text-[#B4846C]'
+                        }`}
                       >
                         {isMobileToolsExpanded ? (
-                          <ChevronDown className="w-4 h-4" />
+                          <ChevronDown className="w-3.5 h-3.5" />
                         ) : (
-                          <>
-                            <ChevronUp className="w-4 h-4" />
-                            {(selectedId || mobilePopover) && (
-                              <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-[#B4846C]" />
-                            )}
-                          </>
+                          <ChevronUp className="w-3.5 h-3.5" />
                         )}
                       </button>
 
-                      <div className="w-4.5 h-[1px] bg-stone-200/80 dark:bg-stone-700/80" />
+                      {isMobileToolsExpanded && (
+                        <>
+                          <div className="flex flex-col gap-0.5 mt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('color')}
+                              aria-pressed={mobilePopover === 'color'}
+                              aria-label="Colors — Petals, Wrapper, Ribbon, Card and Voice"
+                              className={`w-full h-[38px] rounded-xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                                mobilePopover === 'color'
+                                  ? 'bg-[#B4846C] text-white'
+                                  : isDarkMode
+                                    ? 'text-[#F3EAE4] hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Palette className={`w-3.5 h-3.5 shrink-0 ${mobilePopover === 'color' ? 'text-white' : 'text-[#B4846C]'}`} />
+                              <span className="text-[9.5px] font-semibold leading-none tracking-tight">Colors</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('stem')}
+                              aria-pressed={mobilePopover === 'stem'}
+                              aria-label="Resize and tilt — Stem length, size and angle"
+                              className={`w-full h-[38px] rounded-xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                                mobilePopover === 'stem'
+                                  ? 'bg-[#B4846C] text-white'
+                                  : isDarkMode
+                                    ? 'text-[#F3EAE4] hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Sliders className={`w-3.5 h-3.5 shrink-0 ${mobilePopover === 'stem' ? 'text-white' : 'text-[#B4846C]'}`} />
+                              <span className="text-[9.5px] font-semibold leading-none tracking-tight">Resize</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('layers')}
+                              aria-pressed={mobilePopover === 'layers'}
+                              aria-label="Layers — Reorder, lock and hide stems"
+                              className={`w-full h-[38px] rounded-xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                                mobilePopover === 'layers'
+                                  ? 'bg-[#B4846C] text-white'
+                                  : isDarkMode
+                                    ? 'text-[#F3EAE4] hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Layers className={`w-3.5 h-3.5 shrink-0 ${mobilePopover === 'layers' ? 'text-white' : 'text-[#B4846C]'}`} />
+                              <span className="text-[9.5px] font-semibold leading-none tracking-tight">Layers</span>
+                            </button>
+                          </div>
+
+                          <div className={`my-1 mx-1.5 h-px ${isDarkMode ? 'bg-[#3D322E]' : 'bg-[#EFE5DB]'}`} />
+
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('card')}
+                              aria-pressed={mobilePopover === 'card'}
+                              aria-label="Write note — Edit greeting card"
+                              className={`relative w-full h-[38px] rounded-xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                                mobilePopover === 'card'
+                                  ? 'bg-[#B4846C] text-white'
+                                  : isDarkMode
+                                    ? 'text-[#F3EAE4] hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <PenLine className={`w-3.5 h-3.5 shrink-0 ${mobilePopover === 'card' ? 'text-white' : 'text-[#B4846C]'}`} />
+                              <span className="text-[9.5px] font-semibold leading-none tracking-tight">Note</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMobileFloatingTool('voice')}
+                              aria-pressed={mobilePopover === 'voice'}
+                              aria-label="Add voice — Record voice keepsake"
+                              className={`relative w-full h-[38px] rounded-xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                                mobilePopover === 'voice'
+                                  ? 'bg-[#B4846C] text-white'
+                                  : isDarkMode
+                                    ? 'text-[#F3EAE4] hover:bg-[#372E2A]'
+                                    : 'text-[#3B2F2B] hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              <Mic className={`w-3.5 h-3.5 shrink-0 ${mobilePopover === 'voice' ? 'text-white' : 'text-[#B4846C]'}`} />
+                              <span className="text-[9.5px] font-semibold leading-none tracking-tight">Voice</span>
+                              {voice.audioDataUrl && (
+                                <span className="absolute top-1 right-1.5 w-2 h-2 rounded-full bg-rose-500 border border-white" />
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleToggleMusic}
+                              aria-pressed={isMusicPlaying}
+                              aria-label={isMusicPlaying ? 'Pause music' : 'Play music'}
+                              className={`w-full h-[38px] rounded-xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                                isMusicPlaying
+                                  ? isDarkMode
+                                    ? 'bg-[#3F312B] text-[#F5DFD1]'
+                                    : 'bg-[#F6EDE5] text-[#6D4735]'
+                                  : isDarkMode
+                                    ? 'text-[#B7A499] hover:bg-[#372E2A]'
+                                    : 'text-[#8C7567] hover:bg-[#F5ECE4]'
+                              }`}
+                            >
+                              {isMusicPlaying ? (
+                                <Music className="w-3.5 h-3.5 shrink-0 text-[#B4846C]" />
+                              ) : (
+                                <VolumeX className="w-3.5 h-3.5 shrink-0" />
+                              )}
+                              <span className="text-[9.5px] font-semibold leading-none tracking-tight">
+                                {isMusicPlaying ? 'Music' : 'Muted'}
+                              </span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      <div className={`my-1 mx-1.5 h-px ${isDarkMode ? 'bg-[#3D322E]' : 'bg-[#EFE5DB]'}`} />
 
                       <button
                         type="button"
                         onClick={() => startGiftBloomAnimation(items.length, true)}
                         aria-label="Preview gift bloom"
-                        title="Preview Bloom"
-                        className="w-9 h-8.5 rounded-full flex items-center justify-center text-[#B4846C] active:scale-95 transition"
+                        className={`w-full h-[40px] rounded-xl border flex flex-col items-center justify-center gap-0.5 active:scale-95 transition cursor-pointer ${
+                          isDarkMode
+                            ? 'bg-[#463731] border-[#614D45] text-[#FBF6F1]'
+                            : 'bg-[#F4EAE1] border-[#E3CFC0] text-[#4A3226]'
+                        }`}
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5 shrink-0 text-[#B4846C]" />
+                        <span className="text-[9.5px] font-semibold leading-none tracking-tight">Preview</span>
                       </button>
-                    </div>
+                    </nav>
                   </div>
                 )}
 
@@ -5998,7 +6383,7 @@ export default function App() {
 
         const toFull = `Dearest ${card.to.trim() || 'Someone Special'},`;
         const msgFull = card.message || 'Thinking of you with love and blossoms.';
-        const fromFull = card.from.trim() ? `With love, ${card.from.trim()}` : 'With love';
+        const fromFull = card.from.trim();
 
         const toVisible = toFull.slice(0, Math.min(letterTypedChars, toFull.length));
         const msgCount = Math.max(0, letterTypedChars - toFull.length);
@@ -6092,22 +6477,24 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Handwritten Signature ("With love, ...") */}
-                <div
-                  className="mt-4 text-right text-xl sm:text-2xl font-semibold italic min-h-[2rem]"
-                  style={{
-                    fontFamily: "'Caveat', 'Cormorant Garamond', cursive",
-                    color: cardPalette.sign
-                  }}
-                >
-                  <span>{fromVisible ? `— ${fromVisible}` : ''}</span>
-                  {isWritingFrom && (
-                    <PenLine
-                      className="w-4 h-4 inline-block ml-1 animate-bounce"
-                      style={{ color: cardPalette.seal }}
-                    />
-                  )}
-                </div>
+                {/* Handwritten Signature (Only rendered when sender filled in a name — no default "With love") */}
+                {fromFull && (
+                  <div
+                    className="mt-4 text-right text-xl sm:text-2xl font-semibold italic min-h-[2rem]"
+                    style={{
+                      fontFamily: "'Caveat', 'Cormorant Garamond', cursive",
+                      color: cardPalette.sign
+                    }}
+                  >
+                    <span>{fromVisible ? `— ${fromVisible}` : ''}</span>
+                    {isWritingFrom && (
+                      <PenLine
+                        className="w-4 h-4 inline-block ml-1 animate-bounce"
+                        style={{ color: cardPalette.seal }}
+                      />
+                    )}
+                  </div>
+                )}
 
                 {/* Subtle Card Footer Actions */}
                 <div

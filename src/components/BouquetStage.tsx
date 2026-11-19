@@ -3200,6 +3200,9 @@ export interface BouquetStageProps {
   onRibbonClick?: () => void;
   onPhotoCardUploadClick?: (itemId: string) => void;
   onBouquetSelect?: () => void;
+  canvasZoom?: number;
+  canvasPan?: { x: number; y: number };
+  onCanvasPanChange?: (pan: { x: number; y: number }) => void;
 }
 
 export const BouquetStage: React.FC<BouquetStageProps> = ({
@@ -3226,6 +3229,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   onRibbonClick,
   onPhotoCardUploadClick,
   onBouquetSelect,
+  canvasZoom = 1,
+  canvasPan = { x: 0, y: 0 },
+  onCanvasPanChange,
 }) => {
   const storeState = useBouquetStore();
   const items = snapshotOverride ? snapshotOverride.items : storeState.items;
@@ -3279,6 +3285,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const hasCommittedDragHistoryRef = useRef(false);
   const hasDraggedSpecialRef = useRef(false);
   const wasSpecialAlreadyActiveRef = useRef(false);
+  const [isPanningCanvas, setIsPanningCanvas] = useState(false);
+  const panDragRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startPanX: number;
+    startPanY: number;
+  } | null>(null);
 
   const prevVoiceStyleRef = useRef(voice?.style);
   const prevVoiceVisibleRef = useRef(voice?.visibleOnStage);
@@ -4240,21 +4254,46 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         className={
           isCardThumbnail
             ? 'w-full h-full block pointer-events-none select-none'
-            : 'w-full h-full block touch-none'
+            : `w-full h-full block touch-none ${
+                !isPreviewMode && canvasZoom > 1
+                  ? isPanningCanvas
+                    ? 'cursor-grabbing'
+                    : 'cursor-grab'
+                  : ''
+              }`
         }
         role="img"
         aria-label="Interactive Flower Bouquet Canvas"
         onPointerMove={(e) => {
+          if (panDragRef.current && panDragRef.current.pointerId === e.pointerId && onCanvasPanChange) {
+            const dx = e.clientX - panDragRef.current.startClientX;
+            const dy = e.clientY - panDragRef.current.startClientY;
+            const maxPan = Math.round(280 * Math.max(0.5, canvasZoom - 0.75));
+            const nextX = Math.max(-maxPan, Math.min(maxPan, Math.round(panDragRef.current.startPanX + dx)));
+            const nextY = Math.max(-maxPan, Math.min(maxPan, Math.round(panDragRef.current.startPanY + dy)));
+            onCanvasPanChange({ x: nextX, y: nextY });
+            return;
+          }
           handleStagePointerMove(e);
           if (isPreviewMode && !isCardThumbnail) {
             triggerPresentationRustle(e.clientX, e.clientY, 'move');
           }
         }}
-        onPointerUp={handleStagePointerUp}
+        onPointerUp={(e) => {
+          if (panDragRef.current && panDragRef.current.pointerId === e.pointerId) {
+            panDragRef.current = null;
+            setIsPanningCanvas(false);
+          }
+          handleStagePointerUp();
+        }}
         onPointerLeave={() => {
           lastRustlePointerRef.current = null;
         }}
         onPointerCancel={() => {
+          if (panDragRef.current) {
+            panDragRef.current = null;
+            setIsPanningCanvas(false);
+          }
           handleStagePointerUp();
           lastRustlePointerRef.current = null;
         }}
@@ -4262,6 +4301,17 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           if (!isPreviewMode && !isCardThumbnail) {
             selectItem(null);
             setActiveSpecialObject(null);
+            if (canvasZoom > 1 && e.pointerType === 'mouse' && e.button === 0 && onCanvasPanChange) {
+              panDragRef.current = {
+                pointerId: e.pointerId,
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                startPanX: canvasPan.x,
+                startPanY: canvasPan.y,
+              };
+              setIsPanningCanvas(true);
+              captureSvgPointer(e);
+            }
           } else if (isPreviewMode && !isCardThumbnail) {
             triggerPresentationRustle(e.clientX, e.clientY, 'tap');
           }
@@ -5848,25 +5898,29 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
                   {/* Recipient "Open letter" / "Read note" badge in Preview Mode (omitted on miniature card thumbnails) */}
                   {isPreviewMode && !isCardThumbnail && (
-                    <g data-export-ignore="true" transform="translate(0, -68)">
+                    <g data-export-ignore="true" transform="translate(0, -76)">
                       <rect
-                        x="-42"
-                        y="-11"
-                        width="84"
-                        height="21"
-                        rx="10.5"
+                        x="-62"
+                        y="-15"
+                        width="124"
+                        height="30"
+                        rx="15"
                         fill={cardPalette.seal}
                         stroke="#FFFDF9"
-                        strokeWidth="1"
+                        strokeWidth="1.5"
+                        style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.22))' }}
                       />
                       <text
                         x="0"
-                        y="3"
+                        y="4.5"
                         textAnchor="middle"
                         fill="#ffffff"
-                        fontSize="9.5"
+                        fontSize="13"
                         fontWeight="600"
-                        style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                        style={{
+                          fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                          letterSpacing: '0.015em',
+                        }}
                       >
                         {isUnopenedEnvelope ? 'Open letter' : 'Read note'}
                       </text>
@@ -5875,12 +5929,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 </g>
               </g>
 
-              {/* Upright Editor "✏️ Write note" Pill (stays upright even when card is rotated) */}
+              {/* Upright Editor "Write note" / "Edit note" Action Badge (stays upright even when card is rotated) */}
               {!isPreviewMode && (
                 <g
                   data-export-ignore="true"
                   data-drawer-trigger="true"
-                  transform={`translate(0, ${Math.round(-54 * cardScale - 14)})`}
+                  transform={`translate(0, ${Math.round(-54 * cardScale - 24)})`}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -5889,27 +5943,44 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   }}
                   style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
                   className="cursor-pointer select-none outline-none focus:outline-none"
+                  role="button"
+                  aria-label={card.message?.trim() ? 'Edit greeting card note' : 'Write greeting card note'}
                 >
+                  {/* Generous invisible tap target for mobile ergonomics */}
+                  <rect x="-76" y="-23" width="152" height="46" rx="23" fill="transparent" />
                   <rect
-                    x="-42"
-                    y="-11"
-                    width="84"
-                    height="20"
-                    rx="10"
+                    x="-64"
+                    y="-16"
+                    width="128"
+                    height="32"
+                    rx="16"
                     fill="#1C1917"
                     stroke="#ffffff"
-                    strokeWidth="1"
+                    strokeWidth="1.6"
+                    style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
+                  />
+                  {/* Crisp vector pencil icon */}
+                  <path
+                    d="M-46,4.5 L-44.8,0.6 L-38.4,-5.8 C-37.7,-6.5 -36.6,-6.5 -35.9,-5.8 L-34.9,-4.8 C-34.2,-4.1 -34.2,-3 -34.9,-2.3 L-41.3,4.1 L-46,4.5 Z"
+                    fill="none"
+                    stroke="#F4D3B8"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   />
                   <text
-                    x="0"
-                    y="2.5"
+                    x="10"
+                    y="4.8"
                     textAnchor="middle"
                     fill="#ffffff"
-                    fontSize="9.2"
+                    fontSize="13.5"
                     fontWeight="600"
-                    style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                    style={{
+                      fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                      letterSpacing: '0.01em',
+                    }}
                   >
-                    ✏️ Write note
+                    {card.message?.trim() ? 'Edit note' : 'Write note'}
                   </text>
                 </g>
               )}
@@ -6005,12 +6076,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 </g>
               </g>
 
-              {/* Upright Editor Record/Saved Pill in Editor Mode */}
+              {/* Upright Editor Add Voice / Voice Saved Action Badge */}
               {!isPreviewMode && (
                 <g
                   data-export-ignore="true"
                   data-drawer-trigger="true"
-                  transform={`translate(0, ${Math.round(-48 * voiceScale - 14)})`}
+                  transform={`translate(0, ${Math.round(-48 * voiceScale - 24)})`}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -6019,31 +6090,66 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   }}
                   style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
                   className="cursor-pointer select-none outline-none focus:outline-none"
+                  role="button"
+                  aria-label={voice.audioDataUrl ? 'Edit recorded voice keepsake' : 'Add voice recording'}
                 >
+                  {/* Generous invisible tap target for mobile ergonomics */}
+                  <rect x="-80" y="-23" width="160" height="46" rx="23" fill="transparent" />
                   <rect
-                    x="-46"
-                    y="-11"
-                    width="92"
-                    height="20"
-                    rx="10"
+                    x="-68"
+                    y="-16"
+                    width="136"
+                    height="32"
+                    rx="16"
                     fill={isVoicePlaying ? '#e11d48' : '#1C1917'}
                     stroke="#ffffff"
-                    strokeWidth="1"
+                    strokeWidth="1.6"
+                    style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
                   />
+                  {/* Crisp vector mic / check / pause icon */}
+                  {isVoicePlaying ? (
+                    <g fill="#ffffff">
+                      <rect x="-50" y="-5" width="3" height="10" rx="1" />
+                      <rect x="-44.5" y="-5" width="3" height="10" rx="1" />
+                    </g>
+                  ) : voice.audioDataUrl ? (
+                    <path
+                      d="M-51,0.5 L-47,4.5 L-39.5,-3.5"
+                      fill="none"
+                      stroke="#86efac"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ) : (
+                    <g
+                      fill="none"
+                      stroke="#F4D3B8"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="-49" y="-6.5" width="5" height="8.5" rx="2.5" />
+                      <path d="M-52,-1 A5.5,5.5 0 0,0 -41,-1 M-46.5,4.5 L-46.5,7.2" />
+                    </g>
+                  )}
                   <text
-                    x="0"
-                    y="2.5"
+                    x="10"
+                    y="4.8"
                     textAnchor="middle"
                     fill="#ffffff"
-                    fontSize="9.2"
+                    fontSize="13.5"
                     fontWeight="600"
-                    style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.02em' }}
+                    style={{
+                      fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                      letterSpacing: '0.01em',
+                    }}
                   >
                     {isVoicePlaying
-                      ? '⏸ Playing...'
+                      ? 'Playing...'
                       : voice.audioDataUrl
-                      ? '✓ Voice saved'
-                      : '🎙️ Tap to record'}
+                      ? 'Voice saved'
+                      : 'Add voice'}
                   </text>
                 </g>
               )}
@@ -6053,7 +6159,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         })()}
         </g>
 
-        {/* 5C. CORNER CONTROLS (STRAIGHTEN, HIDE X & PULL-IN/OUT RESIZE+ROTATE) FOR GREETING CARD — NO FOCUS/OUTLINE RING */}
+        {/* 5C. CORNER CONTROLS (STRAIGHTEN, HIDE X & RESIZE+ROTATE) FOR GREETING CARD */}
         {!isPreviewMode &&
           card.visibleOnStage &&
           showCardInGiftView &&
@@ -6064,7 +6170,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             const cardY = card.y ?? 525;
             const cardScale = card.scale ?? 0.72;
             const cardRotation = card.rotation ?? 0;
-            const ringRadius = 72 * cardScale;
+            const ringRadius = Math.max(76, 76 * cardScale);
             return (
               <g
                 data-export-ignore="true"
@@ -6087,12 +6193,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Straighten greeting card rotation"
                 >
                   <title>Reset card tilt to 0°</title>
-                  <circle cx="0" cy="0" r="22" fill="transparent" />
-                  <circle cx="0" cy="0" r="12" fill="#ffffff" stroke="#B4846C" strokeWidth="1.8" />
+                  <circle cx="0" cy="0" r="32" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="18.5"
+                    fill="#ffffff"
+                    stroke="#B4846C"
+                    strokeWidth="2.4"
+                    style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.18))' }}
+                  />
                   <path
-                    d="M-3.5,0 A3.5,3.5 0 1,1 2.5,-2.5 M2.5,-5 L2.5,-2 L-0.5,-2"
+                    d="M-5.5,0 A5.5,5.5 0 1,1 3.8,-3.8 M3.8,-7.5 L3.8,-3.2 L-0.5,-3.2"
                     stroke="#1C1917"
-                    strokeWidth="1.5"
+                    strokeWidth="2.1"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
@@ -6115,17 +6229,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Hide greeting card from canvas"
                 >
                   <title>Hide card from canvas</title>
-                  <circle cx="0" cy="0" r="24" fill="transparent" />
-                  <circle cx="0" cy="0" r="13" fill="#e11d48" stroke="#ffffff" strokeWidth="2" />
-                  <path
-                    d="M-4,-4 L4,4 M4,-4 L-4,4"
+                  <circle cx="0" cy="0" r="34" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="19.5"
+                    fill="#e11d48"
                     stroke="#ffffff"
-                    strokeWidth="2"
+                    strokeWidth="2.5"
+                    style={{ filter: 'drop-shadow(0px 3px 6px rgba(225,29,72,0.28))' }}
+                  />
+                  <path
+                    d="M-5.5,-5.5 L5.5,5.5 M5.5,-5.5 L-5.5,5.5"
+                    stroke="#ffffff"
+                    strokeWidth="2.4"
                     strokeLinecap="round"
                   />
                 </g>
 
-                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate */}
+                {/* BOTTOM-RIGHT HANDLE (+45°): Drag to Resize & Rotate */}
                 <g
                   transform={`translate(${Math.cos(Math.PI / 4) * ringRadius}, ${
                     Math.sin(Math.PI / 4) * ringRadius
@@ -6134,60 +6256,64 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
                   className="cursor-nwse-resize select-none outline-none focus:outline-none"
                   role="slider"
-                  aria-label="Pull in or out to resize greeting card"
+                  aria-label="Drag to resize and rotate greeting card"
                   aria-valuenow={Math.round(cardScale * 100)}
                 >
                   <title>Drag corner to resize and rotate card</title>
                   <circle
                     cx="0"
                     cy="0"
-                    r={interaction?.mode === 'resize-card' ? 20 : 16}
+                    r={interaction?.mode === 'resize-card' ? 30 : 25}
                     fill="#B4846C"
-                    opacity={interaction?.mode === 'resize-card' ? 0.28 : 0.15}
+                    opacity={interaction?.mode === 'resize-card' ? 0.3 : 0.16}
                     className="pointer-events-none"
                   />
-                  <circle cx="0" cy="0" r="24" fill="transparent" />
+                  <circle cx="0" cy="0" r="36" fill="transparent" />
                   <circle
                     cx="0"
                     cy="0"
-                    r="14"
+                    r="21"
                     fill={interaction?.mode === 'resize-card' ? '#B4846C' : '#1C1917'}
                     stroke="#ffffff"
-                    strokeWidth="2"
+                    strokeWidth="2.5"
+                    style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
                   />
                   <path
-                    d="M-4.5,-4.5 L4.5,4.5 M-4.5,-1 L-4.5,-4.5 L-1,-4.5 M4.5,1 L4.5,4.5 L1,4.5"
+                    d="M-6.5,-6.5 L6.5,6.5 M-6.5,-1.5 L-6.5,-6.5 L-1.5,-6.5 M6.5,1.5 L6.5,6.5 L1.5,6.5"
                     stroke="#ffffff"
-                    strokeWidth="1.8"
+                    strokeWidth="2.3"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
                   />
-                  <g transform="translate(0, 26)" className="pointer-events-none">
+                  <g transform="translate(0, 38)" className="pointer-events-none">
                     <rect
-                      x="-54"
-                      y="-9"
-                      width="108"
-                      height="18"
-                      rx="9"
+                      x="-72"
+                      y="-15"
+                      width="144"
+                      height="30"
+                      rx="15"
                       fill="#1C1917"
-                      fillOpacity="0.88"
+                      fillOpacity="0.92"
                       stroke="#ffffff"
-                      strokeWidth="0.8"
-                      strokeOpacity="0.4"
+                      strokeWidth="1.4"
+                      strokeOpacity="0.85"
+                      style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.26))' }}
                     />
                     <text
                       x="0"
-                      y="3.5"
+                      y="4.5"
                       textAnchor="middle"
                       fill="#ffffff"
-                      fontSize="9.5"
+                      fontSize="13"
                       fontWeight="600"
-                      style={{ fontFamily: "'Inter', sans-serif" }}
+                      style={{
+                        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                      }}
                     >
                       {interaction?.mode === 'resize-card'
                         ? `${Math.round(cardScale * 100)}% · ${cardRotation}°`
-                        : '⤡ Pull in/out to resize'}
+                        : 'Drag to resize'}
                     </text>
                   </g>
                 </g>
@@ -6195,7 +6321,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             );
           })()}
 
-        {/* 5D. CORNER CONTROLS (STRAIGHTEN, HIDE X & PULL-IN/OUT RESIZE+ROTATE) FOR VOICE KEEPSAKE — NO FOCUS/OUTLINE RING */}
+        {/* 5D. CORNER CONTROLS (STRAIGHTEN, HIDE X & RESIZE+ROTATE) FOR VOICE KEEPSAKE */}
         {!isPreviewMode &&
           voice?.visibleOnStage &&
           (activeSpecialObject === 'voice' ||
@@ -6205,7 +6331,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             const voiceY = voice.y ?? 525;
             const voiceScale = voice.scale ?? 1.0;
             const voiceRotation = voice.rotation ?? 0;
-            const ringRadius = 62 * voiceScale;
+            const ringRadius = Math.max(68, 66 * voiceScale);
             return (
               <g
                 data-export-ignore="true"
@@ -6228,12 +6354,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Straighten voice keepsake rotation"
                 >
                   <title>Reset keepsake tilt to 0°</title>
-                  <circle cx="0" cy="0" r="22" fill="transparent" />
-                  <circle cx="0" cy="0" r="12" fill="#ffffff" stroke="#B4846C" strokeWidth="1.8" />
+                  <circle cx="0" cy="0" r="32" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="18.5"
+                    fill="#ffffff"
+                    stroke="#B4846C"
+                    strokeWidth="2.4"
+                    style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.18))' }}
+                  />
                   <path
-                    d="M-3.5,0 A3.5,3.5 0 1,1 2.5,-2.5 M2.5,-5 L2.5,-2 L-0.5,-2"
+                    d="M-5.5,0 A5.5,5.5 0 1,1 3.8,-3.8 M3.8,-7.5 L3.8,-3.2 L-0.5,-3.2"
                     stroke="#1C1917"
-                    strokeWidth="1.5"
+                    strokeWidth="2.1"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
@@ -6256,17 +6390,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Hide voice keepsake from canvas"
                 >
                   <title>Hide voice keepsake from canvas</title>
-                  <circle cx="0" cy="0" r="24" fill="transparent" />
-                  <circle cx="0" cy="0" r="13" fill="#e11d48" stroke="#ffffff" strokeWidth="2" />
-                  <path
-                    d="M-4,-4 L4,4 M4,-4 L-4,4"
+                  <circle cx="0" cy="0" r="34" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="19.5"
+                    fill="#e11d48"
                     stroke="#ffffff"
-                    strokeWidth="2"
+                    strokeWidth="2.5"
+                    style={{ filter: 'drop-shadow(0px 3px 6px rgba(225,29,72,0.28))' }}
+                  />
+                  <path
+                    d="M-5.5,-5.5 L5.5,5.5 M5.5,-5.5 L-5.5,5.5"
+                    stroke="#ffffff"
+                    strokeWidth="2.4"
                     strokeLinecap="round"
                   />
                 </g>
 
-                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate */}
+                {/* BOTTOM-RIGHT HANDLE (+45°): Drag to Resize & Rotate */}
                 <g
                   transform={`translate(${Math.cos(Math.PI / 4) * ringRadius}, ${
                     Math.sin(Math.PI / 4) * ringRadius
@@ -6275,60 +6417,64 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
                   className="cursor-nwse-resize select-none outline-none focus:outline-none"
                   role="slider"
-                  aria-label="Pull in or out to resize voice keepsake"
+                  aria-label="Drag to resize and rotate voice keepsake"
                   aria-valuenow={Math.round(voiceScale * 100)}
                 >
                   <title>Drag corner to resize and rotate voice keepsake</title>
                   <circle
                     cx="0"
                     cy="0"
-                    r={interaction?.mode === 'resize-voice' ? 20 : 16}
+                    r={interaction?.mode === 'resize-voice' ? 30 : 25}
                     fill="#B4846C"
-                    opacity={interaction?.mode === 'resize-voice' ? 0.28 : 0.15}
+                    opacity={interaction?.mode === 'resize-voice' ? 0.3 : 0.16}
                     className="pointer-events-none"
                   />
-                  <circle cx="0" cy="0" r="24" fill="transparent" />
+                  <circle cx="0" cy="0" r="36" fill="transparent" />
                   <circle
                     cx="0"
                     cy="0"
-                    r="14"
+                    r="21"
                     fill={interaction?.mode === 'resize-voice' ? '#B4846C' : '#1C1917'}
                     stroke="#ffffff"
-                    strokeWidth="2"
+                    strokeWidth="2.5"
+                    style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
                   />
                   <path
-                    d="M-4.5,-4.5 L4.5,4.5 M-4.5,-1 L-4.5,-4.5 L-1,-4.5 M4.5,1 L4.5,4.5 L1,4.5"
+                    d="M-6.5,-6.5 L6.5,6.5 M-6.5,-1.5 L-6.5,-6.5 L-1.5,-6.5 M6.5,1.5 L6.5,6.5 L1.5,6.5"
                     stroke="#ffffff"
-                    strokeWidth="1.8"
+                    strokeWidth="2.3"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
                   />
-                  <g transform="translate(0, 26)" className="pointer-events-none">
+                  <g transform="translate(0, 38)" className="pointer-events-none">
                     <rect
-                      x="-54"
-                      y="-9"
-                      width="108"
-                      height="18"
-                      rx="9"
+                      x="-72"
+                      y="-15"
+                      width="144"
+                      height="30"
+                      rx="15"
                       fill="#1C1917"
-                      fillOpacity="0.88"
+                      fillOpacity="0.92"
                       stroke="#ffffff"
-                      strokeWidth="0.8"
-                      strokeOpacity="0.4"
+                      strokeWidth="1.4"
+                      strokeOpacity="0.85"
+                      style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.26))' }}
                     />
                     <text
                       x="0"
-                      y="3.5"
+                      y="4.5"
                       textAnchor="middle"
                       fill="#ffffff"
-                      fontSize="9.5"
+                      fontSize="13"
                       fontWeight="600"
-                      style={{ fontFamily: "'Inter', sans-serif" }}
+                      style={{
+                        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                      }}
                     >
                       {interaction?.mode === 'resize-voice'
                         ? `${Math.round(voiceScale * 100)}% · ${voiceRotation}°`
-                        : '⤡ Pull in/out to resize'}
+                        : 'Drag to resize'}
                     </text>
                   </g>
                 </g>
@@ -6336,8 +6482,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             );
           })()}
 
-        {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & PULL-IN/OUT RESIZE HANDLE (Inside Bouquet Transform Space) */}
-        {!isPreviewMode && selectedItem && selectedDisplay && !selectedItem.hidden && (
+        {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & RESIZE+ROTATE HANDLE (Inside Bouquet Transform Space) */}
+        {!isPreviewMode && selectedItem && selectedDisplay && !selectedItem.hidden && (() => {
+          const handleRingRadius = Math.max(66, 60 * selectedDisplay.scale);
+          return (
           <g data-export-ignore="true" data-drawer-trigger="true" transform={bouquetTransform}>
           <g
             transform={`translate(${selectedDisplay.x}, ${selectedDisplay.y})`}
@@ -6346,7 +6494,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             <circle
               cx="0"
               cy="0"
-              r={Math.max(38, 48 * selectedDisplay.scale)}
+              r={Math.max(44, 50 * selectedDisplay.scale)}
               fill="transparent"
               onPointerDown={(e) => handleItemPointerDown(e, selectedItem)}
               className={
@@ -6360,18 +6508,18 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             <circle
               cx="0"
               cy="0"
-              r={58 * selectedDisplay.scale}
+              r={handleRingRadius}
               fill="none"
               stroke={selectedItem.locked ? '#d97706' : '#B4846C'}
-              strokeWidth="1.75"
-              strokeDasharray={selectedItem.locked ? '4 4' : '6 5'}
+              strokeWidth="2"
+              strokeDasharray={selectedItem.locked ? '5 5' : '7 5'}
               className="pointer-events-none"
             />
 
-            {/* On-Canvas Upload Photo Pill for Selected Photocard */}
+            {/* On-Canvas Upload Photo Badge for Selected Photocard */}
             {selectedItem.photoStyle && !selectedItem.locked && onPhotoCardUploadClick && (
               <g
-                transform={`translate(0, ${-58 * selectedDisplay.scale - 16})`}
+                transform={`translate(0, ${-handleRingRadius - 24})`}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -6381,24 +6529,28 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 role="button"
                 aria-label="Upload photo for photocard"
               >
+                <rect x="-82" y="-23" width="164" height="46" rx="23" fill="transparent" />
                 <rect
-                  x="-48"
-                  y="-11"
-                  width="96"
-                  height="21"
-                  rx="10.5"
+                  x="-72"
+                  y="-16"
+                  width="144"
+                  height="32"
+                  rx="16"
                   fill="#1C1917"
                   stroke="#ffffff"
-                  strokeWidth="1.2"
+                  strokeWidth="1.6"
+                  style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
                 />
                 <text
                   x="0"
-                  y="3"
+                  y="4.8"
                   textAnchor="middle"
                   fill="#ffffff"
-                  fontSize="9.2"
+                  fontSize="13.5"
                   fontWeight="600"
-                  style={{ fontFamily: "'Inter', sans-serif" }}
+                  style={{
+                    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                  }}
                 >
                   {selectedItem.photoDataUrl ? 'Change photo' : 'Upload photo'}
                 </text>
@@ -6406,9 +6558,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             )}
 
             {selectedItem.locked ? (
-              /* Locked Indicator Pill on Ring Top — Tap to Unlock */
+              /* Locked Indicator Badge on Ring Top — Tap to Unlock */
               <g
-                transform={`translate(0, ${-58 * selectedDisplay.scale - 14})`}
+                transform={`translate(0, ${-handleRingRadius - 24})`}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   toggleItemLock(selectedItem.id);
@@ -6417,24 +6569,28 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 role="button"
                 aria-label="Unlock flower"
               >
+                <rect x="-94" y="-23" width="188" height="46" rx="23" fill="transparent" />
                 <rect
-                  x="-64"
-                  y="-12"
-                  width="128"
-                  height="24"
-                  rx="12"
+                  x="-86"
+                  y="-16"
+                  width="172"
+                  height="32"
+                  rx="16"
                   fill="#1C1917"
                   stroke="#f59e0b"
-                  strokeWidth="1.5"
+                  strokeWidth="1.8"
+                  style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
                 />
                 <text
                   x="0"
-                  y="4"
+                  y="4.8"
                   textAnchor="middle"
                   fill="#fde68a"
-                  fontSize="10"
+                  fontSize="13"
                   fontWeight="600"
-                  style={{ fontFamily: "'Inter', sans-serif" }}
+                  style={{
+                    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                  }}
                 >
                   Locked · Tap to unlock
                 </text>
@@ -6443,8 +6599,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               <>
                 {/* TOP-LEFT HANDLE (-135°): Quick Flip Button */}
                 <g
-                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * 58 * selectedDisplay.scale}, ${
-                    Math.sin((-3 * Math.PI) / 4) * 58 * selectedDisplay.scale
+                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * handleRingRadius}, ${
+                    Math.sin((-3 * Math.PI) / 4) * handleRingRadius
                   })`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -6455,12 +6611,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Flip flower horizontally"
                 >
                   <title>Flip horizontally</title>
-                  <circle cx="0" cy="0" r="22" fill="transparent" />
-                  <circle cx="0" cy="0" r="12" fill="#ffffff" stroke="#B4846C" strokeWidth="1.8" />
+                  <circle cx="0" cy="0" r="32" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="18.5"
+                    fill="#ffffff"
+                    stroke="#B4846C"
+                    strokeWidth="2.4"
+                    style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.18))' }}
+                  />
                   <path
-                    d="M-5,0 L5,0 M-5,0 L-2,-3 M-5,0 L-2,3 M5,0 L2,-3 M5,0 L2,3"
+                    d="M-7,0 L7,0 M-7,0 L-3,-4 M-7,0 L-3,4 M7,0 L3,-4 M7,0 L3,4"
                     stroke="#1C1917"
-                    strokeWidth="1.5"
+                    strokeWidth="2.1"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
@@ -6469,8 +6633,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
                 {/* TOP-RIGHT HANDLE (-45°): Working Delete (X) Button */}
                 <g
-                  transform={`translate(${Math.cos(-Math.PI / 4) * 58 * selectedDisplay.scale}, ${
-                    Math.sin(-Math.PI / 4) * 58 * selectedDisplay.scale
+                  transform={`translate(${Math.cos(-Math.PI / 4) * handleRingRadius}, ${
+                    Math.sin(-Math.PI / 4) * handleRingRadius
                   })`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -6481,95 +6645,107 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Delete selected flower"
                 >
                   <title>Remove item</title>
-                  <circle cx="0" cy="0" r="24" fill="transparent" />
-                  <circle cx="0" cy="0" r="13" fill="#e11d48" stroke="#ffffff" strokeWidth="2" />
-                  <path
-                    d="M-4,-4 L4,4 M4,-4 L-4,4"
+                  <circle cx="0" cy="0" r="34" fill="transparent" />
+                  <circle
+                    cx="0"
+                    cy="0"
+                    r="19.5"
+                    fill="#e11d48"
                     stroke="#ffffff"
-                    strokeWidth="2"
+                    strokeWidth="2.5"
+                    style={{ filter: 'drop-shadow(0px 3px 6px rgba(225,29,72,0.28))' }}
+                  />
+                  <path
+                    d="M-5.5,-5.5 L5.5,5.5 M5.5,-5.5 L-5.5,5.5"
+                    stroke="#ffffff"
+                    strokeWidth="2.4"
                     strokeLinecap="round"
                   />
                 </g>
 
-                {/* BOTTOM-RIGHT HANDLE (+45°): Pull In / Pull Out to Resize & Rotate */}
+                {/* BOTTOM-RIGHT HANDLE (+45°): Drag to Resize & Rotate */}
                 <g
-                  transform={`translate(${Math.cos(Math.PI / 4) * 58 * selectedDisplay.scale}, ${
-                    Math.sin(Math.PI / 4) * 58 * selectedDisplay.scale
+                  transform={`translate(${Math.cos(Math.PI / 4) * handleRingRadius}, ${
+                    Math.sin(Math.PI / 4) * handleRingRadius
                   })`}
                   onPointerDown={(e) => handleGizmoPointerDown(e, selectedItem)}
                   className="cursor-nwse-resize"
                   role="slider"
-                  aria-label="Pull in or out to resize and rotate flower"
+                  aria-label="Drag to resize and rotate flower"
                   aria-valuenow={Math.round(selectedItem.scale * 100)}
                 >
-                  <title>Pull in or out to resize and rotate</title>
+                  <title>Drag corner to resize and rotate</title>
                   {/* Radial Pull-In / Pull-Out Guide Line showing resize axis */}
                   <line
-                    x1="-22"
-                    y1="-22"
-                    x2="22"
-                    y2="22"
+                    x1="-28"
+                    y1="-28"
+                    x2="28"
+                    y2="28"
                     stroke="#B4846C"
-                    strokeWidth="1.6"
-                    strokeDasharray="2.5 2.5"
+                    strokeWidth="2"
+                    strokeDasharray="3 3"
                     className="pointer-events-none"
                   />
                   {/* Outer pulse halo when actively resizing */}
                   <circle
                     cx="0"
                     cy="0"
-                    r={interaction?.mode === 'transform' ? 20 : 16}
+                    r={interaction?.mode === 'transform' ? 30 : 25}
                     fill="#B4846C"
-                    opacity={interaction?.mode === 'transform' ? 0.28 : 0.15}
+                    opacity={interaction?.mode === 'transform' ? 0.3 : 0.16}
                     className="pointer-events-none"
                   />
-                  {/* Invisible generous touch target (48px diameter) for easy mobile manipulation */}
-                  <circle cx="0" cy="0" r="24" fill="transparent" />
+                  {/* Generous invisible touch target for effortless mobile manipulation */}
+                  <circle cx="0" cy="0" r="36" fill="transparent" />
                   {/* Main Resize Handle Badge */}
                   <circle
                     cx="0"
                     cy="0"
-                    r="14"
+                    r="21"
                     fill={interaction?.mode === 'transform' ? '#B4846C' : '#1C1917'}
                     stroke="#ffffff"
-                    strokeWidth="2"
+                    strokeWidth="2.5"
+                    style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
                   />
-                  {/* Bidirectional Diagonal Pull-In / Pull-Out Resize Arrow Icon (⤡) */}
+                  {/* Bidirectional Diagonal Pull-In / Pull-Out Resize Arrow Icon */}
                   <path
-                    d="M-4.5,-4.5 L4.5,4.5 M-4.5,-1 L-4.5,-4.5 L-1,-4.5 M4.5,1 L4.5,4.5 L1,4.5"
+                    d="M-6.5,-6.5 L6.5,6.5 M-6.5,-1.5 L-6.5,-6.5 L-1.5,-6.5 M6.5,1.5 L6.5,6.5 L1.5,6.5"
                     stroke="#ffffff"
-                    strokeWidth="1.8"
+                    strokeWidth="2.3"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     fill="none"
                   />
 
-                  {/* Clear Visual Indicator Pill: Shows "Pull in/out to resize" or live scale % */}
-                  <g transform="translate(0, 26)" className="pointer-events-none">
+                  {/* Crisp High-Contrast Indicator Badge: Shows "Drag to resize" or live scale % · angle */}
+                  <g transform="translate(0, 38)" className="pointer-events-none">
                     <rect
-                      x="-54"
-                      y="-9"
-                      width="108"
-                      height="18"
-                      rx="9"
+                      x="-72"
+                      y="-15"
+                      width="144"
+                      height="30"
+                      rx="15"
                       fill="#1C1917"
-                      fillOpacity="0.88"
+                      fillOpacity="0.92"
                       stroke="#ffffff"
-                      strokeWidth="0.8"
-                      strokeOpacity="0.4"
+                      strokeWidth="1.4"
+                      strokeOpacity="0.85"
+                      style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.26))' }}
                     />
                     <text
                       x="0"
-                      y="3.5"
+                      y="4.5"
                       textAnchor="middle"
                       fill="#ffffff"
-                      fontSize="9.5"
+                      fontSize="13"
                       fontWeight="600"
-                      style={{ fontFamily: "'Inter', sans-serif" }}
+                      style={{
+                        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                      }}
                     >
                       {interaction?.mode === 'transform'
                         ? `${Math.round(selectedItem.scale * 100)}% · ${selectedItem.rotation}°`
-                        : '⤡ Pull in/out to resize'}
+                        : 'Drag to resize'}
                     </text>
                   </g>
                 </g>
@@ -6577,7 +6753,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             )}
           </g>
           </g>
-        )}
+          );
+        })()}
       </svg>
   );
 
@@ -6596,11 +6773,20 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     >
       <div
         data-testid="bouquet-canvas-frame"
-        className="relative overflow-hidden transition-[border-color,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+        className={`relative overflow-hidden ${
+          isPanningCanvas
+            ? 'transition-none'
+            : 'transition-[transform,border-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]'
+        }`}
         style={{
           width: 'min(100cqw, calc(100cqh * 648 / 680), 860px)',
           height: 'min(100cqh, calc(100cqw * 680 / 648), 902px)',
           borderRadius: '5.247% / 5%',
+          transform:
+            !isPreviewMode && (canvasZoom !== 1 || canvasPan.x !== 0 || canvasPan.y !== 0)
+              ? `translate3d(${canvasPan.x}px, ${canvasPan.y}px, 0) scale(${canvasZoom})`
+              : undefined,
+          transformOrigin: 'center center',
           border: isPreviewMode
             ? `1.5px solid ${envBackdrop.canvasBorderColor}`
             : `1px solid ${isDarkMode ? 'rgba(251, 246, 241, 0.09)' : 'rgba(28, 25, 23, 0.07)'}`,
