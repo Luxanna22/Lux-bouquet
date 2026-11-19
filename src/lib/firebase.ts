@@ -3,10 +3,8 @@ import {
   getFirestore,
   doc,
   getDoc,
-  getDocFromServer,
   setDoc,
   deleteDoc,
-  onSnapshot,
   runTransaction
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -24,18 +22,6 @@ import {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-
-if (typeof window !== 'undefined') {
-  (async function testConnection() {
-    try {
-      await getDocFromServer(doc(db, 'test', 'connection'));
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('the client is offline')) {
-        console.error('Please check your Firebase configuration.');
-      }
-    }
-  })();
-}
 
 export enum OperationType {
   CREATE = 'create',
@@ -206,60 +192,68 @@ export async function saveSharedBouquetToFirestore(
   const docRef = doc(db, 'shared_bouquets', code);
 
   try {
-    const existingSnap = await getDoc(docRef);
-    const existingData = existingSnap.exists()
-      ? (existingSnap.data() as Partial<SharedBouquetRecord>)
-      : null;
+    const createdAt = new Date().toISOString();
 
-    const createdAt =
-      existingData && typeof existingData.createdAt === 'string' && existingData.createdAt.length >= 10
-        ? existingData.createdAt
-        : new Date().toISOString();
-
-    // Automatically offload overflow voice/photos into eternal companion `bouquet_assets/{assetId}` docs
-    // whenever combined document size would approach Firestore's 1 MiB ceiling.
+    // Zero-read create-once: Firestore rules enforce strict immutability on existing bouquets & assets,
+    // so we write directly without burning a pre-check getDoc read unit (critical under Starter Tier read quotas).
     const split = extractOverflowAssetsFromPayload(
       code,
       cleanPayload,
-      voice?.audioDataUrl || existingData?.voiceAudioDataUrl || undefined,
+      voice?.audioDataUrl || undefined,
       { createdAt }
     );
     if (split.payload.length > 900000) return false;
 
     if (split.assets.length > 0) {
       await Promise.all(
-        split.assets.map((asset) =>
-          setDoc(doc(db, 'bouquet_assets', asset.assetId), {
-            assetId: asset.assetId,
-            bouquetCode: asset.bouquetCode,
-            kind: asset.kind,
-            dataUrl: asset.dataUrl,
-            createdAt: asset.createdAt,
-          })
-        )
+        split.assets.map(async (asset) => {
+          const assetRef = doc(db, 'bouquet_assets', asset.assetId);
+          try {
+            await setDoc(assetRef, {
+              assetId: asset.assetId,
+              bouquetCode: asset.bouquetCode,
+              kind: asset.kind,
+              dataUrl: asset.dataUrl,
+              createdAt: asset.createdAt,
+            });
+          } catch (assetErr) {
+            // If server /api/shorten raced and created the exact same immutable asset milliseconds earlier, verify it exists
+            const checkAfter = await getDoc(assetRef).catch(() => null);
+            if (!checkAfter || !checkAfter.exists()) {
+              throw assetErr;
+            }
+          }
+        })
       );
     }
 
     const record = sanitizeRecordForFirestore(
-      existingData,
+      null,
       {
         payload: split.payload,
         voiceAudioDataUrl: split.voiceAudioDataUrl,
         voiceStyle: voice?.style,
         voiceTitle: voice?.title,
         voiceDurationSec: voice?.durationSec,
-        openCount: existingData?.openCount ?? 0,
-        voicePlayCount: existingData?.voicePlayCount ?? 0,
-        isPremium: retentionMeta?.isPremium ?? existingData?.isPremium,
-        retentionDays: retentionMeta?.retentionDays ?? existingData?.retentionDays,
+        openCount: 0,
+        voicePlayCount: 0,
+        isPremium: retentionMeta?.isPremium,
+        retentionDays: retentionMeta?.retentionDays,
         createdAt,
       },
       code
     );
 
-    await setDoc(docRef, record);
-    if (!existingSnap.exists()) {
+    try {
+      await setDoc(docRef, record);
       incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => {});
+    } catch (writeErr) {
+      // If server /api/shorten raced and created the exact same immutable bouquet doc milliseconds earlier, verify it exists
+      const checkAfter = await getDoc(docRef).catch(() => null);
+      if (checkAfter && checkAfter.exists()) {
+        return true;
+      }
+      throw writeErr;
     }
     return true;
   } catch (error) {
@@ -272,9 +266,45 @@ export async function saveSharedBouquetToFirestore(
 }
 
 export async function fetchSharedBouquetFromFirestore(
-  code: string
+  code: string,
+  options?: { skipApi?: boolean }
 ): Promise<SharedBouquetRecord | null> {
   if (!code || !CODE_REGEX.test(code)) return null;
+
+  // Primary path: query /api/shorten?c={code} first (RAM -> Private Vercel Blob -> Firestore + auto-mirror)
+  // so opening any bouquet spends 0 Firestore read units and stays 100% online during Firestore 429 limits.
+  if (!options?.skipApi && typeof window !== 'undefined' && typeof fetch === 'function') {
+    try {
+      const resp = await fetch(`/api/shorten?c=${encodeURIComponent(code)}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (resp.ok) {
+        const apiData = await resp.json().catch(() => null);
+        if (apiData && typeof apiData.payload === 'string' && apiData.payload.length >= 3) {
+          return {
+            code,
+            payload: apiData.payload,
+            ...(apiData.voiceAudioDataUrl ? { voiceAudioDataUrl: apiData.voiceAudioDataUrl } : {}),
+            ...(apiData.voiceStyle ? { voiceStyle: apiData.voiceStyle } : {}),
+            ...(apiData.voiceTitle ? { voiceTitle: apiData.voiceTitle } : {}),
+            ...(typeof apiData.voiceDurationSec === 'number'
+              ? { voiceDurationSec: apiData.voiceDurationSec }
+              : {}),
+            ...(typeof apiData.isPremium === 'boolean' ? { isPremium: apiData.isPremium } : {}),
+            ...(typeof apiData.retentionDays === 'number'
+              ? { retentionDays: apiData.retentionDays }
+              : {}),
+            createdAt:
+              typeof apiData.createdAt === 'string' ? apiData.createdAt : new Date().toISOString(),
+          };
+        }
+      }
+    } catch {
+      // Fall through to direct Firestore read
+    }
+  }
+
   const docPath = `shared_bouquets/${code}`;
   try {
     const snap = await getDoc(doc(db, 'shared_bouquets', code));
@@ -626,6 +656,34 @@ function parseGarlandFeedData(data?: Partial<SharedBouquetRecord> | null): Saved
 }
 
 export async function fetchGlobalGarlandFeedFromFirestore(): Promise<SavedVaultBouquet[]> {
+  // Primary path: Vercel Edge-cached + Private Vercel Blob-backed server endpoint (0 client Firestore reads!)
+  if (typeof window !== 'undefined' && typeof fetch === 'function') {
+    try {
+      const resp = await fetch('/api/shorten?garland=1', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (data && Array.isArray(data.entries)) {
+          return deduplicateVaultList(
+            data.entries.filter(
+              (item: SavedVaultBouquet) =>
+                item &&
+                typeof item.code === 'string' &&
+                !item.code.startsWith('draft_') &&
+                item.isDraft === false &&
+                item.pinToShowcase === true
+            ),
+            true
+          );
+        }
+      }
+    } catch {
+      // Fall through to direct Firestore read if API route is unavailable
+    }
+  }
+
   try {
     const snap = await getDoc(doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE));
     if (!snap.exists()) return [];
@@ -638,24 +696,25 @@ export async function fetchGlobalGarlandFeedFromFirestore(): Promise<SavedVaultB
 export function subscribeToGlobalGarlandFeed(
   onUpdate: (entries: SavedVaultBouquet[]) => void
 ): () => void {
-  try {
-    const feedDocRef = doc(db, 'shared_bouquets', GARLAND_FEED_DOC_CODE);
-    return onSnapshot(
-      feedDocRef,
-      (snap) => {
-        if (!snap.exists()) {
-          onUpdate([]);
-          return;
+  // Use a lightweight 90s Edge-cached poll instead of a live Firestore onSnapshot listener
+  // to avoid burning Firestore read units across all concurrent visitors.
+  if (typeof window === 'undefined') return () => {};
+  let disposed = false;
+  const intervalId = window.setInterval(() => {
+    if (disposed || document.visibilityState !== 'visible') return;
+    fetchGlobalGarlandFeedFromFirestore()
+      .then((feed) => {
+        if (!disposed && Array.isArray(feed)) {
+          onUpdate(feed);
         }
-        onUpdate(parseGarlandFeedData(snap.data() as Partial<SharedBouquetRecord>));
-      },
-      () => {
-        // Fallback if snapshot listener encounters a transient network error
-      }
-    );
-  } catch {
-    return () => {};
-  }
+      })
+      .catch(() => {});
+  }, 90_000);
+
+  return () => {
+    disposed = true;
+    window.clearInterval(intervalId);
+  };
 }
 
 export async function publishBouquetToGlobalGarlandFeed(

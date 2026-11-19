@@ -21,14 +21,11 @@ import {
 import { createOnDemandLenisDriver } from '../lib/dofParallax';
 import {
   fetchGlobalGarlandFeedFromFirestore,
-  fetchSharedBouquetFromFirestore,
-  SharedBouquetRecord,
   subscribeToGlobalGarlandFeed,
 } from '../lib/firebase';
 import { SavedVaultBouquet } from '../types/bouquet';
 import {
   decodeBouquetFromHash,
-  hydrateSnapshotWithFirestoreRecord,
   localShortCodeCache,
 } from '../lib/shareAndExport';
 import {
@@ -37,98 +34,36 @@ import {
 } from '../lib/seoMeta';
 
 /**
- * Shared hook to merge user's locally saved/shared bouquets and the Firestore global Lace Garland feed
- * with the curated community showcase, deduplicating by short code (and collapsing older drafts),
- * hydrating full Firestore `shared_bouquets/{code}` records (including `payload` and `voiceAudioDataUrl`)
- * for 100% cross-device visual and audio consistency, and filtering out >30-day expired bouquets.
+ * Shared hook to load the Edge-cached / Vercel Blob-backed global Lace Garland feed
+ * and merge with the curated community showcase without firing per-bouquet Firestore reads.
+ * Opening any bouquet card navigates to `/{code}` which fetches full photos & voice on demand.
  */
 export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
-  const [hydratedRecords, setHydratedRecords] = useState<Record<string, SharedBouquetRecord>>({});
   const [remoteFeedEntries, setRemoteFeedEntries] = useState<SavedVaultBouquet[]>([]);
-  const hydratedCodesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let cancelled = false;
 
-    const refreshFeed = () => {
-      fetchGlobalGarlandFeedFromFirestore()
-        .then((feed) => {
-          if (!cancelled && Array.isArray(feed)) {
-            setRemoteFeedEntries(feed);
-          }
-        })
-        .catch(() => {});
-    };
+    fetchGlobalGarlandFeedFromFirestore()
+      .then((feed) => {
+        if (!cancelled && Array.isArray(feed)) {
+          setRemoteFeedEntries(feed);
+        }
+      })
+      .catch(() => {});
 
-    refreshFeed();
     const unsubscribe = subscribeToGlobalGarlandFeed((feed) => {
       if (!cancelled && Array.isArray(feed)) {
         setRemoteFeedEntries(feed);
       }
     });
 
-    const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
-        refreshFeed();
-      }
-    };
-    window.addEventListener('focus', refreshFeed);
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-
     return () => {
       cancelled = true;
       unsubscribe();
-      window.removeEventListener('focus', refreshFeed);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
   }, [vaultCount]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let cancelled = false;
-    const eligibleFeed = filterEligiblePublicGarlandEntries(remoteFeedEntries);
-    const missingEntries = eligibleFeed.filter(
-      (v) => v.code && !hydratedCodesRef.current.has(v.code)
-    );
-    if (missingEntries.length === 0) return;
-
-    missingEntries.forEach((v) => hydratedCodesRef.current.add(v.code));
-
-    Promise.allSettled(
-      missingEntries.map(async (v) => {
-        const record = await fetchSharedBouquetFromFirestore(v.code);
-        return { code: v.code, record };
-      })
-    ).then((results) => {
-      if (cancelled) return;
-      const batch: Record<string, SharedBouquetRecord> = {};
-      let hasAdditions = false;
-      for (const res of results) {
-        if (res.status !== 'fulfilled') continue;
-        const { code, record } = res.value;
-        if (!record || !record.payload) {
-          hydratedCodesRef.current.delete(code);
-          continue;
-        }
-        localShortCodeCache.set(code, record.payload);
-        try {
-          localStorage.setItem(`bq_short_${code}`, record.payload);
-        } catch {
-          // Ignore localStorage quota errors
-        }
-        batch[code] = record;
-        hasAdditions = true;
-      }
-      if (hasAdditions) {
-        setHydratedRecords((prev) => ({ ...prev, ...batch }));
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [vaultCount, remoteFeedEntries]);
 
   return useMemo(() => {
     const curated = buildCuratedShowcaseBouquets(nowMs);
@@ -137,7 +72,7 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
     }
 
     // Strictly render ONLY creations explicitly published and pinned to the global Garland feed
-    // (`sab_garland_feed_v1`) — never merge private or unshared local device drafts/saves.
+    // — never merge private or unshared local device drafts/saves.
     const eligibleFeed = filterEligiblePublicGarlandEntries(remoteFeedEntries);
     const seenCodes = new Set<string>();
     const userEntries: ShowcaseBouquetEntry[] = [];
@@ -152,56 +87,31 @@ export function useActiveShowcaseBouquets(vaultCount: number, nowMs: number) {
       }
       seenCodes.add(v.code);
 
-      const firestoreRecord = v.code ? hydratedRecords[v.code] : undefined;
       let decodedSnap = null;
       try {
-        // Prefer the canonical Firestore record payload (which always has all photos & latest edits)
-        // or the local cache / draftPayload
         const candidatePayloads = [
-          firestoreRecord?.payload,
           v.code ? localShortCodeCache.get(v.code) : undefined,
           v.draftPayload,
           v.code ? localStorage.getItem(`bq_short_${v.code}`) : null,
           v.shareUrl,
         ].filter((p): p is string => Boolean(p && p.trim().length > 3));
 
-        // Pick the richest payload (e.g. one with inline photos intact over a slimmed feed index payload)
-        const bestPayload =
-          candidatePayloads.sort((a, b) => b.length - a.length)[0] ||
-          firestoreRecord?.payload ||
-          '';
-
+        // Pick the richest locally available payload (e.g. creator's own device cache or Garland draftPayload)
+        const bestPayload = candidatePayloads.sort((a, b) => b.length - a.length)[0] || '';
         if (bestPayload) {
           decodedSnap = decodeBouquetFromHash(bestPayload);
-        }
-        if (decodedSnap && firestoreRecord) {
-          decodedSnap = hydrateSnapshotWithFirestoreRecord(decodedSnap, firestoreRecord);
         }
       } catch {
         // Ignore decode errors
       }
-      userEntries.push(
-        convertVaultBouquetToShowcaseEntry(
-          firestoreRecord
-            ? {
-                ...v,
-                isPremium: Boolean(v.isPremium || firestoreRecord.isPremium),
-                retentionDays:
-                  Math.max(v.retentionDays ?? 0, firestoreRecord.retentionDays ?? 0) ||
-                  undefined,
-              }
-            : v,
-          decodedSnap,
-          userEntries.length
-        )
-      );
+      userEntries.push(convertVaultBouquetToShowcaseEntry(v, decodedSnap, userEntries.length));
       if (userEntries.length >= 200) break;
     }
 
     const userCodes = new Set<string>(userEntries.map((u) => u.code));
     const merged = [...userEntries, ...curated.filter((c) => !userCodes.has(c.code))];
     return filterShowcaseBouquets(merged, { nowMs });
-  }, [nowMs, vaultCount, remoteFeedEntries, hydratedRecords]);
+  }, [nowMs, vaultCount, remoteFeedEntries]);
 }
 
 /**

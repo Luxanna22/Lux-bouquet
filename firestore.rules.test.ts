@@ -177,5 +177,44 @@ export const DIRTY_DOZEN_TEST_CASES: SecurityAssertionCase[] = [
       createdAt: '2026-11-07T08:00:00.000Z'
     },
     expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 16,
+    name: 'Immutable Shared Bouquet Payload Overwrite on Update',
+    operation: 'update',
+    path: '/shared_bouquets/AbCdEf123456789',
+    payload: {
+      code: 'AbCdEf123456789',
+      payload: '#g=0.0.@tampered',
+      createdAt: '2026-11-07T08:00:00.000Z'
+    },
+    expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 17,
+    name: 'Immutable Shared Bouquet Voice Overwrite on Update',
+    operation: 'update',
+    path: '/shared_bouquets/AbCdEf123456789',
+    payload: {
+      code: 'AbCdEf123456789',
+      payload: '#g=0.0.@0',
+      voiceAudioDataUrl: 'data:audio/webm;base64,dGFtcGVyZWQ=',
+      createdAt: '2026-11-07T08:00:00.000Z'
+    },
+    expected: 'PERMISSION_DENIED'
+  },
+  {
+    id: 18,
+    name: 'Immutable Bouquet Asset Overwrite Denied',
+    operation: 'update',
+    path: '/bouquet_assets/AbCdEf123456789_p0',
+    payload: {
+      assetId: 'AbCdEf123456789_p0',
+      bouquetCode: 'AbCdEf123456789',
+      kind: 'photo',
+      dataUrl: 'data:image/jpeg;base64,dGFtcGVyZWQ=',
+      createdAt: '2026-11-07T08:00:00.000Z'
+    },
+    expected: 'PERMISSION_DENIED'
   }
 ];

@@ -210,28 +210,43 @@ service cloud.firestore {
       allow get: if isValidShortCode(code);
       allow list: if false;
 
-      // Anyone can register a valid short link payload; updates preserve immutable code/createdAt and protect sab_* system docs
+      // Anyone can register a valid short link payload once.
+      // Once created, user bouquet designs, voice recordings, and tier fields are strictly immutable;
+      // only recipient engagement fields (openCount, voicePlayCount, reaction, recipientReply, repliedAt) may update.
+      // System docs (sab_garland_feed_v1, sab_ov_*, sab_bqlog_*) keep payload immutable and can never be deleted.
       allow create: if isValidShortCode(code) && isValidSharedBouquet(request.resource.data, code);
       allow update: if isValidShortCode(code) &&
         isValidSharedBouquet(request.resource.data, code) &&
         request.resource.data.code == resource.data.code &&
-        (code == 'sab_garland_feed_v1' || request.resource.data.createdAt == resource.data.createdAt) &&
-        (!isSystemRecordCode(code) || request.resource.data.payload == resource.data.payload);
+        (
+          (
+            isSystemRecordCode(code) &&
+            request.resource.data.payload == resource.data.payload &&
+            (code == 'sab_garland_feed_v1' || request.resource.data.createdAt == resource.data.createdAt)
+          ) ||
+          (
+            !isSystemRecordCode(code) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'openCount',
+              'voicePlayCount',
+              'reaction',
+              'recipientReply',
+              'repliedAt'
+            ]) &&
+            (!('openCount' in resource.data) || !('openCount' in request.resource.data) || request.resource.data.openCount >= resource.data.openCount) &&
+            (!('voicePlayCount' in resource.data) || !('voicePlayCount' in request.resource.data) || request.resource.data.voicePlayCount >= resource.data.voicePlayCount)
+          )
+        );
       // System docs (sab_garland_feed_v1, sab_ov_*, sab_bqlog_*) can NEVER be deleted
       allow delete: if isValidShortCode(code) && !isSystemRecordCode(code);
     }
 
     match /bouquet_assets/{assetId} {
-      // Companion eternal media assets (overflow photos & voice notes) referenced by shared_bouquets/{code}
+      // Companion eternal media assets (overflow photos & voice notes) are strictly immutable once created
       allow get: if isValidAssetId(assetId);
       allow list: if false;
       allow create: if isValidAssetId(assetId) && isValidBouquetAsset(request.resource.data, assetId);
-      allow update: if isValidAssetId(assetId) &&
-        isValidBouquetAsset(request.resource.data, assetId) &&
-        request.resource.data.assetId == resource.data.assetId &&
-        request.resource.data.bouquetCode == resource.data.bouquetCode &&
-        request.resource.data.kind == resource.data.kind &&
-        request.resource.data.createdAt == resource.data.createdAt;
+      allow update: if false;
       allow delete: if isValidAssetId(assetId);
     }
 

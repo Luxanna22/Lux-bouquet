@@ -24,7 +24,18 @@ import {
   stripInlinePhotosFromCompactPayloadServer,
 } from './_lib/bouquetAssetsHelper.js';
 
+import {
+  fetchBouquetFromBlob,
+  fetchGarlandFeedFromBlob,
+  isVercelBlobConfigured,
+  saveBouquetToBlob,
+  saveGarlandFeedToBlob,
+  upsertGarlandFeedInBlob,
+} from './_lib/blobStorage.js';
+
 const shortCodeMemory = new Map();
+let garlandFeedMemoryCache = { entries: null, fetchedAt: 0 };
+const GARLAND_CACHE_TTL_MS = 45_000;
 
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
@@ -33,6 +44,11 @@ const FIRESTORE_ASSETS_URL = `https://firestore.googleapis.com/v1/projects/${FIR
 
 export function clearShortCodeMemoryForTesting() {
   shortCodeMemory.clear();
+  garlandFeedMemoryCache = { entries: null, fetchedAt: 0 };
+}
+
+export function invalidateGarlandFeedMemoryCache() {
+  garlandFeedMemoryCache = { entries: null, fetchedAt: 0 };
 }
 
 function evictLocalShortPayload(code) {
@@ -59,6 +75,9 @@ function saveShortPayload(code, payload, extra = {}) {
     voiceStyle: extra.voiceStyle || null,
     voiceTitle: extra.voiceTitle || null,
     voiceDurationSec: typeof extra.voiceDurationSec === 'number' ? extra.voiceDurationSec : null,
+    isPremium: typeof extra.isPremium === 'boolean' ? extra.isPremium : undefined,
+    retentionDays: typeof extra.retentionDays === 'number' ? extra.retentionDays : undefined,
+    createdAt: typeof extra.createdAt === 'string' ? extra.createdAt : undefined,
   };
   shortCodeMemory.set(safeCode, entry);
   if (shortCodeMemory.size > 1000) {
@@ -194,22 +213,26 @@ async function saveOverflowAssetToFirestoreRest(asset) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(`${FIRESTORE_ASSETS_URL}/${encodeURIComponent(asset.assetId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fields: {
-          assetId: { stringValue: asset.assetId },
-          bouquetCode: { stringValue: asset.bouquetCode },
-          kind: { stringValue: asset.kind },
-          dataUrl: { stringValue: asset.dataUrl },
-          createdAt: { stringValue: asset.createdAt },
-        },
-      }),
-      signal: controller.signal,
-    });
+    const resp = await fetch(
+      `${FIRESTORE_ASSETS_URL}/${encodeURIComponent(asset.assetId)}?currentDocument.exists=false`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            assetId: { stringValue: asset.assetId },
+            bouquetCode: { stringValue: asset.bouquetCode },
+            kind: { stringValue: asset.kind },
+            dataUrl: { stringValue: asset.dataUrl },
+            createdAt: { stringValue: asset.createdAt },
+          },
+        }),
+        signal: controller.signal,
+      }
+    );
     clearTimeout(timer);
-    return resp.ok;
+    // 409 ALREADY_EXISTS / 412 FAILED_PRECONDITION means this immutable asset was already persisted (e.g. by client SDK)
+    return resp.ok || resp.status === 409 || resp.status === 412;
   } catch {
     return false;
   }
@@ -226,27 +249,9 @@ export async function saveToFirestoreRest(code, payload, extra = {}) {
         ? stripInlineAudioFromCompactPayloadServer(String(payload))
         : String(payload);
 
-    // Check if document already exists so we preserve immutable createdAt & recipient engagement fields
-    let preservedCreatedAt = new Date().toISOString();
-    let existingFields = null;
-    try {
-      const checkCtrl = new AbortController();
-      const checkTimer = setTimeout(() => checkCtrl.abort(), 4000);
-      const existingResp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
-        method: 'GET',
-        signal: checkCtrl.signal,
-      });
-      clearTimeout(checkTimer);
-      if (existingResp.ok) {
-        const existingDoc = await existingResp.json().catch(() => null);
-        existingFields = existingDoc?.fields || null;
-        if (existingFields?.createdAt?.stringValue) {
-          preservedCreatedAt = existingFields.createdAt.stringValue;
-        }
-      }
-    } catch {
-      // Proceed with create/upsert
-    }
+    // Zero-read create-once write: directly attempt create with `?currentDocument.exists=false`
+    // so new bouquet shares spend 0 Firestore read units and can still persist even if daily read units are exhausted!
+    const createdAt = new Date().toISOString();
 
     // Automatically offload overflow photos/voice into eternal companion `bouquet_assets/{assetId}` docs
     // so multi-photo + voice bouquets NEVER fail Firestore's 1 MiB document size ceiling.
@@ -254,7 +259,7 @@ export async function saveToFirestoreRest(code, payload, extra = {}) {
       safeCode,
       cleanPayload,
       extra.voiceAudioDataUrl || null,
-      { createdAt: preservedCreatedAt }
+      { createdAt }
     );
 
     if (split.assets.length > 0) {
@@ -269,7 +274,7 @@ export async function saveToFirestoreRest(code, payload, extra = {}) {
     const fields = {
       code: { stringValue: safeCode },
       payload: { stringValue: split.payload.slice(0, 900000) },
-      createdAt: { stringValue: preservedCreatedAt },
+      createdAt: { stringValue: createdAt },
     };
     if (split.voiceAudioDataUrl && typeof split.voiceAudioDataUrl === 'string') {
       fields.voiceAudioDataUrl = { stringValue: split.voiceAudioDataUrl.slice(0, 900000) };
@@ -294,41 +299,20 @@ export async function saveToFirestoreRest(code, payload, extra = {}) {
       };
     }
 
-    if (existingFields) {
-      if (existingFields.openCount?.integerValue !== undefined) {
-        fields.openCount = { integerValue: String(existingFields.openCount.integerValue) };
-      }
-      if (existingFields.voicePlayCount?.integerValue !== undefined) {
-        fields.voicePlayCount = { integerValue: String(existingFields.voicePlayCount.integerValue) };
-      }
-      if (existingFields.reaction?.stringValue !== undefined) {
-        fields.reaction = { stringValue: existingFields.reaction.stringValue };
-      }
-      if (existingFields.recipientReply?.stringValue !== undefined) {
-        fields.recipientReply = { stringValue: existingFields.recipientReply.stringValue };
-      }
-      if (existingFields.repliedAt?.stringValue !== undefined) {
-        fields.repliedAt = { stringValue: existingFields.repliedAt.stringValue };
-      }
-      if (!fields.isPremium && existingFields.isPremium?.booleanValue !== undefined) {
-        fields.isPremium = { booleanValue: Boolean(existingFields.isPremium.booleanValue) };
-      }
-      if (!fields.retentionDays && existingFields.retentionDays?.integerValue !== undefined) {
-        fields.retentionDays = { integerValue: String(existingFields.retentionDays.integerValue) };
-      }
-    }
-
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-      signal: controller.signal,
-    });
+    const resp = await fetch(
+      `${FIRESTORE_BASE_URL}/${encodeURIComponent(safeCode)}?currentDocument.exists=false`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+        signal: controller.signal,
+      }
+    );
     clearTimeout(timer);
     return {
-      ok: resp.ok,
+      ok: resp.ok || resp.status === 409 || resp.status === 412,
       assetIds: split.assets.map((a) => a.assetId),
     };
   } catch {
@@ -551,6 +535,114 @@ export default async function handler(req, res) {
 
   const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const codeParam = (urlObj.searchParams.get('c') || '').replace(/[^0-9A-Za-z_-]/g, '');
+  const garlandParam = urlObj.searchParams.get('garland');
+
+  // Edge-cached Shared Creations Garland Feed endpoint (`GET /api/shorten?garland=1`)
+  // Eliminates per-visitor Firestore reads by merging Vercel Blob + Firestore behind a 45s CDN + RAM cache!
+  if (req.method === 'GET' && garlandParam === '1') {
+    const now = Date.now();
+    if (
+      Array.isArray(garlandFeedMemoryCache.entries) &&
+      now - garlandFeedMemoryCache.fetchedAt < GARLAND_CACHE_TTL_MS
+    ) {
+      const filteredCached = garlandFeedMemoryCache.entries.filter(
+        (item) => item && item.code && !OWNER_DELETED_BOUQUET_CODES.has(item.code)
+      );
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, s-maxage=45, stale-while-revalidate=300');
+      res.end(JSON.stringify({ ok: true, entries: filteredCached, cached: true }));
+      return;
+    }
+
+    const [blobEntries, firestoreEntries] = await Promise.all([
+      fetchGarlandFeedFromBlob({ useCache: true }).catch(() => null),
+      (async () => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4500);
+          const resp = await fetch(`${FIRESTORE_BASE_URL}/${GARLAND_FEED_DOC_CODE}`, {
+            method: 'GET',
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          if (!resp.ok) return null;
+          const doc = await resp.json().catch(() => null);
+          const raw = doc?.fields?.voiceAudioDataUrl?.stringValue;
+          if (!raw) return [];
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+    const byCode = new Map();
+    const ingest = (list) => {
+      if (!Array.isArray(list)) return;
+      for (const item of list) {
+        if (
+          !item ||
+          typeof item.code !== 'string' ||
+          item.code.startsWith('draft_') ||
+          item.code.startsWith('sab_') ||
+          item.isDraft !== false ||
+          item.pinToShowcase !== true ||
+          OWNER_DELETED_BOUQUET_CODES.has(item.code)
+        ) {
+          continue;
+        }
+        const prev = byCode.get(item.code);
+        if (!prev) {
+          byCode.set(item.code, item);
+        } else {
+          const prevTs = Date.parse(prev.createdAt || '') || 0;
+          const nextTs = Date.parse(item.createdAt || '') || 0;
+          if (nextTs > prevTs) byCode.set(item.code, item);
+        }
+      }
+    };
+    ingest(blobEntries);
+    ingest(firestoreEntries);
+
+    const merged = Array.from(byCode.values())
+      .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0))
+      .slice(0, MAX_GARLAND_FEED_ENTRIES);
+
+    // If Firestore had entries not yet mirrored to Blob, backfill Blob asynchronously so future Firestore 429s stay seamless
+    if (
+      isVercelBlobConfigured() &&
+      Array.isArray(firestoreEntries) &&
+      firestoreEntries.length > 0 &&
+      (!Array.isArray(blobEntries) || blobEntries.length < merged.length)
+    ) {
+      saveGarlandFeedToBlob(merged).catch(() => {});
+    }
+
+    if (merged.length > 0 || blobEntries !== null || firestoreEntries !== null) {
+      garlandFeedMemoryCache = { entries: merged, fetchedAt: now };
+    }
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, s-maxage=45, stale-while-revalidate=300');
+    res.end(
+      JSON.stringify({
+        ok: true,
+        entries: merged,
+        source:
+          blobEntries !== null && firestoreEntries !== null
+            ? 'merged'
+            : blobEntries !== null
+            ? 'vercel_blob'
+            : firestoreEntries !== null
+            ? 'firestore'
+            : 'empty',
+      })
+    );
+    return;
+  }
 
   if (req.method === 'GET' && codeParam) {
     // 0. If this code was explicitly deleted by the owner in Admin Bouquets, evict any warm RAM / /tmp cache and return 404 immediately
@@ -566,16 +658,29 @@ export default async function handler(req, res) {
     // 1. Check in-memory and /tmp cache first
     let entry = loadLocalShortPayload(codeParam);
 
-    // 2. Query persistent Firebase Firestore database (re-hydrates overflow bouquet_assets + voiceAudioDataUrl eternally, even after Garland expiry!)
+    // 2. Check Private Vercel Blob storage first (0 Firestore read units & stays 100% online during Firestore 429!)
+    if ((!entry || !entry.payload) && isVercelBlobConfigured()) {
+      const blobEntry = await fetchBouquetFromBlob(codeParam, { useCache: true });
+      if (blobEntry && blobEntry.payload) {
+        entry = blobEntry;
+        saveShortPayload(codeParam, blobEntry.payload, blobEntry);
+      }
+    }
+
+    // 3. Query persistent Firebase Firestore database (re-hydrates overflow bouquet_assets + voiceAudioDataUrl eternally, even after Garland expiry!)
     if (!entry || !entry.payload) {
       const firestoreEntry = await fetchFromFirestoreRest(codeParam);
       if (firestoreEntry && firestoreEntry.payload) {
         entry = firestoreEntry;
         saveShortPayload(codeParam, firestoreEntry.payload, firestoreEntry);
+        // Mirror legacy Firestore bouquet into Vercel Blob in background so future opens spend 0 Firestore read units!
+        if (isVercelBlobConfigured()) {
+          saveBouquetToBlob(codeParam, firestoreEntry).catch(() => {});
+        }
       }
     }
 
-    // 3. Fallback to is.gd slug if needed
+    // 4. Fallback to is.gd slug if needed
     if (!entry || !entry.payload) {
       try {
         const slug = `bq_${codeParam}`;
@@ -610,6 +715,9 @@ export default async function handler(req, res) {
         voiceStyle: entry.voiceStyle || null,
         voiceTitle: entry.voiceTitle || null,
         voiceDurationSec: entry.voiceDurationSec ?? null,
+        ...(typeof entry.isPremium === 'boolean' ? { isPremium: entry.isPremium } : {}),
+        ...(typeof entry.retentionDays === 'number' ? { retentionDays: entry.retentionDays } : {}),
+        ...(typeof entry.createdAt === 'string' ? { createdAt: entry.createdAt } : {}),
       })
     );
     return;
@@ -676,8 +784,28 @@ export default async function handler(req, res) {
       OWNER_DELETED_BOUQUET_CODES.delete(code);
       saveShortPayload(code, payload, extra);
 
-      // 1. Persist full bouquet & overflow assets (photos + voice) eternally to Firebase Firestore
-      const firestoreResult = await saveToFirestoreRest(code, payload, extra);
+      // 1. Dual-write eternal persistence: save to BOTH Firebase Firestore AND Private Vercel Blob in parallel!
+      // Even if Firestore hits its daily free-tier read/write quota (429), Vercel Blob persists full photos + voice seamlessly.
+      const cleanPayloadForBlob =
+        extra.voiceAudioDataUrl && typeof extra.voiceAudioDataUrl === 'string'
+          ? stripInlineAudioFromCompactPayloadServer(String(payload))
+          : String(payload);
+
+      const [firestoreResult, blobSaved] = await Promise.all([
+        saveToFirestoreRest(code, payload, extra).catch(() => ({ ok: false, assetIds: [] })),
+        isVercelBlobConfigured()
+          ? saveBouquetToBlob(code, {
+              payload: cleanPayloadForBlob,
+              voiceAudioDataUrl: extra.voiceAudioDataUrl || null,
+              voiceStyle: extra.voiceStyle || null,
+              voiceTitle: extra.voiceTitle || null,
+              voiceDurationSec: extra.voiceDurationSec ?? null,
+              isPremium: extra.isPremium,
+              retentionDays: extra.retentionDays,
+              createdAt: new Date().toISOString(),
+            }).catch(() => false)
+          : Promise.resolve(false),
+      ]);
 
       // 1a. Register 1-time Pay-It-Forward Recipient Gift Box slot if sealed with an eligible pass
       const giftSlot = await registerSharedBouquetGiftOfferServer({
@@ -696,17 +824,24 @@ export default async function handler(req, res) {
           bodyObj.garlandEntry.pinToShowcase === true
       );
 
-      // 1b. If the user ticked "Pin to Lace Garland", persist via CAS to `shared_bouquets/sab_garland_feed_v1`
+      // 1b. If the user ticked "Pin to Lace Garland", persist to BOTH Firestore (CAS) AND Vercel Blob mirror
       if (shouldPinToGarland) {
-        await publishToGarlandFeedRest(code, payload, bodyObj.garlandEntry).catch(() => {});
+        await Promise.all([
+          publishToGarlandFeedRest(code, payload, bodyObj.garlandEntry).catch(() => false),
+          isVercelBlobConfigured()
+            ? upsertGarlandFeedInBlob(code, payload, bodyObj.garlandEntry).catch(() => false)
+            : Promise.resolve(false),
+        ]);
+        invalidateGarlandFeedMemoryCache();
       }
 
       // 1c. ALWAYS log EVERY shared bouquet (both Garland-pinned AND private non-Garland links)
-      // into the persistent Admin Bouquet Log so the owner can inspect, verify, and delete mock creations!
+      // into the persistent Admin Bouquet Log (mirrored to both Firestore & Vercel Blob)
       const inspected = inspectPayloadAssetsSummaryServer(payload, extra.voiceAudioDataUrl);
       const clientMeta =
         bodyObj.bouquetMeta && typeof bodyObj.bouquetMeta === 'object' ? bodyObj.bouquetMeta : {};
       const shortUrl = origin ? `${origin}/${code}` : `/${code}`;
+      const anyPersisted = Boolean(firestoreResult.ok || blobSaved);
 
       await recordBouquetInAdminLogServer({
         code,
@@ -736,9 +871,9 @@ export default async function handler(req, res) {
         payloadBytes: payload.length,
         voiceBytes: typeof extra.voiceAudioDataUrl === 'string' ? extra.voiceAudioDataUrl.length : 0,
         assetIds: firestoreResult.assetIds || [],
-        persistedToFirestore: Boolean(firestoreResult.ok),
-        existsInFirestore: Boolean(firestoreResult.ok),
-        source: 'shorten',
+        persistedToFirestore: anyPersisted,
+        existsInFirestore: anyPersisted,
+        source: blobSaved && !firestoreResult.ok ? 'vercel_blob' : 'shorten',
       }).catch(() => {});
 
       // 2. Also keep secondary is.gd backup for compact payloads
@@ -758,7 +893,7 @@ export default async function handler(req, res) {
         );
         clearTimeout(timer);
       } catch {
-        // Firestore and local cache already saved
+        // Firestore / Vercel Blob and local cache already saved
       }
 
       res.statusCode = 200;
@@ -767,7 +902,11 @@ export default async function handler(req, res) {
         JSON.stringify({
           code,
           shortUrl,
-          persisted: Boolean(firestoreResult.ok),
+          persisted: anyPersisted,
+          storage: {
+            firestore: Boolean(firestoreResult.ok),
+            blob: Boolean(blobSaved),
+          },
           assetCount: (firestoreResult.assetIds || []).length,
           recipientGiftSpawned: Boolean(giftSlot && giftSlot.status === 'OPEN'),
         })

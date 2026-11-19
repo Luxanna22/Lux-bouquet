@@ -26,11 +26,19 @@ import {
   stripInlinePhotosFromCompactPayloadServer,
   // @ts-expect-error Plain ESM server helper without .d.ts
 } from '../../api/_lib/bouquetAssetsHelper.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import shortenHandler, {
   clearShortCodeMemoryForTesting,
+  invalidateGarlandFeedMemoryCache,
   publishToGarlandFeedRest,
   // @ts-expect-error Plain ESM API handler without .d.ts
 } from '../../api/shorten.js';
+import {
+  setBlobClientForTesting,
+  // @ts-expect-error Plain ESM server helper without .d.ts
+} from '../../api/_lib/blobStorage.js';
 import {
   createSignedAdminSessionToken,
   handlePaymentEndpoint,
@@ -933,3 +941,308 @@ describe('Admin Bouquet Log Pure Helpers', () => {
     assert.equal(summary.wrapStyle, 'kraft');
   });
 });
+
+describe('Private Vercel Blob Failover Under Firestore 429 Quota Exhaustion', () => {
+  it('saves, loads, lists on Garland, verifies, unpins/re-pins, and deletes bouquets 100% via Private Vercel Blob when Firestore returns 429', async () => {
+    const origFetch = globalThis.fetch;
+    const blobStore = new Map<string, { body: string; access: string }>();
+
+    // Simulate a strict Private Vercel Blob store (rejects access: 'public', supports private put/get/del)
+    setBlobClientForTesting({
+      put: async (pathname: string, body: string, opts: { access?: string }) => {
+        if (opts?.access !== 'private') {
+          const err = new Error('Cannot use public access on a private store.');
+          err.name = 'BlobAccessError';
+          throw err;
+        }
+        blobStore.set(pathname, { body: String(body), access: 'private' });
+        return { url: `https://private.blob.vercel-storage.com/${pathname}`, pathname };
+      },
+      get: async (pathname: string, opts: { access?: string }) => {
+        if (opts?.access !== 'private') {
+          const err = new Error('Cannot use public access on a private store.');
+          err.name = 'BlobAccessError';
+          throw err;
+        }
+        const item = blobStore.get(pathname);
+        if (!item) return null;
+        return {
+          statusCode: 200,
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(item.body));
+              controller.close();
+            },
+          }),
+        };
+      },
+      del: async (pathname: string) => {
+        blobStore.delete(pathname);
+      },
+    });
+
+    // Simulate 100% Firestore HTTP 429 Quota Exceeded outage across every Firestore REST URL
+    globalThis.fetch = (async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes('firestore.googleapis.com')) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              message: "Quota exceeded for quota metric 'Free daily read units per project'",
+              status: 'RESOURCE_EXHAUSTED',
+            },
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('Not Found', { status: 404 });
+    }) as unknown as typeof fetch;
+
+    resetOwnerBouquetLogStateForTesting();
+    clearShortCodeMemoryForTesting();
+    invalidateGarlandFeedMemoryCache();
+
+    const code = 'BlobFailover001';
+    const tmpJson = path.join(os.tmpdir(), `bq_short_${code}.json`);
+    const tmpTxt = path.join(os.tmpdir(), `bq_short_${code}.txt`);
+
+    try {
+      const heavyPhoto = `data:image/jpeg;base64,${'C'.repeat(420_000)}`;
+      const heavyVoice = `data:audio/webm;base64,${'D'.repeat(280_000)}`;
+      const snap: BouquetSnapshot = {
+        items: [
+          {
+            id: 'stem-rose',
+            type: 'rose',
+            x: 280,
+            y: 340,
+            scale: 1,
+            rotation: -6,
+            flipX: false,
+            petalColor: '#e11d48',
+            centerColor: '#fbbf24',
+            layerPlane: 'inside',
+            clippedToBouquet: true,
+          },
+          {
+            id: 'stem-photo',
+            type: 'rose',
+            x: 340,
+            y: 310,
+            scale: 0.9,
+            rotation: 8,
+            flipX: false,
+            petalColor: '#ffffff',
+            centerColor: '#111827',
+            layerPlane: 'front',
+            clippedToBouquet: true,
+            photoStyle: 'polaroid',
+            photoDataUrl: heavyPhoto,
+            photoCaption: 'Forever moment',
+          },
+        ],
+        wrapStyle: 'kraft',
+        wrapColor: '#d9b99b',
+        ribbonColor: '#e11d48',
+        ribbonStyle: 'satin',
+        environment: 'sunlit',
+        bouquetPose: { x: 300, y: 380, scale: 1, rotation: 0 },
+        card: {
+          to: 'Kathleen',
+          from: 'Mark',
+          message: 'Thinking of you always',
+          theme: 'cream',
+          visibleOnStage: true,
+        },
+        voice: {
+          style: 'mixtape',
+          visibleOnStage: true,
+          title: 'For Kathleen',
+          primaryColor: '#ec4899',
+          accentColor: '#fde047',
+          audioDataUrl: heavyVoice,
+          durationSec: 18,
+        },
+        lock: { mode: 'none', unlockAtIso: '', questionPrompt: '', passcodeAnswer: '' },
+      };
+      const compactPayload = encodeBouquetToCompactPayload(snap, true);
+
+      const deviceHash = 'owner-device-blob-test';
+      const adminToken = createSignedAdminSessionToken(deviceHash);
+
+      const mintReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'mint_paid_pass',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        tier: 'pass_30d',
+        region: 'global',
+        label: 'Blob Failover QA Pass',
+        channel: 'test',
+      });
+      await handleVerifyAction(mintReq.req, mintReq.res);
+      assert.equal(mintReq.res.statusCode, 200);
+      const mintedPassKey = mintReq.res.json().pass?.passKey;
+      assert.ok(mintedPassKey, 'Minted passKey must be returned even during Firestore 429');
+
+      const redeemReq = createMockReqRes('POST', '/api/payments/redeem-pass', {
+        passKey: mintedPassKey,
+        deviceTokenHash: deviceHash,
+      });
+      await handlePaymentEndpoint(redeemReq.req, redeemReq.res, '/api/payments/redeem-pass');
+      assert.equal(redeemReq.res.statusCode, 200);
+      const redeemedPass = redeemReq.res.json().pass;
+      assert.ok(redeemedPass?.activeSessionNonce);
+
+      // 1. POST /api/shorten while Firestore returns 429 -> must succeed via Private Vercel Blob!
+      const postReq = createMockReqRes('POST', '/api/shorten', {
+        code,
+        payload: compactPayload,
+        origin: 'https://sendabouquet.online',
+        voiceAudioDataUrl: heavyVoice,
+        voiceStyle: 'mixtape',
+        voiceTitle: 'For Kathleen',
+        voiceDurationSec: 18,
+        passKey: redeemedPass.passKey,
+        deviceTokenHash: deviceHash,
+        activeSessionNonce: redeemedPass.activeSessionNonce,
+        pass: redeemedPass,
+        pinToShowcase: true,
+        bouquetMeta: {
+          to: 'Kathleen',
+          from: 'Mark',
+          noteExcerpt: 'Thinking of you always',
+          createdAt: '2026-11-19T10:00:00.000Z',
+          shareUrl: `https://sendabouquet.online/${code}`,
+          pinnedToGarland: true,
+          flowerCount: snap.items.length,
+          photoCount: 1,
+          hasVoice: true,
+        },
+        garlandEntry: {
+          code,
+          to: 'Kathleen',
+          from: 'Mark',
+          createdAt: '2026-11-19T10:00:00.000Z',
+          shareUrl: `https://sendabouquet.online/${code}`,
+          isDraft: false,
+          pinToShowcase: true,
+          hasVoice: true,
+          flowerCount: snap.items.length,
+          draftPayload: compactPayload,
+        },
+      });
+      await shortenHandler(postReq.req, postReq.res);
+      assert.equal(postReq.res.statusCode, 200);
+      const postJson = postReq.res.json();
+      assert.equal(postJson.persisted, true, 'Bouquet must persist via Private Vercel Blob despite Firestore 429');
+      assert.equal(postJson.storage.firestore, false);
+      assert.equal(postJson.storage.blob, true);
+      assert.ok(blobStore.has(`bouquets/${code}.json`), 'Bouquet blob must exist in private store');
+
+      // 2. Evict ALL local RAM + /tmp caches to simulate a completely cold serverless instance on another continent
+      clearShortCodeMemoryForTesting();
+      if (fs.existsSync(tmpJson)) fs.unlinkSync(tmpJson);
+      if (fs.existsSync(tmpTxt)) fs.unlinkSync(tmpTxt);
+
+      // GET /api/shorten?c=BlobFailover001 must serve full photo + voice straight from Private Vercel Blob!
+      const getReq = createMockReqRes('GET', `/api/shorten?c=${code}`);
+      await shortenHandler(getReq.req, getReq.res);
+      assert.equal(getReq.res.statusCode, 200);
+      const getJson = getReq.res.json();
+      assert.equal(getJson.voiceAudioDataUrl, heavyVoice);
+      const decoded = decodeBouquetFromHash(getJson.payload);
+      assert.ok(decoded);
+      assert.equal(decoded!.card.to, 'Kathleen');
+      assert.equal(decoded!.items.find((it) => it.photoStyle)?.photoDataUrl, heavyPhoto);
+
+      // 3. GET /api/shorten?garland=1 must serve the Garland feed from Private Vercel Blob during Firestore 429!
+      invalidateGarlandFeedMemoryCache();
+      const garlandReq = createMockReqRes('GET', '/api/shorten?garland=1');
+      await shortenHandler(garlandReq.req, garlandReq.res);
+      assert.equal(garlandReq.res.statusCode, 200);
+      const garlandJson = garlandReq.res.json();
+      assert.equal(garlandJson.source, 'vercel_blob');
+      assert.ok(garlandJson.entries.some((e: { code: string }) => e.code === code));
+
+      // 4. Cold-start Admin Bouquet Log hydration must recover the bouquet from Private Vercel Blob!
+      resetOwnerBouquetLogStateForTesting();
+
+      const logReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'fetch_owner_bouquet_log',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+      });
+      await handleVerifyAction(logReq.req, logReq.res);
+      assert.equal(logReq.res.statusCode, 200);
+      const logged: AdminBouquetLogEntry[] = logReq.res.json().bouquetLog;
+      assert.ok(logged.some((b) => b.code === code && b.to === 'Kathleen'));
+
+      // 5. Admin verify_owner_bouquet must verify the bouquet live in Private Vercel Blob even under Firestore 429!
+      const verifyReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'verify_owner_bouquet',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        code,
+      });
+      await handleVerifyAction(verifyReq.req, verifyReq.res);
+      assert.equal(verifyReq.res.statusCode, 200);
+      assert.equal(verifyReq.res.json().verification.existsInFirestore, false);
+      assert.equal(verifyReq.res.json().verification.existsInBlob, true);
+      assert.equal(verifyReq.res.json().verification.eternalLinkActive, true);
+      assert.equal(verifyReq.res.json().verification.inGarlandFeed, true);
+
+      // 6. Admin toggle_owner_bouquet_garland (unpin -> re-pin) must work purely via Private Vercel Blob!
+      const unpinReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'toggle_owner_bouquet_garland',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        code,
+        pinned: false,
+      });
+      await handleVerifyAction(unpinReq.req, unpinReq.res);
+      assert.equal(unpinReq.res.statusCode, 200);
+      invalidateGarlandFeedMemoryCache();
+      const afterUnpin = createMockReqRes('GET', '/api/shorten?garland=1');
+      await shortenHandler(afterUnpin.req, afterUnpin.res);
+      assert.equal(afterUnpin.res.json().entries.some((e: { code: string }) => e.code === code), false);
+
+      const repinReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'toggle_owner_bouquet_garland',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        code,
+        pinned: true,
+      });
+      await handleVerifyAction(repinReq.req, repinReq.res);
+      assert.equal(repinReq.res.statusCode, 200);
+      invalidateGarlandFeedMemoryCache();
+      const afterRepin = createMockReqRes('GET', '/api/shorten?garland=1');
+      await shortenHandler(afterRepin.req, afterRepin.res);
+      assert.equal(afterRepin.res.json().entries.some((e: { code: string }) => e.code === code), true);
+
+      // 7. Admin delete_owner_bouquets must delete from Private Vercel Blob + Blob Garland + return 404 immediately!
+      const delReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'delete_owner_bouquets',
+        adminSessionToken: adminToken,
+        deviceTokenHash: deviceHash,
+        codes: [code],
+      });
+      await handleVerifyAction(delReq.req, delReq.res);
+      assert.equal(delReq.res.statusCode, 200);
+      assert.equal(blobStore.has(`bouquets/${code}.json`), false, 'Bouquet blob must be deleted');
+
+      const getAfterDel = createMockReqRes('GET', `/api/shorten?c=${code}`);
+      await shortenHandler(getAfterDel.req, getAfterDel.res);
+      assert.equal(getAfterDel.res.statusCode, 404);
+    } finally {
+      setBlobClientForTesting(null);
+      globalThis.fetch = origFetch;
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+      if (fs.existsSync(tmpJson)) fs.unlinkSync(tmpJson);
+      if (fs.existsSync(tmpTxt)) fs.unlinkSync(tmpTxt);
+    }
+  });
+});
+

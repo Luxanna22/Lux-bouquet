@@ -465,7 +465,7 @@ export default function App() {
     'share' | 'png' | 'pass_menu'
   >('pass_menu');
   const [checkoutInitialView, setCheckoutInitialView] = useState<'plans' | 'redeem'>('plans');
-  const lastSealSyncPromiseRef = useRef<Promise<unknown> | null>(null);
+  const lastSealSyncPromiseRef = useRef<Promise<{ persisted: boolean; fallbackHashUrl: string | null }> | null>(null);
 
   const currentPremiumInspection = useMemo(
     () =>
@@ -1890,7 +1890,8 @@ export default function App() {
         }
 
         // If opened via a first-party short link (e.g. https://[domain]/Vu18KSuusq9133s) on a new device,
-        // fetch the bouquet payload and voice recording from Firebase Firestore first, with fallback to /api/shorten?c=<code>
+        // fetch via /api/shorten?c=<code> first (Private Vercel Blob -> Firestore + auto-mirror = 0 Firestore reads!),
+        // with direct client Firestore fallback if the serverless endpoint is unreachable.
         if (pathCode) {
           const reqId = ++showcaseResolveRequestIdRef.current;
           setShowLandingPage(false);
@@ -1903,15 +1904,21 @@ export default function App() {
                 voiceStyle?: string | null;
                 voiceTitle?: string | null;
                 voiceDurationSec?: number | null;
-              } | null = await fetchSharedBouquetFromFirestore(pathCode);
+              } | null = null;
 
-              if (showcaseResolveRequestIdRef.current !== reqId) return;
-
-              if (!data || typeof data.payload !== 'string') {
+              try {
                 const r = await fetch(`/api/shorten?c=${encodeURIComponent(pathCode)}`);
                 if (r.ok) {
                   data = await r.json();
                 }
+              } catch {
+                // Fall back to direct Firestore client read
+              }
+
+              if (showcaseResolveRequestIdRef.current !== reqId) return;
+
+              if (!data || typeof data.payload !== 'string') {
+                data = await fetchSharedBouquetFromFirestore(pathCode, { skipApi: true });
               }
 
               if (showcaseResolveRequestIdRef.current !== reqId) return;
@@ -2343,13 +2350,31 @@ export default function App() {
             }
             : null,
         })
-      }).catch(() => null);
+      })
+        .then(async (resp) => {
+          if (!resp.ok) return false;
+          const data = await resp.json().catch(() => null);
+          return Boolean(data && data.persisted === true);
+        })
+        .catch(() => false);
+
+      const fallbackHashUrl =
+        origin && hashPayload.startsWith('#') && hashPayload.length <= 8000
+          ? `${origin}/${hashPayload}`
+          : null;
 
       lastSealSyncPromiseRef.current = Promise.allSettled([
         firestoreSavePromise,
         garlandPublishPromise,
         shortenApiPromise,
-      ]);
+      ]).then((results) => {
+        const fsOk = results[0].status === 'fulfilled' && results[0].value === true;
+        const apiPersisted = results[2].status === 'fulfilled' && results[2].value === true;
+        return {
+          persisted: fsOk || apiPersisted,
+          fallbackHashUrl,
+        };
+      });
 
       return firstPartyUrl;
     },
@@ -2595,14 +2620,20 @@ export default function App() {
       true,
       verifiedPaidPass
     );
+    let resolvedShareUrl = firstPartyUrl;
     if (lastSealSyncPromiseRef.current) {
-      await Promise.race([
+      const syncResult = await Promise.race([
         lastSealSyncPromiseRef.current,
-        new Promise((resolve) => setTimeout(resolve, 2200)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2600)),
       ]);
+      // Zero-DB safety net: if BOTH Firestore AND Private Vercel Blob failed, fall back to a
+      // self-contained #g=... URL so recipients NEVER receive a dead short link.
+      if (syncResult && syncResult.persisted === false && syncResult.fallbackHashUrl) {
+        resolvedShareUrl = syncResult.fallbackHashUrl;
+      }
     }
-    setShortShareUrl(firstPartyUrl);
-    setSealedGiftUrl(firstPartyUrl);
+    setShortShareUrl(resolvedShareUrl);
+    setSealedGiftUrl(resolvedShareUrl);
     setSealedBouquetCode(hasPaidUnlockForSeal ? currentBouquetShortCode : null);
     setSealedPaidPass(verifiedPaidPass);
     setIsShorteningUrl(false);
@@ -2628,7 +2659,7 @@ export default function App() {
     }
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(firstPartyUrl).catch(() => { });
+      navigator.clipboard.writeText(resolvedShareUrl).catch(() => { });
     }
     trackStudioTelemetry({
       eventType: 'bouquet_sealed',

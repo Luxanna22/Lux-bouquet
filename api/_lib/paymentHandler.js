@@ -13,6 +13,16 @@ import {
   stripInlineAudioFromCompactPayloadServer,
   stripInlinePhotosFromCompactPayloadServer,
 } from './bouquetAssetsHelper.js';
+import {
+  deleteBouquetFromBlob,
+  fetchAdminBouquetLogFromBlob,
+  fetchBouquetFromBlob,
+  fetchGarlandFeedFromBlob,
+  isVercelBlobConfigured,
+  removeCodesFromGarlandFeedInBlob,
+  saveAdminBouquetLogToBlob,
+  upsertGarlandFeedInBlob,
+} from './blobStorage.js';
 
 const FIRESTORE_PROJECT_ID = 'amiable-alloy-sw1sf';
 const FIRESTORE_DB_ID = 'ai-studio-luxbouquet-d9f38715-de7a-49d9-bccf-4493a2abc586';
@@ -2386,6 +2396,21 @@ async function mutateGarlandFeedDocCasRest(mutatorFn, maxRetries = 3) {
 export async function hydrateOwnerBouquetLogServer(options = {}) {
   const includeGarlandBackfill = options.includeGarlandBackfill !== false;
   let logHydrated = false;
+
+  // 1. Hydrate from Private Vercel Blob mirror first (works seamlessly even if Firestore returns 429)
+  if (isVercelBlobConfigured()) {
+    try {
+      const blobLog = await fetchAdminBouquetLogFromBlob();
+      if (blobLog) {
+        mergeRemoteOwnerBouquetLogIntoMemory(blobLog);
+        logHydrated = true;
+      }
+    } catch {
+      // Continue to Firestore hydration
+    }
+  }
+
+  // 2. Hydrate from Firestore persistent Admin Bouquet Log document
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
@@ -2416,16 +2441,25 @@ export async function hydrateOwnerBouquetLogServer(options = {}) {
       }
     }
   } catch {
-    // Keep current in-memory log
+    // Keep current in-memory + Blob log
   }
 
-  // Backfill any pre-existing bouquets from `sab_garland_feed_v1` that were shared before the Admin Log existed
+  // 3. Backfill any pre-existing bouquets from Garland feed (both Vercel Blob & Firestore)
   if (includeGarlandBackfill) {
-    const garlandDoc = await fetchGarlandFeedDocRest();
-    if (garlandDoc && Array.isArray(garlandDoc.entries)) {
-      for (const item of garlandDoc.entries) {
+    const [garlandDoc, blobGarlandEntries] = await Promise.all([
+      fetchGarlandFeedDocRest().catch(() => null),
+      isVercelBlobConfigured() ? fetchGarlandFeedFromBlob({ useCache: false }).catch(() => null) : Promise.resolve(null),
+    ]);
+    const combinedEntries = [
+      ...(Array.isArray(blobGarlandEntries) ? blobGarlandEntries : []),
+      ...(garlandDoc && Array.isArray(garlandDoc.entries) ? garlandDoc.entries : []),
+    ];
+    if (combinedEntries.length > 0) {
+      const seenBackfill = new Set();
+      for (const item of combinedEntries) {
         if (!item || typeof item.code !== 'string') continue;
-        if (OWNER_DELETED_BOUQUET_CODES.has(item.code)) continue;
+        if (seenBackfill.has(item.code) || OWNER_DELETED_BOUQUET_CODES.has(item.code)) continue;
+        seenBackfill.add(item.code);
         const summary = inspectPayloadAssetsSummaryServer(item.draftPayload || '', null);
         mergeBouquetLogEntryInMemory(
           {
@@ -2458,7 +2492,7 @@ export async function hydrateOwnerBouquetLogServer(options = {}) {
             payloadBytes: summary.payloadBytes,
             voiceBytes: 0,
             assetIds: [],
-            persistedToFirestore: true,
+            persistedToFirestore: Boolean(garlandDoc?.entries?.some((g) => g?.code === item.code)),
             source: 'garland_backfill',
           },
           { fromBackfill: true }
@@ -2475,32 +2509,46 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
   const onBeforeRetryMerge =
     typeof options.onBeforeRetryMerge === 'function' ? options.onBeforeRetryMerge : null;
 
+  const buildPayloadObj = () => {
+    const entries = serializeOwnerBouquetLogList().slice(0, 1200);
+    const deletedCodes = Array.from(OWNER_DELETED_BOUQUET_CODES).slice(-1000);
+    const payloadObj = {
+      v: 1,
+      updatedAt: new Date().toISOString(),
+      entries,
+      deletedCodes,
+    };
+    let jsonStr = JSON.stringify(payloadObj);
+    while (payloadObj.entries.length > 50 && jsonStr.length > 860_000) {
+      payloadObj.entries.pop();
+      jsonStr = JSON.stringify(payloadObj);
+    }
+    return { payloadObj, jsonStr };
+  };
+
+  let blobSaved = false;
+
   try {
     if (bouquetLogRemoteExists === null) {
       await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
       if (onBeforeRetryMerge && bouquetLogRemoteExists === true) {
         onBeforeRetryMerge();
       }
-      if (bouquetLogRemoteExists === null) {
-        return false;
-      }
+    }
+
+    // Always persist to Private Vercel Blob mirror (succeeds even when Firestore is returning 429)
+    if (isVercelBlobConfigured()) {
+      const { payloadObj } = buildPayloadObj();
+      blobSaved = await saveAdminBouquetLogToBlob(payloadObj).catch(() => false);
+    }
+
+    if (bouquetLogRemoteExists === null) {
+      return blobSaved;
     }
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const entries = serializeOwnerBouquetLogList().slice(0, 1200);
-      const deletedCodes = Array.from(OWNER_DELETED_BOUQUET_CODES).slice(-1000);
-      let payloadObj = {
-        v: 1,
-        updatedAt: new Date().toISOString(),
-        entries,
-        deletedCodes,
-      };
-      let jsonStr = JSON.stringify(payloadObj);
-      while (payloadObj.entries.length > 50 && jsonStr.length > 860_000) {
-        payloadObj.entries.pop();
-        jsonStr = JSON.stringify(payloadObj);
-      }
-      if (jsonStr.length > 880_000) return false;
+      const { payloadObj, jsonStr } = buildPayloadObj();
+      if (jsonStr.length > 880_000) return blobSaved;
 
       const fields = {
         code: { stringValue: OWNER_BOUQUET_LOG_DOC_CODE },
@@ -2533,24 +2581,27 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
         if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
           bouquetLogLastUpdateTime = savedDoc.updateTime;
         }
+        if (isVercelBlobConfigured() && attempt > 0) {
+          await saveAdminBouquetLogToBlob(payloadObj).catch(() => false);
+        }
         return true;
       }
 
       if ((resp.status === 409 || resp.status === 412) && attempt < maxRetries) {
         const hydrated = await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
         if (!hydrated && bouquetLogRemoteExists === null) {
-          return false;
+          return blobSaved;
         }
         if (onBeforeRetryMerge) {
           onBeforeRetryMerge();
         }
         continue;
       }
-      return false;
+      return blobSaved;
     }
-    return false;
+    return blobSaved;
   } catch {
-    return false;
+    return blobSaved;
   }
 }
 
@@ -2606,10 +2657,11 @@ export async function deleteBouquetsFromFirestoreAndGarlandServer(rawCodes) {
   ).slice(0, 50);
 
   if (validCodes.length === 0) {
-    return { deletedCodes: [], firestoreDeletedCount: 0, garlandUpdated: false };
+    return { deletedCodes: [], firestoreDeletedCount: 0, blobDeletedCount: 0, garlandUpdated: false };
   }
 
   let firestoreDeletedCount = 0;
+  let blobDeletedCount = 0;
 
   for (const code of validCodes) {
     const loggedEntry = OWNER_BOUQUET_LOG.get(code);
@@ -2652,30 +2704,43 @@ export async function deleteBouquetsFromFirestoreAndGarlandServer(rawCodes) {
       }
     }
 
-    // 3. Delete `shared_bouquets/{code}`
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3500);
-      const delResp = await fetch(
-        `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`,
-        { method: 'DELETE', signal: controller.signal }
-      );
-      clearTimeout(timer);
-      if (delResp.ok || delResp.status === 404) {
-        firestoreDeletedCount += 1;
-      }
-    } catch {
-      // Continue deleting remaining codes
-    }
+    // 3. Delete `shared_bouquets/{code}` AND Private Vercel Blob copy in parallel
+    const [fsDelOk, blobDelOk] = await Promise.all([
+      (async () => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3500);
+          const delResp = await fetch(
+            `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`,
+            { method: 'DELETE', signal: controller.signal }
+          );
+          clearTimeout(timer);
+          return delResp.ok || delResp.status === 404;
+        } catch {
+          return false;
+        }
+      })(),
+      isVercelBlobConfigured()
+        ? deleteBouquetFromBlob(code).catch(() => false)
+        : Promise.resolve(false),
+    ]);
+    if (fsDelOk) firestoreDeletedCount += 1;
+    if (blobDelOk) blobDeletedCount += 1;
   }
 
-  // 4. Remove all deleted codes from `sab_garland_feed_v1` via CAS
+  // 4. Remove all deleted codes from BOTH Firestore `sab_garland_feed_v1` AND Vercel Blob Garland feed
   const deleteSet = new Set(validCodes);
-  const garlandUpdated = await mutateGarlandFeedDocCasRest((existing) =>
-    existing.filter((item) => item && !deleteSet.has(item.code))
-  );
+  const [firestoreGarlandUpdated, blobGarlandUpdated] = await Promise.all([
+    mutateGarlandFeedDocCasRest((existing) =>
+      existing.filter((item) => item && !deleteSet.has(item.code))
+    ).catch(() => false),
+    isVercelBlobConfigured()
+      ? removeCodesFromGarlandFeedInBlob(validCodes).catch(() => false)
+      : Promise.resolve(false),
+  ]);
+  const garlandUpdated = Boolean(firestoreGarlandUpdated || blobGarlandUpdated);
 
-  // 5. Tombstone & remove from persistent Admin Bouquet Log via CAS
+  // 5. Tombstone & remove from persistent Admin Bouquet Log (Firestore + Vercel Blob)
   await mutateAndSaveOwnerBouquetLogServer(() => {
     for (const code of validCodes) {
       OWNER_DELETED_BOUQUET_CODES.add(code);
@@ -2686,6 +2751,7 @@ export async function deleteBouquetsFromFirestoreAndGarlandServer(rawCodes) {
   return {
     deletedCodes: validCodes,
     firestoreDeletedCount,
+    blobDeletedCount,
     garlandUpdated,
   };
 }
@@ -2704,9 +2770,14 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
   await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
 
   if (!nextPinned) {
-    await mutateGarlandFeedDocCasRest((existing) =>
-      existing.filter((item) => item && item.code !== code)
-    );
+    await Promise.all([
+      mutateGarlandFeedDocCasRest((existing) =>
+        existing.filter((item) => item && item.code !== code)
+      ).catch(() => false),
+      isVercelBlobConfigured()
+        ? removeCodesFromGarlandFeedInBlob([code]).catch(() => false)
+        : Promise.resolve(false),
+    ]);
     await mutateAndSaveOwnerBouquetLogServer(() => {
       const existing = OWNER_BOUQUET_LOG.get(code);
       if (existing) {
@@ -2716,36 +2787,42 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
     return { ok: true, code, pinned: false };
   }
 
-  // Pinning back onto the Garland: fetch canonical payload from `shared_bouquets/{code}`
-  let docFields = null;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (resp.ok) {
-      const docJson = await resp.json().catch(() => null);
-      docFields = docJson?.fields || null;
-    }
-  } catch {
-    docFields = null;
-  }
+  // Pinning back onto the Garland: fetch canonical payload from Firestore OR Private Vercel Blob
+  const [firestoreFields, blobRecord] = await Promise.all([
+    (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (resp.ok) {
+          const docJson = await resp.json().catch(() => null);
+          return docJson?.fields || null;
+        }
+      } catch {
+        // Fallback to Vercel Blob
+      }
+      return null;
+    })(),
+    isVercelBlobConfigured()
+      ? fetchBouquetFromBlob(code, { useCache: false }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
-  const rawPayload = docFields?.payload?.stringValue || '';
+  const rawPayload = firestoreFields?.payload?.stringValue || blobRecord?.payload || '';
+  const voiceAudioStr =
+    firestoreFields?.voiceAudioDataUrl?.stringValue || blobRecord?.voiceAudioDataUrl || null;
   if (!rawPayload) {
     return {
       ok: false,
-      message: 'Bouquet document was not found in Firestore, so it cannot be pinned to the Garland.',
+      message: 'Bouquet document was not found in Firestore or Vercel Blob, so it cannot be pinned to the Garland.',
     };
   }
 
-  const summary = inspectPayloadAssetsSummaryServer(
-    rawPayload,
-    docFields?.voiceAudioDataUrl?.stringValue || null
-  );
+  const summary = inspectPayloadAssetsSummaryServer(rawPayload, voiceAudioStr);
   const existingLog = OWNER_BOUQUET_LOG.get(code);
   const cleanDraftPayload = stripInlinePhotosFromCompactPayloadServer(
     stripInlineAudioFromCompactPayloadServer(rawPayload)
@@ -2753,14 +2830,20 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
 
   const createdAt =
     existingLog?.createdAt ||
-    docFields?.createdAt?.stringValue ||
+    firestoreFields?.createdAt?.stringValue ||
+    blobRecord?.createdAt ||
     new Date().toISOString();
   const isPremium = Boolean(
-    docFields?.isPremium?.booleanValue ?? existingLog?.isPremium ?? false
+    firestoreFields?.isPremium?.booleanValue ??
+      blobRecord?.isPremium ??
+      existingLog?.isPremium ??
+      false
   );
   const retentionDays =
-    docFields?.retentionDays?.integerValue !== undefined
-      ? Number(docFields.retentionDays.integerValue)
+    firestoreFields?.retentionDays?.integerValue !== undefined
+      ? Number(firestoreFields.retentionDays.integerValue)
+      : typeof blobRecord?.retentionDays === 'number'
+      ? blobRecord.retentionDays
       : existingLog?.retentionDays || (isPremium ? 36500 : 30);
 
   const garlandItem = {
@@ -2781,9 +2864,14 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
     draftPayload: cleanDraftPayload,
   };
 
-  await mutateGarlandFeedDocCasRest((existing) => [
-    garlandItem,
-    ...existing.filter((item) => item && item.code !== code),
+  await Promise.all([
+    mutateGarlandFeedDocCasRest((existing) => [
+      garlandItem,
+      ...existing.filter((item) => item && item.code !== code),
+    ]).catch(() => false),
+    isVercelBlobConfigured()
+      ? upsertGarlandFeedInBlob(code, rawPayload, garlandItem).catch(() => false)
+      : Promise.resolve(false),
   ]);
 
   await mutateAndSaveOwnerBouquetLogServer(() => {
@@ -2808,13 +2896,10 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
         environment: existingLog?.environment || summary.environment,
         lockMode: existingLog?.lockMode || summary.lockMode,
         payloadBytes: rawPayload.length,
-        voiceBytes: docFields?.voiceAudioDataUrl?.stringValue?.length || 0,
-        assetIds: collectAssetIdsFromBouquetRecordServer(
-          rawPayload,
-          docFields?.voiceAudioDataUrl?.stringValue || null
-        ),
-        persistedToFirestore: true,
-        existsInFirestore: true,
+        voiceBytes: voiceAudioStr?.length || 0,
+        assetIds: collectAssetIdsFromBouquetRecordServer(rawPayload, voiceAudioStr),
+        persistedToFirestore: Boolean(firestoreFields),
+        existsInFirestore: Boolean(firestoreFields),
       },
       { forceUnDelete: true, overridePinned: true }
     );
@@ -2824,8 +2909,9 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
 }
 
 /**
- * Live-verifies a bouquet code directly against Firestore (`shared_bouquets/{code}` + any companion
- * `bouquet_assets/{assetId}` + `sab_garland_feed_v1`) and imports/updates it in the Admin Bouquet Log.
+ * Live-verifies a bouquet code directly against BOTH Firestore (`shared_bouquets/{code}` + any companion
+ * `bouquet_assets/{assetId}`) AND Private Vercel Blob (`bouquets/{code}.json`), plus the Garland feeds,
+ * and imports/updates it in the Admin Bouquet Log.
  */
 export async function verifyBouquetPersistenceServer(rawCode) {
   const code = String(rawCode || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 24);
@@ -2834,6 +2920,7 @@ export async function verifyBouquetPersistenceServer(rawCode) {
       ok: false,
       code,
       existsInFirestore: false,
+      existsInBlob: false,
       eternalLinkActive: false,
       inGarlandFeed: false,
       assetCount: 0,
@@ -2842,33 +2929,46 @@ export async function verifyBouquetPersistenceServer(rawCode) {
     };
   }
 
-  let docJson = null;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (resp.ok) {
-      docJson = await resp.json().catch(() => null);
-    }
-  } catch {
-    docJson = null;
-  }
+  const [docJson, blobRecord, garlandDoc, blobGarlandEntries] = await Promise.all([
+    (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4500);
+        const resp = await fetch(`${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(code)}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (resp.ok) {
+          return await resp.json().catch(() => null);
+        }
+      } catch {
+        // Fallback to Vercel Blob
+      }
+      return null;
+    })(),
+    isVercelBlobConfigured()
+      ? fetchBouquetFromBlob(code, { useCache: false }).catch(() => null)
+      : Promise.resolve(null),
+    fetchGarlandFeedDocRest().catch(() => null),
+    isVercelBlobConfigured()
+      ? fetchGarlandFeedFromBlob({ useCache: false }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
-  const garlandDoc = await fetchGarlandFeedDocRest();
   const inGarlandFeed = Boolean(
-    garlandDoc && Array.isArray(garlandDoc.entries) && garlandDoc.entries.some((e) => e?.code === code)
+    (garlandDoc && Array.isArray(garlandDoc.entries) && garlandDoc.entries.some((e) => e?.code === code)) ||
+      (Array.isArray(blobGarlandEntries) && blobGarlandEntries.some((e) => e?.code === code))
   );
 
   const nowIso = new Date().toISOString();
   const fields = docJson?.fields || null;
-  const rawPayload = fields?.payload?.stringValue || '';
+  const firestorePayload = fields?.payload?.stringValue || '';
+  const existsInFirestore = Boolean(fields && firestorePayload);
+  const existsInBlob = Boolean(blobRecord && blobRecord.payload);
 
-  if (!fields || !rawPayload) {
-    // Mark in log if tracked so owner sees it's missing from Firestore
+  if (!existsInFirestore && !existsInBlob) {
+    // Mark in log if tracked so owner sees it's missing from both Firestore and Vercel Blob
     await mutateAndSaveOwnerBouquetLogServer(() => {
       const existing = OWNER_BOUQUET_LOG.get(code);
       if (existing) {
@@ -2884,20 +2984,25 @@ export async function verifyBouquetPersistenceServer(rawCode) {
       ok: true,
       code,
       existsInFirestore: false,
+      existsInBlob: false,
       eternalLinkActive: false,
       inGarlandFeed,
       assetCount: 0,
       missingAssetIds: [],
-      message: `No Firestore record found for "${code}".`,
+      message: `No Firestore or Vercel Blob record found for "${code}".`,
     };
   }
 
-  const voiceField = fields.voiceAudioDataUrl?.stringValue || '';
-  const assetIds = collectAssetIdsFromBouquetRecordServer(rawPayload, voiceField);
+  const rawPayload = firestorePayload || blobRecord.payload;
+  const voiceField =
+    (existsInFirestore ? fields.voiceAudioDataUrl?.stringValue : blobRecord?.voiceAudioDataUrl) || '';
+  const assetIds = existsInFirestore
+    ? collectAssetIdsFromBouquetRecordServer(rawPayload, voiceField)
+    : [];
   const missingAssetIds = [];
   let totalAssetBytes = 0;
 
-  if (assetIds.length > 0) {
+  if (existsInFirestore && assetIds.length > 0) {
     const checks = await Promise.all(
       assetIds.map(async (assetId) => {
         try {
@@ -2925,21 +3030,29 @@ export async function verifyBouquetPersistenceServer(rawCode) {
 
   const summary = inspectPayloadAssetsSummaryServer(rawPayload, voiceField || null);
   const openCount =
-    fields.openCount?.integerValue !== undefined ? Number(fields.openCount.integerValue) : 0;
+    fields?.openCount?.integerValue !== undefined ? Number(fields.openCount.integerValue) : 0;
   const voicePlayCount =
-    fields.voicePlayCount?.integerValue !== undefined
+    fields?.voicePlayCount?.integerValue !== undefined
       ? Number(fields.voicePlayCount.integerValue)
       : 0;
-  const hasReaction = Boolean(fields.reaction?.stringValue || fields.recipientReply?.stringValue);
-  const recipientReply = fields.recipientReply?.stringValue || '';
-  const isPremium = Boolean(fields.isPremium?.booleanValue);
+  const hasReaction = Boolean(fields?.reaction?.stringValue || fields?.recipientReply?.stringValue);
+  const recipientReply = fields?.recipientReply?.stringValue || '';
+  const isPremium = Boolean(
+    existsInFirestore ? fields.isPremium?.booleanValue : blobRecord?.isPremium
+  );
   const retentionDays =
-    fields.retentionDays?.integerValue !== undefined
+    fields?.retentionDays?.integerValue !== undefined
       ? Number(fields.retentionDays.integerValue)
+      : typeof blobRecord?.retentionDays === 'number'
+      ? blobRecord.retentionDays
       : isPremium
       ? 36500
       : 30;
-  const createdAt = fields.createdAt?.stringValue || nowIso;
+  const createdAt =
+    fields?.createdAt?.stringValue || blobRecord?.createdAt || nowIso;
+
+  const eternalLinkActive =
+    (existsInFirestore && missingAssetIds.length === 0) || existsInBlob;
 
   const { result: savedEntry } = await mutateAndSaveOwnerBouquetLogServer(() =>
     mergeBouquetLogEntryInMemory(
@@ -2956,8 +3069,11 @@ export async function verifyBouquetPersistenceServer(rawCode) {
         isCouture: Boolean(isPremium || retentionDays >= 90),
         flowerCount: summary.flowerCount,
         photoCount: summary.photoCount,
-        hasVoice: summary.hasVoice || Boolean(fields.voiceStyle?.stringValue),
-        voiceStyle: fields.voiceStyle?.stringValue || summary.voiceStyle,
+        hasVoice:
+          summary.hasVoice ||
+          Boolean(fields?.voiceStyle?.stringValue || blobRecord?.voiceStyle),
+        voiceStyle:
+          fields?.voiceStyle?.stringValue || blobRecord?.voiceStyle || summary.voiceStyle,
         wrapStyle: summary.wrapStyle,
         ribbonStyle: summary.ribbonStyle,
         environment: summary.environment,
@@ -2965,8 +3081,8 @@ export async function verifyBouquetPersistenceServer(rawCode) {
         payloadBytes: rawPayload.length + totalAssetBytes,
         voiceBytes: voiceField.length,
         assetIds,
-        persistedToFirestore: missingAssetIds.length === 0,
-        existsInFirestore: true,
+        persistedToFirestore: existsInFirestore ? missingAssetIds.length === 0 : existsInBlob,
+        existsInFirestore: existsInFirestore || existsInBlob,
         openCount,
         voicePlayCount,
         hasReaction,
@@ -2978,11 +3094,23 @@ export async function verifyBouquetPersistenceServer(rawCode) {
     )
   );
 
+  let statusMessage = '';
+  if (existsInFirestore && existsInBlob && missingAssetIds.length === 0) {
+    statusMessage = `Verified live in Firestore + Private Vercel Blob (${assetIds.length} companion asset${assetIds.length === 1 ? '' : 's'}) — eternal link active.`;
+  } else if (existsInFirestore && missingAssetIds.length === 0) {
+    statusMessage = `Verified live in Firestore (${assetIds.length} companion asset${assetIds.length === 1 ? '' : 's'}) — eternal link active.`;
+  } else if (existsInBlob) {
+    statusMessage = `Verified live in Private Vercel Blob — eternal link active (protected against Firestore quota limits).`;
+  } else {
+    statusMessage = `Bouquet exists, but ${missingAssetIds.length} companion asset(s) missing.`;
+  }
+
   return {
     ok: true,
     code,
-    existsInFirestore: true,
-    eternalLinkActive: missingAssetIds.length === 0,
+    existsInFirestore,
+    existsInBlob,
+    eternalLinkActive,
     inGarlandFeed,
     assetCount: assetIds.length,
     missingAssetIds,
@@ -2992,10 +3120,7 @@ export async function verifyBouquetPersistenceServer(rawCode) {
     payloadBytes: rawPayload.length + totalAssetBytes,
     voiceBytes: voiceField.length,
     entry: savedEntry,
-    message:
-      missingAssetIds.length === 0
-        ? `Verified live in Firestore (${assetIds.length} companion asset${assetIds.length === 1 ? '' : 's'}) — eternal link active.`
-        : `Bouquet exists, but ${missingAssetIds.length} companion asset(s) missing.`,
+    message: statusMessage,
   };
 }
 
