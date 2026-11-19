@@ -2,7 +2,6 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handlePaymentApiMiddleware } from './src/server/paymentApiMiddleware';
 
 const imageMemoryStore = new Map<string, Buffer>();
 
@@ -163,7 +162,8 @@ function handlePaymentsMiddleware(
     next();
     return;
   }
-  handlePaymentApiMiddleware(req, res)
+  import('./src/server/paymentApiMiddleware')
+    .then(({ handlePaymentApiMiddleware }) => handlePaymentApiMiddleware(req, res))
     .then((handled) => {
       if (!handled) next();
     })
