@@ -161,8 +161,10 @@ import {
   getOrCreateDeviceTokenHash,
   getRetentionPolicyForPassTier,
   getStoredStudioPass,
+  GiftOpenSource,
   hasDeviceClaimedRecipientGift,
   inspectBouquetPremiumUsage,
+  isEligibleRecipientGiftOpenSource,
   isEnvironmentPremium,
   isFlowerPremium,
   isFoundingPromoFreePass,
@@ -342,6 +344,9 @@ export default function App() {
   const [isSubmittingReaction, setIsSubmittingReaction] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [isGiftView, setIsGiftView] = useState<boolean>(initialGiftMode);
+  const [giftOpenSource, setGiftOpenSource] = useState<GiftOpenSource>(
+    initialGiftMode ? 'direct_link' : null
+  );
   const [isGiftEntranceOpen, setIsGiftEntranceOpen] = useState<boolean>(initialGiftMode);
   const [isReducedMotion, setIsReducedMotion] = useState<boolean>(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -1010,7 +1015,8 @@ export default function App() {
       _totalItems: number,
       fromEditorPreview = true,
       forceFullStory?: boolean,
-      overrideCodeKey?: string
+      overrideCodeKey?: string,
+      openSource?: GiftOpenSource
     ) => {
       if (unfurlTimerRef.current !== null) {
         window.clearTimeout(unfurlTimerRef.current);
@@ -1055,6 +1061,11 @@ export default function App() {
       setIsReactionPopoverOpen(false);
       setIsPreviewMode(fromEditorPreview);
       setIsGiftView(true);
+      if (fromEditorPreview) {
+        setGiftOpenSource('editor_preview');
+      } else if (openSource !== undefined) {
+        setGiftOpenSource(openSource);
+      }
       setDeliveryScene(nextScene);
       setIsEntranceUnfurling(false);
       setEntranceSlideProgress(0);
@@ -1438,6 +1449,7 @@ export default function App() {
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
+    setGiftOpenSource(null);
     setIsBloomRevealActive(false);
     setShowGiftCardReveal(true);
   }, [handleStopVoice]);
@@ -1485,6 +1497,7 @@ export default function App() {
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
+    setGiftOpenSource(null);
     setIsBloomRevealActive(false);
     setShowGiftCardReveal(true);
     trackStudioTelemetry({ eventType: 'recipient_to_studio' });
@@ -1524,19 +1537,24 @@ export default function App() {
     setIsGiftEntranceOpen(false);
     setIsGiftView(false);
     setIsPreviewMode(false);
+    setGiftOpenSource(null);
     setIsBloomRevealActive(false);
     setShowGiftCardReveal(true);
     setShowLandingPage(true);
   }, [resetStudioCanvasSession, selectItem, handleStopVoice]);
 
-  // Pay-It-Forward Recipient Gift Box: Wait ~3 seconds after bloom reveal finishes, then verify offer eligibility
+  // Pay-It-Forward Recipient Gift Box: Wait ~3 seconds after bloom reveal finishes, then verify offer eligibility.
+  // Strictly gated to direct recipient links (`giftOpenSource === 'direct_link'`) so browsing Shared Creations
+  // or Lace Garland showcases never triggers or steals the real recipient's gift offer.
   useEffect(() => {
     if (
       !isGiftView ||
       isPreviewMode ||
+      !isEligibleRecipientGiftOpenSource(giftOpenSource) ||
       isGiftEntranceOpen ||
       !isGiftBloomFinished ||
-      !activeShortCode
+      !activeShortCode ||
+      activeShortCode.startsWith('shw_')
     ) {
       return;
     }
@@ -1572,6 +1590,8 @@ export default function App() {
             deviceTokenHash,
             visibleStemCount,
             noteCharCount,
+            openSource: giftOpenSource,
+            openedFromShowcase: giftOpenSource !== 'direct_link',
           }),
         });
         const data = await res.json().catch(() => null);
@@ -1590,6 +1610,7 @@ export default function App() {
   }, [
     isGiftView,
     isPreviewMode,
+    giftOpenSource,
     isGiftEntranceOpen,
     isGiftBloomFinished,
     activeShortCode,
@@ -1598,7 +1619,14 @@ export default function App() {
   ]);
 
   const handleClaimRecipientGiftOffer = useCallback(async () => {
-    if (!activeShortCode || isClaimingRecipientGift) return;
+    if (
+      !activeShortCode ||
+      isClaimingRecipientGift ||
+      isPreviewMode ||
+      !isEligibleRecipientGiftOpenSource(giftOpenSource)
+    ) {
+      return;
+    }
     setIsClaimingRecipientGift(true);
     setRecipientGiftClaimError(null);
     try {
@@ -1614,6 +1642,8 @@ export default function App() {
           deviceTokenHash,
           visibleStemCount,
           noteCharCount,
+          openSource: giftOpenSource,
+          openedFromShowcase: giftOpenSource !== 'direct_link',
         }),
       });
       const data = await res.json().catch(() => null);
@@ -1647,7 +1677,16 @@ export default function App() {
     } finally {
       setIsClaimingRecipientGift(false);
     }
-  }, [activeShortCode, isClaimingRecipientGift, items, card?.message, handleCreateOwnFromShared, triggerToast]);
+  }, [
+    activeShortCode,
+    isClaimingRecipientGift,
+    isPreviewMode,
+    giftOpenSource,
+    items,
+    card?.message,
+    handleCreateOwnFromShared,
+    triggerToast,
+  ]);
 
   // Vercel Web Analytics + First-Party Telemetry + Auto-Unlock Tester Voucher Magic Links (`?voucher=BLOOM-...`)
   useEffect(() => {
@@ -1822,7 +1861,7 @@ export default function App() {
           setIsResolvingShortCode(false);
           setShowLandingPage(false);
           if (giftMode) {
-            startGiftBloomAnimation(shared.items.length, false, false, effectiveCode);
+            startGiftBloomAnimation(shared.items.length, false, false, effectiveCode, 'direct_link');
           } else {
             triggerToast('Loaded shared bouquet');
           }
@@ -1890,7 +1929,7 @@ export default function App() {
                   skipNextDirtyMarkRef.current = true;
                   loadSnapshot(hydratedSnap, { isSharedView: true });
                   selectItem(null);
-                  startGiftBloomAnimation(hydratedSnap.items.length, false, false, pathCode);
+                  startGiftBloomAnimation(hydratedSnap.items.length, false, false, pathCode, 'direct_link');
                 }
               }
             } catch {
@@ -2859,8 +2898,15 @@ export default function App() {
             setReturnToCreationsPage(Boolean(fromCreationsPage));
             setShowLandingPage(false);
             trackStudioTelemetry({ eventType: 'showcase_view' });
-            // Strictly view-only recipient mode (fromEditorPreview = false) so showcase creations cannot be edited
-            startGiftBloomAnimation(currentItems.length, false, false, entry?.code || entry?.id);
+            // Strictly view-only showcase browse mode (`openSource = 'showcase_browse'`) so browsing Shared Creations
+            // or the Lace Garland can neither edit nor claim the real recipient's Pay-It-Forward gift box.
+            startGiftBloomAnimation(
+              currentItems.length,
+              false,
+              false,
+              entry?.code || entry?.id,
+              'showcase_browse'
+            );
           }}
           onOpenVault={() => setIsVaultModalOpen(true)}
           vaultCount={vaultCount}
@@ -4420,7 +4466,11 @@ export default function App() {
               Appears ~3 seconds after bloom reveal finishes in a non-invasive
               responsive corner (`bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6`).
               =================================================================== */}
-              {isGiftView && !isPreviewMode && !isGiftEntranceOpen && isRecipientGiftBoxVisible && (
+              {isGiftView &&
+                !isPreviewMode &&
+                isEligibleRecipientGiftOpenSource(giftOpenSource) &&
+                !isGiftEntranceOpen &&
+                isRecipientGiftBoxVisible && (
                 <div className="absolute bottom-[4.75rem] right-3.5 sm:bottom-20 sm:right-6 z-30 pointer-events-auto animate-in fade-in zoom-in-95 duration-300">
                   <button
                     type="button"
@@ -7298,7 +7348,13 @@ export default function App() {
             loadSnapshot(decoded, { isSharedView: true });
             selectItem(null);
             setShowLandingPage(false);
-            startGiftBloomAnimation(decoded.items.length, false, false, isValidCode ? codeMatch : giftUrl);
+            startGiftBloomAnimation(
+              decoded.items.length,
+              false,
+              false,
+              isValidCode ? codeMatch : giftUrl,
+              'vault'
+            );
           }
           if (isValidCode) {
             const needsLockCheck = !hasDecoded || !decoded?.lock || decoded.lock.mode === 'none';
@@ -7308,7 +7364,7 @@ export default function App() {
               if (!hasDecoded) {
                 selectItem(null);
                 setShowLandingPage(false);
-                startGiftBloomAnimation(0, false, false, codeMatch);
+                startGiftBloomAnimation(0, false, false, codeMatch, 'vault');
               }
             }
             fetchSharedBouquetFromFirestore(codeMatch)
@@ -7327,7 +7383,7 @@ export default function App() {
                   if (!hasDecoded) {
                     selectItem(null);
                     setShowLandingPage(false);
-                    startGiftBloomAnimation(hydrated.items.length, false, false, codeMatch);
+                    startGiftBloomAnimation(hydrated.items.length, false, false, codeMatch, 'vault');
                   }
                 }
               })

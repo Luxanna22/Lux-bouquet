@@ -10,6 +10,7 @@ import {
   getPricingCatalog,
   getRetentionPolicyForPassTier,
   inspectBouquetPremiumUsage,
+  isEligibleRecipientGiftOpenSource,
   isFoundingPromoFreePass,
   isKofiLaunchStarterPass,
   isSilentRecipientGiftPass,
@@ -5367,6 +5368,291 @@ test('Discounted $0 order on paid Single item (prodSingle) does not consume Foun
       kofiLaunchEnabled: true,
       kofiLaunchMaxLimit: 30,
       resetKofiLaunchClaims: true,
+    });
+    paymentLib.resetOwnerVaultMetaForTests();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Shared Creations browse guard: browsing public gallery never receives or steals a direct recipient gift box', async () => {
+  // 1. Pure guard unit checks
+  assert.equal(isEligibleRecipientGiftOpenSource('direct_link'), true);
+  assert.equal(isEligibleRecipientGiftOpenSource('showcase_browse'), false);
+  assert.equal(isEligibleRecipientGiftOpenSource('vault'), false);
+  assert.equal(isEligibleRecipientGiftOpenSource('editor_preview'), false);
+  assert.equal(isEligibleRecipientGiftOpenSource(null), false);
+  assert.equal(isEligibleRecipientGiftOpenSource(undefined), false);
+
+  const showcaseBlocked = evaluateRecipientGiftClaimGuard({
+    recipientGiftEnabled: true,
+    globalClaimedCount: 0,
+    globalMaxLimit: 150,
+    slotStatus: 'OPEN',
+    slotHop: 1,
+    creatorDeviceHash: 'dev_sender_launch_01',
+    viewerDeviceHash: 'dev_gallery_browser_01',
+    openedFromShowcase: true,
+    openSource: 'showcase_browse',
+  });
+  assert.equal(showcaseBlocked.canShowAndClaim, false);
+  assert.equal(showcaseBlocked.reason, 'SHOWCASE_BROWSE_BLOCKED');
+
+  const vaultBlocked = evaluateRecipientGiftClaimGuard({
+    recipientGiftEnabled: true,
+    globalClaimedCount: 0,
+    globalMaxLimit: 150,
+    slotStatus: 'OPEN',
+    slotHop: 1,
+    creatorDeviceHash: 'dev_sender_launch_01',
+    viewerDeviceHash: 'dev_vault_viewer_01',
+    openSource: 'vault',
+  });
+  assert.equal(vaultBlocked.canShowAndClaim, false);
+  assert.equal(vaultBlocked.reason, 'SHOWCASE_BROWSE_BLOCKED');
+
+  const directAllowed = evaluateRecipientGiftClaimGuard({
+    recipientGiftEnabled: true,
+    globalClaimedCount: 0,
+    globalMaxLimit: 150,
+    slotStatus: 'OPEN',
+    slotHop: 1,
+    creatorDeviceHash: 'dev_sender_launch_01',
+    viewerDeviceHash: 'dev_real_recipient_01',
+    openedFromShowcase: false,
+    openSource: 'direct_link',
+  });
+  assert.equal(directAllowed.canShowAndClaim, true);
+  assert.equal(directAllowed.reason, 'ELIGIBLE');
+
+  // 2. Full server-side flow: Launch-Free sender seals bouquet -> gallery browser is blocked -> real recipient still claims!
+  const { EventEmitter } = await import('node:events');
+  // @ts-expect-error ESM serverless handler
+  const paymentLib = await import('../../api/_lib/paymentHandler.js');
+  // @ts-expect-error ESM serverless handler
+  const shortenMod = await import('../../api/shorten.js');
+  const { encodeBouquetToCompactPayload, computeShortCode } = await import('./shareAndExport');
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({ ok: false, status: 404, json: async () => ({}) })) as unknown as typeof fetch;
+
+  const makeReq = (method: string, url: string, bodyStr?: string) => {
+    const req = new EventEmitter() as InstanceType<typeof EventEmitter> & {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    req.method = method;
+    req.url = url;
+    req.headers = { 'content-type': 'application/json', host: 'sendabouquet.online' };
+    if (bodyStr !== undefined) {
+      setImmediate(() => {
+        req.emit('data', Buffer.from(bodyStr, 'utf8'));
+        req.emit('end');
+      });
+    }
+    return req;
+  };
+  const makeRes = () => {
+    let body = '';
+    return {
+      statusCode: 200,
+      headers: {} as Record<string, string>,
+      setHeader(k: string, v: string) {
+        this.headers[k.toLowerCase()] = v;
+      },
+      end(chunk?: string) {
+        if (chunk) body += chunk;
+      },
+      json() {
+        return JSON.parse(body || '{}');
+      },
+    };
+  };
+
+  try {
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
+    });
+
+    const senderDev = 'dev_launch_sender_gallery_test';
+    const launchPass = paymentLib.createSignedStudioPassServer({
+      tier: 'single',
+      region: 'INTL',
+      deviceTokenHash: senderDev,
+      secondaryDeviceHash: senderDev,
+      paymentProvider: 'kofi',
+      paymentReference: 'kofi_launch_free_gallery_test',
+    });
+    paymentLib.SERVER_PASS_STORE.set(launchPass.passKey, launchPass);
+
+    const snap = {
+      items: [
+        { id: 'f1', type: 'rose' as const, x: 260, y: 260, scale: 1, rotation: -8, flipX: false, petalColor: '#f43f5e', centerColor: '#be123c' },
+        { id: 'f2', type: 'peony' as const, x: 300, y: 245, scale: 1, rotation: 0, flipX: false, petalColor: '#fb7185', centerColor: '#fef08a' },
+        { id: 'f3', type: 'tulip' as const, x: 340, y: 265, scale: 1, rotation: 10, flipX: false, petalColor: '#f472b6', centerColor: '#fbcfe8' },
+      ],
+      wrapStyle: 'tissue' as const,
+      wrapColor: '#f5efe6',
+      ribbonColor: '#b4846c',
+      ribbonStyle: 'satin' as const,
+      environment: 'studio' as const,
+      bouquetPose: { x: 300, y: 386, scale: 0.86, rotation: 0 },
+      card: {
+        to: 'Claire',
+        from: 'Noah',
+        message: 'Made this bouquet just for you to celebrate your bright new week!',
+        x: 300,
+        y: 525,
+        rotation: -3,
+        scale: 1,
+        theme: 'cream' as const,
+        font: 'serif' as const,
+        shape: 'classic' as const,
+        visibleOnStage: true,
+      },
+    };
+    const payload = encodeBouquetToCompactPayload(snap, true);
+    const code = computeShortCode(payload);
+
+    const sealRes = makeRes();
+    await shortenMod.default(
+      makeReq(
+        'POST',
+        '/api/shorten',
+        JSON.stringify({
+          code,
+          payload,
+          origin: 'https://www.sendabouquet.online',
+          passKey: launchPass.passKey,
+          deviceTokenHash: senderDev,
+          activeSessionNonce: launchPass.activeSessionNonce,
+          pass: launchPass,
+        })
+      ),
+      sealRes
+    );
+    assert.equal(sealRes.statusCode, 200);
+    assert.equal(sealRes.json().recipientGiftSpawned, true);
+
+    // Random new user browsing Shared Creations unwraps this same bouquet -> MUST NOT be eligible or able to claim!
+    const galleryBrowserDev = 'dev_new_browser_creations_01';
+    const browseCheckRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'check_recipient_gift_offer',
+          bouquetCode: code,
+          deviceTokenHash: galleryBrowserDev,
+          visibleStemCount: 3,
+          noteCharCount: 64,
+          openSource: 'showcase_browse',
+          openedFromShowcase: true,
+        })
+      ),
+      browseCheckRes,
+      '/api/payments/verify-action'
+    );
+    assert.deepEqual(browseCheckRes.json(), { ok: true, eligible: false });
+
+    const browseClaimRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: code,
+          deviceTokenHash: galleryBrowserDev,
+          visibleStemCount: 3,
+          noteCharCount: 64,
+          openSource: 'showcase_browse',
+          openedFromShowcase: true,
+        })
+      ),
+      browseClaimRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(browseClaimRes.statusCode, 403);
+    assert.equal(browseClaimRes.json().ok, false);
+
+    // Curated showcase codes (`shw_*`) are also always rejected server-side
+    const curatedCheckRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'check_recipient_gift_offer',
+          bouquetCode: 'shw_sophia01',
+          deviceTokenHash: galleryBrowserDev,
+          visibleStemCount: 5,
+          noteCharCount: 50,
+          isCoutureOrSeed: true,
+        })
+      ),
+      curatedCheckRes,
+      '/api/payments/verify-action'
+    );
+    assert.deepEqual(curatedCheckRes.json(), { ok: true, eligible: false });
+
+    // Real recipient opens the sender's direct link -> slot is still OPEN and claim succeeds!
+    const realRecipientDev = 'dev_real_recipient_direct_01';
+    const directCheckRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'check_recipient_gift_offer',
+          bouquetCode: code,
+          deviceTokenHash: realRecipientDev,
+          visibleStemCount: 3,
+          noteCharCount: 64,
+          openSource: 'direct_link',
+          openedFromShowcase: false,
+        })
+      ),
+      directCheckRes,
+      '/api/payments/verify-action'
+    );
+    assert.deepEqual(directCheckRes.json(), { ok: true, eligible: true });
+
+    const directClaimRes = makeRes();
+    await paymentLib.handlePaymentEndpoint(
+      makeReq(
+        'POST',
+        '/api/payments/verify-action',
+        JSON.stringify({
+          action: 'claim_recipient_gift_offer',
+          bouquetCode: code,
+          deviceTokenHash: realRecipientDev,
+          visibleStemCount: 3,
+          noteCharCount: 64,
+          openSource: 'direct_link',
+          openedFromShowcase: false,
+        })
+      ),
+      directClaimRes,
+      '/api/payments/verify-action'
+    );
+    assert.equal(directClaimRes.statusCode, 200);
+    assert.equal(directClaimRes.json().ok, true);
+    assert.equal(isSilentRecipientGiftPass(directClaimRes.json().pass), true);
+  } finally {
+    paymentLib.updateFoundingLaunchPromoConfigServer({
+      kofiLaunchEnabled: true,
+      kofiLaunchMaxLimit: 30,
+      resetKofiLaunchClaims: true,
+      recipientGiftEnabled: true,
+      recipientGiftMaxLimit: 150,
+      resetRecipientGiftClaims: true,
     });
     paymentLib.resetOwnerVaultMetaForTests();
     globalThis.fetch = originalFetch;

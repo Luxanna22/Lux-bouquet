@@ -1116,18 +1116,22 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     };
   }, []);
   const [nowMs] = useState<number>(() => Date.now());
-  const [visibleSlots, setVisibleSlots] = useState<number>(() => {
-    if (typeof window === 'undefined') return 4;
-    if (window.innerWidth < 640) return 2;
-    if (window.innerWidth < 1024) return 3;
-    return 4;
+  const [viewportMetrics, setViewportMetrics] = useState<{ slots: number; height: number }>(() => {
+    if (typeof window === 'undefined') return { slots: 4, height: 900 };
+    const w = window.innerWidth;
+    const h = window.innerHeight || 900;
+    return { slots: w < 640 ? 2 : w < 1024 ? 3 : 4, height: h };
   });
+  const visibleSlots = viewportMetrics.slots;
+  const isShortMobileViewport = visibleSlots === 2 && viewportMetrics.height < 640;
+  const mobileCardsPerPage = isShortMobileViewport ? 2 : 4;
   const [activeCarouselStep, setActiveCarouselStep] = useState(0);
 
   const pageScrollWrapperRef = useRef<HTMLDivElement | null>(null);
   const pageScrollContentRef = useRef<HTMLDivElement | null>(null);
   const lenisRef = useRef<Lenis | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const progressBarFillRef = useRef<HTMLDivElement | null>(null);
   const currentOffsetRef = useRef<number>(0);
   const dragStartXRef = useRef<number | null>(null);
   const dragStartScrollRef = useRef<number>(0);
@@ -1143,22 +1147,37 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     [allActiveEntries, searchQuery, nowMs]
   );
 
-  // Responsive slot count (2 on mobile, 3 on tablet, 4 on desktop)
+  // Responsive slot count + visualViewport height awareness (handles mobile Safari/Chrome bars & keyboards)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onResize = () => {
       const w = window.innerWidth;
-      setVisibleSlots(w < 640 ? 2 : w < 1024 ? 3 : 4);
+      const h = Math.round(window.visualViewport?.height || window.innerHeight || 900);
+      const nextSlots = w < 640 ? 2 : w < 1024 ? 3 : 4;
+      setViewportMetrics((prev) =>
+        prev.slots === nextSlots && Math.abs(prev.height - h) < 8 ? prev : { slots: nextSlots, height: h }
+      );
     };
     onResize();
     window.addEventListener('resize', onResize, { passive: true });
-    return () => window.removeEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize, { passive: true });
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+    };
   }, []);
 
   const totalMobilePages = useMemo(
-    () => Math.max(1, Math.ceil(filteredEntries.length / 4)),
-    [filteredEntries.length]
+    () => Math.max(1, Math.ceil(filteredEntries.length / mobileCardsPerPage)),
+    [filteredEntries.length, mobileCardsPerPage]
   );
+
+  // Clamp active page when mobile viewport switches between 2-card and 4-card layouts
+  useEffect(() => {
+    if (visibleSlots === 2 && activeCarouselStep >= totalMobilePages) {
+      setActiveCarouselStep(Math.max(0, totalMobilePages - 1));
+    }
+  }, [visibleSlots, activeCarouselStep, totalMobilePages]);
 
   // Maximum carousel offset in item/page units so scrolling moves every creation across the lace garland
   const maxCarouselOffset = useMemo(() => {
@@ -1176,7 +1195,17 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   const totalScrollRangePx = Math.max(320, Math.round(maxCarouselOffset * scrollPerItemPx));
 
   const edgeY = 6;
-  const midY = visibleSlots === 2 ? 26 : visibleSlots === 3 ? 48 : 66;
+  const isCompactDesktopHeight = visibleSlots > 2 && viewportMetrics.height < 720;
+  const midY =
+    visibleSlots === 2
+      ? 20
+      : visibleSlots === 3
+      ? isCompactDesktopHeight
+        ? 36
+        : 46
+      : isCompactDesktopHeight
+      ? 48
+      : 60;
 
   const wakeLenisRafRef = useRef<(() => void) | null>(null);
   const [galleryMountedRange, setGalleryMountedRange] = useState<{ startIdx: number; endIdx: number }>(() =>
@@ -1212,6 +1241,15 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
       const scrollOffset = progress * maxCarouselOffset;
       currentOffsetRef.current = scrollOffset;
       syncGalleryMountedRange(scrollOffset);
+
+      if (progressBarFillRef.current) {
+        const minFill =
+          visibleSlots === 2
+            ? 1 / Math.max(1, totalMobilePages)
+            : Math.min(1, visibleSlots / Math.max(1, filteredEntries.length));
+        const visualScale = minFill + (1 - minFill) * progress;
+        progressBarFillRef.current.style.transform = `scaleX(${Math.max(0.08, Math.min(1, visualScale)).toFixed(4)})`;
+      }
 
       const maxSteps =
         visibleSlots === 2
@@ -1326,42 +1364,71 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
     applySingleLaceTransforms(0);
   }, [searchQuery, applySingleLaceTransforms]);
 
-  const scrollByStep = (deltaSteps: number) => {
-    if (visibleSlots === 2) {
-      const nextStep = Math.max(0, Math.min(totalMobilePages - 1, activeCarouselStep + deltaSteps));
-      setActiveCarouselStep(nextStep);
-      currentOffsetRef.current = nextStep;
-      const wrapper = pageScrollWrapperRef.current;
-      if (wrapper && maxCarouselOffset > 0) {
-        const targetScrollTop = (nextStep / maxCarouselOffset) * totalScrollRangePx;
-        if (lenisRef.current) {
-          lenisRef.current.scrollTo(targetScrollTop, { immediate: true });
-        } else {
-          wrapper.scrollTo({ top: targetScrollTop, behavior: 'instant' as ScrollBehavior });
+  const scrollByStep = useCallback(
+    (deltaSteps: number) => {
+      if (visibleSlots === 2) {
+        const nextStep = Math.max(0, Math.min(totalMobilePages - 1, activeCarouselStep + deltaSteps));
+        setActiveCarouselStep(nextStep);
+        currentOffsetRef.current = nextStep;
+        if (progressBarFillRef.current) {
+          const ratio = totalMobilePages <= 1 ? 1 : (nextStep + 1) / totalMobilePages;
+          progressBarFillRef.current.style.transform = `scaleX(${Math.max(0.08, Math.min(1, ratio)).toFixed(4)})`;
         }
+        const wrapper = pageScrollWrapperRef.current;
+        if (wrapper && maxCarouselOffset > 0) {
+          const targetScrollTop = (nextStep / maxCarouselOffset) * totalScrollRangePx;
+          if (lenisRef.current) {
+            lenisRef.current.scrollTo(targetScrollTop, { immediate: true });
+          } else {
+            wrapper.scrollTo({ top: targetScrollTop, behavior: 'instant' as ScrollBehavior });
+          }
+        }
+        return;
       }
-      return;
-    }
 
-    const wrapper = pageScrollWrapperRef.current;
-    if (!wrapper) return;
-    const targetOffset = Math.max(
-      0,
-      Math.min(maxCarouselOffset, Math.round(currentOffsetRef.current + deltaSteps))
-    );
-    const targetScrollTop =
-      maxCarouselOffset > 0 ? (targetOffset / maxCarouselOffset) * totalScrollRangePx : 0;
+      const wrapper = pageScrollWrapperRef.current;
+      if (!wrapper) return;
+      const targetOffset = Math.max(
+        0,
+        Math.min(maxCarouselOffset, Math.round(currentOffsetRef.current + deltaSteps))
+      );
+      const targetScrollTop =
+        maxCarouselOffset > 0 ? (targetOffset / maxCarouselOffset) * totalScrollRangePx : 0;
 
-    if (lenisRef.current) {
-      lenisRef.current.scrollTo(targetScrollTop, {
-        duration: 0.85,
-        easing: (t: number) => 1 - Math.pow(1 - t, 4),
-      });
-      wakeLenisRafRef.current?.();
-    } else {
-      wrapper.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
-    }
-  };
+      if (lenisRef.current) {
+        lenisRef.current.scrollTo(targetScrollTop, {
+          duration: 0.85,
+          easing: (t: number) => 1 - Math.pow(1 - t, 4),
+        });
+        wakeLenisRafRef.current?.();
+      } else {
+        wrapper.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+      }
+    },
+    [visibleSlots, totalMobilePages, activeCarouselStep, maxCarouselOffset, totalScrollRangePx]
+  );
+
+  // Keyboard navigation (Left/Right arrows to glide the garland)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        scrollByStep(1);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        scrollByStep(-1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [scrollByStep]);
 
   const triggerSmoothClose = (afterClose: () => void) => {
     if (isClosingRef.current) return;
@@ -1373,9 +1440,29 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
   };
 
   const mobilePageSlice = useMemo(() => {
-    const start = activeCarouselStep * 4;
-    return filteredEntries.slice(start, start + 4);
-  }, [filteredEntries, activeCarouselStep]);
+    const start = activeCarouselStep * mobileCardsPerPage;
+    return filteredEntries.slice(start, start + mobileCardsPerPage);
+  }, [filteredEntries, activeCarouselStep, mobileCardsPerPage]);
+
+  const desktopStepCount = Math.max(1, filteredEntries.length);
+  const desktopMaxStepIndex = Math.max(0, Math.round(maxCarouselOffset));
+  const isAtStart = activeCarouselStep <= 0;
+  const isAtEnd =
+    visibleSlots === 2
+      ? activeCarouselStep >= totalMobilePages - 1
+      : activeCarouselStep >= desktopMaxStepIndex;
+
+  // Dynamic card sizing formulas driven by actual remaining stage container height (`cqh`) and width (`cqw`)
+  const desktopCardWidthExpr =
+    visibleSlots === 3
+      ? `clamp(142px, min(26.5cqw, calc((100cqh - ${midY + 52}px) / 1.32)), 214px)`
+      : `clamp(144px, min(20.5cqw, calc((100cqh - ${midY + 54}px) / 1.32)), 234px)`;
+  const desktopTrackHeightExpr = `min(100cqh, calc(${desktopCardWidthExpr} * 1.33 + ${midY + 46}px))`;
+
+  const mobileCardWidthExpr = isShortMobileViewport
+    ? 'clamp(132px, min(43cqw, calc((100cqh - 66px) / 1.35)), 184px)'
+    : 'clamp(112px, min(41.5cqw, calc((50cqh - 60px) / 1.35)), 162px)';
+  const mobileSingleRowHeightExpr = `min(100cqh, calc(${mobileCardWidthExpr} * 1.35 + 52px))`;
 
   const pageContent = (
     <div
@@ -1419,141 +1506,176 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
         style={{ height: `calc(100dvh + ${totalScrollRangePx}px)` }}
         className="w-full relative"
       >
-        {/* SINGLE-SCREEN LOCKED STAGE (100dvh) */}
+        {/* SINGLE-SCREEN LOCKED STAGE (100dvh — adapts seamlessly to browser tabs, address bars & safe areas) */}
         <div
           data-testid="single-screen-lace-stage"
-          className="sticky top-0 h-dvh w-full overflow-hidden flex flex-col justify-between sm:justify-start select-none"
+          className="sticky top-0 h-dvh w-full overflow-hidden flex flex-col select-none"
         >
-          {/* 1. FLOATING PILL NAVBAR (Consistent with Landing & Studio Header) + COMPACT EDITORIAL TITLE & SEARCH */}
-          <div className="w-full shrink-0 z-30">
-            <header className="w-full max-w-5xl mx-auto px-2.5 sm:px-6 pt-2 sm:pt-3">
-              <div
-                className={`h-11 sm:h-12 px-2.5 sm:px-4 rounded-full border border-dashed shadow-[0_6px_24px_rgba(35,28,24,0.05)] flex items-center justify-between gap-2 transition-colors ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/95 border-[#574843] text-[#FBF6F1]'
-                    : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#231C18]'
-                }`}
-              >
-                {/* Left: Back to Home + Brand */}
-                <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => triggerSmoothClose(onBackToHome)}
-                    data-testid="creations-back-home-btn"
-                    className={`h-8 sm:h-8.5 px-3 sm:px-3.5 rounded-full border border-dashed text-xs font-medium inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 ${
-                      isDarkMode
-                        ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                        : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                    }`}
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Back</span>
-                  </button>
+          {/* 1. QUIET EDITORIAL TOP NAVIGATION RAIL (Steps back visually so the gallery title & bouquets lead) */}
+          <header
+            className={`w-full shrink-0 z-30 border-b backdrop-blur-md transition-colors ${
+              isDarkMode
+                ? 'bg-[#2B2321]/92 border-[#433733] text-[#FBF6F1]'
+                : 'bg-[#FDF9F5]/92 border-[#ECE1D5] text-[#231C18]'
+            }`}
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+          >
+            <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-10 h-12 sm:h-14 flex items-center justify-between gap-3">
+              {/* Left Zone: Quiet Back Link + Hairline Divider + Brand Wordmark */}
+              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onBackToHome)}
+                  data-testid="creations-back-home-btn"
+                  className={`h-9 px-2 -ml-2 rounded-lg text-xs sm:text-[13px] font-medium inline-flex items-center gap-1.5 transition-colors active:scale-95 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A67F6A]/40 ${
+                    isDarkMode
+                      ? 'text-[#D6C4BA] hover:text-[#FBF6F1] hover:bg-[#3A302C]'
+                      : 'text-[#6A5346] hover:text-[#1F1815] hover:bg-[#F3EAE0]'
+                  }`}
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                  <span>Back</span>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => triggerSmoothClose(onBackToHome)}
-                    className="flex items-center gap-1.5 sm:gap-2 cursor-pointer hover:opacity-85 transition"
-                  >
-                    <BrandLogoMark className="w-5.5 h-5.5 sm:w-6 sm:h-6 shrink-0" isDarkMode={isDarkMode} />
-                    <span
-                      className="hidden sm:inline text-lg sm:text-xl font-semibold tracking-tight whitespace-nowrap"
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                    >
-                      Send A Bouquet
-                    </span>
-                  </button>
-                </div>
-
-                {/* Right: Theme Toggle, Compact Saved Bouquets Pill & Craft CTA (Never wraps on mobile) */}
-                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={onToggleDarkMode}
-                    aria-label="Toggle theme"
-                    className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-dashed flex items-center justify-center transition-colors active:scale-95 cursor-pointer shrink-0 ${
-                      isDarkMode
-                        ? 'bg-[#423734]/70 border-[#66554F] text-[#E6B89C] hover:bg-[#4D403C]'
-                        : 'bg-[#FAF4EE]/85 border-[#DECBB9] text-[#5C4438] hover:bg-[#F3E9DF]'
-                    }`}
-                  >
-                    {isDarkMode ? (
-                      <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" />
-                    ) : (
-                      <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => triggerSmoothClose(onOpenVault)}
-                    aria-label="Saved Bouquets"
-                    title="Saved Bouquets"
-                    className={`inline-flex h-8 sm:h-8.5 px-2.5 sm:px-3.5 rounded-full border border-dashed text-xs font-medium items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ${
-                      isDarkMode
-                        ? 'bg-[#423734] border-[#66554F] text-[#FBF6F1] hover:bg-[#4D403C]'
-                        : 'bg-[#FAF4EE] border-[#D8C4B4] text-[#5C4438] hover:bg-[#F3E9DF]'
-                    }`}
-                  >
-                    <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
-                    <span className="hidden md:inline">Saved Bouquets</span>
-                    {vaultCount > 0 && (
-                      <span
-                        className={`text-[11px] font-semibold tabular-nums ${
-                          isDarkMode ? 'text-[#F0C8B0]' : 'text-[#7A4B3A]'
-                        }`}
-                      >
-                        {vaultCount}
-                      </span>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => triggerSmoothClose(onStartCrafting)}
-                    className={`h-8 sm:h-8.5 px-3.5 sm:px-4 rounded-full text-white text-xs font-medium inline-flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ${
-                      isDarkMode
-                        ? 'bg-[#9A6550] hover:bg-[#875642]'
-                        : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
-                    }`}
-                  >
-                    Craft a Bouquet
-                  </button>
-                </div>
-              </div>
-            </header>
-
-            {/* Compact Editorial Title + Unified "For / From" Search Input */}
-            <div className="max-w-xl mx-auto px-3 pt-1.5 sm:pt-3 text-center">
-              <h1
-                className={`text-[22px] sm:text-3xl lg:text-[34px] font-semibold tracking-tight leading-none ${
-                  isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
-                }`}
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              >
-                On the <span className="italic font-normal">Lace Garland</span>
-              </h1>
-
-              <label
-                className={`mt-1.5 sm:mt-2 max-w-md mx-auto rounded-full border border-dashed px-3.5 sm:px-4 py-1 sm:py-2 flex items-center gap-2 transition-colors shadow-[0_6px_22px_rgba(122,75,58,0.04)] cursor-text ${
-                  isDarkMode
-                    ? 'bg-[#352C29]/95 border-[#574843] focus-within:border-[#8A7267]'
-                    : 'bg-[#FFFDF9]/95 border-[#DECBB9] focus-within:border-[#B5967E]'
-                }`}
-              >
-                <Search
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
-                    isDarkMode ? 'text-[#C8B2A6]' : 'text-[#9A8274]'
+                <span
+                  aria-hidden="true"
+                  className={`h-4 w-px shrink-0 ${
+                    isDarkMode ? 'bg-[#4C3F3A]' : 'bg-[#E4D6C8]'
                   }`}
                 />
-                <span
-                  className={`text-[13.5px] sm:text-[15px] italic font-medium shrink-0 select-none ${
-                    isDarkMode ? 'text-[#E6B89C]' : 'text-[#7A4B3A]'
+
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onBackToHome)}
+                  className="flex items-center gap-2 cursor-pointer hover:opacity-85 transition-opacity shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A67F6A]/40 rounded-lg py-1"
+                >
+                  <BrandLogoMark className="w-5.5 h-5.5 sm:w-6 sm:h-6 shrink-0" isDarkMode={isDarkMode} />
+                  <span
+                    className="hidden sm:inline text-[18px] lg:text-[19px] font-semibold tracking-tight whitespace-nowrap"
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  >
+                    Send A Bouquet
+                  </span>
+                </button>
+              </div>
+
+              {/* Right Zone: Quiet Utilities + Single Primary Focal CTA */}
+              <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={onToggleDarkMode}
+                  aria-label="Toggle theme"
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A67F6A]/40 ${
+                    isDarkMode
+                      ? 'text-[#E6B89C] hover:bg-[#3A302C]'
+                      : 'text-[#6A5346] hover:bg-[#F3EAE0]'
+                  }`}
+                >
+                  {isDarkMode ? (
+                    <Sun className="w-4 h-4 text-amber-300" />
+                  ) : (
+                    <Moon className="w-4 h-4" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onOpenVault)}
+                  aria-label="Saved Bouquets"
+                  title="Saved Bouquets"
+                  className={`inline-flex h-9 px-2.5 sm:px-3 rounded-lg text-xs sm:text-[13px] font-medium items-center gap-1.5 transition-colors active:scale-95 cursor-pointer shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A67F6A]/40 ${
+                    isDarkMode
+                      ? 'text-[#E4D5CC] hover:text-[#FBF6F1] hover:bg-[#3A302C]'
+                      : 'text-[#5C4438] hover:text-[#1F1815] hover:bg-[#F3EAE0]'
+                  }`}
+                >
+                  <Bookmark className="w-3.5 h-3.5 text-[#B4846C] shrink-0" />
+                  <span className="hidden md:inline">Saved Bouquets</span>
+                  {vaultCount > 0 && (
+                    <span
+                      className={`text-[11px] font-semibold tabular-nums ${
+                        isDarkMode ? 'text-[#E6B89C]' : 'text-[#8C5B47]'
+                      }`}
+                    >
+                      {vaultCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => triggerSmoothClose(onStartCrafting)}
+                  className={`h-9 sm:h-9.5 px-4 sm:px-5 rounded-full text-white text-xs sm:text-[13px] font-medium inline-flex items-center justify-center transition-colors active:scale-95 cursor-pointer shrink-0 whitespace-nowrap shadow-[0_2px_10px_rgba(122,75,58,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#7A4B3A] ${
+                    isDarkMode
+                      ? 'bg-[#9A6550] hover:bg-[#875642]'
+                      : 'bg-[#7A4B3A] hover:bg-[#633B2C]'
+                  }`}
+                >
+                  Craft a Bouquet
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* 2. EDITORIAL GALLERY MASTHEAD (Primary Title + Unboxed Context on Left, Clean Search on Right) */}
+          <div className="w-full shrink-0 z-30">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 pt-2.5 sm:pt-4 lg:pt-5 pb-1.5 sm:pb-2 flex flex-col md:flex-row md:items-end md:justify-between gap-2 sm:gap-3 md:gap-6">
+              <div className="min-w-0">
+                <h1
+                  className={`text-[25px] sm:text-[34px] lg:text-[40px] font-semibold tracking-[-0.02em] leading-[1.04] ${
+                    isDarkMode ? 'text-[#FBF6F1]' : 'text-[#1F1815]'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
-                  For / From
-                </span>
+                  On the <span className="italic font-normal">Lace Garland</span>
+                </h1>
+                <div
+                  className={`mt-0.5 sm:mt-1 flex items-center gap-2 text-[12px] sm:text-[13px] leading-snug ${
+                    isDarkMode ? 'text-[#B5A197]' : 'text-[#7D685D]'
+                  }`}
+                >
+                  {searchQuery.trim() ? (
+                    <>
+                      <span
+                        className={`font-medium tabular-nums ${
+                          isDarkMode ? 'text-[#E8D5CB]' : 'text-[#543E33]'
+                        }`}
+                      >
+                        {filteredEntries.length} {filteredEntries.length === 1 ? 'match' : 'matches'}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="truncate">for “{searchQuery.trim()}”</span>
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className={`font-medium tabular-nums ${
+                          isDarkMode ? 'text-[#E8D5CB]' : 'text-[#543E33]'
+                        }`}
+                      >
+                        {filteredEntries.length} shared bouquets
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="truncate">
+                        {visibleSlots === 2 ? 'Tap any keepsake to unwrap' : 'Click any keepsake to unwrap'}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <label
+                className={`w-full md:w-[300px] lg:w-[348px] h-9.5 sm:h-10.5 rounded-full border px-3.5 sm:px-4 flex items-center gap-2.5 transition-all cursor-text shrink-0 ${
+                  isDarkMode
+                    ? 'bg-[#352C29] border-[#52433D] focus-within:border-[#9E8072] focus-within:ring-2 focus-within:ring-[#9E8072]/20'
+                    : 'bg-[#FFFDF9] border-[#E3D5C7] focus-within:border-[#B28C76] focus-within:ring-2 focus-within:ring-[#B28C76]/15 shadow-[0_1px_2px_rgba(35,28,24,0.03)]'
+                }`}
+              >
+                <Search
+                  className={`w-4 h-4 shrink-0 ${
+                    isDarkMode ? 'text-[#B59F94]' : 'text-[#9A8274]'
+                  }`}
+                />
                 <input
                   type="text"
                   value={searchQuery}
@@ -1561,10 +1683,10 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                   placeholder="Search recipient or sender…"
                   aria-label="Search bouquets by recipient (For) or sender (From)"
                   data-testid="showcase-search-unified"
-                  className={`w-full min-w-0 bg-transparent text-[13px] sm:text-sm focus:outline-none ${
+                  className={`w-full min-w-0 bg-transparent text-[13px] sm:text-[13.5px] focus:outline-none ${
                     isDarkMode
                       ? 'text-[#FBF6F1] placeholder:text-[#9E8C82]'
-                      : 'text-[#231C18] placeholder:text-[#A39084]'
+                      : 'text-[#231C18] placeholder:text-[#9F8B7F]'
                   }`}
                 />
                 {searchQuery.trim() && (
@@ -1573,7 +1695,7 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                     onClick={() => setSearchQuery('')}
                     aria-label="Clear search"
                     data-testid="showcase-search-clear"
-                    className={`p-1 rounded-full transition cursor-pointer shrink-0 ${
+                    className={`w-6 h-6 -mr-1 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                       isDarkMode
                         ? 'text-[#D8C7BE] hover:bg-[#483C38]'
                         : 'text-[#7A685D] hover:bg-[#F3ECE3]'
@@ -1586,9 +1708,10 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             </div>
           </div>
 
-          {/* 2. MIDDLE: HANGING LACE GARLAND STAGE (2 Draped Lace Rows of 2 Cards on Mobile = 4 Cards/Screen; 1 Sweeping Lace Line of 4 Cards on Desktop) */}
-          <div
-            className="relative flex-1 min-h-0 w-full flex flex-col items-center justify-between sm:justify-start pt-1 sm:pt-2 pb-2 sm:pb-0 overflow-x-hidden overflow-y-visible"
+          {/* 3. HERO STAGE: CONTAINER-SIZED, OPTICALLY CENTERED CATENARY LACE GARLAND */}
+          <main
+            className="relative flex-1 min-h-0 w-full flex flex-col items-center justify-center overflow-hidden"
+            style={{ containerType: 'size' }}
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button, input, label')) return;
               dragStartXRef.current = e.clientX;
@@ -1625,24 +1748,31 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
             {filteredEntries.length === 0 ? (
               <div
                 data-testid="showcase-empty-state"
-                className={`max-w-sm mx-auto mt-8 rounded-[24px] border border-dashed py-9 px-6 text-center ${
+                className={`max-w-sm mx-4 rounded-2xl border py-8 px-6 text-center ${
                   isDarkMode
-                    ? 'bg-[#352C29]/80 border-[#574843]'
-                    : 'bg-[#FFFDF9]/90 border-[#DECBB9]'
+                    ? 'bg-[#352C29]/85 border-[#52433D]'
+                    : 'bg-[#FFFDF9] border-[#E5D7C9] shadow-[0_6px_24px_rgba(35,28,24,0.04)]'
                 }`}
               >
                 <p
-                  className={`text-xl font-semibold ${
+                  className={`text-2xl font-semibold ${
                     isDarkMode ? 'text-[#FBF6F1]' : 'text-[#231C18]'
                   }`}
                   style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
                 >
                   No bouquets found for “{searchQuery.trim()}”
                 </p>
+                <p
+                  className={`mt-1.5 text-xs ${
+                    isDarkMode ? 'text-[#B5A197]' : 'text-[#7D685D]'
+                  }`}
+                >
+                  Try searching by a different recipient or sender name.
+                </p>
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className={`mt-4 px-5 py-2 rounded-full border border-dashed text-xs font-medium transition cursor-pointer ${
+                  className={`mt-4 h-9 px-5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
                     isDarkMode
                       ? 'border-[#66554F] bg-[#423734] text-[#FBF6F1] hover:bg-[#4D403C]'
                       : 'border-[#D8C4B4] bg-[#FAF4EE] text-[#5C4438] hover:bg-[#F3E9DF]'
@@ -1652,211 +1782,251 @@ export const CreationsGalleryPageView: React.FC<CreationsGalleryPageViewProps> =
                 </button>
               </div>
             ) : visibleSlots === 2 ? (
-              <>
-                {/* MOBILE 2-TIER DRAPED CATENARY LACE GARLAND (4 Bouquets Per Screen — Zero Wasted Viewport Space) */}
-                <div
-                  data-testid="single-lace-carousel-track"
-                  className="w-full flex-1 min-h-0 flex flex-col justify-evenly gap-1"
-                >
-                  {[mobilePageSlice.slice(0, 2), mobilePageSlice.slice(2, 4)]
-                    .filter((rowEntries) => rowEntries.length > 0)
-                    .map((rowEntries, rowIdx) => (
-                      <div
-                        key={`mobile-lace-row-${rowIdx}-${activeCarouselStep}`}
-                        className="relative w-full h-[256px] min-[390px]:h-[270px] shrink-0"
-                      >
-                        <div className="absolute top-0 inset-x-0 z-0">
-                          <SweepingCatenaryLaceLineSVG
-                            isDarkMode={isDarkMode}
-                            edgeY={5}
-                            midY={22}
-                          />
-                        </div>
-                        <div className="absolute inset-0 z-10">
-                          {rowEntries.map((entry, colIdx) => {
-                            const isSingleInRow = rowEntries.length === 1;
-                            const u = isSingleInRow ? 0.5 : colIdx === 0 ? 0.255 : 0.745;
-                            const yCurvePx = evaluateCatenaryCurveY(u, 5, 22);
-                            const rotateDeg = isSingleInRow ? 0 : colIdx === 0 ? 0.75 : -0.75;
-                            return (
-                              <div
-                                key={entry.id}
-                                data-testid={`showcase-card-${entry.code}`}
-                                style={{
-                                  left: `${(u * 100).toFixed(1)}%`,
-                                  transform: `translate3d(-50%, ${yCurvePx.toFixed(1)}px, 0) rotate(${rotateDeg}deg)`,
-                                }}
-                                className="absolute top-0 w-[154px] min-[380px]:w-[164px] transition-all duration-300"
-                              >
-                                <HangingCreationCard
-                                  entry={entry}
-                                  isDarkMode={isDarkMode}
-                                  disableStaticTilt
-                                  onUnwrap={(selected) =>
-                                    triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
-                                  }
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
+              /* MOBILE GARLAND STAGE: Container-fitted 2 rows (4 cards/page) on standard phones, 1 generous row (2 cards/page) when height is tight */
+              <div
+                data-testid="single-lace-carousel-track"
+                className="w-full h-full flex flex-col justify-center"
+              >
+                {(isShortMobileViewport
+                  ? [mobilePageSlice.slice(0, 2)]
+                  : [mobilePageSlice.slice(0, 2), mobilePageSlice.slice(2, 4)]
+                )
+                  .filter((rowEntries) => rowEntries.length > 0)
+                  .map((rowEntries, rowIdx) => (
+                    <div
+                      key={`mobile-lace-row-${rowIdx}-${activeCarouselStep}-${isShortMobileViewport ? '1r' : '2r'}`}
+                      style={isShortMobileViewport ? { height: mobileSingleRowHeightExpr } : undefined}
+                      className={
+                        isShortMobileViewport
+                          ? 'relative w-full shrink-0'
+                          : 'relative w-full flex-1 min-h-0'
+                      }
+                    >
+                      <div className="absolute top-0 inset-x-0 z-0">
+                        <SweepingCatenaryLaceLineSVG
+                          isDarkMode={isDarkMode}
+                          edgeY={4}
+                          midY={18}
+                        />
                       </div>
-                    ))}
-                </div>
-
-                {/* MOBILE PAGE CONTROLS */}
-                <div className="w-full shrink-0 pt-1 pb-1.5 px-4 z-30 flex items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => scrollByStep(-1)}
-                    aria-label="Glide carousel right (previous creation)"
-                    data-testid="lace-carousel-prev"
-                    className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer shadow-2xs ${
-                      isDarkMode
-                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
-                        : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
-                    }`}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-
-                  <div
-                    className={`px-4 py-1.5 rounded-full border border-dashed text-xs tabular-nums shadow-2xs ${
-                      isDarkMode
-                        ? 'bg-[#352C29]/90 border-[#574843] text-[#E5D6CE]'
-                        : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#5C4438]'
-                    }`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    <span className="font-semibold">
-                      {Math.min(totalMobilePages, activeCarouselStep + 1)} / {totalMobilePages}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => scrollByStep(1)}
-                    aria-label="Glide carousel left (next creation)"
-                    data-testid="lace-carousel-next"
-                    className={`w-9 h-9 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer shadow-2xs ${
-                      isDarkMode
-                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
-                        : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
-                    }`}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </>
+                      <div className="absolute inset-0 z-10">
+                        {rowEntries.map((entry, colIdx) => {
+                          const isSingleInRow = rowEntries.length === 1;
+                          const u = isSingleInRow ? 0.5 : colIdx === 0 ? 0.26 : 0.74;
+                          const yCurvePx = evaluateCatenaryCurveY(u, 4, 18);
+                          const rotateDeg = isSingleInRow ? 0 : colIdx === 0 ? 0.7 : -0.7;
+                          return (
+                            <div
+                              key={entry.id}
+                              data-testid={`showcase-card-${entry.code}`}
+                              style={{
+                                left: `${(u * 100).toFixed(1)}%`,
+                                width: mobileCardWidthExpr,
+                                transform: `translate3d(-50%, ${yCurvePx.toFixed(1)}px, 0) rotate(${rotateDeg}deg)`,
+                              }}
+                              className="absolute top-0 transition-all duration-300"
+                            >
+                              <HangingCreationCard
+                                entry={entry}
+                                isDarkMode={isDarkMode}
+                                disableStaticTilt
+                                onUnwrap={(selected) =>
+                                  triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
+                                }
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+              </div>
             ) : (
-              <>
-                <div
-                  data-testid="single-lace-carousel-track"
-                  className="relative w-full h-[376px] lg:h-[432px] shrink-0"
-                >
-                  {/* The ONE Sweeping Catenary Lace Cord Across the Screen */}
-                  <div className="absolute top-0 inset-x-0 z-0">
-                    <SweepingCatenaryLaceLineSVG
-                      isDarkMode={isDarkMode}
-                      edgeY={edgeY}
-                      midY={midY}
-                    />
-                  </div>
-
-                  {/* Hanging Creations Gliding From Right to Left Along the Single Catenary Curve */}
-                  <div className="absolute inset-0 z-10">
-                    {filteredEntries.map((entry, idx) => {
-                      const initial = computeSingleLaceCarouselItemTransform(
-                        idx,
-                        filteredEntries.length,
-                        0,
-                        visibleSlots,
-                        entry.tiltDeg,
-                        edgeY,
-                        midY
-                      );
-                      const isWithinMountWindow =
-                        idx >= galleryMountedRange.startIdx && idx <= galleryMountedRange.endIdx;
-                      return (
-                        <div
-                          key={entry.id}
-                          ref={(el) => {
-                            itemRefs.current[idx] = el;
-                          }}
-                          data-testid={`showcase-card-${entry.code}`}
-                          data-hidden={initial.isVisible ? '0' : '1'}
-                          style={{
-                            left: `${initial.xPercent}%`,
-                            transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
-                            opacity: initial.opacity,
-                            pointerEvents: initial.isVisible ? 'auto' : 'none',
-                            visibility: initial.isVisible ? 'visible' : 'hidden',
-                            willChange: initial.isVisible ? 'transform, opacity' : 'auto',
-                            contain: 'layout style paint',
-                          }}
-                          className="absolute top-0 w-[clamp(172px,23.5vh,214px)] lg:w-[clamp(182px,25vh,228px)]"
-                        >
-                          <HangingCreationCard
-                            entry={entry}
-                            isDarkMode={isDarkMode}
-                            disableStaticTilt
-                            deferIllustration={!isWithinMountWindow}
-                            onUnwrap={(selected) =>
-                              triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
-                            }
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+              /* DESKTOP & TABLET SINGLE SWEEPING CATENARY LACE GARLAND */
+              <div
+                data-testid="single-lace-carousel-track"
+                style={{ height: desktopTrackHeightExpr }}
+                className="relative w-full shrink-0"
+              >
+                {/* The ONE Sweeping Catenary Lace Cord Across the Viewport */}
+                <div className="absolute top-0 inset-x-0 z-0">
+                  <SweepingCatenaryLaceLineSVG
+                    isDarkMode={isDarkMode}
+                    edgeY={edgeY}
+                    midY={midY}
+                  />
                 </div>
 
-                {/* 3. CAROUSEL STEP CONTROLS — Positioned Directly Under the Hanging Cards (Never Stranded at Bottom Edge) */}
-                <div className="w-full shrink-0 mt-4 pb-2 px-4 z-30 flex items-center justify-center gap-3">
+                {/* Hanging Creations Gliding From Right to Left Along the Single Catenary Curve */}
+                <div className="absolute inset-0 z-10">
+                  {filteredEntries.map((entry, idx) => {
+                    const initial = computeSingleLaceCarouselItemTransform(
+                      idx,
+                      filteredEntries.length,
+                      0,
+                      visibleSlots,
+                      entry.tiltDeg,
+                      edgeY,
+                      midY
+                    );
+                    const isWithinMountWindow =
+                      idx >= galleryMountedRange.startIdx && idx <= galleryMountedRange.endIdx;
+                    return (
+                      <div
+                        key={entry.id}
+                        ref={(el) => {
+                          itemRefs.current[idx] = el;
+                        }}
+                        data-testid={`showcase-card-${entry.code}`}
+                        data-hidden={initial.isVisible ? '0' : '1'}
+                        style={{
+                          left: `${initial.xPercent}%`,
+                          width: desktopCardWidthExpr,
+                          transform: `translate3d(-50%, ${initial.yCurvePx}px, 0) rotate(${initial.rotateDeg}deg) scale(${initial.scale})`,
+                          opacity: initial.opacity,
+                          pointerEvents: initial.isVisible ? 'auto' : 'none',
+                          visibility: initial.isVisible ? 'visible' : 'hidden',
+                          willChange: initial.isVisible ? 'transform, opacity' : 'auto',
+                          contain: 'layout style paint',
+                        }}
+                        className="absolute top-0"
+                      >
+                        <HangingCreationCard
+                          entry={entry}
+                          isDarkMode={isDarkMode}
+                          disableStaticTilt
+                          deferIllustration={!isWithinMountWindow}
+                          onUnwrap={(selected) =>
+                            triggerSmoothClose(() => onUnwrapShowcaseBouquet(selected))
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Soft Edge Vignettes so Entering/Exiting Cards Dissolve Smoothly Instead of Hard Viewport Clipping */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 left-0 w-10 lg:w-16 z-20"
+                  style={{
+                    background: isDarkMode
+                      ? 'linear-gradient(90deg, #2B2321 0%, rgba(43,35,33,0.55) 45%, rgba(43,35,33,0) 100%)'
+                      : 'linear-gradient(90deg, #FDF9F5 0%, rgba(253,249,245,0.55) 45%, rgba(253,249,245,0) 100%)',
+                  }}
+                />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 right-0 w-10 lg:w-16 z-20"
+                  style={{
+                    background: isDarkMode
+                      ? 'linear-gradient(270deg, #2B2321 0%, rgba(43,35,33,0.55) 45%, rgba(43,35,33,0) 100%)'
+                      : 'linear-gradient(270deg, #FDF9F5 0%, rgba(253,249,245,0.55) 45%, rgba(253,249,245,0) 100%)',
+                  }}
+                />
+              </div>
+            )}
+          </main>
+
+          {/* 4. GROUNDED QUIET FOOTER CONTROL RAIL (Clean Hairline Controls + Progress Track + Safe-Area Support) */}
+          {filteredEntries.length > 0 && (
+            <footer
+              className={`w-full shrink-0 z-30 border-t transition-colors ${
+                isDarkMode
+                  ? 'bg-[#2B2321]/92 border-[#433733]/75'
+                  : 'bg-[#FDF9F5]/92 border-[#ECE1D5]/85'
+              }`}
+              style={{
+                paddingBottom: 'max(0.65rem, env(safe-area-inset-bottom, 0px))',
+              }}
+            >
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 pt-2.5 flex items-center justify-center sm:justify-between gap-4">
+                <p
+                  className={`hidden sm:block text-xs w-52 whitespace-nowrap ${
+                    isDarkMode ? 'text-[#A69288]' : 'text-[#8C766A]'
+                  }`}
+                >
+                  Scroll or drag along the lace
+                </p>
+
+                <div className="flex items-center gap-4">
                   <button
                     type="button"
                     onClick={() => scrollByStep(-1)}
+                    disabled={isAtStart}
                     aria-label="Glide carousel right (previous creation)"
                     data-testid="lace-carousel-prev"
-                    className={`w-9.5 h-9.5 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer shadow-2xs ${
+                    className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer active:scale-95 disabled:opacity-35 disabled:cursor-default disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A67F6A]/40 ${
                       isDarkMode
-                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
-                        : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+                        ? 'bg-[#352C29] border-[#52433D] text-[#FBF6F1] hover:bg-[#413632]'
+                        : 'bg-[#FFFDF9] border-[#DFD0C1] text-[#4A382E] hover:bg-[#F6EFE6]'
                     }`}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
 
-                  <div
-                    className={`px-4 py-1.5 rounded-full border border-dashed text-[13px] tabular-nums shadow-2xs ${
-                      isDarkMode
-                        ? 'bg-[#352C29]/90 border-[#574843] text-[#E5D6CE]'
-                        : 'bg-[#FFFDF9]/95 border-[#DECBB9] text-[#5C4438]'
-                    }`}
-                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                  >
-                    <span className="font-semibold">
-                      {Math.min(filteredEntries.length, activeCarouselStep + 1)} / {filteredEntries.length}
+                  <div className="flex flex-col items-center gap-1.5 min-w-[92px]">
+                    <span
+                      className={`text-[13px] font-medium tabular-nums tracking-[0.04em] leading-none ${
+                        isDarkMode ? 'text-[#EFE3DA]' : 'text-[#4A382E]'
+                      }`}
+                    >
+                      {visibleSlots === 2
+                        ? `${Math.min(totalMobilePages, activeCarouselStep + 1)} / ${totalMobilePages}`
+                        : `${Math.min(desktopStepCount, activeCarouselStep + 1)} / ${desktopStepCount}`}
                     </span>
+                    <div
+                      aria-hidden="true"
+                      className={`w-20 sm:w-24 h-[2px] rounded-full overflow-hidden ${
+                        isDarkMode ? 'bg-[#463934]' : 'bg-[#E7DACD]'
+                      }`}
+                    >
+                      <div
+                        ref={progressBarFillRef}
+                        className={`h-full w-full origin-left rounded-full transition-transform duration-150 ${
+                          isDarkMode ? 'bg-[#D8A88E]' : 'bg-[#8C5B47]'
+                        }`}
+                        style={{
+                          transform: `scaleX(${Math.max(
+                            0.08,
+                            Math.min(
+                              1,
+                              visibleSlots === 2
+                                ? 1 / Math.max(1, totalMobilePages)
+                                : visibleSlots / Math.max(1, filteredEntries.length)
+                            )
+                          ).toFixed(4)})`,
+                        }}
+                      />
+                    </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => scrollByStep(1)}
+                    disabled={isAtEnd}
                     aria-label="Glide carousel left (next creation)"
                     data-testid="lace-carousel-next"
-                    className={`w-9.5 h-9.5 rounded-full border border-dashed flex items-center justify-center transition active:scale-95 cursor-pointer shadow-2xs ${
+                    className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer active:scale-95 disabled:opacity-35 disabled:cursor-default disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A67F6A]/40 ${
                       isDarkMode
-                        ? 'bg-[#352C29]/95 border-[#5E4E49] text-[#FBF6F1] hover:bg-[#433834]'
-                        : 'bg-[#FFFDF9]/95 border-[#D8C4B4] text-[#4A382E] hover:bg-[#FAF3EB]'
+                        ? 'bg-[#352C29] border-[#52433D] text-[#FBF6F1] hover:bg-[#413632]'
+                        : 'bg-[#FFFDF9] border-[#DFD0C1] text-[#4A382E] hover:bg-[#F6EFE6]'
                     }`}
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
-              </>
-            )}
-          </div>
+
+                <p
+                  className={`hidden sm:block text-xs text-right w-52 whitespace-nowrap ${
+                    isDarkMode ? 'text-[#A69288]' : 'text-[#8C766A]'
+                  }`}
+                >
+                  Use ← → keys to browse
+                </p>
+              </div>
+            </footer>
+          )}
         </div>
       </div>
     </div>

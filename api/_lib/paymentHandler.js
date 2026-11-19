@@ -2703,10 +2703,27 @@ export async function checkRecipientGiftOfferServer({
   visibleStemCount,
   noteCharCount,
   isCoutureOrSeed,
+  openedFromShowcase,
+  openSource,
 } = {}) {
   await hydratePersistentOwnerVaultServer();
   const cleanDevice = String(deviceTokenHash || '').trim();
+  const safeCode = String(bouquetCode || '').replace(/[^0-9A-Za-z_-]/g, '');
+  const cleanOpenSource = typeof openSource === 'string' ? openSource.trim() : '';
   const promo = getFoundingLaunchPromoStatusServer(cleanDevice);
+
+  if (
+    openedFromShowcase === true ||
+    (cleanOpenSource && cleanOpenSource !== 'direct_link') ||
+    safeCode.startsWith('shw_')
+  ) {
+    return {
+      ok: true,
+      eligible: false,
+      reason: 'SHOWCASE_BROWSE_BLOCKED',
+      remainingGlobal: promo.recipientGiftRemaining,
+    };
+  }
 
   if (!promo.recipientGiftEnabled) {
     return {
@@ -5986,6 +6003,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           noteCharCount:
             typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
           isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
+          openedFromShowcase: Boolean(parsed.openedFromShowcase),
+          openSource: typeof parsed.openSource === 'string' ? parsed.openSource : undefined,
         });
         sendJson(res, 200, {
           ok: Boolean(check.ok),
@@ -6016,6 +6035,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             noteCharCount:
               typeof parsed.noteCharCount === 'number' ? parsed.noteCharCount : undefined,
             isCoutureOrSeed: Boolean(parsed.isCoutureOrSeed),
+            openedFromShowcase: Boolean(parsed.openedFromShowcase),
+            openSource: typeof parsed.openSource === 'string' ? parsed.openSource : undefined,
           });
 
           if (!check.eligible) {

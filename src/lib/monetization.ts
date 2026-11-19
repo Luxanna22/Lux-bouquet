@@ -1696,6 +1696,12 @@ export function evaluateBouquetRecipientGiftEligibility(params: {
   };
 }
 
+export type GiftOpenSource = 'direct_link' | 'showcase_browse' | 'vault' | 'editor_preview' | null;
+
+export function isEligibleRecipientGiftOpenSource(openSource?: GiftOpenSource): boolean {
+  return openSource === 'direct_link';
+}
+
 export function evaluateRecipientGiftClaimGuard(params: {
   recipientGiftEnabled?: boolean;
   globalClaimedCount?: number;
@@ -1708,6 +1714,8 @@ export function evaluateRecipientGiftClaimGuard(params: {
   viewerCreatedBouquetLocally?: boolean;
   viewerAlreadyClaimedRecipientGift?: boolean;
   isPreviewMode?: boolean;
+  openedFromShowcase?: boolean;
+  openSource?: GiftOpenSource;
 }): {
   canShowAndClaim: boolean;
   reason: string;
@@ -1729,6 +1737,12 @@ export function evaluateRecipientGiftClaimGuard(params: {
 
   if (params.isPreviewMode) {
     return { canShowAndClaim: false, reason: 'PREVIEW_MODE', remainingGlobal };
+  }
+  if (
+    params.openedFromShowcase === true ||
+    (params.openSource !== undefined && !isEligibleRecipientGiftOpenSource(params.openSource))
+  ) {
+    return { canShowAndClaim: false, reason: 'SHOWCASE_BROWSE_BLOCKED', remainingGlobal };
   }
   if (params.recipientGiftEnabled === false) {
     return { canShowAndClaim: false, reason: 'PROMO_DISABLED', remainingGlobal };
