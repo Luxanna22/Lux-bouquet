@@ -26,7 +26,7 @@ import {
 
 import {
   fetchBouquetFromBlob,
-  fetchGarlandFeedFromBlob,
+  fetchGarlandFeedStateFromBlob,
   isVercelBlobConfigured,
   saveBouquetToBlob,
   saveGarlandFeedToBlob,
@@ -501,6 +501,55 @@ export async function publishToGarlandFeedRest(code, payload, garlandEntry, maxR
   return false;
 }
 
+async function reconcileGarlandFeedToFirestoreRest(mergedEntries, remoteMeta) {
+  if (!Array.isArray(mergedEntries) || !remoteMeta || !remoteMeta.reachable) return false;
+  try {
+    const feedUrl = `${FIRESTORE_BASE_URL}/${GARLAND_FEED_DOC_CODE}`;
+    const sanitized = mergedEntries.slice(0, MAX_GARLAND_FEED_ENTRIES).map((item, idx) =>
+      idx >= 3 && item && typeof item.draftPayload === 'string'
+        ? { ...item, draftPayload: stripInlinePhotosFromCompactPayloadServer(item.draftPayload) }
+        : item
+    );
+    let jsonStr = JSON.stringify(sanitized);
+    if (jsonStr.length > 680_000) {
+      const stripped = sanitized.map((item) =>
+        item && typeof item.draftPayload === 'string'
+          ? { ...item, draftPayload: stripInlinePhotosFromCompactPayloadServer(item.draftPayload) }
+          : item
+      );
+      jsonStr = JSON.stringify(stripped);
+    }
+    if (jsonStr.length > 880_000) return false;
+
+    const fields = {
+      code: { stringValue: GARLAND_FEED_DOC_CODE },
+      payload: { stringValue: remoteMeta.preservedPayload || GARLAND_FEED_IMMUTABLE_PAYLOAD },
+      createdAt: { stringValue: remoteMeta.preservedCreatedAt || GARLAND_FEED_IMMUTABLE_CREATED_AT },
+      voiceAudioDataUrl: { stringValue: jsonStr },
+    };
+
+    let writeUrl = feedUrl;
+    if (remoteMeta.exists && remoteMeta.updateTime) {
+      writeUrl = `${feedUrl}?currentDocument.updateTime=${encodeURIComponent(remoteMeta.updateTime)}`;
+    } else if (!remoteMeta.exists) {
+      writeUrl = `${feedUrl}?currentDocument.exists=false`;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const patchResp = await fetch(writeUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return patchResp.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   applySecurityHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -555,8 +604,8 @@ export default async function handler(req, res) {
       return;
     }
 
-    const [blobEntries, firestoreEntries] = await Promise.all([
-      fetchGarlandFeedFromBlob({ useCache: true }).catch(() => null),
+    const [blobState, firestoreRes] = await Promise.all([
+      fetchGarlandFeedStateFromBlob({ useCache: true }).catch(() => null),
       (async () => {
         try {
           const controller = new AbortController();
@@ -566,16 +615,50 @@ export default async function handler(req, res) {
             signal: controller.signal,
           });
           clearTimeout(timer);
-          if (!resp.ok) return null;
+          if (resp.status === 404) {
+            return {
+              reachable: true,
+              exists: false,
+              updateTime: '',
+              preservedCreatedAt: GARLAND_FEED_IMMUTABLE_CREATED_AT,
+              preservedPayload: GARLAND_FEED_IMMUTABLE_PAYLOAD,
+              entries: [],
+            };
+          }
+          if (!resp.ok) return { reachable: false, exists: false, updateTime: '', entries: null };
           const doc = await resp.json().catch(() => null);
-          const raw = doc?.fields?.voiceAudioDataUrl?.stringValue;
-          if (!raw) return [];
-          const parsed = JSON.parse(raw);
-          return Array.isArray(parsed) ? parsed : [];
+          const exFields = doc?.fields;
+          const raw = exFields?.voiceAudioDataUrl?.stringValue;
+          const parsed = raw ? JSON.parse(raw) : [];
+          return {
+            reachable: true,
+            exists: true,
+            updateTime: typeof doc?.updateTime === 'string' ? doc.updateTime : '',
+            preservedCreatedAt:
+              exFields?.createdAt?.stringValue && exFields.createdAt.stringValue.length >= 10
+                ? exFields.createdAt.stringValue
+                : GARLAND_FEED_IMMUTABLE_CREATED_AT,
+            preservedPayload:
+              exFields?.payload?.stringValue && exFields.payload.stringValue.length >= 3
+                ? exFields.payload.stringValue
+                : GARLAND_FEED_IMMUTABLE_PAYLOAD,
+            entries: Array.isArray(parsed) ? parsed : [],
+          };
         } catch {
-          return null;
+          return { reachable: false, exists: false, updateTime: '', entries: null };
         }
       })(),
+    ]);
+
+    const blobEntries = blobState ? blobState.entries : null;
+    const blobRemovedCodes = blobState?.removedCodes || [];
+    const firestoreEntries = firestoreRes.entries;
+
+    // Combine local deleted tombstones + Blob removedCodes tombstones so unpinned/deleted bouquets
+    // from a Firestore 429 outage NEVER resurrect when stale Firestore returns online!
+    const removedSet = new Set([
+      ...OWNER_DELETED_BOUQUET_CODES,
+      ...blobRemovedCodes,
     ]);
 
     const byCode = new Map();
@@ -589,7 +672,7 @@ export default async function handler(req, res) {
           item.code.startsWith('sab_') ||
           item.isDraft !== false ||
           item.pinToShowcase !== true ||
-          OWNER_DELETED_BOUQUET_CODES.has(item.code)
+          removedSet.has(item.code)
         ) {
           continue;
         }
@@ -610,14 +693,29 @@ export default async function handler(req, res) {
       .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0))
       .slice(0, MAX_GARLAND_FEED_ENTRIES);
 
-    // If Firestore had entries not yet mirrored to Blob, backfill Blob asynchronously so future Firestore 429s stay seamless
+    // 1. If Firestore had entries not yet mirrored to Blob, backfill Blob while preserving `removedCodes`
     if (
       isVercelBlobConfigured() &&
       Array.isArray(firestoreEntries) &&
       firestoreEntries.length > 0 &&
       (!Array.isArray(blobEntries) || blobEntries.length < merged.length)
     ) {
-      saveGarlandFeedToBlob(merged).catch(() => {});
+      saveGarlandFeedToBlob(merged, blobRemovedCodes).catch(() => {});
+    }
+
+    // 2. If Firestore recovered and is missing new Blob creations OR still contains unpinned/deleted tombstones,
+    // heal Firestore's `sab_garland_feed_v1` automatically via CAS!
+    if (firestoreRes.reachable && blobState) {
+      const fsCodes = new Set(
+        Array.isArray(firestoreEntries)
+          ? firestoreEntries.filter((e) => e && typeof e.code === 'string').map((e) => e.code)
+          : []
+      );
+      const hasStaleRemovedInFirestore = Array.from(fsCodes).some((c) => removedSet.has(c));
+      const hasNewBlobEntriesMissingInFirestore = merged.some((e) => !fsCodes.has(e.code));
+      if (hasStaleRemovedInFirestore || hasNewBlobEntriesMissingInFirestore) {
+        await reconcileGarlandFeedToFirestoreRest(merged, firestoreRes).catch(() => false);
+      }
     }
 
     if (merged.length > 0 || blobEntries !== null || firestoreEntries !== null) {
@@ -706,7 +804,7 @@ export default async function handler(req, res) {
 
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=3600');
     res.end(
       JSON.stringify({
         code: codeParam,

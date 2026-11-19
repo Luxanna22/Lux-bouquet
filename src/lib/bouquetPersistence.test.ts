@@ -41,10 +41,17 @@ import {
 } from '../../api/_lib/blobStorage.js';
 import {
   createSignedAdminSessionToken,
+  createSignedStudioPassServer,
+  fetchStudioPassFromFirestoreRest,
   handlePaymentEndpoint,
+  hydratePersistentOwnerVaultServer,
+  isPhPaymentsDisabledServer,
+  OWNER_ANALYTICS_STATE,
   OWNER_BOUQUET_LOG_DOC_CODE,
   OWNER_VAULT_DOC_CODE,
+  PAID_PASS_LEDGER,
   resetOwnerBouquetLogStateForTesting,
+  resetOwnerVaultInMemoryForColdStartTests,
   // @ts-expect-error Plain ESM server handler without .d.ts
 } from '../../api/_lib/paymentHandler.js';
 
@@ -1244,5 +1251,410 @@ describe('Private Vercel Blob Failover Under Firestore 429 Quota Exhaustion', ()
       if (fs.existsSync(tmpTxt)) fs.unlinkSync(tmpTxt);
     }
   });
+
+  it('Admin Console works 100% during Firestore 429 outage AND reconciles conflict-free when stale Firestore recovers', async () => {
+    const origFetch = globalThis.fetch;
+    const blobStore = new Map<string, string>();
+    let blobPutCount = 0;
+
+    setBlobClientForTesting({
+      async put(pathname: string, body: string) {
+        blobPutCount += 1;
+        blobStore.set(pathname, String(body));
+        return { url: `https://private.blob.local/${pathname}`, pathname };
+      },
+      async get(pathname: string) {
+        const val = blobStore.get(pathname);
+        if (val === undefined) return null;
+        return {
+          statusCode: 200,
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(val));
+              controller.close();
+            },
+          }),
+        };
+      },
+      async del(pathname: string) {
+        blobStore.delete(pathname);
+      },
+    });
+
+    // Simulated Firestore store (offline/429 in Phase 1, comes back online with STALE pre-outage state in Phase 2)
+    let firestoreExhausted = true;
+    const fsDocs = new Map<string, { fields: Record<string, unknown>; updateTime: string }>();
+    let fsRev = 1;
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = String(input);
+      if (!urlStr.includes('firestore.googleapis.com')) {
+        return new Response('Not found', { status: 404 });
+      }
+      if (firestoreExhausted) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              message: 'Quota exceeded: Free daily read units per project',
+              status: 'RESOURCE_EXHAUSTED',
+            },
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const u = new URL(urlStr);
+      const docMatch = u.pathname.match(/\/documents\/(shared_bouquets|studio_passes|studio_stats)\/([^/?]+)$/);
+      if (!docMatch) return new Response('{}', { status: 404 });
+      const docKey = `${docMatch[1]}/${decodeURIComponent(docMatch[2])}`;
+      const method = (init?.method || 'GET').toUpperCase();
+
+      if (method === 'GET') {
+        const existing = fsDocs.get(docKey);
+        if (!existing) return new Response('{}', { status: 404 });
+        return new Response(
+          JSON.stringify({
+            name: docKey,
+            fields: existing.fields,
+            updateTime: existing.updateTime,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (method === 'PATCH') {
+        const existing = fsDocs.get(docKey);
+        const expectedUpdateTime = u.searchParams.get('currentDocument.updateTime');
+        const expectedExists = u.searchParams.get('currentDocument.exists');
+        if (expectedExists === 'false' && existing) {
+          return new Response('{}', { status: 409 });
+        }
+        if (expectedUpdateTime && (!existing || existing.updateTime !== expectedUpdateTime)) {
+          return new Response('{}', { status: 412 });
+        }
+        const parsedBody = JSON.parse(String(init?.body || '{}'));
+        const nextUpdateTime = `2026-11-19T12:00:${String(fsRev++).padStart(2, '0')}.000000Z`;
+        fsDocs.set(docKey, { fields: parsedBody.fields || {}, updateTime: nextUpdateTime });
+        return new Response(
+          JSON.stringify({
+            name: docKey,
+            fields: parsedBody.fields || {},
+            updateTime: nextUpdateTime,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      // =========================================================================
+      // PHASE 1: FIRESTORE IS EXHAUSTED (429) — ADMIN MUST WORK 100% VIA BLOB
+      // =========================================================================
+      resetOwnerVaultInMemoryForColdStartTests();
+      resetOwnerBouquetLogStateForTesting();
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+
+      const ownerDevice = 'dev_owner_failover_admin_999';
+      const adminToken = createSignedAdminSessionToken(ownerDevice);
+
+      // 1A. Toggle PH Payments Disabled ON during Firestore 429
+      const disablePhReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'toggle_ph_payments',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+        disabled: true,
+      });
+      await handleVerifyAction(disablePhReq.req, disablePhReq.res);
+      assert.equal(disablePhReq.res.statusCode, 200);
+      assert.equal(disablePhReq.res.json().phPaymentsDisabled, true, 'PHP Disable toggle must succeed under Firestore 429');
+      assert.equal(isPhPaymentsDisabledServer(), true);
+      assert.ok(blobStore.has('system/owner_vault.json'), 'Owner Vault must be saved to Private Vercel Blob');
+
+      // 1B. Toggle Income Pause, update Launch Promo limits, and change Owner PIN during Firestore 429
+      const pauseReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'toggle_income_pause',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+        paused: true,
+      });
+      await handleVerifyAction(pauseReq.req, pauseReq.res);
+      assert.equal(pauseReq.res.statusCode, 200);
+      assert.equal(pauseReq.res.json().incomePausedForTesting, true);
+
+      const promoReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'update_launch_promo_config',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+        kofiLaunchEnabled: false,
+        kofiLaunchMaxLimit: 42,
+        recipientGiftMaxLimit: 200,
+      });
+      await handleVerifyAction(promoReq.req, promoReq.res);
+      assert.equal(promoReq.res.statusCode, 200);
+      assert.equal(promoReq.res.json().launchPromo.kofiLaunchEnabled, false);
+      assert.equal(promoReq.res.json().launchPromo.kofiLaunchMaxLimit, 42);
+
+      const pinReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'update_owner_pin',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+        newPin: 'OUTAGE-PIN-7788',
+      });
+      await handleVerifyAction(pinReq.req, pinReq.res);
+      assert.equal(pinReq.res.statusCode, 200);
+
+      // 1C. Mint & redeem a Paid Pass during Firestore 429 -> must persist in BOTH Owner Vault Blob AND passes/{passKey}.json!
+      const mintReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'mint_paid_pass',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+        tier: 'pass_30d',
+        region: 'INTL',
+        label: 'Outage Buyer Pass',
+        channel: 'manual',
+      });
+      await handleVerifyAction(mintReq.req, mintReq.res);
+      assert.equal(mintReq.res.statusCode, 200);
+      const outagePassKey = mintReq.res.json().pass?.passKey;
+      assert.ok(outagePassKey);
+      assert.ok(blobStore.has(`passes/${outagePassKey}.json`), 'Minted pass must mirror to Private Vercel Blob');
+
+      const buyerDevice = 'dev_buyer_outage_device_123';
+      const redeemReq = createMockReqRes('POST', '/api/payments/redeem-pass', {
+        passKey: outagePassKey,
+        deviceTokenHash: buyerDevice,
+      });
+      await handlePaymentEndpoint(redeemReq.req, redeemReq.res, '/api/payments/redeem-pass');
+      assert.equal(redeemReq.res.statusCode, 200);
+      assert.equal(redeemReq.res.json().pass.primaryDeviceHash, buyerDevice);
+
+      // 1D. Unpin an older historical Garland bouquet (`StaleGarland001`) during Firestore 429 -> records removedCodes tombstone in Blob!
+      const unpinOldReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'toggle_owner_bouquet_garland',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+        code: 'StaleGarland001',
+        pinned: false,
+      });
+      await handleVerifyAction(unpinOldReq.req, unpinOldReq.res);
+      assert.equal(unpinOldReq.res.statusCode, 200);
+      const garlandBlobAfterUnpin = JSON.parse(blobStore.get('system/garland_feed.json') || '{}');
+      assert.ok(
+        Array.isArray(garlandBlobAfterUnpin.removedCodes) &&
+          garlandBlobAfterUnpin.removedCodes.includes('StaleGarland001'),
+        'Unpinning during Firestore 429 must record removedCodes tombstone in Blob'
+      );
+
+      // 1E. Verify anonymous telemetry_event & read-only fetch_owner_console NEVER spend Blob put() ops!
+      const putsBeforeTelemetry = blobPutCount;
+      for (let i = 0; i < 5; i++) {
+        const telReq = createMockReqRes('POST', '/api/payments/verify-action', {
+          action: 'telemetry_event',
+          telemetry: { type: 'page_view', device: 'mobile', region: 'PH' },
+        });
+        await handleVerifyAction(telReq.req, telReq.res);
+        assert.equal(telReq.res.statusCode, 200);
+      }
+      const fetchConsoleReq = createMockReqRes('POST', '/api/payments/verify-action', {
+        action: 'fetch_owner_console',
+        adminSessionToken: adminToken,
+        deviceTokenHash: ownerDevice,
+      });
+      await handleVerifyAction(fetchConsoleReq.req, fetchConsoleReq.res);
+      assert.equal(fetchConsoleReq.res.statusCode, 200);
+      assert.equal(
+        blobPutCount,
+        putsBeforeTelemetry,
+        'Anonymous telemetry_event and read-only fetch_owner_console must spend ZERO Vercel Blob put() ops'
+      );
+
+      // 1F. Cold start while STILL in Firestore 429 -> every Admin setting must survive from Blob!
+      resetOwnerVaultInMemoryForColdStartTests();
+      assert.equal(isPhPaymentsDisabledServer(), false, 'Sanity check: cold start starts false');
+      await hydratePersistentOwnerVaultServer();
+      assert.equal(isPhPaymentsDisabledServer(), true, 'PHP Disable must survive cold start via Blob during 429');
+      assert.equal(OWNER_ANALYTICS_STATE.incomePausedForTesting, true);
+      assert.equal(OWNER_ANALYTICS_STATE.kofiLaunchEnabled, false);
+      assert.equal(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit, 42);
+      assert.ok(PAID_PASS_LEDGER.has(outagePassKey), 'Outage paid pass must survive cold start via Blob');
+
+      // =========================================================================
+      // PHASE 2: FIRESTORE RECOVERS WITH STALE PRE-OUTAGE DATA — ZERO CLOBBER!
+      // =========================================================================
+      const staleTs = Date.now() - 6 * 60 * 60 * 1000; // 6 hours older than Phase 1 Blob edits
+      const historicalPass = createSignedStudioPassServer({
+        passKey: 'BLOOM-HIST-9901',
+        tier: 'pass_7d',
+        region: 'INTL',
+        deviceTokenHash: 'dev_historical_buyer_001',
+        paymentProvider: 'kofi',
+        paymentReference: 'kofi_hist_001',
+      });
+      const staleFirestoreVault = {
+        v: 1,
+        updatedAt: new Date(staleTs).toISOString(),
+        phPaymentsDisabled: false,
+        phDisabledUpdatedAtMs: staleTs,
+        incomePausedForTesting: false,
+        incomePauseUpdatedAtMs: staleTs,
+        launchPromoConfigUpdatedAtMs: staleTs,
+        kofiLaunchEnabled: true,
+        kofiLaunchMaxLimit: 30,
+        recipientGiftEnabled: true,
+        recipientGiftMaxLimit: 150,
+        customOwnerPin: 'STALE-OLD-PIN',
+        customOwnerPinUpdatedAtMs: staleTs,
+        issuedPassKeys: [historicalPass.passKey],
+        paidPasses: [
+          {
+            passKey: historicalPass.passKey,
+            tier: 'pass_7d',
+            region: 'INTL',
+            currency: 'USD',
+            amountMinor: 399,
+            status: 'claimed',
+            label: 'Historical Pre-Outage Buyer',
+            channel: 'kofi',
+            createdAt: new Date(staleTs).toISOString(),
+            expiresAt: historicalPass.expiresAt,
+            claimedDeviceHash: 'dev_historical_buyer_001',
+            bouquetsCreated: 1,
+            isTest: false,
+            passRecord: historicalPass,
+          },
+        ],
+        testerVouchers: [],
+        revokedVoucherKeys: [],
+        analytics: {
+          phPaymentsDisabled: false,
+          incomePausedForTesting: false,
+          kofiLaunchEnabled: true,
+          kofiLaunchMaxLimit: 30,
+          recipientGiftEnabled: true,
+          recipientGiftMaxLimit: 150,
+        },
+      };
+
+      fsDocs.set(`shared_bouquets/${OWNER_VAULT_DOC_CODE}`, {
+        updateTime: '2026-11-19T06:00:00.000000Z',
+        fields: {
+          code: { stringValue: OWNER_VAULT_DOC_CODE },
+          payload: { stringValue: '#sab_owner_vault_v1' },
+          createdAt: { stringValue: '2026-11-08T00:00:00.000Z' },
+          voiceAudioDataUrl: { stringValue: JSON.stringify(staleFirestoreVault) },
+        },
+      });
+
+      // Seed stale Firestore Garland with BOTH a historical keeper AND the unpinned StaleGarland001
+      fsDocs.set('shared_bouquets/sab_garland_feed_v1', {
+        updateTime: '2026-11-19T06:00:00.000000Z',
+        fields: {
+          code: { stringValue: 'sab_garland_feed_v1' },
+          payload: { stringValue: '#sab_garland_feed_v1' },
+          createdAt: { stringValue: '2026-11-08T00:00:00.000Z' },
+          voiceAudioDataUrl: {
+            stringValue: JSON.stringify([
+              {
+                code: 'KeepHist000001',
+                to: 'Clara',
+                from: 'Noah',
+                createdAt: '2026-11-18T10:00:00.000Z',
+                shareUrl: '/KeepHist000001',
+                isDraft: false,
+                pinToShowcase: true,
+                draftPayload: '#v=1',
+              },
+              {
+                code: 'StaleGarland001',
+                to: 'Unpinned',
+                from: 'Owner',
+                createdAt: '2026-11-18T09:00:00.000Z',
+                shareUrl: '/StaleGarland001',
+                isDraft: false,
+                pinToShowcase: true,
+                draftPayload: '#v=1',
+              },
+            ]),
+          },
+        },
+      });
+
+      // Turn Firestore back online and simulate a fresh cold-start server instance!
+      firestoreExhausted = false;
+      resetOwnerVaultInMemoryForColdStartTests();
+      invalidateGarlandFeedMemoryCache();
+
+      // 2A. Hydrating Owner Vault merges BOTH sources without clobbering AND auto-heals Firestore!
+      await hydratePersistentOwnerVaultServer();
+      assert.equal(isPhPaymentsDisabledServer(), true, 'Blob newer PHP Disable must beat stale Firestore false');
+      assert.equal(OWNER_ANALYTICS_STATE.incomePausedForTesting, true, 'Blob newer Income Pause must win');
+      assert.equal(OWNER_ANALYTICS_STATE.kofiLaunchEnabled, false, 'Blob newer Launch Promo config must win');
+      assert.equal(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit, 42);
+      assert.ok(PAID_PASS_LEDGER.has(historicalPass.passKey), 'Historical Firestore paid pass must be preserved!');
+      assert.ok(PAID_PASS_LEDGER.has(outagePassKey), 'Outage Blob paid pass must be preserved!');
+
+      // Verify Firestore OWNER_VAULT_DOC_CODE was automatically healed with merged state!
+      const healedFsVaultRaw = (
+        fsDocs.get(`shared_bouquets/${OWNER_VAULT_DOC_CODE}`)?.fields?.voiceAudioDataUrl as {
+          stringValue: string;
+        }
+      )?.stringValue;
+      const healedFsVault = JSON.parse(healedFsVaultRaw);
+      assert.equal(healedFsVault.phPaymentsDisabled, true, 'Firestore vault must be auto-healed to phPaymentsDisabled=true');
+      assert.equal(healedFsVault.customOwnerPin, 'OUTAGE-PIN-7788', 'Firestore vault must be auto-healed with newer Blob PIN');
+      assert.ok(
+        healedFsVault.paidPasses.some((p: { passKey: string }) => p.passKey === historicalPass.passKey) &&
+          healedFsVault.paidPasses.some((p: { passKey: string }) => p.passKey === outagePassKey),
+        'Auto-healed Firestore vault must contain BOTH historical and outage paid passes'
+      );
+
+      // 2B. Fetching the outage-minted Studio Pass after Firestore returns must recover it from Blob AND backfill Firestore!
+      const fetchedPass = await fetchStudioPassFromFirestoreRest(outagePassKey);
+      assert.ok(fetchedPass);
+      assert.equal(fetchedPass.primaryDeviceHash, buyerDevice);
+      // Give microtask fire-and-forget Firestore backfill a tick to complete
+      await new Promise((r) => setTimeout(r, 20));
+      assert.ok(
+        fsDocs.has(`studio_passes/${outagePassKey}`),
+        'Studio Pass created/redeemed during 429 must auto-backfill into Firestore when Firestore returns'
+      );
+
+      // 2C. GET /api/shorten?garland=1 must show historical KeepHist000001, keep StaleGarland001 REMOVED, and heal Firestore Garland!
+      const garlandRecoveryReq = createMockReqRes('GET', '/api/shorten?garland=1');
+      await shortenHandler(garlandRecoveryReq.req, garlandRecoveryReq.res);
+      assert.equal(garlandRecoveryReq.res.statusCode, 200);
+      const recoveredEntries: Array<{ code: string }> = garlandRecoveryReq.res.json().entries;
+      assert.ok(recoveredEntries.some((e) => e.code === 'KeepHist000001'), 'Historical Firestore Garland bouquet must appear');
+      assert.equal(
+        recoveredEntries.some((e) => e.code === 'StaleGarland001'),
+        false,
+        'Bouquet unpinned during Firestore 429 must NEVER resurrect when stale Firestore recovers'
+      );
+      const healedGarlandFs = JSON.parse(
+        (
+          fsDocs.get('shared_bouquets/sab_garland_feed_v1')?.fields?.voiceAudioDataUrl as {
+            stringValue: string;
+          }
+        ).stringValue
+      );
+      assert.equal(
+        healedGarlandFs.some((e: { code: string }) => e.code === 'StaleGarland001'),
+        false,
+        'Firestore Garland document must be automatically reconciled to remove StaleGarland001'
+      );
+    } finally {
+      setBlobClientForTesting(null);
+      globalThis.fetch = origFetch;
+      resetOwnerVaultInMemoryForColdStartTests();
+      resetOwnerBouquetLogStateForTesting();
+      clearShortCodeMemoryForTesting();
+      invalidateGarlandFeedMemoryCache();
+    }
+  });
 });
+
 

@@ -1865,8 +1865,11 @@ export default function App() {
           } else {
             triggerToast('Loaded shared bouquet');
           }
-          // Always check Firestore by short code if voice audio was stripped or if a newer Firestore record exists
-          if (effectiveCode) {
+          // Only fetch from /api/shorten or Firestore if voice audio or photo pixels were stripped from the hash URL
+          const needsMediaHydration =
+            Boolean(shared.voice?.visibleOnStage && !shared.voice?.audioDataUrl) ||
+            shared.items.some((it) => Boolean(it.photoStyle && !it.photoDataUrl));
+          if (effectiveCode && needsMediaHydration) {
             const reqId = ++showcaseResolveRequestIdRef.current;
             fetchSharedBouquetFromFirestore(effectiveCode)
               .then((docData) => {
@@ -2256,12 +2259,6 @@ export default function App() {
         verifiedPass ? verifiedPass.tier : 'free'
       );
 
-      // Persist directly to Firebase Firestore with 3-tier retention metadata (30d free, 90d paid extended, Eternal keepsake)
-      const firestoreSavePromise = saveSharedBouquetToFirestore(code, hashPayload, snap, {
-        isPremium: policy.isPremiumEternal,
-        retentionDays: policy.retentionDays,
-      }).catch(() => false);
-
       const previousDraftCode = currentSessionVaultIsDraftRef.current
         ? currentSessionVaultCodeRef.current
         : null;
@@ -2289,12 +2286,6 @@ export default function App() {
         vaultEntry,
         previousDraftCode
       );
-      const garlandPublishPromise = shouldPinToGarland
-        ? publishBouquetToGlobalGarlandFeed(
-          vaultEntry,
-          previousDraftCode
-        ).catch(() => false)
-        : Promise.resolve(true);
       currentSessionVaultCodeRef.current = code;
       currentSessionVaultIsDraftRef.current = false;
       setHasUnsavedDraftChanges(false);
@@ -2305,9 +2296,9 @@ export default function App() {
         incrementStudioGlobalStat('bouquetsCreated', Boolean(voice?.audioDataUrl)).catch(() => { });
       }
 
-      // Also register via /api/shorten serverless endpoint (server enforces Couture permission via Bloom Key,
-      // splits overflow assets for eternal Firestore persistence, logs EVERY bouquet into the Admin Bouquet Log
-      // even when not shared on the Garland, and syncs Garland entries via CAS!)
+      // Register via /api/shorten FIRST (single authoritative write to Private Vercel Blob + Firestore + Garland + Admin Log)
+      // to eliminate duplicate Firestore writes and ~50-read-unit client Garland transaction collisions.
+      // Only fall back to direct client Firestore writes if /api/shorten fails or is unreachable.
       const photoCount = items.filter((it) => Boolean(it.photoStyle)).length;
       const shortenApiPromise = fetch('/api/shorten', {
         method: 'POST',
@@ -2352,26 +2343,35 @@ export default function App() {
         })
       })
         .then(async (resp) => {
-          if (!resp.ok) return false;
+          if (!resp.ok) return { ok: false, persisted: false };
           const data = await resp.json().catch(() => null);
-          return Boolean(data && data.persisted === true);
+          return {
+            ok: Boolean(data),
+            persisted: Boolean(data && data.persisted === true),
+          };
         })
-        .catch(() => false);
+        .catch(() => ({ ok: false, persisted: false }));
 
       const fallbackHashUrl =
         origin && hashPayload.startsWith('#') && hashPayload.length <= 8000
           ? `${origin}/${hashPayload}`
           : null;
 
-      lastSealSyncPromiseRef.current = Promise.allSettled([
-        firestoreSavePromise,
-        garlandPublishPromise,
-        shortenApiPromise,
-      ]).then((results) => {
-        const fsOk = results[0].status === 'fulfilled' && results[0].value === true;
-        const apiPersisted = results[2].status === 'fulfilled' && results[2].value === true;
+      lastSealSyncPromiseRef.current = shortenApiPromise.then(async (apiRes) => {
+        if (apiRes.persisted) {
+          return { persisted: true, fallbackHashUrl };
+        }
+        const [fsOk, garlandOk] = await Promise.all([
+          saveSharedBouquetToFirestore(code, hashPayload, snap, {
+            isPremium: policy.isPremiumEternal,
+            retentionDays: policy.retentionDays,
+          }).catch(() => false),
+          shouldPinToGarland
+            ? publishBouquetToGlobalGarlandFeed(vaultEntry, previousDraftCode).catch(() => false)
+            : Promise.resolve(false),
+        ]);
         return {
-          persisted: fsOk || apiPersisted,
+          persisted: Boolean(fsOk || garlandOk),
           fallbackHashUrl,
         };
       });

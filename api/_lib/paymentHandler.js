@@ -18,9 +18,13 @@ import {
   fetchAdminBouquetLogFromBlob,
   fetchBouquetFromBlob,
   fetchGarlandFeedFromBlob,
+  fetchOwnerVaultFromBlob,
+  fetchStudioPassFromBlob,
   isVercelBlobConfigured,
   removeCodesFromGarlandFeedInBlob,
   saveAdminBouquetLogToBlob,
+  saveOwnerVaultToBlob,
+  saveStudioPassToBlob,
   upsertGarlandFeedInBlob,
 } from './blobStorage.js';
 
@@ -1343,11 +1347,15 @@ export const OWNER_ANALYTICS_STATE = {
 let incomePauseUpdatedAtMs = 0;
 let phDisabledUpdatedAtMs = 0;
 let launchPromoConfigUpdatedAtMs = 0;
+let customOwnerPinUpdatedAtMs = 0;
 let kofiLaunchResetAtMs = 0;
 let recipientGiftResetAtMs = 0;
 let lastCheckoutFlagHydrateMs = 0;
+let lastTelemetryHydrateMs = 0;
+let lastTelemetryFlushMs = 0;
 let vaultLastUpdateTime = '';
 let vaultRemoteExists = null; // null = unknown (never cleanly hydrated/confirmed), true = exists, false = confirmed missing
+let vaultBlobHydrated = false;
 let vaultWriteChain = Promise.resolve();
 const PASS_DOC_META = new Map();
 const PASS_KEY_LOCKS = new Map();
@@ -1355,8 +1363,36 @@ const PASS_KEY_LOCKS = new Map();
 export function resetOwnerVaultMetaForTests() {
   vaultLastUpdateTime = '';
   vaultRemoteExists = null;
+  vaultBlobHydrated = false;
   lastCheckoutFlagHydrateMs = 0;
+  lastTelemetryHydrateMs = 0;
+  lastTelemetryFlushMs = 0;
   PASS_DOC_META.clear();
+}
+
+export function resetOwnerVaultInMemoryForColdStartTests() {
+  resetOwnerVaultMetaForTests();
+  incomePauseUpdatedAtMs = 0;
+  phDisabledUpdatedAtMs = 0;
+  launchPromoConfigUpdatedAtMs = 0;
+  customOwnerPinUpdatedAtMs = 0;
+  kofiLaunchResetAtMs = 0;
+  recipientGiftResetAtMs = 0;
+  cachedCustomOwnerPin = '';
+  OWNER_ANALYTICS_STATE.incomePausedForTesting = false;
+  OWNER_ANALYTICS_STATE.phPaymentsDisabled = false;
+  OWNER_ANALYTICS_STATE.kofiLaunchEnabled = true;
+  OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit = 30;
+  OWNER_ANALYTICS_STATE.recipientGiftEnabled = true;
+  OWNER_ANALYTICS_STATE.recipientGiftMaxLimit = 150;
+  OWNER_ANALYTICS_STATE.revenueUsdCents = 0;
+  OWNER_ANALYTICS_STATE.revenuePhpCentavos = 0;
+  OWNER_ANALYTICS_STATE.passesIssued = { single: 0, pass_7d: 0, pass_30d: 0, tester: 0 };
+  PAID_PASS_LEDGER.clear();
+  TESTER_VOUCHER_LEDGER.clear();
+  ISSUED_PASS_KEYS.clear();
+  REVOKED_VOUCHER_KEYS.clear();
+  SERVER_PASS_STORE.clear();
 }
 
 function withVaultWriteLock(fn) {
@@ -1575,8 +1611,12 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     PAID_PASS_LEDGER.clear();
   }
 
+  const remotePinTs = Number(remote.customOwnerPinUpdatedAtMs || 0);
   if (typeof remote.customOwnerPin === 'string' && remote.customOwnerPin.trim().length >= 4) {
-    if (!cachedCustomOwnerPin) {
+    if (remotePinTs > customOwnerPinUpdatedAtMs) {
+      customOwnerPinUpdatedAtMs = remotePinTs;
+      cachedCustomOwnerPin = remote.customOwnerPin.trim();
+    } else if (!cachedCustomOwnerPin && customOwnerPinUpdatedAtMs === 0) {
       cachedCustomOwnerPin = remote.customOwnerPin.trim();
     }
   }
@@ -1887,104 +1927,152 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
   reconcileFoundingLaunchFromLedgerServer();
 }
 
-export async function hydratePersistentOwnerVaultServer() {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(
-      `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`,
-      { method: 'GET', signal: controller.signal }
-    );
-    clearTimeout(timer);
-    if (resp.status === 404) {
-      vaultRemoteExists = false;
-      vaultLastUpdateTime = '';
-      return false;
+function buildOwnerVaultPayloadObject(nowMs = Date.now()) {
+  const pinEntries = [];
+  for (const [k, v] of PIN_ATTEMPT_TRACKER.entries()) {
+    if (v && (v.count > 0 || v.lockedUntilMs > nowMs)) {
+      pinEntries.push([k, v]);
     }
-    if (!resp.ok) {
-      return false;
-    }
-    const docJson = await resp.json().catch(() => null);
-    if (!docJson || typeof docJson !== 'object') {
-      return false;
-    }
-    const rawVaultJson = docJson?.fields?.voiceAudioDataUrl?.stringValue;
-    if (!rawVaultJson) {
-      vaultRemoteExists = Boolean(docJson.fields);
-      vaultLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
-      return false;
-    }
-    vaultRemoteExists = true;
-    vaultLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
-    const parsed = JSON.parse(rawVaultJson);
-    mergeRemoteOwnerVaultIntoMemory(parsed);
-    return true;
-  } catch {
-    return false;
   }
+  return {
+    v: 1,
+    updatedAt: new Date(nowMs).toISOString(),
+    incomeResetEpoch: Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0),
+    incomeResetAtMs: Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0),
+    incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
+    incomePauseUpdatedAtMs,
+    phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
+    phDisabledUpdatedAtMs,
+    launchPromoConfigUpdatedAtMs,
+    kofiLaunchResetAtMs,
+    recipientGiftResetAtMs,
+    kofiLaunchIgnoredKeys: Array.from(KOFI_LAUNCH_IGNORED_KEYS).slice(-500),
+    kofiLaunchEnabled: Boolean(OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false),
+    kofiLaunchMaxLimit: Number(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit ?? 30),
+    kofiLaunchClaimedCount: Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
+    recipientGiftEnabled: Boolean(OWNER_ANALYTICS_STATE.recipientGiftEnabled !== false),
+    recipientGiftMaxLimit: Number(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit ?? 150),
+    recipientGiftClaimedCount: Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
+    kofiLaunchClaimedDevices: Array.from(KOFI_LAUNCH_CLAIMED_DEVICES).slice(-500),
+    kofiLaunchTxIds: Array.from(KOFI_LAUNCH_TX_IDS).slice(-500),
+    recipientGiftClaimedDevices: Array.from(RECIPIENT_GIFT_CLAIMED_DEVICES).slice(-600),
+    recipientGiftSlots: Array.from(RECIPIENT_GIFT_SLOTS.entries()).slice(-600),
+    customOwnerPin: cachedCustomOwnerPin || '',
+    customOwnerPinUpdatedAtMs,
+    revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
+    issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
+    pinAttemptTracker: pinEntries.slice(0, 200),
+    testerVouchers: Array.from(TESTER_VOUCHER_LEDGER.values()).slice(0, 250),
+    paidPasses: Array.from(PAID_PASS_LEDGER.values()).slice(0, 350),
+    analytics: OWNER_ANALYTICS_STATE,
+  };
+}
+
+export async function hydratePersistentOwnerVaultServer(options = {}) {
+  const allowAutoHealFirestore = options.allowAutoHealFirestore !== false;
+  const blobConfigured = isVercelBlobConfigured();
+
+  const [firestoreRes, blobParsed] = await Promise.all([
+    (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4500);
+        const resp = await fetch(
+          `${FIRESTORE_SHARED_BOUQUETS_URL}/${encodeURIComponent(OWNER_VAULT_DOC_CODE)}`,
+          { method: 'GET', signal: controller.signal }
+        );
+        clearTimeout(timer);
+        if (resp.status === 404) {
+          vaultRemoteExists = false;
+          vaultLastUpdateTime = '';
+          return { reachable: true, parsed: null };
+        }
+        if (!resp.ok) {
+          return { reachable: false, parsed: null };
+        }
+        const docJson = await resp.json().catch(() => null);
+        if (!docJson || typeof docJson !== 'object') {
+          return { reachable: false, parsed: null };
+        }
+        const rawVaultJson = docJson?.fields?.voiceAudioDataUrl?.stringValue;
+        if (!rawVaultJson) {
+          vaultRemoteExists = Boolean(docJson.fields);
+          vaultLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
+          return { reachable: true, parsed: null };
+        }
+        vaultRemoteExists = true;
+        vaultLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
+        return { reachable: true, parsed: JSON.parse(rawVaultJson) };
+      } catch {
+        return { reachable: false, parsed: null };
+      }
+    })(),
+    blobConfigured ? fetchOwnerVaultFromBlob().catch(() => null) : Promise.resolve(null),
+  ]);
+
+  if (blobConfigured) {
+    vaultBlobHydrated = true;
+  }
+
+  // Merge both sources via order-independent timestamp/union CRDT so neither source can clobber newer changes
+  if (firestoreRes.parsed) {
+    mergeRemoteOwnerVaultIntoMemory(firestoreRes.parsed);
+  }
+  if (blobParsed) {
+    mergeRemoteOwnerVaultIntoMemory(blobParsed);
+  }
+
+  // Automatic conflict-free reconciliation when Firestore recovers after a 429 outage:
+  // If Blob has a strictly newer snapshot than Firestore, backfill the merged vault back into Firestore.
+  if (allowAutoHealFirestore && firestoreRes.reachable && blobParsed) {
+    const blobTs = Date.parse(blobParsed.updatedAt || '') || 0;
+    const fsTs = Date.parse(firestoreRes.parsed?.updatedAt || '') || 0;
+    if (blobTs > fsTs || !firestoreRes.parsed) {
+      await withVaultWriteLock(() =>
+        savePersistentOwnerVaultServerUnlocked({ skipBlobWrite: true, maxRetries: 2 })
+      ).catch(() => false);
+    }
+  }
+
+  return Boolean(firestoreRes.parsed || blobParsed);
 }
 
 async function savePersistentOwnerVaultServerUnlocked(options = {}) {
   const maxRetries = Math.max(0, Math.min(5, Number(options.maxRetries ?? 3)));
+  const skipBlobWrite = options.skipBlobWrite === true;
   const onBeforeRetryMerge =
     typeof options.onBeforeRetryMerge === 'function' ? options.onBeforeRetryMerge : null;
 
+  let blobSaved = false;
+
   try {
-    // CRITICAL SAFETY GUARD: Never blindly PATCH default cold-start memory over Firestore if we
-    // haven't cleanly read or confirmed 404 on the remote vault yet!
-    if (vaultRemoteExists === null) {
-      await hydratePersistentOwnerVaultServer();
-      if (onBeforeRetryMerge && vaultRemoteExists === true) {
+    // CRITICAL SAFETY GUARD: Never blindly overwrite remote state if neither Firestore nor Blob has been hydrated yet!
+    if (vaultRemoteExists === null && !vaultBlobHydrated) {
+      await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
+      if (onBeforeRetryMerge && (vaultRemoteExists === true || vaultBlobHydrated)) {
         onBeforeRetryMerge();
       }
-      if (vaultRemoteExists === null) {
+      if (vaultRemoteExists === null && !vaultBlobHydrated) {
         return false;
       }
     }
 
+    // Persist authoritative Admin/Vault mutations to Private Vercel Blob so every Admin toggle
+    // (PHP disable, income pause, launch promo, PIN, passes) works 100% even during Firestore 429 outages.
+    if (!skipBlobWrite && isVercelBlobConfigured()) {
+      const initialPayload = buildOwnerVaultPayloadObject(Date.now());
+      blobSaved = await saveOwnerVaultToBlob(initialPayload).catch(() => false);
+    }
+
+    // If Firestore is currently unreachable (e.g. 429 RESOURCE_EXHAUSTED), Blob persistence is authoritative until recovery.
+    if (vaultRemoteExists === null) {
+      return blobSaved;
+    }
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const nowMs = Date.now();
-      const pinEntries = [];
-      for (const [k, v] of PIN_ATTEMPT_TRACKER.entries()) {
-        if (v && (v.count > 0 || v.lockedUntilMs > nowMs)) {
-          pinEntries.push([k, v]);
-        }
-      }
-
-      const vaultPayload = {
-        v: 1,
-        updatedAt: new Date(nowMs).toISOString(),
-        incomeResetEpoch: Number(OWNER_ANALYTICS_STATE.incomeResetEpoch || 0),
-        incomeResetAtMs: Number(OWNER_ANALYTICS_STATE.incomeResetAtMs || 0),
-        incomePausedForTesting: Boolean(OWNER_ANALYTICS_STATE.incomePausedForTesting),
-        incomePauseUpdatedAtMs,
-        phPaymentsDisabled: Boolean(OWNER_ANALYTICS_STATE.phPaymentsDisabled),
-        phDisabledUpdatedAtMs,
-        launchPromoConfigUpdatedAtMs,
-        kofiLaunchResetAtMs,
-        recipientGiftResetAtMs,
-        kofiLaunchIgnoredKeys: Array.from(KOFI_LAUNCH_IGNORED_KEYS).slice(-500),
-        kofiLaunchEnabled: Boolean(OWNER_ANALYTICS_STATE.kofiLaunchEnabled !== false),
-        kofiLaunchMaxLimit: Number(OWNER_ANALYTICS_STATE.kofiLaunchMaxLimit ?? 30),
-        kofiLaunchClaimedCount: Number(OWNER_ANALYTICS_STATE.kofiLaunchClaimedCount || 0),
-        recipientGiftEnabled: Boolean(OWNER_ANALYTICS_STATE.recipientGiftEnabled !== false),
-        recipientGiftMaxLimit: Number(OWNER_ANALYTICS_STATE.recipientGiftMaxLimit ?? 150),
-        recipientGiftClaimedCount: Number(OWNER_ANALYTICS_STATE.recipientGiftClaimedCount || 0),
-        kofiLaunchClaimedDevices: Array.from(KOFI_LAUNCH_CLAIMED_DEVICES).slice(-500),
-        kofiLaunchTxIds: Array.from(KOFI_LAUNCH_TX_IDS).slice(-500),
-        recipientGiftClaimedDevices: Array.from(RECIPIENT_GIFT_CLAIMED_DEVICES).slice(-600),
-        recipientGiftSlots: Array.from(RECIPIENT_GIFT_SLOTS.entries()).slice(-600),
-        customOwnerPin: cachedCustomOwnerPin || '',
-        revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
-        issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
-        pinAttemptTracker: pinEntries.slice(0, 200),
-        testerVouchers: Array.from(TESTER_VOUCHER_LEDGER.values()).slice(0, 250),
-        paidPasses: Array.from(PAID_PASS_LEDGER.values()).slice(0, 350),
-        analytics: OWNER_ANALYTICS_STATE,
-      };
-
+      const vaultPayload = buildOwnerVaultPayloadObject(Date.now());
       const jsonStr = JSON.stringify(vaultPayload);
-      if (jsonStr.length > 880_000) return false;
+      if (jsonStr.length > 880_000) return blobSaved;
 
       const fields = {
         code: { stringValue: OWNER_VAULT_DOC_CODE },
@@ -2017,14 +2105,18 @@ async function savePersistentOwnerVaultServerUnlocked(options = {}) {
         if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
           vaultLastUpdateTime = savedDoc.updateTime;
         }
+        // If CAS retried and merged newer concurrent state, keep Blob mirror aligned too
+        if (attempt > 0 && !skipBlobWrite && isVercelBlobConfigured()) {
+          await saveOwnerVaultToBlob(vaultPayload).catch(() => false);
+        }
         return true;
       }
 
       // CAS conflict (409 ALREADY_EXISTS / 412 FAILED_PRECONDITION): re-hydrate, re-apply local delta, and retry
       if ((resp.status === 409 || resp.status === 412) && attempt < maxRetries) {
-        const hydrated = await hydratePersistentOwnerVaultServer();
+        const hydrated = await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
         if (!hydrated && vaultRemoteExists === null) {
-          return false;
+          return blobSaved;
         }
         if (onBeforeRetryMerge) {
           onBeforeRetryMerge();
@@ -2032,11 +2124,11 @@ async function savePersistentOwnerVaultServerUnlocked(options = {}) {
         continue;
       }
 
-      return false;
+      return blobSaved;
     }
-    return false;
+    return blobSaved;
   } catch {
-    return false;
+    return blobSaved;
   }
 }
 
@@ -2046,9 +2138,9 @@ export async function savePersistentOwnerVaultServer(options = {}) {
 
 export async function mutateAndSaveOwnerVaultServer(mutatorFn, options = {}) {
   return withVaultWriteLock(async () => {
-    if (vaultRemoteExists === null) {
-      await hydratePersistentOwnerVaultServer();
-      if (vaultRemoteExists === null) {
+    if (vaultRemoteExists === null && !vaultBlobHydrated) {
+      await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
+      if (vaultRemoteExists === null && !vaultBlobHydrated) {
         return { saved: false, result: { abort: true, reason: 'VAULT_UNAVAILABLE' } };
       }
     }
@@ -2395,7 +2487,12 @@ async function mutateGarlandFeedDocCasRest(mutatorFn, maxRetries = 3) {
 
 export async function hydrateOwnerBouquetLogServer(options = {}) {
   const includeGarlandBackfill = options.includeGarlandBackfill !== false;
+  const allowAutoHealFirestore = options.allowAutoHealFirestore !== false;
   let logHydrated = false;
+  let blobLogUpdatedAtMs = 0;
+  let firestoreLogUpdatedAtMs = 0;
+  let firestoreReachable = false;
+  let blobHadLog = false;
 
   // 1. Hydrate from Private Vercel Blob mirror first (works seamlessly even if Firestore returns 429)
   if (isVercelBlobConfigured()) {
@@ -2403,6 +2500,8 @@ export async function hydrateOwnerBouquetLogServer(options = {}) {
       const blobLog = await fetchAdminBouquetLogFromBlob();
       if (blobLog) {
         mergeRemoteOwnerBouquetLogIntoMemory(blobLog);
+        blobLogUpdatedAtMs = Date.parse(blobLog.updatedAt || '') || 0;
+        blobHadLog = true;
         logHydrated = true;
       }
     } catch {
@@ -2422,16 +2521,19 @@ export async function hydrateOwnerBouquetLogServer(options = {}) {
     if (resp.status === 404) {
       bouquetLogRemoteExists = false;
       bouquetLogLastUpdateTime = '';
+      firestoreReachable = true;
       logHydrated = true;
     } else if (resp.ok) {
       const docJson = await resp.json().catch(() => null);
       if (docJson && typeof docJson === 'object') {
         bouquetLogRemoteExists = true;
         bouquetLogLastUpdateTime = typeof docJson.updateTime === 'string' ? docJson.updateTime : '';
+        firestoreReachable = true;
         const rawJson = docJson?.fields?.voiceAudioDataUrl?.stringValue;
         if (rawJson) {
           try {
             const parsed = JSON.parse(rawJson);
+            firestoreLogUpdatedAtMs = Date.parse(parsed?.updatedAt || '') || 0;
             mergeRemoteOwnerBouquetLogIntoMemory(parsed);
           } catch {
             // Ignore malformed JSON
@@ -2501,11 +2603,24 @@ export async function hydrateOwnerBouquetLogServer(options = {}) {
     }
   }
 
+  // 4. Auto-heal Firestore Admin Bouquet Log if Blob recorded newer bouquets/deletions during a Firestore 429 outage
+  if (
+    allowAutoHealFirestore &&
+    firestoreReachable &&
+    blobHadLog &&
+    (blobLogUpdatedAtMs > firestoreLogUpdatedAtMs || bouquetLogRemoteExists === false)
+  ) {
+    await withBouquetLogWriteLock(() =>
+      saveOwnerBouquetLogServerUnlocked({ skipBlobWrite: true, maxRetries: 2 })
+    ).catch(() => false);
+  }
+
   return logHydrated;
 }
 
 async function saveOwnerBouquetLogServerUnlocked(options = {}) {
   const maxRetries = Math.max(0, Math.min(5, Number(options.maxRetries ?? 3)));
+  const skipBlobWrite = options.skipBlobWrite === true;
   const onBeforeRetryMerge =
     typeof options.onBeforeRetryMerge === 'function' ? options.onBeforeRetryMerge : null;
 
@@ -2530,14 +2645,17 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
 
   try {
     if (bouquetLogRemoteExists === null) {
-      await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+      await hydrateOwnerBouquetLogServer({
+        includeGarlandBackfill: false,
+        allowAutoHealFirestore: false,
+      });
       if (onBeforeRetryMerge && bouquetLogRemoteExists === true) {
         onBeforeRetryMerge();
       }
     }
 
     // Always persist to Private Vercel Blob mirror (succeeds even when Firestore is returning 429)
-    if (isVercelBlobConfigured()) {
+    if (!skipBlobWrite && isVercelBlobConfigured()) {
       const { payloadObj } = buildPayloadObj();
       blobSaved = await saveAdminBouquetLogToBlob(payloadObj).catch(() => false);
     }
@@ -2581,14 +2699,17 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
         if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
           bouquetLogLastUpdateTime = savedDoc.updateTime;
         }
-        if (isVercelBlobConfigured() && attempt > 0) {
+        if (!skipBlobWrite && isVercelBlobConfigured() && attempt > 0) {
           await saveAdminBouquetLogToBlob(payloadObj).catch(() => false);
         }
         return true;
       }
 
       if ((resp.status === 409 || resp.status === 412) && attempt < maxRetries) {
-        const hydrated = await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+        const hydrated = await hydrateOwnerBouquetLogServer({
+          includeGarlandBackfill: false,
+          allowAutoHealFirestore: false,
+        });
         if (!hydrated && bouquetLogRemoteExists === null) {
           return blobSaved;
         }
@@ -2608,7 +2729,10 @@ async function saveOwnerBouquetLogServerUnlocked(options = {}) {
 export async function mutateAndSaveOwnerBouquetLogServer(mutatorFn, options = {}) {
   return withBouquetLogWriteLock(async () => {
     if (bouquetLogRemoteExists === null) {
-      await hydrateOwnerBouquetLogServer({ includeGarlandBackfill: false });
+      await hydrateOwnerBouquetLogServer({
+        includeGarlandBackfill: false,
+        allowAutoHealFirestore: false,
+      });
     }
     let result = typeof mutatorFn === 'function' ? mutatorFn({ retry: false }) : undefined;
     const saved = await saveOwnerBouquetLogServerUnlocked({
@@ -2741,12 +2865,15 @@ export async function deleteBouquetsFromFirestoreAndGarlandServer(rawCodes) {
   const garlandUpdated = Boolean(firestoreGarlandUpdated || blobGarlandUpdated);
 
   // 5. Tombstone & remove from persistent Admin Bouquet Log (Firestore + Vercel Blob)
-  await mutateAndSaveOwnerBouquetLogServer(() => {
-    for (const code of validCodes) {
-      OWNER_DELETED_BOUQUET_CODES.add(code);
-      OWNER_BOUQUET_LOG.delete(code);
-    }
-  });
+  await mutateAndSaveOwnerBouquetLogServer(
+    () => {
+      for (const code of validCodes) {
+        OWNER_DELETED_BOUQUET_CODES.add(code);
+        OWNER_BOUQUET_LOG.delete(code);
+      }
+    },
+    { forceBlobMirror: true }
+  );
 
   return {
     deletedCodes: validCodes,
@@ -2778,12 +2905,15 @@ export async function setBouquetGarlandVisibilityServer(rawCode, pinned) {
         ? removeCodesFromGarlandFeedInBlob([code]).catch(() => false)
         : Promise.resolve(false),
     ]);
-    await mutateAndSaveOwnerBouquetLogServer(() => {
-      const existing = OWNER_BOUQUET_LOG.get(code);
-      if (existing) {
-        OWNER_BOUQUET_LOG.set(code, { ...existing, pinnedToGarland: false });
-      }
-    });
+    await mutateAndSaveOwnerBouquetLogServer(
+      () => {
+        const existing = OWNER_BOUQUET_LOG.get(code);
+        if (existing) {
+          OWNER_BOUQUET_LOG.set(code, { ...existing, pinnedToGarland: false });
+        }
+      },
+      { forceBlobMirror: true }
+    );
     return { ok: true, code, pinned: false };
   }
 
@@ -3314,11 +3444,15 @@ export function togglePhPaymentsDisabledServer(disabled, nowMs = Date.now()) {
 async function ensureCheckoutFlagsHydratedServer({ force = false } = {}) {
   if (process.env.NODE_TEST_CONTEXT && !force) return false;
   const nowMs = Date.now();
-  if (!force && vaultRemoteExists !== null && nowMs - lastCheckoutFlagHydrateMs < 3_000) {
+  if (
+    !force &&
+    (vaultRemoteExists !== null || vaultBlobHydrated) &&
+    nowMs - lastCheckoutFlagHydrateMs < 15_000
+  ) {
     return true;
   }
   const ok = await hydratePersistentOwnerVaultServer();
-  if (ok || vaultRemoteExists === false) {
+  if (ok || vaultRemoteExists === false || vaultBlobHydrated) {
     lastCheckoutFlagHydrateMs = Date.now();
   }
   return ok;
@@ -4397,11 +4531,37 @@ function buildFirestorePassFields(pass) {
   };
 }
 
+async function patchStudioPassDirectToFirestoreRest(normKey, pass) {
+  try {
+    const fields = buildFirestorePassFields(pass);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(`${FIRESTORE_PASSES_URL}/${encodeURIComponent(normKey)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const savedDoc = await resp.json().catch(() => null);
+      if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
+        PASS_DOC_META.set(normKey, { exists: true, updateTime: savedDoc.updateTime });
+      }
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function saveStudioPassWithCasRest(pass, { expectMissing = false } = {}) {
   if (!pass || !isValidPassKeyFormat(pass.passKey)) {
     return { ok: false, conflict: false };
   }
   const normKey = normalizePassKey(pass.passKey);
+  let firestoreOk = false;
   try {
     const fields = buildFirestorePassFields(pass);
     const meta = PASS_DOC_META.get(normKey);
@@ -4434,94 +4594,119 @@ export async function saveStudioPassWithCasRest(pass, { expectMissing = false } 
             ? savedDoc.updateTime
             : meta?.updateTime || '',
       });
-      return { ok: true, conflict: false };
-    }
-
-    if (resp.status === 409 || resp.status === 412) {
+      firestoreOk = true;
+    } else if (resp.status === 409 || resp.status === 412) {
+      // Preserve exact CAS conflict signal so caller re-reads & retries without clobbering Blob
       return { ok: false, conflict: true };
     }
-    return { ok: false, conflict: false };
   } catch {
-    return { ok: false, conflict: false };
+    firestoreOk = false;
   }
+
+  const blobOk = isVercelBlobConfigured()
+    ? await saveStudioPassToBlob(normKey, pass).catch(() => false)
+    : false;
+  return { ok: Boolean(firestoreOk || blobOk), conflict: false };
 }
 
 export async function saveStudioPassToFirestoreRest(pass) {
   if (!pass || !isValidPassKeyFormat(pass.passKey)) return false;
   const normKey = normalizePassKey(pass.passKey);
-  try {
-    const fields = buildFirestorePassFields(pass);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(`${FIRESTORE_PASSES_URL}/${encodeURIComponent(normKey)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (resp.ok) {
-      const savedDoc = await resp.json().catch(() => null);
-      if (savedDoc && typeof savedDoc.updateTime === 'string' && savedDoc.updateTime) {
-        PASS_DOC_META.set(normKey, { exists: true, updateTime: savedDoc.updateTime });
-      }
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
+  const [firestoreOk, blobOk] = await Promise.all([
+    patchStudioPassDirectToFirestoreRest(normKey, pass),
+    isVercelBlobConfigured()
+      ? saveStudioPassToBlob(normKey, pass).catch(() => false)
+      : Promise.resolve(false),
+  ]);
+  return Boolean(firestoreOk || blobOk);
 }
 
 export async function fetchStudioPassFromFirestoreRest(passKey) {
   const normalized = normalizePassKey(passKey);
   if (!isValidPassKeyFormat(normalized)) return null;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(`${FIRESTORE_PASSES_URL}/${encodeURIComponent(normalized)}`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (resp.status === 404) {
-      PASS_DOC_META.set(normalized, { exists: false, updateTime: '' });
-      return null;
-    }
-    if (!resp.ok) return null;
-    const docJson = await resp.json();
-    const f = docJson?.fields;
-    if (!f || !f.passKey?.stringValue) {
-      if (!f) {
-        PASS_DOC_META.set(normalized, { exists: false, updateTime: '' });
+
+  const [fsRes, blobPass] = await Promise.all([
+    (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4500);
+        const resp = await fetch(`${FIRESTORE_PASSES_URL}/${encodeURIComponent(normalized)}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (resp.status === 404) {
+          PASS_DOC_META.set(normalized, { exists: false, updateTime: '' });
+          return { reachable: true, pass: null };
+        }
+        if (!resp.ok) return { reachable: false, pass: null };
+        const docJson = await resp.json().catch(() => null);
+        const f = docJson?.fields;
+        if (!f || !f.passKey?.stringValue) {
+          if (!f) {
+            PASS_DOC_META.set(normalized, { exists: false, updateTime: '' });
+          }
+          return { reachable: true, pass: null };
+        }
+        PASS_DOC_META.set(normalized, {
+          exists: true,
+          updateTime: typeof docJson.updateTime === 'string' ? docJson.updateTime : '',
+        });
+        return {
+          reachable: true,
+          pass: {
+            passKey: f.passKey.stringValue,
+            tier: f.tier?.stringValue || 'pass_7d',
+            region: f.region?.stringValue || 'INTL',
+            createdAt: f.createdAt?.stringValue || '',
+            expiresAt: f.expiresAt?.stringValue || '',
+            retentionDays: Number(f.retentionDays?.integerValue || 90),
+            isEternalKeepsake: Boolean(f.isEternalKeepsake?.booleanValue),
+            primaryDeviceHash: f.primaryDeviceHash?.stringValue || '',
+            secondaryDeviceHash: f.secondaryDeviceHash?.stringValue || null,
+            activeSessionNonce: f.activeSessionNonce?.stringValue || '',
+            boundBouquetCode: f.boundBouquetCode?.stringValue || null,
+            dailyUsageDate: f.dailyUsageDate?.stringValue || '',
+            dailyUsageCount: Number(f.dailyUsageCount?.integerValue || 0),
+            paymentProvider: f.paymentProvider?.stringValue || 'kofi',
+            paymentReference: f.paymentReference?.stringValue || '',
+            signature: f.signature?.stringValue || '',
+          },
+        };
+      } catch {
+        return { reachable: false, pass: null };
       }
-      return null;
+    })(),
+    isVercelBlobConfigured()
+      ? fetchStudioPassFromBlob(normalized).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const firestorePass = fsRes.pass;
+  if (!firestorePass && !blobPass) return null;
+  if (firestorePass && !blobPass) return firestorePass;
+  if (!firestorePass && blobPass) {
+    // Firestore recovered and is missing a pass minted/saved in Blob during 429 -> backfill Firestore!
+    if (fsRes.reachable) {
+      patchStudioPassDirectToFirestoreRest(normalized, blobPass).catch(() => {});
     }
-    PASS_DOC_META.set(normalized, {
-      exists: true,
-      updateTime: typeof docJson.updateTime === 'string' ? docJson.updateTime : '',
-    });
-    return {
-      passKey: f.passKey.stringValue,
-      tier: f.tier?.stringValue || 'pass_7d',
-      region: f.region?.stringValue || 'INTL',
-      createdAt: f.createdAt?.stringValue || '',
-      expiresAt: f.expiresAt?.stringValue || '',
-      retentionDays: Number(f.retentionDays?.integerValue || 90),
-      isEternalKeepsake: Boolean(f.isEternalKeepsake?.booleanValue),
-      primaryDeviceHash: f.primaryDeviceHash?.stringValue || '',
-      secondaryDeviceHash: f.secondaryDeviceHash?.stringValue || null,
-      activeSessionNonce: f.activeSessionNonce?.stringValue || '',
-      boundBouquetCode: f.boundBouquetCode?.stringValue || null,
-      dailyUsageDate: f.dailyUsageDate?.stringValue || '',
-      dailyUsageCount: Number(f.dailyUsageCount?.integerValue || 0),
-      paymentProvider: f.paymentProvider?.stringValue || 'kofi',
-      paymentReference: f.paymentReference?.stringValue || '',
-      signature: f.signature?.stringValue || '',
-    };
-  } catch {
-    return null;
+    return blobPass;
   }
+
+  // Both Firestore & Blob returned records -> pick canonical more-advanced state (bound, revoked, higher daily usage)
+  const canonical = pickCanonicalPassRecordServer(firestorePass, blobPass) || blobPass || firestorePass;
+  if (fsRes.reachable && canonical === blobPass) {
+    const differs =
+      firestorePass.primaryDeviceHash !== blobPass.primaryDeviceHash ||
+      firestorePass.secondaryDeviceHash !== blobPass.secondaryDeviceHash ||
+      firestorePass.boundBouquetCode !== blobPass.boundBouquetCode ||
+      firestorePass.dailyUsageCount !== blobPass.dailyUsageCount ||
+      firestorePass.expiresAt !== blobPass.expiresAt;
+    if (differs) {
+      patchStudioPassDirectToFirestoreRest(normalized, blobPass).catch(() => {});
+    }
+  }
+  return canonical;
 }
 
 export function pickCanonicalPassRecordServer(passA, passB) {
@@ -6564,12 +6749,25 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       const deviceTokenHash =
         typeof parsed.deviceTokenHash === 'string' ? parsed.deviceTokenHash : '';
 
-      // 4A. First-party telemetry event ingestion (Persisted to Firestore so Vercel redeploys never reset visits/analytics)
+      // 4A. First-party telemetry event ingestion
+      // Throttled to at most 1 Firestore flush per 60s per warm instance and NEVER writes to Vercel Blob
+      // so viral visitor pageviews never burn Blob put() ops or exhaust Firestore daily quotas!
       if (actionType === 'telemetry_event') {
-        await hydratePersistentOwnerVaultServer();
-        await mutateAndSaveOwnerVaultServer(() => {
-          applyServerTelemetryEvent(parsed.telemetry);
-        });
+        const nowMs = Date.now();
+        applyServerTelemetryEvent(parsed.telemetry);
+        const shouldFlushFirestore =
+          nowMs - lastTelemetryFlushMs >= 60_000 ||
+          (vaultRemoteExists === null && nowMs - lastTelemetryHydrateMs >= 60_000);
+        if (shouldFlushFirestore) {
+          lastTelemetryHydrateMs = nowMs;
+          lastTelemetryFlushMs = nowMs;
+          if (vaultRemoteExists === null) {
+            await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
+          }
+          if (vaultRemoteExists !== null) {
+            await savePersistentOwnerVaultServer({ skipBlobWrite: true, maxRetries: 1 });
+          }
+        }
         sendJson(res, 200, { ok: true });
         return true;
       }
@@ -6630,15 +6828,18 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           syncRealAnalyticsSnapshotServer(),
           hydrateOwnerBouquetLogServer({ includeGarlandBackfill: true }),
         ]);
-        await mutateAndSaveOwnerVaultServer(() => {
-          pushAnalyticsEventServer(
-            'security',
-            'owner_unlocked',
-            'Owner unlocked the Atelier Analytics & Tester Voucher Console',
-            'desktop',
-            'INTL'
-          );
-        });
+        await mutateAndSaveOwnerVaultServer(
+          () => {
+            pushAnalyticsEventServer(
+              'security',
+              'owner_unlocked',
+              'Owner unlocked the Atelier Analytics & Tester Voucher Console',
+              'desktop',
+              'INTL'
+            );
+          },
+          { skipBlobWrite: true }
+        );
         sendJson(res, 200, {
           ok: true,
           adminSessionToken,
@@ -6666,7 +6867,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           syncRealAnalyticsSnapshotServer(),
           hydrateOwnerBouquetLogServer({ includeGarlandBackfill: true }),
         ]);
-        await savePersistentOwnerVaultServer();
+        await savePersistentOwnerVaultServer({ skipBlobWrite: true });
         sendJson(res, 200, {
           ok: true,
           analytics: OWNER_ANALYTICS_STATE,
@@ -7075,6 +7276,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         await hydratePersistentOwnerVaultServer();
         await mutateAndSaveOwnerVaultServer(() => {
           cachedCustomOwnerPin = newPin;
+          customOwnerPinUpdatedAtMs = Math.max(Date.now(), customOwnerPinUpdatedAtMs + 1);
           pushAnalyticsEventServer(
             'security',
             'owner_pin_updated',
