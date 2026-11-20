@@ -506,7 +506,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   onStealthGateTriggered,
   onToast,
 }) => {
-  const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_7d');
+  const [selectedTier, setSelectedTier] = useState<StudioPassTier>('pass_30d');
   const [isResolvingRegion, setIsResolvingRegion] = useState<boolean>(
     () => !cachedCheckoutCapability
   );
@@ -757,7 +757,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const region: PricingRegion =
     isPhEligible && paymentGateway !== 'kofi' ? 'PH' : 'INTL';
   const plans = getPricingCatalog(region);
-  const currentPlan = plans.find((p) => p.tier === selectedTier) || plans[1];
+  const currentPlan = plans.find((p) => p.tier === selectedTier) || plans[2];
 
   const kofiStarterEval = evaluateKofiStarterAvailability({
     enabled: launchPromo ? launchPromo.kofiLaunchEnabled : true,
@@ -1012,24 +1012,31 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       allowance: string;
       galleryNote: string;
       badge?: string;
+      highlightBadge?: boolean;
+      marketingLabel: string;
     }
   > = {
     single: {
       compactName: 'Single Bouquet',
       allowance: '1 premium bouquet',
       galleryNote: '90-day gallery',
-      badge: isSingleFreeLaunchActive ? 'Launch Gift' : undefined,
+      badge: isSingleFreeLaunchActive ? 'Launch Gift' : 'One Gift',
+      marketingLabel: isSingleFreeLaunchActive ? 'Free starter' : 'Try once',
     },
     pass_7d: {
       compactName: '7-Day Pass',
       allowance: 'Unlimited · 7 days',
       galleryNote: '90-day gallery',
-      badge: 'Best Value',
+      badge: 'Most Popular',
+      marketingLabel: region === 'PH' ? '~₱14 / day' : '~57¢ / day',
     },
     pass_30d: {
-      compactName: '30-Day Pass',
+      compactName: '30-Day Eternal',
       allowance: 'Unlimited · 30 days',
       galleryNote: 'Eternal showcase',
+      badge: 'Best Value',
+      highlightBadge: true,
+      marketingLabel: region === 'PH' ? '₱7/day · Save 53%' : '23¢/day · Save 59%',
     },
   };
 
@@ -1205,11 +1212,18 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                         size="card"
                       />
                       <div className="pt-0.5 space-y-0.5">
-                        <div className="min-h-[14px] flex items-center justify-center">
+                        <div className="min-h-[16px] flex items-center justify-center">
                           {meta.badge ? (
                             <span
-                              className={`text-[9px] sm:text-[9.5px] uppercase tracking-[0.06em] font-semibold leading-none whitespace-nowrap ${
-                                isDarkMode ? 'text-[#E6B89C]' : 'text-[#8A5A44]'
+                              data-testid={`plan-badge-${plan.tier}`}
+                              className={`text-[8.5px] sm:text-[9.5px] uppercase tracking-[0.06em] font-semibold leading-none whitespace-nowrap ${
+                                meta.highlightBadge
+                                  ? isDarkMode
+                                    ? 'px-2 py-0.5 rounded-full bg-[#E6B89C] text-[#231C18]'
+                                    : 'px-2 py-0.5 rounded-full bg-[#6E4434] text-[#FFFDF9]'
+                                  : isDarkMode
+                                  ? 'text-[#E6B89C]'
+                                  : 'text-[#8A5A44]'
                               }`}
                             >
                               {meta.badge}
@@ -1235,41 +1249,109 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                       </div>
                     </div>
 
-                    <div
-                      className="text-base sm:text-xl font-semibold tracking-tight pt-0.5 min-h-[26px] flex items-center justify-center tabular-nums"
-                      style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                    >
-                      {isResolvingRegion ? (
-                        <span
-                          aria-hidden="true"
-                          className={`inline-block h-4 w-11 rounded-full animate-pulse ${
-                            isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
-                          }`}
-                        />
-                      ) : isFreeSingleCard ? (
-                        <span
-                          data-testid="single-launch-free-price"
-                          className="inline-flex items-baseline justify-center gap-1.5"
-                        >
-                          <span className="text-xs sm:text-sm line-through opacity-50 font-normal">
-                            {plan.displayPrice}
-                          </span>
+                    <div className="w-full pt-0.5 space-y-0.5">
+                      <div
+                        className="text-base sm:text-xl font-semibold tracking-tight min-h-[24px] flex items-center justify-center tabular-nums"
+                        style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                      >
+                        {isResolvingRegion ? (
                           <span
-                            className={
-                              isDarkMode ? 'text-[#E8B4A6]' : 'text-[#9E5B4B]'
-                            }
+                            aria-hidden="true"
+                            className={`inline-block h-4 w-11 rounded-full animate-pulse ${
+                              isDarkMode ? 'bg-[#4E3F3A]' : 'bg-[#EADCD0]'
+                            }`}
+                          />
+                        ) : isFreeSingleCard ? (
+                          <span
+                            data-testid="single-launch-free-price"
+                            className="inline-flex items-baseline justify-center gap-1.5"
                           >
-                            FREE
+                            <span className="text-xs sm:text-sm line-through opacity-50 font-normal">
+                              {plan.displayPrice}
+                            </span>
+                            <span
+                              className={
+                                isDarkMode ? 'text-[#E8B4A6]' : 'text-[#9E5B4B]'
+                              }
+                            >
+                              FREE
+                            </span>
                           </span>
-                        </span>
-                      ) : (
-                        plan.displayPrice
+                        ) : (
+                          plan.displayPrice
+                        )}
+                      </div>
+                      {!isResolvingRegion && (
+                        <div
+                          data-testid={`plan-marketing-label-${plan.tier}`}
+                          className={`text-[9px] sm:text-[10px] leading-tight font-medium tabular-nums ${
+                            meta.highlightBadge
+                              ? isDarkMode
+                                ? 'text-[#E6B89C]'
+                                : 'text-[#8A5A44]'
+                              : 'opacity-65'
+                          }`}
+                        >
+                          {meta.marketingLabel}
+                        </div>
                       )}
                     </div>
                   </button>
                 );
               })}
             </div>
+
+            {/* Strategic Contextual Value Nudge */}
+            {!isResolvingRegion && (
+              <div
+                data-testid="eternal-marketing-callout"
+                className={`px-3 py-2 rounded-xl border border-dashed flex flex-wrap items-center justify-between gap-2 text-[11px] leading-snug ${
+                  selectedTier === 'pass_30d'
+                    ? isDarkMode
+                      ? 'bg-[#423632]/85 border-[#E6B89C]/65 text-[#F6E6DC]'
+                      : 'bg-[#F9EFE6] border-[#B4846C]/70 text-[#4E3429]'
+                    : isDarkMode
+                    ? 'bg-[#2B2321]/65 border-[#544540] text-[#D8C7BE]'
+                    : 'bg-[#FAF4EE]/75 border-[#DECBB9] text-[#5C463B]'
+                }`}
+              >
+                <span className="flex-1 min-w-[200px]">
+                  {selectedTier === 'pass_30d' ? (
+                    <>
+                      <strong className="font-semibold">Eternal Best Value:</strong>{' '}
+                      4× more days than 7-Day Pass for under 2× the price, plus a permanent gallery showcase.
+                    </>
+                  ) : selectedTier === 'pass_7d' ? (
+                    <>
+                      <strong className="font-semibold">Smart Upgrade:</strong>{' '}
+                      Add just {region === 'PH' ? '₱100' : '$3.00'} for 30 days unlimited &amp; Eternal showcase.
+                    </>
+                  ) : isSingleFreeLaunchActive ? (
+                    <>
+                      <strong className="font-semibold">Founding Gift:</strong>{' '}
+                      Try your first couture bouquet free, or go Eternal for 30 days unlimited &amp; forever showcase.
+                    </>
+                  ) : (
+                    <>
+                      <strong className="font-semibold">Gifting more than once?</strong>{' '}
+                      30-Day Eternal saves over 50%/day with unlimited bouquets &amp; forever showcase.
+                    </>
+                  )}
+                </span>
+                {selectedTier !== 'pass_30d' && (
+                  <button
+                    type="button"
+                    data-testid="switch-to-eternal-btn"
+                    onClick={() => setSelectedTier('pass_30d')}
+                    className={`text-[11px] font-semibold underline underline-offset-2 shrink-0 cursor-pointer transition hover:opacity-80 ${
+                      isDarkMode ? 'text-[#E6B89C]' : 'text-[#6E4434]'
+                    }`}
+                  >
+                    Switch to Eternal →
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Clear Gallery Expiration vs. Permanent Recipient Link Note */}
             <div
