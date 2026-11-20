@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Sparkles, Send, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowUp, RotateCcw, ShieldCheck, X } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
@@ -9,18 +9,81 @@ interface ChatMessage {
   snapshotHash?: string;
 }
 
-interface OwnerAiAdvisorPanelProps {
+export interface GeminiAdvisorTriggerButtonProps {
+  isOpen: boolean;
+  onClick: () => void;
+  isDarkMode: boolean;
+  className?: string;
+}
+
+export interface OwnerAiAdvisorPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
   adminSessionToken: string;
   deviceTokenHash: string;
   isDarkMode: boolean;
+  activeTabLabel?: string;
 }
 
 const STARTER_PROMPTS = [
-  'Where is the biggest drop-off in our conversion funnel?',
+  'Where is the biggest drop-off in the conversion funnel?',
   'Analyze PH (₱) vs INTL ($) buyer pricing & tier revenue.',
   'What happens to monthly revenue at 2,000 daily visitors?',
   'Which Couture features trigger the most upgrade views?',
 ];
+
+const GeminiStarIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+    className={className}
+  >
+    <path
+      d="M12 2C12.35 7.45 16.55 11.65 22 12C16.55 12.35 12.35 16.55 12 22C11.65 16.55 7.45 12.35 2 12C7.45 11.65 11.65 7.45 12 2Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+export const GeminiAdvisorTriggerButton: React.FC<GeminiAdvisorTriggerButtonProps> = ({
+  isOpen,
+  onClick,
+  isDarkMode,
+  className = '',
+}) => {
+  const activeStyle = isDarkMode
+    ? 'bg-[#E6B89C] text-[#231C18] border-[#E6B89C] hover:bg-[#F0C8AE]'
+    : 'bg-[#6E4434] text-[#FFFDF9] border-[#6E4434] hover:bg-[#593527]';
+
+  const idleStyle = isDarkMode
+    ? 'bg-[#2B2321] text-[#FBF6F1] border-[#5E4E49] hover:border-[#E6B89C]/80 hover:bg-[#352C29]'
+    : 'bg-[#FFFDF9] text-[#2A201D] border-[#DECBB9] hover:border-[#B4846C] hover:bg-[#FAF4EE]';
+
+  const starTint = isOpen
+    ? 'text-current'
+    : isDarkMode
+      ? 'text-[#E6B89C]'
+      : 'text-[#B4846C]';
+
+  return (
+    <button
+      type="button"
+      data-testid="owner-ai-trigger-btn"
+      aria-expanded={isOpen}
+      aria-label={isOpen ? 'Close Analytics Advisor' : 'Open Analytics Advisor'}
+      title={isOpen ? 'Close Analytics Advisor' : 'Open Analytics Advisor'}
+      onClick={onClick}
+      style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
+      className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border border-dashed text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+        isOpen ? activeStyle : idleStyle
+      } ${className}`}
+    >
+      <GeminiStarIcon className={`w-3.5 h-3.5 shrink-0 transition-transform ${starTint}`} />
+      <span className="hidden sm:inline">Advisor</span>
+    </button>
+  );
+};
 
 function renderInlineSegments(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
@@ -52,13 +115,36 @@ function renderAdvisorText(raw: string): React.ReactNode {
         if (!trimmed) {
           return <div key={idx} className="h-1" />;
         }
+        if (trimmed.startsWith('### ') || trimmed.startsWith('## ')) {
+          const headingText = trimmed.replace(/^#{2,3}\s+/, '');
+          return (
+            <p
+              key={idx}
+              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              className="text-[15px] font-semibold tracking-tight pt-1"
+            >
+              {renderInlineSegments(headingText)}
+            </p>
+          );
+        }
         if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
           return (
-            <div key={idx} className="flex items-start gap-2 pl-1">
-              <span aria-hidden="true" className="opacity-50 select-none">
+            <div key={idx} className="flex items-start gap-2 pl-0.5">
+              <span aria-hidden="true" className="opacity-45 select-none leading-relaxed">
                 ·
               </span>
               <span className="flex-1">{renderInlineSegments(trimmed.slice(2))}</span>
+            </div>
+          );
+        }
+        const numberedMatch = trimmed.match(/^(\d+\.)\s+(.*)$/);
+        if (numberedMatch) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-0.5">
+              <span className="font-mono text-[11px] opacity-55 select-none pt-0.5 tabular-nums">
+                {numberedMatch[1]}
+              </span>
+              <span className="flex-1">{renderInlineSegments(numberedMatch[2])}</span>
             </div>
           );
         }
@@ -69,9 +155,12 @@ function renderAdvisorText(raw: string): React.ReactNode {
 }
 
 export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
+  isOpen,
+  onClose,
   adminSessionToken,
   deviceTokenHash,
   isDarkMode,
+  activeTabLabel,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [questionInput, setQuestionInput] = useState('');
@@ -79,16 +168,54 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [rateRemaining, setRateRemaining] = useState<number | null>(null);
 
-  const panelClass = isDarkMode
-    ? 'bg-[#352C29] border-[#5E4E49]/80'
-    : 'bg-[#FFFDF9] border-[#DECBB9]';
-  const hairlineBorder = isDarkMode ? 'border-[#5E4E49]/70' : 'border-[#DECBB9]/85';
-  const inputClass = isDarkMode
-    ? 'bg-[#2B2321] border-[#5E4E49] text-[#F5EBE6] placeholder:text-[#9A877B] focus:border-[#E6B89C]'
-    : 'bg-[#FAF4EE] border-[#DECBB9] text-[#2C2523] placeholder:text-[#9A877B] focus:border-[#6E4434]';
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Close drawer on Escape key when open
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Auto-scroll to newest message or loading indicator
+  useEffect(() => {
+    if (!isOpen) return;
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, isLoading, errorMsg, isOpen]);
+
+  const surfaceClass = isDarkMode
+    ? 'bg-[#352C29] text-[#FBF6F1] border-[#5E4E49]'
+    : 'bg-[#FFFDF9] text-[#2A201D] border-[#DECBB9]';
+
+  const recessedClass = isDarkMode
+    ? 'bg-[#2B2321] border-[#5E4E49]'
+    : 'bg-[#FAF4EE] border-[#DECBB9]';
+
+  const mutedTextClass = isDarkMode ? 'text-[#D8C7BE]' : 'text-[#6E5D54]';
+
+  const hairlineBorder = isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]';
+
   const primaryBtnClass = isDarkMode
     ? 'bg-[#E6B89C] text-[#231C18] hover:bg-[#F0C8AE]'
     : 'bg-[#6E4434] text-[#FFFDF9] hover:bg-[#593527]';
+
+  const subtleBtnClass = isDarkMode
+    ? 'border-[#5E4E49] text-[#D8C7BE] hover:text-[#FBF6F1] hover:bg-[#2B2321]'
+    : 'border-[#DECBB9] text-[#6E5D54] hover:text-[#2A201D] hover:bg-[#FAF4EE]';
+
+  const inputClass = isDarkMode
+    ? 'bg-[#2B2321] border-[#5E4E49] text-[#FBF6F1] placeholder:text-[#D8C7BE]/55 focus:border-[#E6B89C]'
+    : 'bg-[#FAF4EE] border-[#DECBB9] text-[#2A201D] placeholder:text-[#6E5D54]/65 focus:border-[#6E4434]';
+
+  const errorNoticeClass = isDarkMode
+    ? 'bg-[#2B2321] border-[#B4846C]/60 text-[#E6B89C]'
+    : 'bg-[#FAF4EE] border-[#B4846C]/70 text-[#6E4434]';
 
   const sendAiRequest = async (mode: 'overview' | 'question', text: string) => {
     if (!adminSessionToken || isLoading) return;
@@ -131,11 +258,36 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
           history: nextHistory,
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setErrorMsg(
-          data.message || 'AI Advisor could not complete your request right now.'
-        );
+
+      const rawText = await res.text();
+      let data: {
+        ok?: boolean;
+        message?: string;
+        answer?: string;
+        cached?: boolean;
+        snapshotHash?: string;
+        rateRemaining?: number;
+      } | null = null;
+
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = null;
+        }
+      }
+
+      if (!res.ok || !data?.ok) {
+        if (data?.message) {
+          setErrorMsg(data.message);
+        } else if (!res.ok) {
+          const statusSuffix = res.statusText ? ` (${res.statusText})` : '';
+          setErrorMsg(
+            `Server returned HTTP ${res.status}${statusSuffix}. Please try again in a moment.`
+          );
+        } else {
+          setErrorMsg('The advisor could not complete this request right now.');
+        }
         return;
       }
 
@@ -146,13 +298,13 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
       const assistantMsg: ChatMessage = {
         id: `a_${Date.now()}`,
         role: 'assistant',
-        text: data.answer,
+        text: data.answer || 'No summary was returned.',
         cached: Boolean(data.cached),
         snapshotHash: data.snapshotHash,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch {
-      setErrorMsg('Network error reaching the AI Analytics endpoint.');
+      setErrorMsg('Could not reach the analytics endpoint. Check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -163,83 +315,137 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
     sendAiRequest('question', questionInput);
   };
 
+  const handleClear = () => {
+    if (isLoading) return;
+    setMessages([]);
+    setErrorMsg(null);
+    inputRef.current?.focus();
+  };
+
   return (
-    <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1
-            style={{ fontFamily: "'Cormorant Garamond', serif" }}
-            className="text-2xl sm:text-3xl font-normal"
-          >
-            Analytics Advisor
-          </h1>
-          <p className="text-xs opacity-65">
-            On-demand executive analysis powered by server-side Gemini. Runs only when requested.
-          </p>
-        </div>
+    <>
+      {/* Mobile-only soft backdrop */}
+      {isOpen && (
+        <div
+          aria-hidden="true"
+          onClick={onClose}
+          className="fixed inset-0 z-30 bg-[#231C18]/35 backdrop-blur-[1px] md:hidden"
+        />
+      )}
 
-        <button
-          data-testid="owner-ai-overview-btn"
-          type="button"
-          disabled={isLoading}
-          onClick={() => sendAiRequest('overview', '')}
-          className={`px-4 py-2 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 self-start sm:self-auto ${primaryBtnClass}`}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>{isLoading ? 'Analyzing...' : 'Generate Overview'}</span>
-        </button>
-      </div>
-
-      {/* Strict Privacy & Quota Efficiency Scope Banner */}
-      <div
-        data-testid="owner-ai-scope-banner"
-        className={`rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${panelClass}`}
+      {/* Right-hand slide-out / docked Gemini-style sidebar (stays mounted when closed to preserve history) */}
+      <aside
+        aria-label="Analytics Advisor"
+        aria-hidden={!isOpen}
+        style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
+        className={`${
+          isOpen ? 'flex' : 'hidden'
+        } fixed inset-y-0 right-0 z-40 md:static md:z-auto md:shrink-0 w-full sm:w-[390px] lg:w-[410px] h-full flex-col border-l border-dashed shadow-xl md:shadow-none ${surfaceClass}`}
       >
-        <div className="flex items-start sm:items-center gap-2 opacity-80">
-          <ShieldCheck className="w-4 h-4 shrink-0 text-[#5A7F64] dark:text-[#8AB89A] mt-0.5 sm:mt-0" />
-          <span>
-            Strict context allowlist: aggregated counts, currency totals & style popularity only.
-            Pass keys, PINs, emails & device IDs never leave the server.
-          </span>
-        </div>
-        <span className="font-mono text-[11px] opacity-60 shrink-0 tabular-nums">
-          5m snapshot cache{rateRemaining !== null ? ` · ${rateRemaining}/10 live calls left` : ''}
-        </span>
-      </div>
+        {/* Compact Header */}
+        <header
+          className={`px-4 py-3 border-b border-dashed flex items-center justify-between gap-2 shrink-0 ${hairlineBorder}`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <GeminiStarIcon
+              className={`w-4 h-4 shrink-0 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#B4846C]'}`}
+            />
+            <div className="min-w-0">
+              <h2
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                className="text-xl font-medium leading-none truncate"
+              >
+                Analytics Advisor
+              </h2>
+              {activeTabLabel && (
+                <p className={`text-[11px] leading-tight mt-0.5 truncate ${mutedTextClass}`}>
+                  Viewing {activeTabLabel}
+                </p>
+              )}
+            </div>
+          </div>
 
-      {/* Main Advisor Surface */}
-      <section className={`rounded-xl border overflow-hidden flex flex-col ${panelClass}`}>
-        {/* Starter Prompts */}
-        <div className={`p-4 border-b ${hairlineBorder} flex flex-wrap gap-2`}>
-          {STARTER_PROMPTS.map((prompt) => (
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
-              key={prompt}
+              data-testid="owner-ai-overview-btn"
               type="button"
               disabled={isLoading}
-              onClick={() => sendAiRequest('question', prompt)}
-              className={`px-3 py-1.5 rounded-lg border text-xs text-left transition-colors cursor-pointer disabled:opacity-50 ${hairlineBorder} hover:bg-current/5`}
+              onClick={() => sendAiRequest('overview', '')}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-45 transition-colors ${primaryBtnClass}`}
             >
-              {prompt}
+              <GeminiStarIcon className="w-3 h-3 shrink-0" />
+              <span>{isLoading ? 'Analyzing...' : 'Overview'}</span>
             </button>
-          ))}
-        </div>
 
-        {/* Conversation Thread */}
+            {messages.length > 0 && (
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={handleClear}
+                aria-label="Clear conversation"
+                title="Clear conversation"
+                className={`px-2 py-1.5 rounded-lg border border-dashed text-[11px] inline-flex items-center gap-1 cursor-pointer disabled:opacity-45 transition-colors ${subtleBtnClass}`}
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span className="hidden sm:inline">Clear</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close Analytics Advisor"
+              title="Close (Esc)"
+              className={`p-1.5 rounded-lg border border-dashed cursor-pointer transition-colors ${subtleBtnClass}`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </header>
+
+        {/* Scrollable Conversation Thread */}
         <div
           data-testid="owner-ai-thread"
-          className="p-4 sm:p-5 space-y-4 min-h-[260px] max-h-[440px] overflow-y-auto"
+          className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4"
         >
           {messages.length === 0 ? (
-            <div className="py-10 text-center space-y-2 max-w-md mx-auto">
-              <p
-                style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                className="text-lg italic opacity-70"
-              >
-                Click “Generate Overview” or ask a question about revenue, funnel conversion, or buyer scaling.
-              </p>
-              <p className="text-xs opacity-50">
-                No background API calls fire on page load — zero idle quota usage.
-              </p>
+            <div className="h-full flex flex-col justify-center py-4 space-y-5">
+              <div className="space-y-1.5">
+                <div
+                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full border border-dashed ${recessedClass}`}
+                >
+                  <GeminiStarIcon
+                    className={`w-4 h-4 ${isDarkMode ? 'text-[#E6B89C]' : 'text-[#B4846C]'}`}
+                  />
+                </div>
+                <p
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  className="text-2xl font-medium leading-snug"
+                >
+                  Ask about studio metrics, pricing, or conversion.
+                </p>
+                <p className={`text-xs leading-relaxed ${mutedTextClass}`}>
+                  On-demand analysis from aggregated studio counts. Nothing runs until you ask.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {STARTER_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => sendAiRequest('question', prompt)}
+                    className={`w-full px-3 py-2.5 rounded-xl border border-dashed text-xs text-left leading-snug transition-colors cursor-pointer disabled:opacity-45 ${recessedClass} ${
+                      isDarkMode
+                        ? 'hover:border-[#E6B89C]/70 text-[#FBF6F1]'
+                        : 'hover:border-[#B4846C] text-[#2A201D]'
+                    }`}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             messages.map((m) => (
@@ -249,21 +455,36 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
                   m.role === 'user' ? 'items-end' : 'items-start'
                 }`}
               >
-                <div
-                  className={`max-w-[90%] rounded-xl px-4 py-3 text-xs sm:text-sm leading-relaxed ${
-                    m.role === 'user'
-                      ? `${primaryBtnClass} whitespace-pre-wrap`
-                      : `border ${hairlineBorder} ${
-                          isDarkMode ? 'bg-[#2B2321]/75' : 'bg-[#FAF4EE]/80'
-                        }`
-                  }`}
-                >
-                  {m.role === 'assistant' ? renderAdvisorText(m.text) : m.text}
-                </div>
-                {m.role === 'assistant' && (
-                  <div className="text-[11px] opacity-50 font-mono px-1 tabular-nums">
-                    {m.cached ? 'Served from 5m cache · 0 quota used' : 'Fresh snapshot insight'}
-                    {m.snapshotHash ? ` · #${m.snapshotHash}` : ''}
+                {m.role === 'user' ? (
+                  <div
+                    className={`max-w-[86%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs leading-relaxed whitespace-pre-wrap ${primaryBtnClass}`}
+                  >
+                    {m.text}
+                  </div>
+                ) : (
+                  <div className="w-full flex items-start gap-2">
+                    <div
+                      className={`mt-1 w-5 h-5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${recessedClass}`}
+                    >
+                      <GeminiStarIcon
+                        className={`w-2.5 h-2.5 ${
+                          isDarkMode ? 'text-[#E6B89C]' : 'text-[#B4846C]'
+                        }`}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div
+                        className={`rounded-2xl rounded-tl-sm border border-dashed px-3.5 py-2.5 text-xs leading-relaxed ${recessedClass}`}
+                      >
+                        {renderAdvisorText(m.text)}
+                      </div>
+                      <div
+                        className={`text-[10px] font-mono px-1 tabular-nums ${mutedTextClass} opacity-75`}
+                      >
+                        {m.cached ? '5m cache · 0 quota' : 'Fresh insight'}
+                        {m.snapshotHash ? ` · #${m.snapshotHash}` : ''}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -271,48 +492,83 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
           )}
 
           {isLoading && (
-            <div className="text-xs italic opacity-60 px-1">
-              Reviewing sanitized studio metrics...
+            <div className="flex items-center gap-2 px-1">
+              <GeminiStarIcon
+                className={`w-3.5 h-3.5 animate-pulse ${
+                  isDarkMode ? 'text-[#E6B89C]' : 'text-[#B4846C]'
+                }`}
+              />
+              <span className={`text-xs italic ${mutedTextClass}`}>
+                Reviewing sanitized studio metrics...
+              </span>
             </div>
           )}
+
+          <div ref={threadEndRef} />
         </div>
 
+        {/* Soft Warm Taupe Dashed Error Notice */}
         {errorMsg && (
           <div
             data-testid="owner-ai-error"
-            className="mx-4 mb-3 px-3.5 py-2.5 rounded-lg border border-rose-500/35 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300"
+            role="status"
+            className={`mx-4 mb-2.5 px-3 py-2 rounded-xl border border-dashed text-xs leading-relaxed flex items-start justify-between gap-2 shrink-0 ${errorNoticeClass}`}
           >
-            {errorMsg}
+            <span>{errorMsg}</span>
+            <button
+              type="button"
+              onClick={() => setErrorMsg(null)}
+              aria-label="Dismiss notice"
+              className="opacity-65 hover:opacity-100 cursor-pointer shrink-0 pt-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
           </div>
         )}
 
-        {/* Chat Input */}
-        <form
-          onSubmit={handleSubmit}
-          className={`p-3.5 border-t ${hairlineBorder} flex items-center gap-2`}
+        {/* Composer + Subtle One-Line Privacy Footer */}
+        <div
+          className={`px-3.5 pt-3 pb-2.5 border-t border-dashed space-y-2 shrink-0 ${hairlineBorder}`}
         >
-          <input
-            data-testid="owner-ai-input"
-            type="text"
-            value={questionInput}
-            onChange={(e) => setQuestionInput(e.target.value)}
-            placeholder="Ask about conversion bottlenecks, PH/INTL pricing, or revenue projections..."
-            maxLength={500}
-            aria-label="Ask AI Analytics Advisor"
-            className={`flex-1 min-w-0 px-3.5 py-2 rounded-lg border text-xs focus:outline-none ${inputClass}`}
-          />
-          <button
-            data-testid="owner-ai-send-btn"
-            type="submit"
-            disabled={isLoading || !questionInput.trim()}
-            aria-label="Send analytics question"
-            className={`px-3.5 py-2 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-45 shrink-0 ${primaryBtnClass}`}
+          <form onSubmit={handleSubmit} className="flex items-center gap-2">
+            <input
+              ref={inputRef}
+              data-testid="owner-ai-input"
+              type="text"
+              value={questionInput}
+              onChange={(e) => setQuestionInput(e.target.value)}
+              placeholder="Ask about funnel, pricing, or growth..."
+              maxLength={500}
+              aria-label="Ask AI Analytics Advisor"
+              className={`flex-1 min-w-0 px-3 py-2 rounded-xl border border-dashed text-xs focus:outline-none transition-colors ${inputClass}`}
+            />
+            <button
+              data-testid="owner-ai-send-btn"
+              type="submit"
+              disabled={isLoading || !questionInput.trim()}
+              aria-label="Send analytics question"
+              className={`w-8 h-8 rounded-xl inline-flex items-center justify-center cursor-pointer disabled:opacity-40 transition-colors shrink-0 ${primaryBtnClass}`}
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+          </form>
+
+          <div
+            data-testid="owner-ai-scope-banner"
+            className={`flex items-center justify-between gap-2 text-[10px] leading-tight px-0.5 ${mutedTextClass} opacity-80`}
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>Ask</span>
-          </button>
-        </form>
-      </section>
-    </div>
+            <span className="inline-flex items-center gap-1 min-w-0 truncate">
+              <ShieldCheck className="w-3 h-3 shrink-0 text-[#5E8568] dark:text-[#8AB89A]" />
+              <span className="truncate">
+                Aggregated counts only · keys, PINs &amp; emails stay private
+              </span>
+            </span>
+            <span className="font-mono shrink-0 tabular-nums">
+              5m cache{rateRemaining !== null ? ` · ${rateRemaining}/10` : ''}
+            </span>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 };

@@ -7134,7 +7134,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        await syncRealAnalyticsSnapshotServer();
+        await Promise.race([
+          syncRealAnalyticsSnapshotServer().catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, 1800)),
+        ]);
         const aiResult = await runOwnerAnalyticsAi({
           analytics: OWNER_ANALYTICS_STATE,
           mode: parsed.mode === 'overview' ? 'overview' : 'question',

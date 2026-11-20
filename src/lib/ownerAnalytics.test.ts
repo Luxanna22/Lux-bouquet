@@ -728,6 +728,51 @@ describe('Admin-Only Gemini Analytics Advisor Security & Quota Protection', () =
     assert.equal(eleventh.code, 'RATE_LIMITED');
     assert.equal(eleventh.statusCode, 429);
   });
+
+  it('seamlessly falls back to the next Gemini model when the primary model throws 404 NOT_FOUND', async () => {
+    resetOwnerAiStateForTests();
+    const summary = createInitialAnalyticsSummary(1_760_000_000_000);
+    summary.webVisits = 320;
+    summary.bouquetsCreated = 95;
+
+    const attemptedModels: string[] = [];
+    let sawThinkingConfig = false;
+
+    const fallbackClientFactory = () => ({
+      models: {
+        generateContent: async (params: { model: string; config?: Record<string, unknown> }) => {
+          attemptedModels.push(params.model);
+          if (params.config && 'thinkingConfig' in params.config) {
+            sawThinkingConfig = true;
+          }
+          if (attemptedModels.length === 1) {
+            const err = new Error('models/not-found is not found for API version v1beta (NOT_FOUND)') as Error & {
+              status?: number;
+            };
+            err.status = 404;
+            throw err;
+          }
+          return { text: 'Fallback model succeeded with grounded analytics summary.' };
+        },
+      },
+    });
+
+    const result = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'overview',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_fallback_tester',
+      nowMs: 1_760_000_300_000,
+      clientFactory: fallbackClientFactory,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.answer, 'Fallback model succeeded with grounded analytics summary.');
+    assert.equal(attemptedModels.length, 2);
+    assert.notEqual(attemptedModels[0], attemptedModels[1]);
+    assert.equal(sawThinkingConfig, false);
+  });
 });
 
 describe('Owner Keys & Passes Classification and Filtering Helpers', () => {

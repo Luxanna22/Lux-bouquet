@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Sparkles,
   RefreshCw,
   ArrowLeft,
   Flower2,
@@ -29,7 +28,10 @@ import { decodeBouquetFromHash } from '../lib/shareAndExport';
 import { BrandLogoMark } from './BrandLogoMark';
 import { OwnerOverviewSection } from './OwnerOverviewSection';
 import { OwnerKeysSection } from './OwnerKeysSection';
-import { OwnerAiAdvisorPanel } from './OwnerAiAdvisorPanel';
+import {
+  GeminiAdvisorTriggerButton,
+  OwnerAiAdvisorPanel,
+} from './OwnerAiAdvisorPanel';
 import { OwnerBouquetsSection } from './OwnerBouquetsSection';
 import { invalidateCheckoutCapabilityCache } from './StudioCheckoutModal';
 import {
@@ -46,7 +48,7 @@ interface StealthGateAndOwnerConsoleProps {
   onToast: (msg: string) => void;
 }
 
-type ConsoleTab = 'web_funnel' | 'bouquets' | 'vouchers' | 'ai_advisor' | 'botanicals' | 'security_stream';
+type ConsoleTab = 'web_funnel' | 'bouquets' | 'vouchers' | 'botanicals' | 'security_stream';
 
 const PRETTY_LABELS: Record<string, string> = {
   rose: 'Red Rose',
@@ -159,6 +161,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   });
   const [isServerVerified, setIsServerVerified] = useState(false);
   const [activeTab, setActiveTab] = useState<ConsoleTab>('web_funnel');
+  const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
   const [analytics, setAnalytics] = useState<OwnerAnalyticsSummary>(() =>
     createInitialAnalyticsSummary()
   );
@@ -1144,13 +1147,6 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       count: paidPasses.length + testerVouchers.length || undefined,
     },
     {
-      id: 'ai_advisor',
-      testId: 'owner-tab-ai_advisor',
-      label: 'AI Advisor',
-      mobileLabel: 'Advisor',
-      icon: Sparkles,
-    },
-    {
       id: 'botanicals',
       testId: 'owner-tab-botanicals',
       label: 'Botanicals',
@@ -1166,9 +1162,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
     },
   ];
 
+  const activeNavLabel =
+    navItems.find((item) => item.id === activeTab)?.label || 'Overview';
+
   const cardSurface = isDarkMode
-    ? 'bg-[#352C29] border-[#5E4E49]/80'
-    : 'bg-[#FFFDF9] border-[#DECBB9]';
+    ? 'bg-[#352C29] border-[#5E4E49]/85 border-dashed'
+    : 'bg-[#FFFDF9] border-[#DECBB9] border-dashed';
 
   const hairlineBorder = isDarkMode ? 'border-[#5E4E49]/70' : 'border-[#DECBB9]/85';
   const hairlineDivide = isDarkMode ? 'divide-[#5E4E49]/70' : 'divide-[#DECBB9]/85';
@@ -1290,25 +1289,30 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE TOP BAR */}
       <header
-        className={`md:hidden h-13 px-4 border-b flex items-center justify-between shrink-0 ${
+        className={`md:hidden h-13 px-3.5 border-b border-dashed flex items-center justify-between shrink-0 ${
           isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
-        <div className="flex items-center gap-2">
-          <BrandLogoMark className="w-4 h-4" />
+        <div className="flex items-center gap-2 min-w-0">
+          <BrandLogoMark className="w-4 h-4 shrink-0" />
           <span
             style={{ fontFamily: "'Cormorant Garamond', serif" }}
-            className="text-lg font-medium"
+            className="text-lg font-medium truncate"
           >
             Atelier Console
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <GeminiAdvisorTriggerButton
+            isOpen={isAiDrawerOpen}
+            onClick={() => setIsAiDrawerOpen((prev) => !prev)}
+            isDarkMode={isDarkMode}
+          />
           <button
             type="button"
             onClick={() => adminSessionToken && fetchConsoleData(adminSessionToken)}
             aria-label="Sync"
-            className={`p-1.5 rounded-lg border cursor-pointer ${hairlineBorder}`}
+            className={`p-1.5 rounded-full border border-dashed cursor-pointer ${hairlineBorder}`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -1317,7 +1321,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               type="button"
               onClick={onToggleDarkMode}
               aria-label="Toggle theme"
-              className={`p-1.5 rounded-lg border cursor-pointer ${hairlineBorder}`}
+              className={`p-1.5 rounded-full border border-dashed cursor-pointer ${hairlineBorder}`}
             >
               {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
             </button>
@@ -1325,7 +1329,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           <button
             type="button"
             onClick={onExitToStudio}
-            className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer ${
+            className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer ${
               isDarkMode ? 'bg-[#E6B89C] text-[#231C18]' : 'bg-[#6E4434] text-[#FFFDF9]'
             }`}
           >
@@ -1334,9 +1338,31 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         </div>
       </header>
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-20 md:pb-8">
-        <div className="max-w-5xl mx-auto space-y-6">
+      {/* WORKSPACE COLUMN (DESKTOP TOP BAR + SCROLLABLE CONTENT) */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        {/* DESKTOP UTILITY BAR (Clean breadcrumb + Google Gemini-style right-panel trigger) */}
+        <header
+          className={`hidden md:flex h-14 px-6 lg:px-8 border-b border-dashed items-center justify-between shrink-0 ${
+            isDarkMode ? 'bg-[#2B2321]/95 border-[#5E4E49]/75' : 'bg-[#FAF4EE]/95 border-[#DECBB9]'
+          }`}
+        >
+          <div className="flex items-center gap-2 text-xs">
+            <span className="opacity-50">Atelier Console</span>
+            <span aria-hidden="true" className="opacity-35">/</span>
+            <span className="font-medium">{activeNavLabel}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <GeminiAdvisorTriggerButton
+              isOpen={isAiDrawerOpen}
+              onClick={() => setIsAiDrawerOpen((prev) => !prev)}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+        </header>
+
+        {/* MAIN CONTENT AREA */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-20 md:pb-8">
+          <div className="max-w-5xl mx-auto space-y-6">
           {/* TAB 1: REVENUE & FUNNEL OVERVIEW */}
           {activeTab === 'web_funnel' && (
             <OwnerOverviewSection
@@ -1389,26 +1415,17 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             />
           )}
 
-          {/* TAB 3: ADMIN-ONLY AI ANALYTICS ADVISOR (kept mounted while verified so chat persists across tab switches) */}
-          <div className={activeTab === 'ai_advisor' ? 'block' : 'hidden'}>
-            <OwnerAiAdvisorPanel
-              adminSessionToken={adminSessionToken}
-              deviceTokenHash={deviceTokenHash}
-              isDarkMode={isDarkMode}
-            />
-          </div>
-
           {/* TAB 4: BOTANICALS & STYLING */}
           {activeTab === 'botanicals' && (
             <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
               <div className="flex items-baseline justify-between">
                 <h1
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                  className="text-2xl sm:text-3xl font-normal"
+                  className="text-2xl sm:text-3xl font-medium"
                 >
                   Botanicals & Styling
                 </h1>
-                <span className="text-xs opacity-60">Real selections from sealed bouquets</span>
+                <span className="text-xs opacity-60">Selections from sealed bouquets</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1419,14 +1436,22 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                   { title: 'Atmosphere Scenes', items: topEnvironments },
                 ].map((group) => {
                   const maxVal = Math.max(1, ...(group.items.map(([, c]) => c) || [1]));
+                  const totalGroup = group.items.reduce((sum, [, c]) => sum + c, 0);
                   return (
-                    <div key={group.title} className={`rounded-xl border p-5 ${cardSurface}`}>
-                      <h2
-                        style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                        className="text-xl font-medium mb-3"
-                      >
-                        {group.title}
-                      </h2>
+                    <div key={group.title} className={`rounded-2xl border p-5 ${cardSurface}`}>
+                      <div className="flex items-baseline justify-between mb-3.5">
+                        <h2
+                          style={{ fontFamily: "'Cormorant Garamond', serif" }}
+                          className="text-xl font-medium"
+                        >
+                          {group.title}
+                        </h2>
+                        {totalGroup > 0 && (
+                          <span className="text-[11px] font-mono tabular-nums opacity-55">
+                            {totalGroup} picks
+                          </span>
+                        )}
+                      </div>
 
                       {group.items.length === 0 ? (
                         <div
@@ -1436,19 +1461,24 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                           Recorded as bouquets are sealed
                         </div>
                       ) : (
-                        <div className="space-y-2.5">
+                        <div className="space-y-3">
                           {group.items.map(([id, count]) => {
                             const pct = Math.max(8, Math.round((count / maxVal) * 100));
+                            const sharePct =
+                              totalGroup > 0 ? Math.round((count / totalGroup) * 100) : 0;
                             return (
                               <div key={id} className="space-y-1">
                                 <div className="flex items-center justify-between text-xs">
-                                  <span>{formatLabel(id)}</span>
-                                  <span className="font-mono tabular-nums opacity-65">{count}</span>
+                                  <span className="font-medium">{formatLabel(id)}</span>
+                                  <span className="font-mono tabular-nums opacity-65">
+                                    {count}{' '}
+                                    <span className="opacity-65">({sharePct}%)</span>
+                                  </span>
                                 </div>
-                                <div className="h-1.5 rounded-sm bg-current/10 overflow-hidden">
+                                <div className="h-2 rounded-full bg-current/10 overflow-hidden">
                                   <div
                                     style={{ width: `${pct}%` }}
-                                    className="h-full bg-[#6E4434] dark:bg-[#E6B89C]"
+                                    className="h-full rounded-full bg-[#6E4434] dark:bg-[#E6B89C] transition-all duration-300"
                                   />
                                 </div>
                               </div>
@@ -1585,12 +1615,23 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               </div>
             </div>
           )}
-        </div>
-      </main>
+          </div>
+        </main>
+      </div>
+
+      {/* GOOGLE GEMINI-STYLE RIGHT-HAND AI ADVISOR DRAWER (Docked on desktop, slide-over on mobile) */}
+      <OwnerAiAdvisorPanel
+        isOpen={isAiDrawerOpen}
+        onClose={() => setIsAiDrawerOpen(false)}
+        adminSessionToken={adminSessionToken}
+        deviceTokenHash={deviceTokenHash}
+        isDarkMode={isDarkMode}
+        activeTabLabel={activeNavLabel}
+      />
 
       {/* MOBILE BOTTOM NAVIGATION DOCK */}
       <nav
-        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t grid grid-cols-6 z-20 ${
+        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t border-dashed grid grid-cols-5 z-20 ${
           isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >

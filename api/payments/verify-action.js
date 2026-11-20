@@ -1,5 +1,7 @@
 import { handlePaymentEndpoint } from '../_lib/paymentHandler.js';
 
+export const maxDuration = 30;
+
 export default async function handler(req, res) {
   await handlePaymentEndpoint(req, res, '/api/payments/verify-action');
 }

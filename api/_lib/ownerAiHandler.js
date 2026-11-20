@@ -1,12 +1,72 @@
 import crypto from 'node:crypto';
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 
-const GEMINI_MODEL = 'gemini-4-hydrogen';
+const DEFAULT_GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite',
+];
+const ATTEMPT_TIMEOUT_MS = 12 * 1000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 80;
 const RATE_WINDOW_MS = 60 * 1000;
 const MAX_LIVE_CALLS_PER_WINDOW = 10;
 const COOLDOWN_AFTER_429_MS = 45 * 1000;
+
+function getGeminiModelCandidates() {
+  const raw = [process.env.GEMINI_MODEL, ...DEFAULT_GEMINI_MODELS];
+  const seen = new Set();
+  const candidates = [];
+  for (const item of raw) {
+    const trimmed = String(item || '').trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      candidates.push(trimmed);
+    }
+  }
+  return candidates;
+}
+
+function isModelNotFoundError(rawMsg, status) {
+  const lower = rawMsg.toLowerCase();
+  return (
+    status === 404 ||
+    rawMsg.includes('404') ||
+    rawMsg.includes('NOT_FOUND') ||
+    lower.includes('not found') ||
+    lower.includes('unsupported model') ||
+    lower.includes('is not supported for generatecontent')
+  );
+}
+
+async function generateWithTimeout(ai, { model, contents, systemInstruction, timeoutMs }) {
+  const controller = new AbortController();
+  let timer = null;
+  try {
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        const timeoutErr = new Error(`Gemini request timed out after ${timeoutMs}ms`);
+        timeoutErr.code = 'AI_TIMEOUT';
+        reject(timeoutErr);
+      }, timeoutMs);
+    });
+
+    return await Promise.race([
+      ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction,
+          abortSignal: controller.signal,
+        },
+      }),
+      timeoutPromise,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 const AI_RESPONSE_CACHE = new Map();
 const ADMIN_RATE_TRACKER = new Map();
@@ -377,16 +437,36 @@ export async function runOwnerAnalyticsAi({
 
   try {
     const ai = clientFactory(apiKey);
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: userPrompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        thinkingConfig: {
-          thinkingLevel: ThinkingLevel.LOW,
-        },
-      },
-    });
+    const modelCandidates = getGeminiModelCandidates();
+    let response = null;
+    let lastErr = null;
+
+    for (let i = 0; i < modelCandidates.length; i += 1) {
+      const model = modelCandidates[i];
+      try {
+        response = await generateWithTimeout(ai, {
+          model,
+          contents: userPrompt,
+          systemInstruction: SYSTEM_INSTRUCTION,
+          timeoutMs: ATTEMPT_TIMEOUT_MS,
+        });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const rawMsg = String(err?.message || err || '');
+        const status = Number(err?.status || err?.code || 0);
+        const hasMoreModels = i < modelCandidates.length - 1;
+        if (hasMoreModels && isModelNotFoundError(rawMsg, status)) {
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (lastErr) {
+      throw lastErr;
+    }
 
     const answer = String(response?.text || '').trim();
     if (!answer) {
@@ -416,6 +496,15 @@ export async function runOwnerAnalyticsAi({
   } catch (err) {
     const rawMsg = String(err?.message || err || '');
     const status = Number(err?.status || err?.code || 0);
+
+    if (err?.code === 'AI_TIMEOUT') {
+      return {
+        ok: false,
+        statusCode: 504,
+        code: 'AI_TIMEOUT',
+        message: 'Gemini took too long to respond. Please try again in a moment.',
+      };
+    }
 
     if (
       status === 429 ||
