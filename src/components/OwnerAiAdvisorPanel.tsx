@@ -166,6 +166,10 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
   const [questionInput, setQuestionInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [lastFailedRequest, setLastFailedRequest] = useState<{
+    mode: 'overview' | 'question';
+    text: string;
+  } | null>(null);
   const [rateRemaining, setRateRemaining] = useState<number | null>(null);
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
@@ -217,30 +221,40 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
     ? 'bg-[#2B2321] border-[#B4846C]/60 text-[#E6B89C]'
     : 'bg-[#FAF4EE] border-[#B4846C]/70 text-[#6E4434]';
 
-  const sendAiRequest = async (mode: 'overview' | 'question', text: string) => {
+  const sendAiRequest = async (
+    mode: 'overview' | 'question',
+    text: string,
+    isRetry = false
+  ) => {
     if (!adminSessionToken || isLoading) return;
     if (mode === 'question' && !text.trim()) return;
 
     setIsLoading(true);
     setErrorMsg(null);
+    setLastFailedRequest(null);
 
     const displayUserPrompt =
       mode === 'overview'
         ? 'Generate executive analytics & revenue overview'
         : text.trim();
 
-    const userMessage: ChatMessage = {
-      id: `u_${Date.now()}`,
-      role: 'user',
-      text: displayUserPrompt,
-    };
-
-    const nextHistory = messages.slice(-4).map((m) => ({
+    const historySource =
+      isRetry && messages[messages.length - 1]?.role === 'user'
+        ? messages.slice(0, -1)
+        : messages;
+    const nextHistory = historySource.slice(-4).map((m) => ({
       role: m.role,
       text: m.text.slice(0, 400),
     }));
 
-    setMessages((prev) => [...prev, userMessage]);
+    if (!isRetry) {
+      const userMessage: ChatMessage = {
+        id: `u_${Date.now()}`,
+        role: 'user',
+        text: displayUserPrompt,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+    }
     if (mode === 'question') {
       setQuestionInput('');
     }
@@ -278,13 +292,24 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
       }
 
       if (!res.ok || !data?.ok) {
+        setLastFailedRequest({ mode, text });
         if (data?.message) {
           setErrorMsg(data.message);
         } else if (!res.ok) {
-          const statusSuffix = res.statusText ? ` (${res.statusText})` : '';
-          setErrorMsg(
-            `Server returned HTTP ${res.status}${statusSuffix}. Please try again in a moment.`
-          );
+          const isTimeoutCode = /FUNCTION_INVOCATION_TIMEOUT|504/i.test(rawText);
+          const isInvocationFailed = /FUNCTION_INVOCATION_FAILED|BAD_GATEWAY/i.test(rawText);
+          if (isTimeoutCode) {
+            setErrorMsg('The server function timed out waiting for Gemini. Tap Retry to try again.');
+          } else if (isInvocationFailed) {
+            setErrorMsg(
+              `Gateway returned HTTP ${res.status} (upstream function error). Redeploy or tap Retry in a moment.`
+            );
+          } else {
+            const statusSuffix = res.statusText ? ` (${res.statusText})` : '';
+            setErrorMsg(
+              `Server returned HTTP ${res.status}${statusSuffix}. Please try again in a moment.`
+            );
+          }
         } else {
           setErrorMsg('The advisor could not complete this request right now.');
         }
@@ -304,6 +329,7 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch {
+      setLastFailedRequest({ mode, text });
       setErrorMsg('Could not reach the analytics endpoint. Check your connection and try again.');
     } finally {
       setIsLoading(false);
@@ -319,6 +345,7 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
     if (isLoading) return;
     setMessages([]);
     setErrorMsg(null);
+    setLastFailedRequest(null);
     inputRef.current?.focus();
   };
 
@@ -514,10 +541,28 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
             role="status"
             className={`mx-4 mb-2.5 px-3 py-2 rounded-xl border border-dashed text-xs leading-relaxed flex items-start justify-between gap-2 shrink-0 ${errorNoticeClass}`}
           >
-            <span>{errorMsg}</span>
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <p>{errorMsg}</p>
+              {lastFailedRequest && (
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() =>
+                    sendAiRequest(lastFailedRequest.mode, lastFailedRequest.text, true)
+                  }
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[11px] font-medium cursor-pointer disabled:opacity-45 transition-colors ${subtleBtnClass}`}
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Retry</span>
+                </button>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => setErrorMsg(null)}
+              onClick={() => {
+                setErrorMsg(null);
+                setLastFailedRequest(null);
+              }}
               aria-label="Dismiss notice"
               className="opacity-65 hover:opacity-100 cursor-pointer shrink-0 pt-0.5"
             >

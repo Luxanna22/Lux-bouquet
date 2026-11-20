@@ -1,12 +1,24 @@
 import crypto from 'node:crypto';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
 const DEFAULT_GEMINI_MODELS = [
+  'gemini-3.1-flash-lite',
   'gemini-4-hydrogen',
   'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
 ];
-const ATTEMPT_TIMEOUT_MS = 10 * 1000;
+const PROHIBITED_DEPRECATED_MODELS = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-pro',
+  'gemini-2.0-flash-thinking',
+]);
+const ATTEMPT_TIMEOUT_MS = 12 * 1000;
+const LIST_MODELS_TIMEOUT_MS = 4000;
+const TOTAL_REQUEST_BUDGET_MS = 22 * 1000;
+const RETRY_503_BACKOFF_MS = 650;
+const MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 80;
 const RATE_WINDOW_MS = 60 * 1000;
@@ -15,128 +27,334 @@ const HOURLY_RATE_WINDOW_MS = 60 * 60 * 1000;
 const MAX_LIVE_CALLS_PER_HOUR = 30;
 const MIN_GAP_BETWEEN_LIVE_CALLS_MS = 2500;
 const COOLDOWN_AFTER_429_MS = 60 * 1000;
-const MAX_OUTPUT_TOKENS = 450;
 
-function getGeminiModelCandidates() {
-  const raw = [process.env.GEMINI_MODEL, ...DEFAULT_GEMINI_MODELS];
+const UNAVAILABLE_MODEL_CACHE = new Map();
+let discoveredModelsCache = { models: [], expiresAtMs: 0 };
+let lastWorkingModelState = { model: '', expiresAtMs: 0 };
+
+function normalizeModelId(rawName) {
+  return String(rawName || '')
+    .trim()
+    .replace(/^models\//i, '');
+}
+
+function isModelMarkedUnavailable(model, nowMs) {
+  const expiresAt = UNAVAILABLE_MODEL_CACHE.get(model);
+  if (!expiresAt) return false;
+  if (nowMs >= expiresAt) {
+    UNAVAILABLE_MODEL_CACHE.delete(model);
+    return false;
+  }
+  return true;
+}
+
+function markModelUnavailable(model, nowMs) {
+  if (!model) return;
+  UNAVAILABLE_MODEL_CACHE.set(model, nowMs + MODEL_CACHE_TTL_MS);
+  if (lastWorkingModelState.model === model) {
+    lastWorkingModelState = { model: '', expiresAtMs: 0 };
+  }
+}
+
+function recordWorkingModel(model, nowMs) {
+  if (!model) return;
+  UNAVAILABLE_MODEL_CACHE.delete(model);
+  lastWorkingModelState = { model, expiresAtMs: nowMs + MODEL_CACHE_TTL_MS };
+}
+
+function getGeminiModelCandidates(nowMs = Date.now()) {
+  const envModel = normalizeModelId(process.env.GEMINI_MODEL || '');
+  const stickyModel =
+    lastWorkingModelState.model && nowMs < lastWorkingModelState.expiresAtMs
+      ? lastWorkingModelState.model
+      : '';
+  const discovered =
+    nowMs < discoveredModelsCache.expiresAtMs ? discoveredModelsCache.models : [];
+
+  const raw = [envModel, stickyModel, ...DEFAULT_GEMINI_MODELS, ...discovered];
   const seen = new Set();
   const candidates = [];
   for (const item of raw) {
-    const trimmed = String(item || '').trim();
-    if (trimmed && !seen.has(trimmed)) {
-      seen.add(trimmed);
-      candidates.push(trimmed);
+    const trimmed = normalizeModelId(item);
+    if (!trimmed || seen.has(trimmed)) continue;
+    if (PROHIBITED_DEPRECATED_MODELS.has(trimmed.toLowerCase()) && trimmed !== envModel) {
+      continue;
+    }
+    if (isModelMarkedUnavailable(trimmed, nowMs)) continue;
+    seen.add(trimmed);
+    candidates.push(trimmed);
+  }
+
+  // Always keep at least one fallback if every model aged into the unavailable cache
+  if (candidates.length === 0) {
+    for (const item of [envModel, ...DEFAULT_GEMINI_MODELS]) {
+      const trimmed = normalizeModelId(item);
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        candidates.push(trimmed);
+      }
     }
   }
   return candidates;
 }
 
-function isRetryableModelError(rawMsg, status) {
+/**
+ * Builds model-safe generateContent config:
+ * - Never passes deprecated sampling params (temperature, topP, topK, candidateCount).
+ * - Never sets tiny maxOutputTokens that can starve thinking tokens and yield empty text.
+ * - Applies thinkingLevel for Gemini 4 / Gemini 3 models, and thinkingBudget: 0 for Gemini 2.5.
+ */
+export function buildGeminiRequestConfig(model, systemInstruction) {
+  const id = normalizeModelId(model).toLowerCase();
+  const base = systemInstruction ? { systemInstruction } : {};
+
+  if (id.startsWith('gemini-4')) {
+    return {
+      ...base,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+    };
+  }
+  if (id.startsWith('gemini-3.1-flash-lite')) {
+    return {
+      ...base,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+    };
+  }
+  if (id.startsWith('gemini-3') && id.includes('flash')) {
+    return {
+      ...base,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+    };
+  }
+  if (id.startsWith('gemini-2.5')) {
+    return {
+      ...base,
+      thinkingConfig: { thinkingBudget: 0 },
+    };
+  }
+  return base;
+}
+
+/**
+ * Filters and ranks live models returned by Google AI Studio `models.list()`
+ * so external keys with different preview/stable aliases self-heal automatically.
+ */
+export function selectDiscoveredFlashModels(rawModels) {
+  if (!Array.isArray(rawModels)) return [];
+  const excludedSubstrings = [
+    'embedding',
+    'imagen',
+    'veo',
+    'lyria',
+    'tts',
+    'transcribe',
+    'translate',
+    'live',
+    'audio',
+    'image',
+    'vision',
+    'robotics',
+    'computer-use',
+    'deep-research',
+    'aqa',
+    'bisheng',
+    'omni',
+    'genie',
+    'decision',
+    'exp-image',
+    'learnlm',
+  ];
+
+  const scored = [];
+  const seen = new Set();
+  for (const entry of rawModels) {
+    const id = normalizeModelId(typeof entry === 'string' ? entry : entry?.name);
+    if (!id || seen.has(id)) continue;
+    const lower = id.toLowerCase();
+
+    if (!lower.startsWith('gemini-')) continue;
+    if (
+      PROHIBITED_DEPRECATED_MODELS.has(lower) ||
+      lower.startsWith('gemini-1.') ||
+      lower.startsWith('gemini-2.0')
+    ) {
+      continue;
+    }
+    if (excludedSubstrings.some((bad) => lower.includes(bad))) continue;
+
+    if (entry && typeof entry === 'object') {
+      const actions = entry.supportedActions || entry.supportedGenerationMethods;
+      if (
+        Array.isArray(actions) &&
+        actions.length > 0 &&
+        !actions.some((a) => String(a).toLowerCase() === 'generatecontent')
+      ) {
+        continue;
+      }
+    }
+
+    let score = 50;
+    if (lower === 'gemini-4-hydrogen') score = 100;
+    else if (lower === 'gemini-3.1-flash-lite') score = 95;
+    else if (lower.startsWith('gemini-3.1-flash-lite')) score = 92;
+    else if (lower.startsWith('gemini-3') && lower.includes('flash')) score = 90;
+    else if (lower === 'gemini-2.5-flash') score = 85;
+    else if (lower.startsWith('gemini-2.5-flash-lite')) score = 80;
+    else if (lower.startsWith('gemini-2.5-flash')) score = 78;
+    else if (lower.includes('flash')) score = 70;
+    else if (lower.includes('lite')) score = 65;
+    else if (lower.includes('pro')) score = 30;
+
+    seen.add(id);
+    scored.push({ id, score });
+  }
+
+  return scored.sort((a, b) => b.score - a.score).map((item) => item.id);
+}
+
+function extractErrorStatus(err) {
+  const candidates = [err?.status, err?.statusCode, err?.code, err?.error?.code];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n >= 100 && n < 600) return n;
+  }
+  const msg = String(err?.message || err || '');
+  const match = msg.match(/\b(400|401|403|404|429|500|502|503|504)\b/);
+  return match ? Number(match[1]) : 0;
+}
+
+function isNotFoundModelError(rawMsg, status) {
   const lower = rawMsg.toLowerCase();
   return (
     status === 404 ||
-    status === 503 ||
-    rawMsg.includes('404') ||
-    rawMsg.includes('503') ||
     rawMsg.includes('NOT_FOUND') ||
-    rawMsg.includes('UNAVAILABLE') ||
     lower.includes('not found') ||
-    lower.includes('unavailable') ||
-    lower.includes('overloaded') ||
     lower.includes('unsupported model') ||
     lower.includes('is not supported for generatecontent')
   );
 }
 
+function isServiceUnavailableError(rawMsg, status) {
+  const lower = rawMsg.toLowerCase();
+  return (
+    status === 503 ||
+    rawMsg.includes('UNAVAILABLE') ||
+    lower.includes('unavailable') ||
+    lower.includes('overloaded') ||
+    lower.includes('high demand')
+  );
+}
+
+function isUnsupportedConfigError(rawMsg, status) {
+  if (status !== 400) return false;
+  const lower = rawMsg.toLowerCase();
+  return (
+    lower.includes('thinking') ||
+    lower.includes('temperature') ||
+    lower.includes('unknown name') ||
+    lower.includes('invalid argument')
+  );
+}
+
 /**
- * Native fetch-based Gemini REST client:
- * - Zero SDK cold-start overhead or unhandled AbortError crashes on Vercel Serverless.
- * - Explicitly disables slow thinking budget on Gemini 2.5 Flash models so answers return in ~1-2s.
- * - Caps output tokens (`MAX_OUTPUT_TOKENS`) to prevent runaway token spend.
+ * Official @google/genai server-side client wrapper:
+ * - Sends required `User-Agent: aistudio-build` header in httpOptions.
+ * - Applies model-safe config (no deprecated sampling params or starved maxOutputTokens).
+ * - Retries once with bare `{ systemInstruction }` if a specific model rejects thinkingConfig.
+ * - Exposes `models.list()` for dynamic self-healing model discovery if static models 404.
  */
-function createRestGeminiClient(apiKey) {
+function createSdkGeminiClient(apiKey) {
+  const sdk = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+
   return {
     models: {
       async generateContent({ model, contents, config }) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT_MS);
+        const systemInstruction = config?.systemInstruction;
+        const safeConfig = buildGeminiRequestConfig(model, systemInstruction);
         try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-            model
-          )}:generateContent`;
-          const generationConfig = {
-            temperature: 0.4,
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
-            ...(model.startsWith('gemini-4')
-              ? { thinkingConfig: { thinkingLevel: 'LOW' } }
-              : model.startsWith('gemini-2.5')
-              ? { thinkingConfig: { thinkingBudget: 0 } }
-              : {}),
-          };
-          const body = {
-            contents: [{ role: 'user', parts: [{ text: String(contents || '') }] }],
-            ...(config?.systemInstruction
-              ? {
-                  systemInstruction: {
-                    parts: [{ text: String(config.systemInstruction) }],
-                  },
-                }
-              : {}),
-            generationConfig,
-          };
-
-          const resp = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey,
-            },
-            body: JSON.stringify(body),
-            signal: controller.signal,
+          const response = await sdk.models.generateContent({
+            model,
+            contents,
+            config: safeConfig,
           });
-
-          const rawText = await resp.text();
-          let json = null;
-          try {
-            json = rawText ? JSON.parse(rawText) : null;
-          } catch {
-            json = null;
-          }
-
-          if (!resp.ok) {
-            const errMsg =
-              json?.error?.message ||
-              rawText.slice(0, 200) ||
-              `Gemini HTTP ${resp.status}`;
-            const err = new Error(errMsg);
-            err.status = resp.status;
-            err.code = json?.error?.status || resp.status;
-            throw err;
-          }
-
-          const parts = json?.candidates?.[0]?.content?.parts;
-          const text = Array.isArray(parts)
-            ? parts
-                .map((p) => (typeof p?.text === 'string' ? p.text : ''))
-                .join('')
-                .trim()
-            : '';
-          return { text };
+          return { text: String(response?.text || '').trim() };
         } catch (err) {
-          if (err?.name === 'AbortError') {
-            const timeoutErr = new Error(
-              `Gemini request timed out after ${ATTEMPT_TIMEOUT_MS}ms`
-            );
-            timeoutErr.code = 'AI_TIMEOUT';
-            throw timeoutErr;
+          const rawMsg = String(err?.message || err || '');
+          const status = extractErrorStatus(err);
+          if (safeConfig.thinkingConfig && isUnsupportedConfigError(rawMsg, status)) {
+            const fallbackResponse = await sdk.models.generateContent({
+              model,
+              contents,
+              config: systemInstruction ? { systemInstruction } : undefined,
+            });
+            return { text: String(fallbackResponse?.text || '').trim() };
           }
           throw err;
-        } finally {
-          clearTimeout(timer);
         }
+      },
+      async list() {
+        const pager = await sdk.models.list({ config: { pageSize: 100 } });
+        const items = [];
+        for await (const m of pager) {
+          items.push(m);
+          if (items.length >= 100) break;
+        }
+        return items;
       },
     },
   };
+}
+
+async function discoverAvailableGeminiModels(ai, nowMs, timeoutMs) {
+  if (nowMs < discoveredModelsCache.expiresAtMs && discoveredModelsCache.models.length > 0) {
+    return discoveredModelsCache.models;
+  }
+  if (!ai?.models || typeof ai.models.list !== 'function') {
+    return [];
+  }
+  let timer = null;
+  try {
+    const listPromise = Promise.resolve().then(() => ai.models.list());
+    listPromise.catch(() => {});
+    const rawResult = await Promise.race([
+      listPromise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('MODEL_LIST_TIMEOUT')), timeoutMs);
+      }),
+    ]);
+
+    let rawList = [];
+    if (Array.isArray(rawResult)) {
+      rawList = rawResult;
+    } else if (rawResult && typeof rawResult[Symbol.asyncIterator] === 'function') {
+      for await (const m of rawResult) {
+        rawList.push(m);
+        if (rawList.length >= 100) break;
+      }
+    } else if (Array.isArray(rawResult?.models)) {
+      rawList = rawResult.models;
+    }
+
+    const selected = selectDiscoveredFlashModels(rawList);
+    if (selected.length > 0) {
+      discoveredModelsCache = {
+        models: selected,
+        expiresAtMs: nowMs + MODEL_CACHE_TTL_MS,
+      };
+    }
+    return selected;
+  } catch {
+    return [];
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function generateWithTimeout(ai, { model, contents, systemInstruction, timeoutMs }) {
@@ -357,7 +575,7 @@ export function computeAnalyticsSnapshotHash(sanitizedSnapshot) {
 }
 
 function getDefaultGeminiClient(apiKey) {
-  return createRestGeminiClient(apiKey);
+  return createSdkGeminiClient(apiKey);
 }
 
 function pruneCache(nowMs) {
@@ -438,6 +656,9 @@ export function resetOwnerAiStateForTests() {
   ADMIN_RATE_TRACKER.clear();
   ADMIN_HOURLY_TRACKER.clear();
   IN_FLIGHT_REQUESTS.clear();
+  UNAVAILABLE_MODEL_CACHE.clear();
+  discoveredModelsCache = { models: [], expiresAtMs: 0 };
+  lastWorkingModelState = { model: '', expiresAtMs: 0 };
   upstreamCooldownUntilMs = 0;
 }
 
@@ -585,37 +806,121 @@ export async function runOwnerAnalyticsAi({
     .join('\n');
 
   const executeLiveCall = async () => {
+    const startedAtMs = Date.now();
+    const getRemainingBudgetMs = () =>
+      Math.max(0, TOTAL_REQUEST_BUDGET_MS - (Date.now() - startedAtMs));
+
     try {
       const ai = clientFactory(apiKey);
-      const modelCandidates = getGeminiModelCandidates();
+      const modelCandidates = getGeminiModelCandidates(nowMs);
       let response = null;
+      let succeededModel = '';
       let lastErr = null;
+      let last503Err = null;
+      let overloadedModel = '';
+      let sawNotFound = false;
+      const triedModels = new Set();
 
-      for (let i = 0; i < modelCandidates.length; i += 1) {
-        const model = modelCandidates[i];
-        try {
-          response = await generateWithTimeout(ai, {
-            model,
-            contents: userPrompt,
-            systemInstruction: SYSTEM_INSTRUCTION,
-            timeoutMs: ATTEMPT_TIMEOUT_MS,
-          });
-          lastErr = null;
-          break;
-        } catch (err) {
-          lastErr = err;
-          const rawMsg = String(err?.message || err || '');
-          const status = Number(err?.status || err?.code || 0);
-          const hasMoreModels = i < modelCandidates.length - 1;
-          if (hasMoreModels && isRetryableModelError(rawMsg, status)) {
-            continue;
+      const attemptModel = async (model) => {
+        const remaining = getRemainingBudgetMs();
+        if (remaining < 1500) {
+          const budgetErr = new Error('Gemini request exceeded total time budget');
+          budgetErr.code = 'AI_TIMEOUT';
+          throw budgetErr;
+        }
+        const timeoutMs = Math.min(ATTEMPT_TIMEOUT_MS, remaining);
+        const res = await generateWithTimeout(ai, {
+          model,
+          contents: userPrompt,
+          systemInstruction: SYSTEM_INSTRUCTION,
+          timeoutMs,
+        });
+        const text = String(res?.text || '').trim();
+        if (!text) {
+          const emptyErr = new Error('Gemini returned an empty response');
+          emptyErr.code = 'EMPTY_AI_RESPONSE';
+          throw emptyErr;
+        }
+        return { text };
+      };
+
+      const runCandidateQueue = async (queue) => {
+        for (const model of queue) {
+          if (!model || triedModels.has(model)) continue;
+          triedModels.add(model);
+          try {
+            response = await attemptModel(model);
+            succeededModel = model;
+            lastErr = null;
+            return true;
+          } catch (err) {
+            lastErr = err;
+            const rawMsg = String(err?.message || err || '');
+            const status = extractErrorStatus(err);
+
+            if (isNotFoundModelError(rawMsg, status)) {
+              sawNotFound = true;
+              markModelUnavailable(model, nowMs);
+              continue;
+            }
+            if (isServiceUnavailableError(rawMsg, status)) {
+              last503Err = err;
+              if (!overloadedModel) overloadedModel = model;
+              continue;
+            }
+            if (err?.code === 'AI_TIMEOUT' && getRemainingBudgetMs() >= 5500) {
+              continue;
+            }
+            // Non-retryable error (429 quota, 401/403 key error, 400 bad request)
+            return false;
           }
-          break;
+        }
+        return false;
+      };
+
+      let succeeded = await runCandidateQueue(modelCandidates);
+
+      // Self-heal when static model aliases 404 on an external Google AI Studio API key:
+      // query live models.list() once (cached 30m) and try top compatible Flash/Lite models.
+      if (!succeeded && sawNotFound && getRemainingBudgetMs() >= 4500) {
+        const discovered = await discoverAvailableGeminiModels(
+          ai,
+          nowMs,
+          Math.min(LIST_MODELS_TIMEOUT_MS, Math.max(1500, getRemainingBudgetMs() - 2500))
+        );
+        const freshCandidates = discovered
+          .filter((m) => !triedModels.has(m) && !isModelMarkedUnavailable(m, nowMs))
+          .slice(0, 2);
+        if (freshCandidates.length > 0) {
+          succeeded = await runCandidateQueue(freshCandidates);
         }
       }
 
-      if (lastErr) {
-        throw lastErr;
+      // Single short backoff retry if a real model was temporarily overloaded (503)
+      if (!succeeded && overloadedModel && getRemainingBudgetMs() >= 4000) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_503_BACKOFF_MS));
+        try {
+          response = await attemptModel(overloadedModel);
+          succeededModel = overloadedModel;
+          lastErr = null;
+          succeeded = true;
+        } catch (retryErr) {
+          lastErr = retryErr;
+          const retryMsg = String(retryErr?.message || retryErr || '');
+          const retryStatus = extractErrorStatus(retryErr);
+          if (isServiceUnavailableError(retryMsg, retryStatus)) {
+            last503Err = retryErr;
+          }
+        }
+      }
+
+      if (!succeeded) {
+        // Preserve 503 ServiceUnavailable if a valid model existed but was busy (never mask with a later 404)
+        const finalErr =
+          last503Err && isNotFoundModelError(String(lastErr?.message || ''), extractErrorStatus(lastErr))
+            ? last503Err
+            : lastErr || last503Err || new Error('Gemini request failed');
+        throw finalErr;
       }
 
       const answer = String(response?.text || '').trim();
@@ -628,6 +933,9 @@ export async function runOwnerAnalyticsAi({
         };
       }
 
+      if (succeededModel) {
+        recordWorkingModel(succeededModel, nowMs);
+      }
       const rateRemaining = recordAdminAiCall(adminKey, nowMs);
       AI_RESPONSE_CACHE.set(cacheDigest, {
         answer,
@@ -639,13 +947,23 @@ export async function runOwnerAnalyticsAi({
         statusCode: 200,
         answer,
         cached: false,
+        modelUsed: succeededModel || undefined,
         snapshotHash,
         cooldownSec: 0,
         rateRemaining,
       };
     } catch (err) {
       const rawMsg = String(err?.message || err || '');
-      const status = Number(err?.status || err?.code || 0);
+      const status = extractErrorStatus(err);
+
+      if (err?.code === 'EMPTY_AI_RESPONSE') {
+        return {
+          ok: false,
+          statusCode: 502,
+          code: 'EMPTY_AI_RESPONSE',
+          message: 'Gemini returned an empty response. Please try asking again.',
+        };
+      }
 
       if (err?.code === 'AI_TIMEOUT') {
         return {
@@ -673,28 +991,56 @@ export async function runOwnerAnalyticsAi({
         };
       }
 
+      const lowerMsg = rawMsg.toLowerCase();
       if (
-        status === 400 ||
         status === 401 ||
         status === 403 ||
         rawMsg.includes('API_KEY_INVALID') ||
-        rawMsg.includes('PERMISSION_DENIED')
+        rawMsg.includes('PERMISSION_DENIED') ||
+        lowerMsg.includes('api key not valid') ||
+        lowerMsg.includes('api key expired') ||
+        lowerMsg.includes('invalid api key')
       ) {
         return {
           ok: false,
           statusCode: status === 400 ? 400 : 403,
           code: 'API_KEY_REJECTED',
           message:
-            'Server Gemini API key was rejected or lacks permission. Verify GEMINI_API_KEY in Vercel Environment Variables.',
+            'Server Gemini API key was rejected or lacks permission. Verify GEMINI_API_KEY in Settings > Secrets or Vercel Environment Variables.',
         };
       }
 
-      if (status === 503 || rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE')) {
+      if (status === 400) {
+        const safeDetail = stripSensitivePatterns(rawMsg)
+          .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED_KEY]')
+          .replace(/\s+/g, ' ')
+          .slice(0, 140);
+        return {
+          ok: false,
+          statusCode: 400,
+          code: 'AI_BAD_REQUEST',
+          message: safeDetail
+            ? `Gemini rejected the request (HTTP 400): ${safeDetail}`
+            : 'Gemini rejected the request (HTTP 400). Please try again.',
+        };
+      }
+
+      if (isServiceUnavailableError(rawMsg, status)) {
         return {
           ok: false,
           statusCode: 503,
           code: 'AI_OVERLOADED',
           message: 'Gemini is temporarily busy (503). Please try again in a few seconds.',
+        };
+      }
+
+      if (isNotFoundModelError(rawMsg, status)) {
+        return {
+          ok: false,
+          statusCode: 502,
+          code: 'AI_MODEL_UNAVAILABLE',
+          message:
+            'No active Gemini text model matched your API key (HTTP 404). Remove any outdated GEMINI_MODEL override or verify your Google AI Studio key access.',
         };
       }
 

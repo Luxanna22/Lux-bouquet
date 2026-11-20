@@ -5000,6 +5000,7 @@ async function readRequestBody(req) {
 }
 
 function sendJson(res, statusCode, data) {
+  if (res.writableEnded) return;
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
@@ -7134,10 +7135,13 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        await Promise.race([
-          syncRealAnalyticsSnapshotServer().catch(() => {}),
-          new Promise((resolve) => setTimeout(resolve, 1800)),
-        ]);
+        const shouldQuickSync = !vaultBlobHydrated && vaultRemoteExists === null;
+        if (shouldQuickSync) {
+          await Promise.race([
+            syncRealAnalyticsSnapshotServer().catch(() => {}),
+            new Promise((resolve) => setTimeout(resolve, 1400)),
+          ]);
+        }
         const aiResult = await runOwnerAnalyticsAi({
           analytics: OWNER_ANALYTICS_STATE,
           mode: parsed.mode === 'overview' ? 'overview' : 'question',

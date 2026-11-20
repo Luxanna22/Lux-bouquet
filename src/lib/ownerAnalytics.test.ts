@@ -32,7 +32,7 @@ import {
 // @ts-expect-error -- Serverless handler is an untyped ESM module
 import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, mintPaidPassServer, revokePaidPassServer, validateAndBindPassRedemptionServer, verifyActiveStudioPassForActionServer, toggleIncomePauseServer, resetOwnerIncomeServer, clearTestAndRevokedPaidKeysServer, recomputePaidRevenueFromLedgerServer, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER, PAID_PASS_LEDGER } from '../../api/_lib/paymentHandler.js';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
-import { sanitizeAnalyticsForAi, runOwnerAnalyticsAi, resetOwnerAiStateForTests } from '../../api/_lib/ownerAiHandler.js';
+import { sanitizeAnalyticsForAi, runOwnerAnalyticsAi, resetOwnerAiStateForTests, buildGeminiRequestConfig, selectDiscoveredFlashModels } from '../../api/_lib/ownerAiHandler.js';
 import { detectInitialSeoRoute, extractGarlandQueryParam } from './seoMeta';
 import { getShortCodeFromPathname } from './shareAndExport';
 
@@ -796,6 +796,167 @@ describe('Admin-Only Gemini Analytics Advisor Security & Quota Protection', () =
     assert.equal(attemptedModels.length, 2);
     assert.notEqual(attemptedModels[0], attemptedModels[1]);
     assert.equal(sawThinkingConfig, false);
+  });
+
+  it('builds Gemini 4 / 3 / 2.5 request configs without deprecated temperature or starved maxOutputTokens', () => {
+    const g4 = buildGeminiRequestConfig('gemini-4-hydrogen', 'Analyst prompt');
+    assert.equal(g4.systemInstruction, 'Analyst prompt');
+    assert.equal('temperature' in g4, false);
+    assert.equal('maxOutputTokens' in g4, false);
+    assert.equal(g4.thinkingConfig?.thinkingLevel, 'LOW');
+
+    const g3Lite = buildGeminiRequestConfig('gemini-3.1-flash-lite', 'Analyst prompt');
+    assert.equal('temperature' in g3Lite, false);
+    assert.equal(g3Lite.thinkingConfig?.thinkingLevel, 'MINIMAL');
+
+    const g25 = buildGeminiRequestConfig('gemini-2.5-flash', 'Analyst prompt');
+    assert.equal('temperature' in g25, false);
+    assert.equal(g25.thinkingConfig?.thinkingBudget, 0);
+
+    const unknown = buildGeminiRequestConfig('gemini-custom-preview', 'Analyst prompt');
+    assert.equal(unknown.systemInstruction, 'Analyst prompt');
+    assert.equal('thinkingConfig' in unknown, false);
+  });
+
+  it('caches 404 unavailable models and prioritizes the sticky working model on subsequent calls', async () => {
+    resetOwnerAiStateForTests();
+    const summary = createInitialAnalyticsSummary(1_760_000_000_000);
+    summary.webVisits = 410;
+
+    const callLog: string[] = [];
+    const clientFactory = () => ({
+      models: {
+        generateContent: async (params: { model: string }) => {
+          callLog.push(params.model);
+          if (params.model === 'gemini-3.1-flash-lite') {
+            const err = new Error('404 NOT_FOUND') as Error & { status?: number };
+            err.status = 404;
+            throw err;
+          }
+          return { text: `Answered via ${params.model}` };
+        },
+      },
+    });
+
+    const first = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'question',
+      question: 'First analytics check',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_sticky_test',
+      nowMs: 1_760_000_400_000,
+      clientFactory,
+    });
+    assert.equal(first.ok, true);
+    assert.deepEqual(callLog, ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']);
+
+    // Second unique question 5s later should skip the 404 model and call the working model directly
+    const second = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'question',
+      question: 'Second analytics check',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_sticky_test',
+      nowMs: 1_760_000_405_000,
+      clientFactory,
+    });
+    assert.equal(second.ok, true);
+    assert.deepEqual(callLog, [
+      'gemini-3.1-flash-lite',
+      'gemini-4-hydrogen',
+      'gemini-4-hydrogen',
+    ]);
+  });
+
+  it('discovers live flash text models via models.list() when all static defaults return 404', async () => {
+    resetOwnerAiStateForTests();
+    const summary = createInitialAnalyticsSummary(1_760_000_000_000);
+    summary.webVisits = 600;
+
+    const filtered = selectDiscoveredFlashModels([
+      { name: 'models/gemini-2.0-flash', supportedActions: ['generateContent'] },
+      { name: 'models/gemini-embedding-2', supportedActions: ['embedContent'] },
+      { name: 'models/gemini-3.8-flash-tts', supportedActions: ['generateContent'] },
+      { name: 'models/gemini-3-flash-preview', supportedActions: ['generateContent'] },
+      { name: 'models/gemini-2.5-pro', supportedActions: ['generateContent'] },
+    ]);
+    assert.deepEqual(filtered, ['gemini-3-flash-preview', 'gemini-2.5-pro']);
+
+    const attempted: string[] = [];
+    let listedCount = 0;
+    const discoverFactory = () => ({
+      models: {
+        list: async () => {
+          listedCount += 1;
+          return [
+            { name: 'models/gemini-2.0-flash', supportedActions: ['generateContent'] },
+            { name: 'models/gemini-3-flash-preview', supportedActions: ['generateContent'] },
+          ];
+        },
+        generateContent: async (params: { model: string }) => {
+          attempted.push(params.model);
+          if (params.model === 'gemini-3-flash-preview') {
+            return { text: 'Self-healed via dynamically discovered Gemini 3 Flash model.' };
+          }
+          const err = new Error('models/not-found is not found (404)') as Error & { status?: number };
+          err.status = 404;
+          throw err;
+        },
+      },
+    });
+
+    const result = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'overview',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_discover_test',
+      nowMs: 1_760_000_500_000,
+      clientFactory: discoverFactory,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.modelUsed, 'gemini-3-flash-preview');
+    assert.equal(listedCount, 1);
+    assert.equal(attempted.includes('gemini-3-flash-preview'), true);
+  });
+
+  it('preserves 503 AI_OVERLOADED instead of masking it behind a later 404 NOT_FOUND', async () => {
+    resetOwnerAiStateForTests();
+    const summary = createInitialAnalyticsSummary(1_760_000_000_000);
+    summary.webVisits = 210;
+
+    let busyAttempts = 0;
+    const overloadedFactory = () => ({
+      models: {
+        generateContent: async (params: { model: string }) => {
+          if (params.model === 'gemini-4-hydrogen') {
+            busyAttempts += 1;
+            const err = new Error('The model is overloaded. Please try again later. (503 UNAVAILABLE)') as Error & {
+              status?: number;
+            };
+            err.status = 503;
+            throw err;
+          }
+          const err = new Error('Model not found (404 NOT_FOUND)') as Error & { status?: number };
+          err.status = 404;
+          throw err;
+        },
+      },
+    });
+
+    const result = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'question',
+      question: 'Overview of initial deployment improvement',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_503_test',
+      nowMs: 1_760_000_600_000,
+      clientFactory: overloadedFactory,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 503);
+    assert.equal(result.code, 'AI_OVERLOADED');
+    assert.equal(busyAttempts, 2); // Initial attempt + 1 backoff retry
   });
 });
 

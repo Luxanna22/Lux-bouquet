@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/payments/verify-action.js": {
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/robots.txt",
