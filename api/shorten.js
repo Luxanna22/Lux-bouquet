@@ -29,6 +29,7 @@ import {
   fetchBouquetFromBlob,
   fetchGarlandFeedStateWithStatusFromBlob,
   isVercelBlobConfigured,
+  patchBouquetReceiptInBlob,
   saveBouquetToBlob,
   saveGarlandFeedToBlob,
   upsertGarlandFeedInBlob,
@@ -78,6 +79,11 @@ function saveShortPayload(code, payload, extra = {}) {
     voiceDurationSec: typeof extra.voiceDurationSec === 'number' ? extra.voiceDurationSec : null,
     isPremium: typeof extra.isPremium === 'boolean' ? extra.isPremium : undefined,
     retentionDays: typeof extra.retentionDays === 'number' ? extra.retentionDays : undefined,
+    openCount: typeof extra.openCount === 'number' ? extra.openCount : 0,
+    voicePlayCount: typeof extra.voicePlayCount === 'number' ? extra.voicePlayCount : 0,
+    reaction: typeof extra.reaction === 'string' ? extra.reaction : null,
+    recipientReply: typeof extra.recipientReply === 'string' ? extra.recipientReply : null,
+    repliedAt: typeof extra.repliedAt === 'string' ? extra.repliedAt : null,
     createdAt: typeof extra.createdAt === 'string' ? extra.createdAt : undefined,
   };
   shortCodeMemory.set(safeCode, entry);
@@ -760,6 +766,8 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET' && codeParam) {
+    const freshParam = urlObj.searchParams.get('fresh') === '1';
+
     // 0. If this code was explicitly deleted by the owner in Admin Bouquets, evict any warm RAM / /tmp cache and return 404 immediately
     if (OWNER_DELETED_BOUQUET_CODES.has(codeParam)) {
       evictLocalShortPayload(codeParam);
@@ -770,12 +778,12 @@ export default async function handler(req, res) {
       return;
     }
 
-    // 1. Check in-memory and /tmp cache first
-    let entry = loadLocalShortPayload(codeParam);
+    // 1. Check in-memory and /tmp cache first (bypassed when `fresh=1` so senders immediately see new recipient replies)
+    let entry = freshParam ? null : loadLocalShortPayload(codeParam);
 
     // 2. Check Private Vercel Blob storage first (0 Firestore read units & stays 100% online during Firestore 429!)
     if ((!entry || !entry.payload) && isVercelBlobConfigured()) {
-      const blobEntry = await fetchBouquetFromBlob(codeParam, { useCache: true });
+      const blobEntry = await fetchBouquetFromBlob(codeParam, { useCache: !freshParam });
       if (blobEntry && blobEntry.payload) {
         entry = blobEntry;
         saveShortPayload(codeParam, blobEntry.payload, blobEntry);
@@ -821,7 +829,10 @@ export default async function handler(req, res) {
 
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=3600');
+    res.setHeader(
+      'Cache-Control',
+      freshParam ? 'no-store' : 'public, max-age=0, s-maxage=300, stale-while-revalidate=3600'
+    );
     res.end(
       JSON.stringify({
         code: codeParam,
@@ -830,6 +841,11 @@ export default async function handler(req, res) {
         voiceStyle: entry.voiceStyle || null,
         voiceTitle: entry.voiceTitle || null,
         voiceDurationSec: entry.voiceDurationSec ?? null,
+        openCount: typeof entry.openCount === 'number' ? entry.openCount : 0,
+        voicePlayCount: typeof entry.voicePlayCount === 'number' ? entry.voicePlayCount : 0,
+        reaction: typeof entry.reaction === 'string' ? entry.reaction : null,
+        recipientReply: typeof entry.recipientReply === 'string' ? entry.recipientReply : null,
+        repliedAt: typeof entry.repliedAt === 'string' ? entry.repliedAt : null,
         ...(typeof entry.isPremium === 'boolean' ? { isPremium: entry.isPremium } : {}),
         ...(typeof entry.retentionDays === 'number' ? { retentionDays: entry.retentionDays } : {}),
         ...(typeof entry.createdAt === 'string' ? { createdAt: entry.createdAt } : {}),
@@ -858,6 +874,131 @@ export default async function handler(req, res) {
       }
 
       const bodyObj = parsedBody.body || {};
+
+      // Handle recipient reply / open-receipt updates (dual-writes to Private Vercel Blob + Firestore so sender always sees replies even during Firestore 429)
+      if (bodyObj.action === 'recipient_reply' || bodyObj.action === 'recipient_open') {
+        const targetCode = String(bodyObj.code || '').replace(/[^0-9A-Za-z_-]/g, '');
+        if (!targetCode || targetCode.length < 7 || targetCode.length > 24 || targetCode.startsWith('sab_')) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: 'Invalid bouquet code' }));
+          return;
+        }
+
+        const isReply = bodyObj.action === 'recipient_reply';
+        const cleanReaction = isReply ? String(bodyObj.reaction || '').trim().slice(0, 32) : undefined;
+        const cleanReply = isReply ? String(bodyObj.recipientReply || '').trim().slice(0, 240) : undefined;
+        const nowIso = new Date().toISOString();
+
+        if (isReply && !cleanReaction && !cleanReply) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: 'Missing reaction or reply message' }));
+          return;
+        }
+
+        // 1. Update Private Vercel Blob receipt
+        let updatedRecord = isVercelBlobConfigured()
+          ? await patchBouquetReceiptInBlob(
+              targetCode,
+              isReply
+                ? { reaction: cleanReaction, recipientReply: cleanReply, repliedAt: nowIso }
+                : { incrementOpen: true }
+            ).catch(() => null)
+          : null;
+
+        // 2. Also update Firestore `shared_bouquets/{code}` receipt fields (if reachable)
+        let firestoreUpdated = false;
+        try {
+          const getCtrl = new AbortController();
+          const getTimer = setTimeout(() => getCtrl.abort(), 3500);
+          const getResp = await fetch(`${FIRESTORE_BASE_URL}/${encodeURIComponent(targetCode)}`, {
+            method: 'GET',
+            signal: getCtrl.signal,
+          });
+          clearTimeout(getTimer);
+          if (getResp.ok) {
+            const docJson = await getResp.json().catch(() => null);
+            const existingFields = docJson?.fields;
+            if (existingFields && existingFields.payload?.stringValue) {
+              const nextFields = { ...existingFields };
+              if (isReply) {
+                if (cleanReaction) nextFields.reaction = { stringValue: cleanReaction };
+                if (cleanReply) nextFields.recipientReply = { stringValue: cleanReply };
+                nextFields.repliedAt = { stringValue: nowIso };
+              } else {
+                const prevOpen = Number(existingFields.openCount?.integerValue || 0);
+                nextFields.openCount = { integerValue: String(prevOpen + 1) };
+              }
+              const patchCtrl = new AbortController();
+              const patchTimer = setTimeout(() => patchCtrl.abort(), 3500);
+              const patchResp = await fetch(
+                `${FIRESTORE_BASE_URL}/${encodeURIComponent(targetCode)}`,
+                {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ fields: nextFields }),
+                  signal: patchCtrl.signal,
+                }
+              );
+              clearTimeout(patchTimer);
+              firestoreUpdated = patchResp.ok;
+              // If Blob didn't have this legacy Firestore bouquet yet, mirror it now with the reply!
+              if (!updatedRecord && isVercelBlobConfigured()) {
+                const hydratedFs = await fetchFromFirestoreRest(targetCode).catch(() => null);
+                if (hydratedFs && hydratedFs.payload) {
+                  const mirrored = {
+                    ...hydratedFs,
+                    ...(isReply
+                      ? {
+                          reaction: cleanReaction || hydratedFs.reaction,
+                          recipientReply: cleanReply || hydratedFs.recipientReply,
+                          repliedAt: nowIso,
+                        }
+                      : { openCount: Math.max(1, Number(hydratedFs.openCount || 0)) }),
+                  };
+                  await saveBouquetToBlob(targetCode, mirrored).catch(() => false);
+                  updatedRecord = mirrored;
+                }
+              }
+            }
+          }
+        } catch {
+          // Blob persistence already succeeded if configured
+        }
+
+        // 3. Keep warm RAM / /tmp cache immediately in sync
+        const localCached = loadLocalShortPayload(targetCode);
+        if (updatedRecord && updatedRecord.payload) {
+          saveShortPayload(targetCode, updatedRecord.payload, updatedRecord);
+        } else if (localCached && localCached.payload) {
+          saveShortPayload(targetCode, localCached.payload, {
+            ...localCached,
+            ...(isReply
+              ? {
+                  reaction: cleanReaction || localCached.reaction,
+                  recipientReply: cleanReply || localCached.recipientReply,
+                  repliedAt: nowIso,
+                }
+              : { openCount: Number(localCached.openCount || 0) + 1 }),
+          });
+        }
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(
+          JSON.stringify({
+            ok: Boolean(updatedRecord || firestoreUpdated || localCached),
+            code: targetCode,
+            openCount: updatedRecord?.openCount ?? undefined,
+            reaction: updatedRecord?.reaction ?? cleanReaction ?? null,
+            recipientReply: updatedRecord?.recipientReply ?? cleanReply ?? null,
+            repliedAt: updatedRecord?.repliedAt ?? (isReply ? nowIso : null),
+          })
+        );
+        return;
+      }
 
       const code = String(bodyObj.code || '').replace(/[^0-9A-Za-z_-]/g, '');
       const payload = String(bodyObj.payload || '').trim();

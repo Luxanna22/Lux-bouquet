@@ -208,6 +208,26 @@ export async function saveBouquetToBlob(code, record) {
       typeof record.retentionDays === 'number' && Number.isFinite(record.retentionDays)
         ? Math.max(1, Math.min(36500, Math.round(record.retentionDays)))
         : 30,
+    openCount:
+      typeof record.openCount === 'number' && Number.isFinite(record.openCount)
+        ? Math.max(0, Math.round(record.openCount))
+        : 0,
+    voicePlayCount:
+      typeof record.voicePlayCount === 'number' && Number.isFinite(record.voicePlayCount)
+        ? Math.max(0, Math.round(record.voicePlayCount))
+        : 0,
+    reaction:
+      typeof record.reaction === 'string' && record.reaction.trim().length > 0
+        ? record.reaction.trim().slice(0, 32)
+        : null,
+    recipientReply:
+      typeof record.recipientReply === 'string' && record.recipientReply.trim().length > 0
+        ? record.recipientReply.trim().slice(0, 240)
+        : null,
+    repliedAt:
+      typeof record.repliedAt === 'string' && record.repliedAt.length >= 10
+        ? record.repliedAt.slice(0, 64)
+        : null,
     createdAt:
       typeof record.createdAt === 'string' && record.createdAt.length >= 10
         ? record.createdAt.slice(0, 64)
@@ -237,9 +257,67 @@ export async function fetchBouquetFromBlob(code, options = {}) {
     voiceDurationSec: typeof parsed.voiceDurationSec === 'number' ? parsed.voiceDurationSec : null,
     isPremium: typeof parsed.isPremium === 'boolean' ? parsed.isPremium : undefined,
     retentionDays: typeof parsed.retentionDays === 'number' ? parsed.retentionDays : undefined,
+    openCount: typeof parsed.openCount === 'number' ? parsed.openCount : 0,
+    voicePlayCount: typeof parsed.voicePlayCount === 'number' ? parsed.voicePlayCount : 0,
+    reaction: typeof parsed.reaction === 'string' ? parsed.reaction : null,
+    recipientReply: typeof parsed.recipientReply === 'string' ? parsed.recipientReply : null,
+    repliedAt: typeof parsed.repliedAt === 'string' ? parsed.repliedAt : null,
     createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : null,
     source: 'vercel_blob',
   };
+}
+
+/**
+ * Patches receipt fields (openCount, voicePlayCount, reaction, recipientReply, repliedAt)
+ * on an existing bouquet blob without altering its immutable payload/photos/voice.
+ */
+export async function patchBouquetReceiptInBlob(code, patch = {}) {
+  const safeCode = String(code || '').replace(/[^0-9A-Za-z_-]/g, '');
+  if (!safeCode || safeCode.length < 7 || safeCode.length > 24 || safeCode.startsWith('sab_')) {
+    return null;
+  }
+  const existing = await fetchBouquetFromBlob(safeCode, { useCache: false });
+  if (!existing) return null;
+
+  const nextOpenCount = patch.incrementOpen
+    ? Math.max(0, Number(existing.openCount || 0) + 1)
+    : typeof patch.openCount === 'number' && Number.isFinite(patch.openCount)
+    ? Math.max(Number(existing.openCount || 0), Math.round(patch.openCount))
+    : Number(existing.openCount || 0);
+
+  const nextVoicePlayCount = patch.incrementVoicePlay
+    ? Math.max(0, Number(existing.voicePlayCount || 0) + 1)
+    : typeof patch.voicePlayCount === 'number' && Number.isFinite(patch.voicePlayCount)
+    ? Math.max(Number(existing.voicePlayCount || 0), Math.round(patch.voicePlayCount))
+    : Number(existing.voicePlayCount || 0);
+
+  const nextReaction =
+    patch.reaction !== undefined
+      ? String(patch.reaction || '').trim().slice(0, 32) || existing.reaction
+      : existing.reaction;
+
+  const nextReply =
+    patch.recipientReply !== undefined
+      ? String(patch.recipientReply || '').trim().slice(0, 240) || existing.recipientReply
+      : existing.recipientReply;
+
+  const nextRepliedAt =
+    patch.repliedAt !== undefined
+      ? String(patch.repliedAt || '').slice(0, 64)
+      : patch.reaction !== undefined || patch.recipientReply !== undefined
+      ? new Date().toISOString()
+      : existing.repliedAt;
+
+  const updated = {
+    ...existing,
+    openCount: nextOpenCount,
+    voicePlayCount: nextVoicePlayCount,
+    reaction: nextReaction || null,
+    recipientReply: nextReply || null,
+    repliedAt: nextRepliedAt || null,
+  };
+  const saved = await saveBouquetToBlob(safeCode, updated);
+  return saved ? updated : null;
 }
 
 /**

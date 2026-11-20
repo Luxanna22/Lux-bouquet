@@ -1,18 +1,51 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   X,
   ExternalLink,
   Copy,
   Trash2,
   Check,
+  RefreshCw,
+  Heart,
 } from 'lucide-react';
-import { SavedVaultBouquet } from '../types/bouquet';
+import { RECIPIENT_REACTIONS, SavedVaultBouquet } from '../types/bouquet';
 import {
   getSavedVaultBouquets,
   removeBouquetFromLocalVault,
   fetchSharedBouquetFromFirestore,
   SharedBouquetRecord,
 } from '../lib/firebase';
+
+const SEEN_REPLIES_STORAGE_KEY = 'sab_seen_replies_v1';
+
+type VaultFilterTab = 'all' | 'replies' | 'sent' | 'drafts';
+
+function loadSeenRepliesMap(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(SEEN_REPLIES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSeenRepliesMap(map: Record<string, string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(SEEN_REPLIES_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function resolveReactionLabel(reactionId?: string): string {
+  if (!reactionId) return 'Replied';
+  const match = RECIPIENT_REACTIONS.find((r) => r.id === reactionId);
+  return match ? match.label : 'Replied';
+}
 
 interface BouquetVaultModalProps {
   isOpen: boolean;
@@ -33,34 +66,117 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
 }) => {
   const [vault, setVault] = useState<SavedVaultBouquet[]>([]);
   const [liveReceipts, setLiveReceipts] = useState<Record<string, SharedBouquetRecord>>({});
+  const [seenReplies, setSeenReplies] = useState<Record<string, string>>(() =>
+    loadSeenRepliesMap()
+  );
+  const [activeFilter, setActiveFilter] = useState<VaultFilterTab>('all');
+  const [isCheckingReplies, setIsCheckingReplies] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const refreshVault = async () => {
+  const refreshVault = useCallback(async () => {
     const list = getSavedVaultBouquets();
     setVault(list);
-    if (list.length === 0) return;
+    const sharedItems = list.filter((item) => !item.isDraft && !item.code.startsWith('draft_'));
+    if (sharedItems.length === 0) return;
 
-    const results: Record<string, SharedBouquetRecord> = {};
-    await Promise.all(
-      list.slice(0, 12).map(async (item) => {
-        try {
-          const rec = await fetchSharedBouquetFromFirestore(item.code);
-          if (rec) {
-            results[item.code] = rec;
+    setIsCheckingReplies(true);
+    try {
+      const results: Record<string, SharedBouquetRecord> = {};
+      await Promise.all(
+        sharedItems.slice(0, 20).map(async (item) => {
+          try {
+            const rec = await fetchSharedBouquetFromFirestore(item.code, { fresh: true });
+            if (rec) {
+              results[item.code] = rec;
+            }
+          } catch {
+            // Ignore individual fetch errors
           }
-        } catch {
-          // Ignore individual fetch errors
-        }
-      })
-    );
-    setLiveReceipts((prev) => ({ ...prev, ...results }));
-  };
+        })
+      );
+      setLiveReceipts((prev) => ({ ...prev, ...results }));
+    } finally {
+      setIsCheckingReplies(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
+      setSeenReplies(loadSeenRepliesMap());
       refreshVault();
     }
-  }, [isOpen]);
+  }, [isOpen, refreshVault]);
+
+  const markVisibleRepliesSeen = useCallback(() => {
+    const next = { ...loadSeenRepliesMap() };
+    let changed = false;
+    for (const [code, rec] of Object.entries(liveReceipts)) {
+      if (rec && (rec.recipientReply || rec.reaction)) {
+        const stamp = rec.repliedAt || rec.recipientReply || rec.reaction || 'seen';
+        if (next[code] !== stamp) {
+          next[code] = stamp;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      saveSeenRepliesMap(next);
+      setSeenReplies(next);
+    }
+  }, [liveReceipts]);
+
+  const handleClose = useCallback(() => {
+    markVisibleRepliesSeen();
+    onClose();
+  }, [markVisibleRepliesSeen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, handleClose]);
+
+  const replyCount = useMemo(
+    () =>
+      vault.filter((entry) => {
+        const live = liveReceipts[entry.code];
+        return Boolean(!entry.isDraft && (live?.recipientReply || live?.reaction));
+      }).length,
+    [vault, liveReceipts]
+  );
+
+  const unreadReplyCount = useMemo(
+    () =>
+      vault.filter((entry) => {
+        const live = liveReceipts[entry.code];
+        if (entry.isDraft || (!live?.recipientReply && !live?.reaction)) return false;
+        const stamp = live.repliedAt || live.recipientReply || live.reaction || 'seen';
+        return seenReplies[entry.code] !== stamp;
+      }).length,
+    [vault, liveReceipts, seenReplies]
+  );
+
+  const filteredVault = useMemo(() => {
+    if (activeFilter === 'replies') {
+      return vault.filter((entry) => {
+        const live = liveReceipts[entry.code];
+        return Boolean(!entry.isDraft && (live?.recipientReply || live?.reaction));
+      });
+    }
+    if (activeFilter === 'sent') {
+      return vault.filter((entry) => !entry.isDraft);
+    }
+    if (activeFilter === 'drafts') {
+      return vault.filter((entry) => Boolean(entry.isDraft));
+    }
+    return vault;
+  }, [vault, liveReceipts, activeFilter]);
 
   if (!isOpen) return null;
 
@@ -75,7 +191,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
   };
 
   const handleDelete = (code: string) => {
-    // Only remove from this device's local history — never delete shared_bouquets/{code} from Firestore,
+    // Only remove from this device's local history — never delete shared_bouquets/{code} from cloud,
     // so eternal recipient links always stay live forever.
     const next = removeBouquetFromLocalVault(code);
     setVault(next);
@@ -94,12 +210,27 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
     }
   };
 
+  const formatReplyTime = (iso?: string) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  };
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Saved Bouquets"
-      onClick={onClose}
+      onClick={handleClose}
       className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
     >
       <div
@@ -112,60 +243,123 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
       >
         {/* Minimal Luxury Header */}
         <div
-          className={`px-5 sm:px-6 pt-5 pb-4 border-b border-dashed flex items-start justify-between gap-3 shrink-0 ${
+          className={`px-5 sm:px-6 pt-5 pb-3.5 border-b border-dashed shrink-0 space-y-3 ${
             isDarkMode
               ? 'border-[#4E403B]'
               : 'border-[#EADFD4] dark:border-[#4E403B]'
           }`}
         >
-          <div>
-            <h2
-              className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight"
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-            >
-              Saved Bouquets
-            </h2>
-            <p
-              className={`text-xs mt-0.5 ${
-                isDarkMode
-                  ? 'text-[#C8B6AC]'
-                  : 'text-[#8C7A70] dark:text-[#C8B6AC]'
-              }`}
-            >
-              Drafts &amp; keepsakes saved on this device
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {onSaveCurrentDraft && (
-              <button
-                type="button"
-                data-testid="vault-save-current-draft-btn"
-                onClick={() => {
-                  onSaveCurrentDraft();
-                  refreshVault();
-                }}
-                className={`px-3 py-1.5 rounded-full border border-dashed text-[11px] font-medium transition cursor-pointer ${
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2
+                className="text-2xl sm:text-[26px] font-medium tracking-tight leading-tight"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                Saved Bouquets
+              </h2>
+              <p
+                className={`text-xs mt-0.5 ${
                   isDarkMode
-                    ? 'border-[#E6B89C]/70 bg-[#E6B89C]/15 text-[#F0C8B0] hover:bg-[#E6B89C]/25'
-                    : 'border-[#B4846C] bg-[#FAF4EE] text-[#6E4434] hover:bg-[#F3E9DF]'
+                    ? 'text-[#C8B6AC]'
+                    : 'text-[#8C7A70] dark:text-[#C8B6AC]'
                 }`}
               >
-                + Save Draft
+                Drafts, sent keepsakes &amp; replies from your recipients
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {vault.some((v) => !v.isDraft) && (
+                <button
+                  type="button"
+                  onClick={() => refreshVault()}
+                  disabled={isCheckingReplies}
+                  title="Check for new recipient replies"
+                  aria-label="Check for new recipient replies"
+                  className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center transition cursor-pointer disabled:opacity-50 ${
+                    isDarkMode
+                      ? 'border-[#5E4E49] text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                      : 'border-[#DECBB9] text-[#7D6B60] hover:text-[#2A201D] hover:bg-[#FAF4EE]'
+                  }`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingReplies ? 'animate-spin' : ''}`} />
+                </button>
+              )}
+              {onSaveCurrentDraft && (
+                <button
+                  type="button"
+                  data-testid="vault-save-current-draft-btn"
+                  onClick={() => {
+                    onSaveCurrentDraft();
+                    refreshVault();
+                  }}
+                  className={`px-3 py-1.5 rounded-full border border-dashed text-[11px] font-medium transition cursor-pointer ${
+                    isDarkMode
+                      ? 'border-[#E6B89C]/70 bg-[#E6B89C]/15 text-[#F0C8B0] hover:bg-[#E6B89C]/25'
+                      : 'border-[#B4846C] bg-[#FAF4EE] text-[#6E4434] hover:bg-[#F3E9DF]'
+                  }`}
+                >
+                  + Save Draft
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleClose}
+                aria-label="Close saved bouquets"
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+                  isDarkMode
+                    ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
+                    : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4] dark:text-[#C8B6AC] dark:hover:text-[#FBF6F1] dark:hover:bg-[#463A36]'
+                }`}
+              >
+                <X className="w-4 h-4" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close saved bouquets"
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-                isDarkMode
-                  ? 'text-[#C8B6AC] hover:text-[#FBF6F1] hover:bg-[#463A36]'
-                  : 'text-[#8C7A70] hover:text-[#2A201D] hover:bg-[#F5EDE4] dark:text-[#C8B6AC] dark:hover:text-[#FBF6F1] dark:hover:bg-[#463A36]'
-              }`}
-            >
-              <X className="w-4 h-4" />
-            </button>
+            </div>
           </div>
+
+          {/* Quiet Filter Bar (lets sender jump straight to Replies) */}
+          {vault.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  { id: 'all', label: `All (${vault.length})` },
+                  {
+                    id: 'replies',
+                    label: replyCount > 0 ? `Replies (${replyCount})` : 'Replies',
+                    hasUnread: unreadReplyCount > 0,
+                  },
+                  { id: 'sent', label: 'Sent' },
+                  { id: 'drafts', label: 'Drafts' },
+                ] as Array<{ id: VaultFilterTab; label: string; hasUnread?: boolean }>
+              ).map((tab) => {
+                const active = activeFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    data-testid={`vault-filter-${tab.id}`}
+                    onClick={() => setActiveFilter(tab.id)}
+                    className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                      active
+                        ? isDarkMode
+                          ? 'bg-[#E6B89C] text-[#231C18]'
+                          : 'bg-[#6E4434] text-[#FFFDF9]'
+                        : isDarkMode
+                        ? 'border border-dashed border-[#5E4E49] text-[#D8C7BE] hover:bg-[#423632]'
+                        : 'border border-dashed border-[#DECBB9] text-[#6E5D54] hover:bg-[#FAF4EE]'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {tab.hasUnread && (
+                      <span
+                        aria-label="Unread replies"
+                        className="w-1.5 h-1.5 rounded-full bg-[#9E4757] inline-block"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Scrollable Body */}
@@ -247,17 +441,52 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                     : 'text-[#8C7A70] dark:text-[#B8A59B]'
                 }`}
               >
-                Whenever you save or share a bouquet in the studio, it will rest here so you can revisit or copy its link anytime.
+                Whenever you save or share a bouquet in the studio, it will rest here so you can revisit its link and read replies anytime.
+              </p>
+            </div>
+          ) : filteredVault.length === 0 ? (
+            <div
+              className={`py-8 px-5 text-center rounded-2xl border border-dashed ${
+                isDarkMode
+                  ? 'border-[#4E403B] bg-[#2D2421]/60'
+                  : 'border-[#E6D6C7] bg-[#FAF4EE]/55'
+              }`}
+            >
+              <p
+                className="text-lg font-medium"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+              >
+                {activeFilter === 'replies'
+                  ? 'No recipient replies yet'
+                  : activeFilter === 'drafts'
+                  ? 'No saved drafts'
+                  : 'No sent bouquets yet'}
+              </p>
+              <p
+                className={`text-xs mt-1 max-w-xs mx-auto leading-relaxed ${
+                  isDarkMode ? 'text-[#B8A59B]' : 'text-[#8C7A70]'
+                }`}
+              >
+                {activeFilter === 'replies'
+                  ? 'When someone opens your bouquet link and writes a note back, their reply will appear right here.'
+                  : 'Switch to All to see your other saved arrangements.'}
               </p>
             </div>
           ) : (
-            vault.map((entry) => {
+            filteredVault.map((entry) => {
               const isCopied = copiedCode === entry.code;
               const live = liveReceipts[entry.code];
               const openCount = live?.openCount ?? 0;
               const voicePlays = live?.voicePlayCount ?? 0;
               const recipientDisplay = entry.to || entry.recipientName || 'Someone Special';
               const senderDisplay = entry.from || entry.senderName || 'Yours Always';
+              const hasReplyOrReaction = Boolean(
+                !entry.isDraft && (live?.recipientReply || live?.reaction)
+              );
+              const replyStamp =
+                live?.repliedAt || live?.recipientReply || live?.reaction || 'seen';
+              const isUnreadReply =
+                hasReplyOrReaction && seenReplies[entry.code] !== replyStamp;
 
               const statusParts: string[] = [];
               if (entry.flowerCount) {
@@ -317,18 +546,6 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                           · From {senderDisplay}
                         </span>
                       </div>
-                      {live?.recipientReply && (
-                        <p
-                          className={`text-sm italic mt-1 line-clamp-2 ${
-                            isDarkMode
-                              ? 'text-[#DFD1C8]'
-                              : 'text-[#5C493F] dark:text-[#DFD1C8]'
-                          }`}
-                          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                        >
-                          Reply: &ldquo;{live.recipientReply}&rdquo;
-                        </p>
-                      )}
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -361,6 +578,56 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Tactile Wax-Sealed Recipient Reply Postcard */}
+                  {hasReplyOrReaction && (
+                    <div
+                      data-testid={`vault-reply-card-${entry.code}`}
+                      className={`mt-3 rounded-xl border border-dashed px-3.5 py-2.5 ${
+                        isDarkMode
+                          ? 'bg-[#352C29] border-[#6A564F]'
+                          : 'bg-[#FFFDF9] border-[#DECBB9]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          <Heart className="w-3 h-3 text-[#9E4757] fill-[#9E4757]/25 shrink-0" />
+                          <span>{resolveReactionLabel(live?.reaction)}</span>
+                          {isUnreadReply && (
+                            <span
+                              className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-medium ${
+                                isDarkMode
+                                  ? 'bg-[#9E4757]/30 text-[#F4C2CC]'
+                                  : 'bg-[#9E4757]/12 text-[#9E4757]'
+                              }`}
+                            >
+                              New
+                            </span>
+                          )}
+                        </span>
+                        {live?.repliedAt && (
+                          <span
+                            className={`text-[10.5px] shrink-0 ${
+                              isDarkMode ? 'text-[#B09D93]' : 'text-[#8C7A70]'
+                            }`}
+                          >
+                            {formatReplyTime(live.repliedAt)}
+                          </span>
+                        )}
+                      </div>
+
+                      {live?.recipientReply && (
+                        <p
+                          className={`mt-1.5 text-lg sm:text-[19px] leading-snug break-words whitespace-pre-wrap ${
+                            isDarkMode ? 'text-[#F5EBE6]' : 'text-[#2A201D]'
+                          }`}
+                          style={{ fontFamily: "'Caveat', 'Cormorant Garamond', cursive" }}
+                        >
+                          &ldquo;{live.recipientReply}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Quiet single-line status + clean actions */}
                   <div
                     className={`mt-3 pt-2.5 border-t border-dashed flex flex-wrap items-center justify-between gap-2 ${
@@ -386,7 +653,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                           data-testid={`resume-draft-${entry.code}`}
                           onClick={() => {
                             onResumeDraft(resolvedDraftPayload, entry.code, Boolean(entry.isDraft));
-                            onClose();
+                            handleClose();
                           }}
                           className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
                             entry.isDraft
@@ -434,7 +701,7 @@ export const BouquetVaultModal: React.FC<BouquetVaultModalProps> = ({
                               if (onOpenGiftUrl) {
                                 e.preventDefault();
                                 onOpenGiftUrl(entry.shareUrl);
-                                onClose();
+                                handleClose();
                               }
                             }}
                             className={`px-3 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${

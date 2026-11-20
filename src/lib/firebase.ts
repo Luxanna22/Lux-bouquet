@@ -267,7 +267,7 @@ export async function saveSharedBouquetToFirestore(
 
 export async function fetchSharedBouquetFromFirestore(
   code: string,
-  options?: { skipApi?: boolean }
+  options?: { skipApi?: boolean; fresh?: boolean }
 ): Promise<SharedBouquetRecord | null> {
   if (!code || !CODE_REGEX.test(code)) return null;
 
@@ -275,9 +275,11 @@ export async function fetchSharedBouquetFromFirestore(
   // so opening any bouquet spends 0 Firestore read units and stays 100% online during Firestore 429 limits.
   if (!options?.skipApi && typeof window !== 'undefined' && typeof fetch === 'function') {
     try {
-      const resp = await fetch(`/api/shorten?c=${encodeURIComponent(code)}`, {
+      const freshSuffix = options?.fresh ? '&fresh=1' : '';
+      const resp = await fetch(`/api/shorten?c=${encodeURIComponent(code)}${freshSuffix}`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
+        ...(options?.fresh ? { cache: 'no-store' as RequestCache } : {}),
       });
       if (resp.ok) {
         const apiData = await resp.json().catch(() => null);
@@ -290,6 +292,19 @@ export async function fetchSharedBouquetFromFirestore(
             ...(apiData.voiceTitle ? { voiceTitle: apiData.voiceTitle } : {}),
             ...(typeof apiData.voiceDurationSec === 'number'
               ? { voiceDurationSec: apiData.voiceDurationSec }
+              : {}),
+            ...(typeof apiData.openCount === 'number' ? { openCount: apiData.openCount } : {}),
+            ...(typeof apiData.voicePlayCount === 'number'
+              ? { voicePlayCount: apiData.voicePlayCount }
+              : {}),
+            ...(typeof apiData.reaction === 'string' && apiData.reaction
+              ? { reaction: apiData.reaction }
+              : {}),
+            ...(typeof apiData.recipientReply === 'string' && apiData.recipientReply
+              ? { recipientReply: apiData.recipientReply }
+              : {}),
+            ...(typeof apiData.repliedAt === 'string' && apiData.repliedAt
+              ? { repliedAt: apiData.repliedAt }
               : {}),
             ...(typeof apiData.isPremium === 'boolean' ? { isPremium: apiData.isPremium } : {}),
             ...(typeof apiData.retentionDays === 'number'
@@ -355,6 +370,24 @@ export async function fetchSharedBouquetFromFirestore(
 
 export async function incrementSharedBouquetOpenCount(code: string): Promise<number | null> {
   if (!code || !CODE_REGEX.test(code)) return null;
+  if (typeof window !== 'undefined' && typeof fetch === 'function') {
+    try {
+      const resp = await fetch('/api/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recipient_open', code }),
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (data?.ok) {
+          incrementStudioGlobalStat('bouquetsOpened').catch(() => {});
+          return typeof data.openCount === 'number' ? data.openCount : 1;
+        }
+      }
+    } catch {
+      // Fall through to direct Firestore write
+    }
+  }
   const docRef = doc(db, 'shared_bouquets', code);
   try {
     const snap = await getDoc(docRef);
@@ -392,6 +425,33 @@ export async function submitSharedBouquetReaction(
   recipientReply?: string
 ): Promise<boolean> {
   if (!code || !CODE_REGEX.test(code)) return false;
+
+  // Primary path: dual-write via /api/shorten (Private Vercel Blob + Firestore) so replies
+  // persist reliably even during Firestore 429 outages and appear immediately in Saved Bouquets.
+  if (typeof window !== 'undefined' && typeof fetch === 'function') {
+    try {
+      const resp = await fetch('/api/shorten', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'recipient_reply',
+          code,
+          reaction: reaction.slice(0, 32),
+          recipientReply: recipientReply !== undefined ? recipientReply.trim().slice(0, 240) : '',
+        }),
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (data?.ok) {
+          incrementStudioGlobalStat('reactionsSent').catch(() => {});
+          return true;
+        }
+      }
+    } catch {
+      // Fall through to direct Firestore write
+    }
+  }
+
   const docRef = doc(db, 'shared_bouquets', code);
   try {
     const snap = await getDoc(docRef);

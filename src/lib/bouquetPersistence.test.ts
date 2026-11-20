@@ -1918,6 +1918,89 @@ describe('Private Vercel Blob Failover Under Firestore 429 Quota Exhaustion', ()
       invalidateGarlandFeedMemoryCache();
     }
   });
+
+  it('Recipient reply & open receipt persist via Private Vercel Blob (even under Firestore 429) and return immediately via ?fresh=1', async () => {
+    const origFetch = globalThis.fetch;
+    const blobStore = new Map<string, string>();
+
+    setBlobClientForTesting({
+      async put(pathname: string, body: string) {
+        blobStore.set(pathname, String(body));
+        return { url: `https://private-blob.test/${pathname}`, pathname };
+      },
+      async get(pathname: string) {
+        const val = blobStore.get(pathname);
+        if (val === undefined) return null;
+        return {
+          statusCode: 200,
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(val));
+              controller.close();
+            },
+          }),
+        };
+      },
+      async del(pathname: string) {
+        blobStore.delete(pathname);
+      },
+    });
+
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+
+    try {
+      clearShortCodeMemoryForTesting();
+      const code = 'ReplyTest0001';
+      const payload = '#g=0.1~RGlhbmU~S2Fp~SGVsbG8.@0';
+
+      // 1. Sender seals bouquet into Blob
+      const sealReq = createMockReqRes('POST', '/api/shorten', {
+        code,
+        payload,
+        origin: 'https://www.sendabouquet.online',
+      });
+      await shortenHandler(sealReq.req, sealReq.res);
+      assert.equal(sealReq.res.statusCode, 200);
+
+      // 2. Direct-link recipient opens & replies
+      const openReq = createMockReqRes('POST', '/api/shorten', {
+        action: 'recipient_open',
+        code,
+      });
+      await shortenHandler(openReq.req, openReq.res);
+      assert.equal(openReq.res.statusCode, 200);
+      assert.equal(openReq.res.json().ok, true);
+
+      const replyReq = createMockReqRes('POST', '/api/shorten', {
+        action: 'recipient_reply',
+        code,
+        reaction: 'touched',
+        recipientReply: 'Thank you so much, this made my whole week!',
+      });
+      await shortenHandler(replyReq.req, replyReq.res);
+      assert.equal(replyReq.res.statusCode, 200);
+      assert.equal(replyReq.res.json().ok, true);
+
+      // 3. Simulate fresh cold start (empty RAM) and sender checking Saved Bouquets with ?fresh=1
+      clearShortCodeMemoryForTesting();
+      const freshReq = createMockReqRes('GET', `/api/shorten?c=${code}&fresh=1`);
+      await shortenHandler(freshReq.req, freshReq.res);
+      assert.equal(freshReq.res.statusCode, 200);
+      const freshJson = freshReq.res.json();
+      assert.equal(freshJson.openCount, 1);
+      assert.equal(freshJson.reaction, 'touched');
+      assert.equal(freshJson.recipientReply, 'Thank you so much, this made my whole week!');
+      assert.ok(typeof freshJson.repliedAt === 'string' && freshJson.repliedAt.length >= 10);
+    } finally {
+      setBlobClientForTesting(null);
+      globalThis.fetch = origFetch;
+      clearShortCodeMemoryForTesting();
+    }
+  });
 });
 
 

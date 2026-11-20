@@ -1426,7 +1426,11 @@ export default function App() {
     ]
   );
 
+  const canRecipientReply =
+    isGiftView && !isPreviewMode && isEligibleRecipientGiftOpenSource(giftOpenSource);
+
   const handleSubmitRecipientReaction = useCallback(async () => {
+    if (!canRecipientReply) return;
     if (!selectedReactionId && !recipientReplyText.trim()) {
       triggerToast('Pick a reaction or write a note');
       return;
@@ -1461,13 +1465,14 @@ export default function App() {
         eventType: 'recipient_reaction',
         hasReply: Boolean(recipientReplyText.trim()),
       });
-      triggerToast('Reaction sent!');
+      triggerToast('Reply sent back!');
     } catch {
-      triggerToast('Reaction saved!');
+      triggerToast('Reply saved!');
     } finally {
       setIsSubmittingReaction(false);
     }
   }, [
+    canRecipientReply,
     selectedReactionId,
     recipientReplyText,
     activeShortCode,
@@ -4702,8 +4707,8 @@ export default function App() {
                   className="gift-hud-float-in w-full px-3 sm:px-4 z-20 absolute bottom-3.5 sm:bottom-6 inset-x-0 pointer-events-none flex flex-col items-center gap-2.5"
                   style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 >
-                  {/* Miniature Stationery Reply Postcard */}
-                  {isReactionPopoverOpen && (
+                  {/* Miniature Stationery Reply Postcard (Strictly for direct link recipients — never Garland/Showcase browsers) */}
+                  {isReactionPopoverOpen && canRecipientReply && (
                     <div
                       onClick={(e) => e.stopPropagation()}
                       className={`pointer-events-auto relative w-full max-w-[340px] rounded-[24px] p-4 sm:p-5 border border-dashed shadow-[0_24px_60px_rgba(28,20,16,0.18)] backdrop-blur-xl animate-in fade-in duration-150 ${isDarkMode
@@ -4901,22 +4906,27 @@ export default function App() {
                       </>
                     )}
 
-                    {/* 3. Recipient Reaction / Reply Note Action */}
-                    <button
-                      type="button"
-                      onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
-                      className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${hasSubmittedReaction
-                        ? 'text-rose-600 dark:text-rose-300'
-                        : isDarkMode
-                          ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
-                          : 'text-[#5C4438] hover:bg-[#FAF4EE]'
-                        }`}
-                    >
-                      <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
-                      <span>{hasSubmittedReaction ? 'Sent' : 'Reply'}</span>
-                    </button>
+                    {/* 3. Recipient Reaction / Reply Note Action (Direct gift link recipients ONLY — hidden on Garland/Showcase & Preview) */}
+                    {canRecipientReply && (
+                      <>
+                        <button
+                          type="button"
+                          data-testid="recipient-reply-dock-btn"
+                          onClick={() => setIsReactionPopoverOpen((prev) => !prev)}
+                          className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${hasSubmittedReaction
+                            ? 'text-rose-600 dark:text-rose-300'
+                            : isDarkMode
+                              ? 'text-[#FBF6F1] hover:bg-[#423632]/70'
+                              : 'text-[#5C4438] hover:bg-[#FAF4EE]'
+                            }`}
+                        >
+                          <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
+                          <span>{hasSubmittedReaction ? 'Sent' : 'Reply'}</span>
+                        </button>
 
-                    <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+                        <span aria-hidden="true" className="hidden sm:inline opacity-25 text-xs select-none">·</span>
+                      </>
+                    )}
 
                     {/* 4. Save Keepsake PNG Action */}
                     <button
@@ -6543,9 +6553,10 @@ export default function App() {
                   className="mt-5 pt-3.5 flex items-center justify-between gap-2"
                   style={{ borderTop: `1px dashed ${cardPalette.rule}` }}
                 >
-                  {(isGiftView || isPreviewMode) && (
+                  {canRecipientReply && (
                     <button
                       type="button"
+                      data-testid="letter-modal-reply-btn"
                       onClick={() => {
                         setIsLetterModalOpen(false);
                         setIsReactionPopoverOpen(true);
