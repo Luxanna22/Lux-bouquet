@@ -1,17 +1,20 @@
 import crypto from 'node:crypto';
-import { GoogleGenAI } from '@google/genai';
 
 const DEFAULT_GEMINI_MODELS = [
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
   'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
 ];
-const ATTEMPT_TIMEOUT_MS = 12 * 1000;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const ATTEMPT_TIMEOUT_MS = 9 * 1000;
+const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 80;
 const RATE_WINDOW_MS = 60 * 1000;
-const MAX_LIVE_CALLS_PER_WINDOW = 10;
-const COOLDOWN_AFTER_429_MS = 45 * 1000;
+const MAX_LIVE_CALLS_PER_WINDOW = 6;
+const HOURLY_RATE_WINDOW_MS = 60 * 60 * 1000;
+const MAX_LIVE_CALLS_PER_HOUR = 30;
+const MIN_GAP_BETWEEN_LIVE_CALLS_MS = 2500;
+const COOLDOWN_AFTER_429_MS = 60 * 1000;
+const MAX_OUTPUT_TOKENS = 450;
 
 function getGeminiModelCandidates() {
   const raw = [process.env.GEMINI_MODEL, ...DEFAULT_GEMINI_MODELS];
@@ -39,37 +42,134 @@ function isModelNotFoundError(rawMsg, status) {
   );
 }
 
-async function generateWithTimeout(ai, { model, contents, systemInstruction, timeoutMs }) {
-  const controller = new AbortController();
-  let timer = null;
-  try {
-    const timeoutPromise = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        const timeoutErr = new Error(`Gemini request timed out after ${timeoutMs}ms`);
-        timeoutErr.code = 'AI_TIMEOUT';
-        reject(timeoutErr);
-      }, timeoutMs);
-    });
+/**
+ * Native fetch-based Gemini REST client:
+ * - Zero SDK cold-start overhead or unhandled AbortError crashes on Vercel Serverless.
+ * - Explicitly disables slow thinking budget on Gemini 2.5 Flash models so answers return in ~1-2s.
+ * - Caps output tokens (`MAX_OUTPUT_TOKENS`) to prevent runaway token spend.
+ */
+function createRestGeminiClient(apiKey) {
+  return {
+    models: {
+      async generateContent({ model, contents, config }) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT_MS);
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+            model
+          )}:generateContent`;
+          const generationConfig = {
+            temperature: 0.4,
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            ...(model.startsWith('gemini-2.5')
+              ? { thinkingConfig: { thinkingBudget: 0 } }
+              : {}),
+          };
+          const body = {
+            contents: [{ role: 'user', parts: [{ text: String(contents || '') }] }],
+            ...(config?.systemInstruction
+              ? {
+                  systemInstruction: {
+                    parts: [{ text: String(config.systemInstruction) }],
+                  },
+                }
+              : {}),
+            generationConfig,
+          };
 
-    return await Promise.race([
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+
+          const rawText = await resp.text();
+          let json = null;
+          try {
+            json = rawText ? JSON.parse(rawText) : null;
+          } catch {
+            json = null;
+          }
+
+          if (!resp.ok) {
+            const errMsg =
+              json?.error?.message ||
+              rawText.slice(0, 200) ||
+              `Gemini HTTP ${resp.status}`;
+            const err = new Error(errMsg);
+            err.status = resp.status;
+            err.code = json?.error?.status || resp.status;
+            throw err;
+          }
+
+          const parts = json?.candidates?.[0]?.content?.parts;
+          const text = Array.isArray(parts)
+            ? parts
+                .map((p) => (typeof p?.text === 'string' ? p.text : ''))
+                .join('')
+                .trim()
+            : '';
+          return { text };
+        } catch (err) {
+          if (err?.name === 'AbortError') {
+            const timeoutErr = new Error(
+              `Gemini request timed out after ${ATTEMPT_TIMEOUT_MS}ms`
+            );
+            timeoutErr.code = 'AI_TIMEOUT';
+            throw timeoutErr;
+          }
+          throw err;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+    },
+  };
+}
+
+async function generateWithTimeout(ai, { model, contents, systemInstruction, timeoutMs }) {
+  let timer = null;
+  let settled = false;
+  try {
+    const callPromise = Promise.resolve().then(() =>
       ai.models.generateContent({
         model,
         contents,
         config: {
           systemInstruction,
-          abortSignal: controller.signal,
         },
-      }),
-      timeoutPromise,
-    ]);
+      })
+    );
+    // Prevent unhandled rejection if timeout wins the race
+    callPromise.catch(() => {});
+
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        if (!settled) {
+          const timeoutErr = new Error(`Gemini request timed out after ${timeoutMs}ms`);
+          timeoutErr.code = 'AI_TIMEOUT';
+          reject(timeoutErr);
+        }
+      }, timeoutMs);
+    });
+
+    const result = await Promise.race([callPromise, timeoutPromise]);
+    settled = true;
+    return result;
   } finally {
+    settled = true;
     if (timer) clearTimeout(timer);
   }
 }
 
 const AI_RESPONSE_CACHE = new Map();
 const ADMIN_RATE_TRACKER = new Map();
+const ADMIN_HOURLY_TRACKER = new Map();
+const IN_FLIGHT_REQUESTS = new Map();
 let upstreamCooldownUntilMs = 0;
 
 function stripSensitivePatterns(rawText) {
@@ -249,14 +349,7 @@ export function computeAnalyticsSnapshotHash(sanitizedSnapshot) {
 }
 
 function getDefaultGeminiClient(apiKey) {
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
+  return createRestGeminiClient(apiKey);
 }
 
 function pruneCache(nowMs) {
@@ -274,32 +367,69 @@ function pruneCache(nowMs) {
 
 function checkAdminAiRateLimit(adminKey, nowMs) {
   const bucketKey = String(adminKey || 'owner_default').slice(0, 64);
-  const existing = ADMIN_RATE_TRACKER.get(bucketKey) || [];
-  const active = existing.filter((ts) => nowMs - ts < RATE_WINDOW_MS);
-  if (active.length >= MAX_LIVE_CALLS_PER_WINDOW) {
-    const oldest = active[0];
-    const retryAfterSec = Math.max(1, Math.ceil((RATE_WINDOW_MS - (nowMs - oldest)) / 1000));
-    return { allowed: false, remaining: 0, retryAfterSec };
+  const existingMin = ADMIN_RATE_TRACKER.get(bucketKey) || [];
+  const activeMin = existingMin.filter((ts) => nowMs - ts < RATE_WINDOW_MS);
+
+  const existingHour = ADMIN_HOURLY_TRACKER.get(bucketKey) || [];
+  const activeHour = existingHour.filter((ts) => nowMs - ts < HOURLY_RATE_WINDOW_MS);
+
+  // Short burst guard (prevents rapid double-click / automated spam loops)
+  if (activeMin.length > 0) {
+    const latest = activeMin[activeMin.length - 1];
+    const gapMs = nowMs - latest;
+    if (gapMs >= 0 && gapMs < MIN_GAP_BETWEEN_LIVE_CALLS_MS) {
+      return {
+        allowed: false,
+        remaining: Math.max(0, MAX_LIVE_CALLS_PER_WINDOW - activeMin.length),
+        retryAfterSec: Math.max(1, Math.ceil((MIN_GAP_BETWEEN_LIVE_CALLS_MS - gapMs) / 1000)),
+        reason: 'BURST_COOLDOWN',
+      };
+    }
   }
+
+  if (activeMin.length >= MAX_LIVE_CALLS_PER_WINDOW) {
+    const oldest = activeMin[0];
+    const retryAfterSec = Math.max(1, Math.ceil((RATE_WINDOW_MS - (nowMs - oldest)) / 1000));
+    return { allowed: false, remaining: 0, retryAfterSec, reason: 'MINUTE_LIMIT' };
+  }
+
+  if (activeHour.length >= MAX_LIVE_CALLS_PER_HOUR) {
+    const oldestHour = activeHour[0];
+    const retryAfterSec = Math.max(
+      1,
+      Math.ceil((HOURLY_RATE_WINDOW_MS - (nowMs - oldestHour)) / 1000)
+    );
+    return { allowed: false, remaining: 0, retryAfterSec, reason: 'HOURLY_LIMIT' };
+  }
+
   return {
     allowed: true,
-    remaining: Math.max(0, MAX_LIVE_CALLS_PER_WINDOW - active.length),
+    remaining: Math.max(0, MAX_LIVE_CALLS_PER_WINDOW - activeMin.length),
     retryAfterSec: 0,
+    reason: null,
   };
 }
 
 function recordAdminAiCall(adminKey, nowMs) {
   const bucketKey = String(adminKey || 'owner_default').slice(0, 64);
-  const existing = ADMIN_RATE_TRACKER.get(bucketKey) || [];
-  const active = existing.filter((ts) => nowMs - ts < RATE_WINDOW_MS);
-  active.push(nowMs);
-  ADMIN_RATE_TRACKER.set(bucketKey, active);
-  return Math.max(0, MAX_LIVE_CALLS_PER_WINDOW - active.length);
+  const existingMin = ADMIN_RATE_TRACKER.get(bucketKey) || [];
+  const activeMin = existingMin.filter((ts) => nowMs - ts < RATE_WINDOW_MS);
+  activeMin.push(nowMs);
+  ADMIN_RATE_TRACKER.set(bucketKey, activeMin);
+
+  const existingHour = ADMIN_HOURLY_TRACKER.get(bucketKey) || [];
+  const activeHour = existingHour.filter((ts) => nowMs - ts < HOURLY_RATE_WINDOW_MS);
+  activeHour.push(nowMs);
+  ADMIN_HOURLY_TRACKER.set(bucketKey, activeHour);
+
+  return Math.max(0, MAX_LIVE_CALLS_PER_WINDOW - activeMin.length);
 }
 
 export function resetOwnerAiStateForTests() {
   AI_RESPONSE_CACHE.clear();
   ADMIN_RATE_TRACKER.clear();
+  ADMIN_HOURLY_TRACKER.clear();
+  IN_FLIGHT_REQUESTS.clear();
   upstreamCooldownUntilMs = 0;
 }
 
@@ -397,13 +527,24 @@ export async function runOwnerAnalyticsAi({
 
   const rateCheck = checkAdminAiRateLimit(adminKey, nowMs);
   if (!rateCheck.allowed) {
+    const limitMessage =
+      rateCheck.reason === 'BURST_COOLDOWN'
+        ? `Please wait ${rateCheck.retryAfterSec}s before sending another question.`
+        : rateCheck.reason === 'HOURLY_LIMIT'
+        ? `Hourly AI limit reached (${MAX_LIVE_CALLS_PER_HOUR}/hr) to protect quota. Try again later or reuse cached insights.`
+        : `Rate limit reached (${MAX_LIVE_CALLS_PER_WINDOW} live queries/min). Wait ${rateCheck.retryAfterSec}s or reuse a cached insight.`;
     return {
       ok: false,
       statusCode: 429,
       code: 'RATE_LIMITED',
       cooldownSec: rateCheck.retryAfterSec,
-      message: `Rate limit reached (10 live AI queries/min). Wait ${rateCheck.retryAfterSec}s or reuse an existing cached insight.`,
+      message: limitMessage,
     };
+  }
+
+  // Deduplicate concurrent identical requests so rapid double-taps never fire 2 upstream Gemini calls
+  if (IN_FLIGHT_REQUESTS.has(cacheDigest)) {
+    return IN_FLIGHT_REQUESTS.get(cacheDigest);
   }
 
   const apiKey = String(
@@ -435,114 +576,127 @@ export async function runOwnerAnalyticsAi({
     .filter(Boolean)
     .join('\n');
 
-  try {
-    const ai = clientFactory(apiKey);
-    const modelCandidates = getGeminiModelCandidates();
-    let response = null;
-    let lastErr = null;
+  const executeLiveCall = async () => {
+    try {
+      const ai = clientFactory(apiKey);
+      const modelCandidates = getGeminiModelCandidates();
+      let response = null;
+      let lastErr = null;
 
-    for (let i = 0; i < modelCandidates.length; i += 1) {
-      const model = modelCandidates[i];
-      try {
-        response = await generateWithTimeout(ai, {
-          model,
-          contents: userPrompt,
-          systemInstruction: SYSTEM_INSTRUCTION,
-          timeoutMs: ATTEMPT_TIMEOUT_MS,
-        });
-        lastErr = null;
-        break;
-      } catch (err) {
-        lastErr = err;
-        const rawMsg = String(err?.message || err || '');
-        const status = Number(err?.status || err?.code || 0);
-        const hasMoreModels = i < modelCandidates.length - 1;
-        if (hasMoreModels && isModelNotFoundError(rawMsg, status)) {
-          continue;
+      for (let i = 0; i < modelCandidates.length; i += 1) {
+        const model = modelCandidates[i];
+        try {
+          response = await generateWithTimeout(ai, {
+            model,
+            contents: userPrompt,
+            systemInstruction: SYSTEM_INSTRUCTION,
+            timeoutMs: ATTEMPT_TIMEOUT_MS,
+          });
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const rawMsg = String(err?.message || err || '');
+          const status = Number(err?.status || err?.code || 0);
+          const hasMoreModels = i < modelCandidates.length - 1;
+          if (hasMoreModels && isModelNotFoundError(rawMsg, status)) {
+            continue;
+          }
+          break;
         }
-        break;
       }
-    }
 
-    if (lastErr) {
-      throw lastErr;
-    }
+      if (lastErr) {
+        throw lastErr;
+      }
 
-    const answer = String(response?.text || '').trim();
-    if (!answer) {
+      const answer = String(response?.text || '').trim();
+      if (!answer) {
+        return {
+          ok: false,
+          statusCode: 502,
+          code: 'EMPTY_AI_RESPONSE',
+          message: 'Gemini returned an empty response. Please try asking again.',
+        };
+      }
+
+      const rateRemaining = recordAdminAiCall(adminKey, nowMs);
+      AI_RESPONSE_CACHE.set(cacheDigest, {
+        answer,
+        createdAtMs: nowMs,
+      });
+
+      return {
+        ok: true,
+        statusCode: 200,
+        answer,
+        cached: false,
+        snapshotHash,
+        cooldownSec: 0,
+        rateRemaining,
+      };
+    } catch (err) {
+      const rawMsg = String(err?.message || err || '');
+      const status = Number(err?.status || err?.code || 0);
+
+      if (err?.code === 'AI_TIMEOUT') {
+        return {
+          ok: false,
+          statusCode: 504,
+          code: 'AI_TIMEOUT',
+          message: 'Gemini took too long to respond. Please try again in a moment.',
+        };
+      }
+
+      if (
+        status === 429 ||
+        rawMsg.includes('429') ||
+        rawMsg.includes('RESOURCE_EXHAUSTED') ||
+        rawMsg.toLowerCase().includes('quota')
+      ) {
+        upstreamCooldownUntilMs = nowMs + COOLDOWN_AFTER_429_MS;
+        return {
+          ok: false,
+          statusCode: 429,
+          code: 'RESOURCE_EXHAUSTED',
+          cooldownSec: Math.ceil(COOLDOWN_AFTER_429_MS / 1000),
+          message:
+            'Gemini API rate or quota limit reached. Automatic 60s cooldown activated to preserve quota.',
+        };
+      }
+
+      if (
+        status === 400 ||
+        status === 401 ||
+        status === 403 ||
+        rawMsg.includes('API_KEY_INVALID') ||
+        rawMsg.includes('PERMISSION_DENIED')
+      ) {
+        return {
+          ok: false,
+          statusCode: status === 400 ? 400 : 403,
+          code: 'API_KEY_REJECTED',
+          message:
+            'Server Gemini API key was rejected or lacks permission. Verify GEMINI_API_KEY in Vercel Environment Variables.',
+        };
+      }
+
       return {
         ok: false,
         statusCode: 502,
-        code: 'EMPTY_AI_RESPONSE',
-        message: 'Gemini returned an empty response. Please try asking again.',
+        code: 'AI_UPSTREAM_ERROR',
+        message: 'Could not reach Gemini AI right now. Please try again in a moment.',
       };
     }
+  };
 
-    const rateRemaining = recordAdminAiCall(adminKey, nowMs);
-    AI_RESPONSE_CACHE.set(cacheDigest, {
-      answer,
-      createdAtMs: nowMs,
-    });
-
-    return {
-      ok: true,
-      statusCode: 200,
-      answer,
-      cached: false,
-      snapshotHash,
-      cooldownSec: 0,
-      rateRemaining,
-    };
-  } catch (err) {
-    const rawMsg = String(err?.message || err || '');
-    const status = Number(err?.status || err?.code || 0);
-
-    if (err?.code === 'AI_TIMEOUT') {
-      return {
-        ok: false,
-        statusCode: 504,
-        code: 'AI_TIMEOUT',
-        message: 'Gemini took too long to respond. Please try again in a moment.',
-      };
+  const livePromise = executeLiveCall();
+  IN_FLIGHT_REQUESTS.set(cacheDigest, livePromise);
+  try {
+    return await livePromise;
+  } finally {
+    if (IN_FLIGHT_REQUESTS.get(cacheDigest) === livePromise) {
+      IN_FLIGHT_REQUESTS.delete(cacheDigest);
     }
-
-    if (
-      status === 429 ||
-      rawMsg.includes('429') ||
-      rawMsg.includes('RESOURCE_EXHAUSTED') ||
-      rawMsg.toLowerCase().includes('quota')
-    ) {
-      upstreamCooldownUntilMs = nowMs + COOLDOWN_AFTER_429_MS;
-      return {
-        ok: false,
-        statusCode: 429,
-        code: 'RESOURCE_EXHAUSTED',
-        cooldownSec: Math.ceil(COOLDOWN_AFTER_429_MS / 1000),
-        message:
-          'Gemini API rate or quota limit reached. Automatic 45s cooldown activated to preserve quota.',
-      };
-    }
-
-    if (
-      status === 400 ||
-      status === 403 ||
-      rawMsg.includes('API_KEY_INVALID') ||
-      rawMsg.includes('PERMISSION_DENIED')
-    ) {
-      return {
-        ok: false,
-        statusCode: status === 400 ? 400 : 403,
-        code: 'API_KEY_REJECTED',
-        message:
-          'Server Gemini API key was rejected or lacks permission. Verify GEMINI_API_KEY in Settings > Secrets.',
-      };
-    }
-
-    return {
-      ok: false,
-      statusCode: 502,
-      code: 'AI_UPSTREAM_ERROR',
-      message: 'Could not reach Gemini AI right now. Please try again in a moment.',
-    };
   }
 }

@@ -701,32 +701,56 @@ describe('Admin-Only Gemini Analytics Advisor Security & Quota Protection', () =
     assert.equal(duringCooldown.code, 'QUOTA_COOLDOWN');
     assert.equal(quotaCalls, 1); // Did NOT hammer Gemini
 
-    // 4. Sliding window rate limit (10 live calls per 60s)
+    // 4. Anti-abuse burst cooldown (2.5s min gap) + sliding window rate limit (6 live calls per 60s)
     resetOwnerAiStateForTests();
-    for (let i = 1; i <= 10; i++) {
+    const firstBurst = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'question',
+      question: 'Unique question #1',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_burst_tester',
+      nowMs: 1_760_000_200_000,
+      clientFactory: mockClientFactory,
+    });
+    assert.equal(firstBurst.ok, true);
+
+    const rapidSpam = await runOwnerAnalyticsAi({
+      analytics: summary,
+      mode: 'question',
+      question: 'Rapid spam 100ms later',
+      apiKeyOverride: 'fake_test_key',
+      adminKey: 'admin_burst_tester',
+      nowMs: 1_760_000_200_100,
+      clientFactory: mockClientFactory,
+    });
+    assert.equal(rapidSpam.ok, false);
+    assert.equal(rapidSpam.code, 'RATE_LIMITED');
+    assert.equal(rapidSpam.statusCode, 429);
+
+    for (let i = 2; i <= 6; i++) {
       const okCall = await runOwnerAnalyticsAi({
         analytics: summary,
         mode: 'question',
         question: `Unique question #${i}`,
         apiKeyOverride: 'fake_test_key',
         adminKey: 'admin_burst_tester',
-        nowMs: 1_760_000_200_000 + i * 100,
+        nowMs: 1_760_000_200_000 + i * 3500,
         clientFactory: mockClientFactory,
       });
       assert.equal(okCall.ok, true);
     }
-    const eleventh = await runOwnerAnalyticsAi({
+    const seventh = await runOwnerAnalyticsAi({
       analytics: summary,
       mode: 'question',
-      question: 'Unique question #11',
+      question: 'Unique question #7',
       apiKeyOverride: 'fake_test_key',
       adminKey: 'admin_burst_tester',
-      nowMs: 1_760_000_205_000,
+      nowMs: 1_760_000_230_000,
       clientFactory: mockClientFactory,
     });
-    assert.equal(eleventh.ok, false);
-    assert.equal(eleventh.code, 'RATE_LIMITED');
-    assert.equal(eleventh.statusCode, 429);
+    assert.equal(seventh.ok, false);
+    assert.equal(seventh.code, 'RATE_LIMITED');
+    assert.equal(seventh.statusCode, 429);
   });
 
   it('seamlessly falls back to the next Gemini model when the primary model throws 404 NOT_FOUND', async () => {

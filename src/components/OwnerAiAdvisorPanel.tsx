@@ -481,7 +481,7 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
                       <div
                         className={`text-[10px] font-mono px-1 tabular-nums ${mutedTextClass} opacity-75`}
                       >
-                        {m.cached ? '5m cache · 0 quota' : 'Fresh insight'}
+                        {m.cached ? '10m cache · 0 quota' : 'Fresh insight'}
                         {m.snapshotHash ? ` · #${m.snapshotHash}` : ''}
                       </div>
                     </div>
@@ -564,7 +564,7 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
               </span>
             </span>
             <span className="font-mono shrink-0 tabular-nums">
-              5m cache{rateRemaining !== null ? ` · ${rateRemaining}/10` : ''}
+              10m cache{rateRemaining !== null ? ` · ${rateRemaining}/6` : ''}
             </span>
           </div>
         </div>
