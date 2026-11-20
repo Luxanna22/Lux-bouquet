@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 
 const DEFAULT_GEMINI_MODELS = [
+  'gemini-4-hydrogen',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
 ];
-const ATTEMPT_TIMEOUT_MS = 9 * 1000;
+const ATTEMPT_TIMEOUT_MS = 10 * 1000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 80;
 const RATE_WINDOW_MS = 60 * 1000;
@@ -30,13 +31,18 @@ function getGeminiModelCandidates() {
   return candidates;
 }
 
-function isModelNotFoundError(rawMsg, status) {
+function isRetryableModelError(rawMsg, status) {
   const lower = rawMsg.toLowerCase();
   return (
     status === 404 ||
+    status === 503 ||
     rawMsg.includes('404') ||
+    rawMsg.includes('503') ||
     rawMsg.includes('NOT_FOUND') ||
+    rawMsg.includes('UNAVAILABLE') ||
     lower.includes('not found') ||
+    lower.includes('unavailable') ||
+    lower.includes('overloaded') ||
     lower.includes('unsupported model') ||
     lower.includes('is not supported for generatecontent')
   );
@@ -61,7 +67,9 @@ function createRestGeminiClient(apiKey) {
           const generationConfig = {
             temperature: 0.4,
             maxOutputTokens: MAX_OUTPUT_TOKENS,
-            ...(model.startsWith('gemini-2.5')
+            ...(model.startsWith('gemini-4')
+              ? { thinkingConfig: { thinkingLevel: 'LOW' } }
+              : model.startsWith('gemini-2.5')
               ? { thinkingConfig: { thinkingBudget: 0 } }
               : {}),
           };
@@ -599,7 +607,7 @@ export async function runOwnerAnalyticsAi({
           const rawMsg = String(err?.message || err || '');
           const status = Number(err?.status || err?.code || 0);
           const hasMoreModels = i < modelCandidates.length - 1;
-          if (hasMoreModels && isModelNotFoundError(rawMsg, status)) {
+          if (hasMoreModels && isRetryableModelError(rawMsg, status)) {
             continue;
           }
           break;
@@ -681,11 +689,20 @@ export async function runOwnerAnalyticsAi({
         };
       }
 
+      if (status === 503 || rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE')) {
+        return {
+          ok: false,
+          statusCode: 503,
+          code: 'AI_OVERLOADED',
+          message: 'Gemini is temporarily busy (503). Please try again in a few seconds.',
+        };
+      }
+
       return {
         ok: false,
         statusCode: 502,
         code: 'AI_UPSTREAM_ERROR',
-        message: 'Could not reach Gemini AI right now. Please try again in a moment.',
+        message: `Could not reach Gemini AI right now${status ? ` (HTTP ${status})` : ''}. Please try again in a moment.`,
       };
     }
   };
