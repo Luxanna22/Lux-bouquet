@@ -30,7 +30,7 @@ import {
   TESTER_SINGLE_DEVICE_SENTINEL,
 } from './monetization';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
-import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, mintPaidPassServer, revokePaidPassServer, validateAndBindPassRedemptionServer, verifyActiveStudioPassForActionServer, toggleIncomePauseServer, resetOwnerIncomeServer, clearTestAndRevokedPaidKeysServer, recomputePaidRevenueFromLedgerServer, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER, PAID_PASS_LEDGER } from '../../api/_lib/paymentHandler.js';
+import { createEncryptedAdminVisitSlug, verifyEncryptedAdminVisitSlug, verifyOwnerPinWithRateLimit, createSignedAdminSessionToken, verifySignedAdminSessionToken, mergeRemoteOwnerVaultIntoMemory, recordPaidPassIssuanceServer, mintPaidPassServer, revokePaidPassServer, validateAndBindPassRedemptionServer, verifyActiveStudioPassForActionServer, toggleIncomePauseServer, resetOwnerIncomeServer, clearTestAndRevokedPaidKeysServer, recomputePaidRevenueFromLedgerServer, applyServerTelemetryEvent, OWNER_ANALYTICS_STATE, TESTER_VOUCHER_LEDGER, PAID_PASS_LEDGER } from '../../api/_lib/paymentHandler.js';
 // @ts-expect-error -- Serverless handler is an untyped ESM module
 import { sanitizeAnalyticsForAi, runOwnerAnalyticsAi, resetOwnerAiStateForTests, buildGeminiRequestConfig, selectDiscoveredFlashModels } from '../../api/_lib/ownerAiHandler.js';
 import { detectInitialSeoRoute, extractGarlandQueryParam } from './seoMeta';
@@ -1211,4 +1211,106 @@ describe('Owner Keys & Passes Classification and Filtering Helpers', () => {
     );
   });
 });
+
+describe('Recipient Engagement & Share Channel Telemetry', () => {
+  it('increments noteOpens, photoOpens, voicePlays, landingViews, and all 5 shareChannels in client summary', () => {
+    let summary = createInitialAnalyticsSummary();
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'landing_view' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'recipient_unwrap' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'note_open' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'note_open' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'photo_open' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'voice_play' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'share_channel', shareChannel: 'short_link' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'share_channel', shareChannel: 'png_download' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'share_channel', shareChannel: 'qr_card' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'share_channel', shareChannel: 'email_surprise' });
+    summary = applyTelemetryEventToSummary(summary, { eventType: 'share_channel', shareChannel: 'garland_pin' });
+
+    assert.equal(summary.landingViews, 1);
+    assert.equal(summary.recipientUnwraps, 1);
+    assert.equal(summary.noteOpens, 2);
+    assert.equal(summary.photoOpens, 1);
+    assert.equal(summary.voicePlays, 1);
+    assert.equal(summary.shareChannels.short_link, 1);
+    assert.equal(summary.shareChannels.png_download, 1);
+    assert.equal(summary.shareChannels.qr_card, 1);
+    assert.equal(summary.shareChannels.email_surprise, 1);
+    assert.equal(summary.shareChannels.garland_pin, 1);
+    assert.ok(summary.recentEvents.some((ev) => ev.type === 'note_open'));
+    assert.ok(summary.recentEvents.some((ev) => ev.type === 'photo_open'));
+    assert.ok(summary.recentEvents.some((ev) => ev.type === 'voice_play'));
+  });
+
+  it('records note_open, photo_open, voice_play, share_channel, checkout_started, and voucher events on server state', () => {
+    const beforeNote = OWNER_ANALYTICS_STATE.noteOpens;
+    const beforePhoto = OWNER_ANALYTICS_STATE.photoOpens;
+    const beforeVoice = OWNER_ANALYTICS_STATE.voicePlays;
+    const beforeQr = OWNER_ANALYTICS_STATE.shareChannels.qr_card || 0;
+    const beforeCheckout = OWNER_ANALYTICS_STATE.checkoutsStarted;
+    const beforeBlockedShares = OWNER_ANALYTICS_STATE.blockedShareAttempts;
+
+    applyServerTelemetryEvent({ eventType: 'note_open' });
+    applyServerTelemetryEvent({ eventType: 'photo_open' });
+    applyServerTelemetryEvent({ eventType: 'voice_play' });
+    applyServerTelemetryEvent({ eventType: 'share_channel', shareChannel: 'qr_card' });
+    applyServerTelemetryEvent({ eventType: 'checkout_started', tier: 'pass_7d', region: 'PH' });
+    applyServerTelemetryEvent({ eventType: 'voucher_claimed' });
+    applyServerTelemetryEvent({ eventType: 'voucher_share_blocked' });
+
+    assert.equal(OWNER_ANALYTICS_STATE.noteOpens, beforeNote + 1);
+    assert.equal(OWNER_ANALYTICS_STATE.photoOpens, beforePhoto + 1);
+    assert.equal(OWNER_ANALYTICS_STATE.voicePlays, beforeVoice + 1);
+    assert.equal(OWNER_ANALYTICS_STATE.shareChannels.qr_card, beforeQr + 1);
+    assert.equal(OWNER_ANALYTICS_STATE.checkoutsStarted, beforeCheckout + 1);
+    assert.equal(OWNER_ANALYTICS_STATE.blockedShareAttempts, beforeBlockedShares + 1);
+    assert.ok(OWNER_ANALYTICS_STATE.recentEvents.some((ev: { type?: string }) => ev.type === 'voucher_claimed'));
+    assert.ok(OWNER_ANALYTICS_STATE.recentEvents.some((ev: { type?: string }) => ev.type === 'note_open'));
+    assert.ok(OWNER_ANALYTICS_STATE.recentEvents.some((ev: { type?: string }) => ev.type === 'photo_open'));
+  });
+
+  it('preserves higher remote noteOpens and photoOpens during Firestore vault merge', () => {
+    const baselineNote = OWNER_ANALYTICS_STATE.noteOpens;
+    const baselinePhoto = OWNER_ANALYTICS_STATE.photoOpens;
+
+    mergeRemoteOwnerVaultIntoMemory({
+      analytics: {
+        noteOpens: baselineNote + 17,
+        photoOpens: baselinePhoto + 9,
+      },
+    });
+
+    assert.equal(OWNER_ANALYTICS_STATE.noteOpens, baselineNote + 17);
+    assert.equal(OWNER_ANALYTICS_STATE.photoOpens, baselinePhoto + 9);
+  });
+
+  it('exposes noteOpens, photoOpens, voicePlays, open rates, and shareChannels in sanitizeAnalyticsForAi', () => {
+    const summary = {
+      ...createInitialAnalyticsSummary(),
+      recipientUnwraps: 20,
+      noteOpens: 15,
+      photoOpens: 10,
+      voicePlays: 5,
+      shareChannels: {
+        short_link: 12,
+        png_download: 6,
+        qr_card: 4,
+        email_surprise: 3,
+        garland_pin: 2,
+      },
+    };
+
+    const sanitized = sanitizeAnalyticsForAi(summary);
+
+    assert.equal(sanitized.funnel.noteOpens, 15);
+    assert.equal(sanitized.funnel.photoOpens, 10);
+    assert.equal(sanitized.funnel.voicePlays, 5);
+    assert.equal(sanitized.ratesPct.noteOpenRatePct, 75);
+    assert.equal(sanitized.ratesPct.photoOpenRatePct, 50);
+    assert.equal(sanitized.ratesPct.voicePlayRatePct, 25);
+    assert.equal(sanitized.audience.shareChannels.qr_card, 4);
+    assert.equal(sanitized.audience.shareChannels.garland_pin, 2);
+  });
+});
+
 

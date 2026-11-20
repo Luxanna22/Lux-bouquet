@@ -999,8 +999,11 @@ export default function App() {
       triggerToast('Could not play voice recording');
     };
     setIsVoicePlaying(true);
-    if (isGiftView && !isPreviewMode && activeShortCode) {
-      incrementSharedBouquetVoicePlayCount(activeShortCode).catch(() => { });
+    if (isGiftView && !isPreviewMode) {
+      trackStudioTelemetry({ eventType: 'voice_play' });
+      if (activeShortCode) {
+        incrementSharedBouquetVoicePlayCount(activeShortCode).catch(() => { });
+      }
     }
     audio.play().catch(() => {
       setIsVoicePlaying(false);
@@ -1747,6 +1750,9 @@ export default function App() {
   useEffect(() => {
     initVercelWebAnalytics();
     trackStudioTelemetry({ eventType: 'web_visit' });
+    if (showLandingPage && !isGiftView && !isPreviewMode && !stealthGateSlug) {
+      trackStudioTelemetry({ eventType: 'landing_view' });
+    }
 
     const handlePopState = () => {
       setStealthGateSlug(extractStealthGateSlug(window.location.pathname));
@@ -2196,6 +2202,7 @@ export default function App() {
     try {
       triggerToast('Saving image...');
       await exportSvgElementToPng(targetSvg, 'flowers-for-you.png');
+      trackStudioTelemetry({ eventType: 'share_channel', shareChannel: 'png_download' });
       triggerToast('Image saved!');
     } catch (err) {
       console.error('Failed to export image:', err);
@@ -2728,6 +2735,10 @@ export default function App() {
       photoStyles: items.filter((i) => i.photoDataUrl).map((i) => i.photoStyle || 'polaroid'),
       lockMode: lock?.mode || 'none',
     });
+    trackStudioTelemetry({ eventType: 'share_channel', shareChannel: 'short_link' });
+    if (pinToShowcaseChecked) {
+      trackStudioTelemetry({ eventType: 'share_channel', shareChannel: 'garland_pin' });
+    }
     triggerToast('Gift sealed & link copied!');
   };
 
@@ -3885,6 +3896,9 @@ export default function App() {
                     onCardTagClick={() => {
                       if (isPreviewMode || isGiftView) {
                         if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                        if (isGiftView && !isPreviewMode) {
+                          trackStudioTelemetry({ eventType: 'note_open' });
+                        }
                         setLetterTypedChars(0);
                         setIsLetterModalOpen(true);
                       } else {
@@ -3926,6 +3940,9 @@ export default function App() {
                     onPhotoCardClick={(photoItem) => {
                       if (!isPreviewMode && !isGiftView) return;
                       if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                      if (isGiftView && !isPreviewMode) {
+                        trackStudioTelemetry({ eventType: 'photo_open' });
+                      }
                       setActivePhotoModalItemId(photoItem.id);
                     }}
                     canvasZoom={!isPreviewMode && !isGiftView ? desktopCanvasZoom : 1}
@@ -4838,6 +4855,9 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (isGiftView && !isPreviewMode) {
+                              trackStudioTelemetry({ eventType: 'note_open' });
+                            }
                             setLetterTypedChars(0);
                             setIsLetterModalOpen(true);
                           }}
@@ -4860,6 +4880,9 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             if (isGiftEntranceOpen || isGiftCurrentlyLocked) return;
+                            if (isGiftView && !isPreviewMode) {
+                              trackStudioTelemetry({ eventType: 'photo_open' });
+                            }
                             setActivePhotoModalItemId(visibleBloomPhotoItems[0].id);
                           }}
                           className={`px-2 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 shrink-0 transition active:scale-95 cursor-pointer ${isDarkMode
@@ -7635,6 +7658,10 @@ export default function App() {
                               return;
                             }
                             setSurpriseEmailSentTo(res.recipientEmail || surpriseRecipientEmail.trim());
+                            trackStudioTelemetry({
+                              eventType: 'share_channel',
+                              shareChannel: 'email_surprise',
+                            });
                             triggerToast('Surprise bouquet email sent!');
                           }}
                           className={`px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition shrink-0 cursor-pointer disabled:opacity-60 ${isDarkMode

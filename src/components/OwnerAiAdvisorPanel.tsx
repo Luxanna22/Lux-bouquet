@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUp, RotateCcw, ShieldCheck, X } from 'lucide-react';
+import { parseAdvisorMarkdown, parseInlineMarkdown } from '../lib/advisorMarkdown';
 
 interface ChatMessage {
   id: string;
@@ -86,69 +87,186 @@ export const GeminiAdvisorTriggerButton: React.FC<GeminiAdvisorTriggerButtonProp
 };
 
 function renderInlineSegments(text: string): React.ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+  const segments = parseInlineMarkdown(text);
+  return segments.map((seg, idx) => {
+    if (seg.type === 'bold_italic') {
       return (
-        <strong key={idx} className="font-semibold">
-          {part.slice(2, -2)}
+        <strong key={idx} className="font-semibold italic">
+          {seg.text}
         </strong>
       );
     }
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+    if (seg.type === 'bold') {
       return (
-        <code key={idx} className="font-mono text-[11px] px-1 py-0.5 rounded bg-current/10">
-          {part.slice(1, -1)}
+        <strong key={idx} className="font-semibold">
+          {seg.text}
+        </strong>
+      );
+    }
+    if (seg.type === 'italic') {
+      return (
+        <em key={idx} className="italic opacity-90">
+          {seg.text}
+        </em>
+      );
+    }
+    if (seg.type === 'code') {
+      return (
+        <code
+          key={idx}
+          className="font-mono text-[11px] px-1.5 py-0.5 rounded-md bg-current/10"
+        >
+          {seg.text}
         </code>
       );
     }
-    return <React.Fragment key={idx}>{part}</React.Fragment>;
+    return <React.Fragment key={idx}>{seg.text}</React.Fragment>;
   });
 }
 
-function renderAdvisorText(raw: string): React.ReactNode {
-  const lines = raw.split('\n');
+function renderAdvisorText(raw: string, isDarkMode: boolean): React.ReactNode {
+  const blocks = parseAdvisorMarkdown(raw);
+  const accentTint = isDarkMode ? 'text-[#E6B89C]' : 'text-[#8C5A46]';
+  const subtleBorder = isDarkMode ? 'border-[#5E4E49]' : 'border-[#DECBB9]';
+
   return (
-    <div className="space-y-1.5">
-      {lines.map((line, idx) => {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          return <div key={idx} className="h-1" />;
+    <div className="space-y-2">
+      {blocks.map((block, idx) => {
+        if (block.type === 'divider') {
+          return (
+            <hr
+              key={idx}
+              className={`border-0 border-t border-dashed my-2 ${subtleBorder}`}
+            />
+          );
         }
-        if (trimmed.startsWith('### ') || trimmed.startsWith('## ')) {
-          const headingText = trimmed.replace(/^#{2,3}\s+/, '');
+
+        if (block.type === 'heading') {
+          if (block.level <= 3) {
+            return (
+              <p
+                key={idx}
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                className={`${
+                  block.level <= 2 ? 'text-[17px]' : 'text-[15.5px]'
+                } font-semibold tracking-tight leading-snug ${idx > 0 ? 'pt-1.5' : ''}`}
+              >
+                {renderInlineSegments(block.text)}
+              </p>
+            );
+          }
+          // #### / ##### / ###### -> clean editorial small-caps sub-label
           return (
             <p
               key={idx}
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-[15px] font-semibold tracking-tight pt-1"
+              className={`text-[10.5px] font-semibold uppercase tracking-[0.08em] leading-snug ${accentTint} ${
+                idx > 0 ? 'pt-1.5' : ''
+              }`}
             >
-              {renderInlineSegments(headingText)}
+              {renderInlineSegments(block.text)}
             </p>
           );
         }
-        if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+
+        if (block.type === 'blockquote') {
           return (
-            <div key={idx} className="flex items-start gap-2 pl-0.5">
-              <span aria-hidden="true" className="opacity-45 select-none leading-relaxed">
-                ·
+            <blockquote
+              key={idx}
+              className={`border-l-2 pl-2.5 py-0.5 text-[11.5px] italic opacity-90 ${
+                isDarkMode ? 'border-[#E6B89C]/65' : 'border-[#B4846C]/75'
+              }`}
+            >
+              {renderInlineSegments(block.text)}
+            </blockquote>
+          );
+        }
+
+        if (block.type === 'bullet') {
+          return (
+            <div
+              key={idx}
+              className={`flex items-start gap-2 ${block.indent > 0 ? 'pl-4' : 'pl-0.5'}`}
+            >
+              <span
+                aria-hidden="true"
+                className={`select-none leading-relaxed ${
+                  block.indent > 0 ? 'opacity-45 text-[10px] pt-0.5' : `${accentTint} opacity-80`
+                }`}
+              >
+                {block.indent > 0 ? '–' : '•'}
               </span>
-              <span className="flex-1">{renderInlineSegments(trimmed.slice(2))}</span>
+              <span className="flex-1 min-w-0 leading-relaxed">
+                {renderInlineSegments(block.text)}
+              </span>
             </div>
           );
         }
-        const numberedMatch = trimmed.match(/^(\d+\.)\s+(.*)$/);
-        if (numberedMatch) {
+
+        if (block.type === 'numbered') {
           return (
-            <div key={idx} className="flex items-start gap-2 pl-0.5">
-              <span className="font-mono text-[11px] opacity-55 select-none pt-0.5 tabular-nums">
-                {numberedMatch[1]}
+            <div
+              key={idx}
+              className={`flex items-start gap-2 ${block.indent > 0 ? 'pl-4' : 'pl-0.5'}`}
+            >
+              <span
+                className={`font-mono text-[11px] font-medium select-none pt-[1px] tabular-nums shrink-0 ${accentTint}`}
+              >
+                {block.index}
               </span>
-              <span className="flex-1">{renderInlineSegments(numberedMatch[2])}</span>
+              <span className="flex-1 min-w-0 leading-relaxed">
+                {renderInlineSegments(block.text)}
+              </span>
             </div>
           );
         }
-        return <p key={idx}>{renderInlineSegments(trimmed)}</p>;
+
+        if (block.type === 'table') {
+          return (
+            <div
+              key={idx}
+              className={`overflow-x-auto rounded-lg border border-dashed my-1 ${subtleBorder}`}
+            >
+              <table className="w-full text-left border-collapse text-[11px] tabular-nums">
+                <thead>
+                  <tr className={`border-b border-dashed ${subtleBorder}`}>
+                    {block.headers.map((header, hIdx) => (
+                      <th
+                        key={hIdx}
+                        className="px-2 py-1.5 font-semibold whitespace-nowrap opacity-85"
+                      >
+                        {renderInlineSegments(header)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, rIdx) => (
+                    <tr
+                      key={rIdx}
+                      className={
+                        rIdx < block.rows.length - 1
+                          ? `border-b border-dashed ${subtleBorder}`
+                          : ''
+                      }
+                    >
+                      {row.map((cell, cIdx) => (
+                        <td key={cIdx} className="px-2 py-1.5 align-top">
+                          {renderInlineSegments(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+
+        return (
+          <p key={idx} className="leading-relaxed">
+            {renderInlineSegments(block.text)}
+          </p>
+        );
       })}
     </div>
   );
@@ -351,27 +469,27 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
 
   return (
     <>
-      {/* Mobile-only soft backdrop */}
+      {/* Soft backdrop for mobile, tablet, and compact laptops (< xl) */}
       {isOpen && (
         <div
           aria-hidden="true"
           onClick={onClose}
-          className="fixed inset-0 z-30 bg-[#231C18]/35 backdrop-blur-[1px] md:hidden"
+          className="fixed inset-0 z-30 bg-[#231C18]/35 backdrop-blur-[1px] xl:hidden"
         />
       )}
 
-      {/* Right-hand slide-out / docked Gemini-style sidebar (stays mounted when closed to preserve history) */}
+      {/* Right-hand slide-out (< xl) / docked (>= xl) Gemini-style sidebar (stays mounted when closed to preserve history) */}
       <aside
         aria-label="Analytics Advisor"
         aria-hidden={!isOpen}
         style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
         className={`${
           isOpen ? 'flex' : 'hidden'
-        } fixed inset-y-0 right-0 z-40 md:static md:z-auto md:shrink-0 w-full sm:w-[390px] lg:w-[410px] h-full flex-col border-l border-dashed shadow-xl md:shadow-none ${surfaceClass}`}
+        } fixed inset-y-0 right-0 z-40 xl:static xl:z-auto xl:shrink-0 w-full max-w-[100vw] sm:w-[390px] xl:w-[370px] 2xl:w-[400px] h-full flex-col border-l border-dashed shadow-xl xl:shadow-none ${surfaceClass}`}
       >
         {/* Compact Header */}
         <header
-          className={`px-4 py-3 border-b border-dashed flex items-center justify-between gap-2 shrink-0 ${hairlineBorder}`}
+          className={`px-3 sm:px-4 py-3 border-b border-dashed flex items-center justify-between gap-2 shrink-0 ${hairlineBorder}`}
         >
           <div className="flex items-center gap-2 min-w-0">
             <GeminiStarIcon
@@ -380,7 +498,7 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
             <div className="min-w-0">
               <h2
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                className="text-xl font-medium leading-none truncate"
+                className="text-lg sm:text-xl font-medium leading-none truncate"
               >
                 Analytics Advisor
               </h2>
@@ -503,7 +621,7 @@ export const OwnerAiAdvisorPanel: React.FC<OwnerAiAdvisorPanelProps> = ({
                       <div
                         className={`rounded-2xl rounded-tl-sm border border-dashed px-3.5 py-2.5 text-xs leading-relaxed ${recessedClass}`}
                       >
-                        {renderAdvisorText(m.text)}
+                        {renderAdvisorText(m.text, isDarkMode)}
                       </div>
                       <div
                         className={`text-[10px] font-mono px-1 tabular-nums ${mutedTextClass} opacity-75`}

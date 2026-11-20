@@ -219,14 +219,14 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
     <div className="space-y-6 animate-[fadeIn_180ms_ease-out]">
       {/* 1. Top Header & Compact Operational Controls */}
       <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1
             style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
             className="text-3xl sm:text-[34px] font-medium tracking-tight leading-none"
           >
             Overview
           </h1>
-          <p className={`text-xs tabular-nums mt-1.5 ${mutedText}`}>
+          <p className={`text-xs tabular-nums mt-1.5 leading-relaxed ${mutedText}`}>
             {metrics.totalPaidPasses} paid keys · {testerCount} tester invites ·{' '}
             {analytics.bouquetsCreated.toLocaleString()} bouquets sealed
             {isIncomePaused ? ' · Test mode active' : ''}
@@ -291,7 +291,7 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           )}
 
           {onResetIncome && confirmingReset && (
-            <div className="inline-flex items-center gap-1.5">
+            <div className="inline-flex flex-wrap items-center gap-1.5">
               <button
                 data-testid="confirm-reset-income-btn"
                 type="button"
@@ -370,13 +370,13 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
       )}
 
       {/* 2. Hero 4-KPI Row */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className={`rounded-2xl border border-dashed p-5 ${cardSurface}`}>
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+        <div className={`rounded-2xl border border-dashed p-4 sm:p-5 min-w-0 ${cardSurface}`}>
           <div className={`text-xs font-medium ${mutedText}`}>Combined Gross</div>
-          <div className="mt-2 flex items-end justify-between gap-2">
+          <div className="mt-2 flex items-end justify-between gap-2 min-w-0">
             <div
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums"
+              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums truncate"
               data-testid="kpi-combined-gross"
             >
               ${metrics.combinedGrossUsd.toFixed(2)}
@@ -388,12 +388,12 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           </div>
         </div>
 
-        <div className={`rounded-2xl border border-dashed p-5 ${cardSurface}`}>
+        <div className={`rounded-2xl border border-dashed p-4 sm:p-5 min-w-0 ${cardSurface}`}>
           <div className={`text-xs font-medium ${mutedText}`}>Est. Net Gain</div>
-          <div className="mt-2 flex items-end justify-between gap-2">
+          <div className="mt-2 flex items-end justify-between gap-2 min-w-0">
             <div
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums"
+              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums truncate"
             >
               ${metrics.estNetUsd.toFixed(2)}
             </div>
@@ -405,12 +405,12 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           </div>
         </div>
 
-        <div className={`rounded-2xl border border-dashed p-5 ${cardSurface}`}>
+        <div className={`rounded-2xl border border-dashed p-4 sm:p-5 min-w-0 ${cardSurface}`}>
           <div className={`text-xs font-medium ${mutedText}`}>Visitors → Paid</div>
-          <div className="mt-2 flex items-end justify-between gap-2">
+          <div className="mt-2 flex items-end justify-between gap-2 min-w-0">
             <div
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums"
+              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums truncate"
             >
               {metrics.overallVisitorToPaidPct.toFixed(2)}%
             </div>
@@ -422,12 +422,12 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           </div>
         </div>
 
-        <div className={`rounded-2xl border border-dashed p-5 ${cardSurface}`}>
+        <div className={`rounded-2xl border border-dashed p-4 sm:p-5 min-w-0 ${cardSurface}`}>
           <div className={`text-xs font-medium ${mutedText}`}>Paid Passes · ARPPU</div>
-          <div className="mt-2 flex items-end justify-between gap-2">
+          <div className="mt-2 flex items-end justify-between gap-2 min-w-0">
             <div
               style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums"
+              className="text-3xl sm:text-[34px] font-medium leading-none tabular-nums truncate"
             >
               {metrics.totalPaidPasses}
               <span className={`text-lg font-normal ml-2 ${mutedText}`}>
@@ -505,66 +505,199 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
         />
       </section>
 
-      {/* 4. Analytics Visual Grid (Funnel + Donut Breakdowns + Channel/Trigger Mini-Bars) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left: Conversion Funnel */}
-        <section className={`lg:col-span-7 rounded-2xl border border-dashed p-5 sm:p-6 ${cardSurface}`}>
-          <div className="flex items-baseline justify-between gap-2 mb-5">
-            <h2
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-2xl font-medium leading-tight"
-            >
-              Conversion Funnel
-            </h2>
-            <span className={`text-xs tabular-nums ${mutedText}`}>
-              Viral loop: {metrics.viralLoopPct}%
-            </span>
-          </div>
+      {/* 4. Analytics Visual Grid (Funnel + Recipient Engagement + Donut Breakdowns) */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+        {/* Left: Conversion Funnel + Recipient Experience & Share Channels */}
+        <div className="xl:col-span-7 space-y-5 min-w-0">
+          <section className={`rounded-2xl border border-dashed p-4 sm:p-6 ${cardSurface}`}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-5">
+              <h2
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                className="text-2xl font-medium leading-tight"
+              >
+                Conversion Funnel
+              </h2>
+              <span className={`text-xs tabular-nums ${mutedText}`}>
+                Viral loop: {metrics.viralLoopPct}%
+              </span>
+            </div>
 
-          <FunnelBarChart steps={metrics.funnelSteps} isDarkMode={isDarkMode} />
-        </section>
-
-        {/* Right: Tier Mix + Region & Devices + Channels & Triggers */}
-        <div className="lg:col-span-5 space-y-4">
-          <section className={`rounded-2xl border border-dashed p-5 ${cardSurface}`}>
-            <h2
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-xl font-medium mb-4 leading-tight"
-            >
-              Tier Mix
-            </h2>
-            <DonutBreakdownChart
-              segments={tierDonutSegments}
-              centerValue={metrics.totalPaidPasses}
-              centerLabel="paid keys"
-              isDarkMode={isDarkMode}
-            />
+            <FunnelBarChart steps={metrics.funnelSteps} isDarkMode={isDarkMode} />
           </section>
 
-          <section className={`rounded-2xl border border-dashed p-5 space-y-4 ${cardSurface}`}>
-            <h2
-              style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-              className="text-xl font-medium leading-tight"
-            >
-              Region & Devices
-            </h2>
+          {/* Recipient Experience & Share Channels */}
+          <section
+            data-testid="recipient-engagement-card"
+            className={`rounded-2xl border border-dashed p-4 sm:p-6 space-y-5 ${cardSurface}`}
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <h2
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  className="text-2xl font-medium leading-tight"
+                >
+                  Recipient Engagement
+                </h2>
+                <p className={`text-xs mt-0.5 ${mutedText}`}>
+                  Keepsake opens, voice plays, replies, and export channels.
+                </p>
+              </div>
+              <span className={`text-xs tabular-nums ${mutedText}`}>
+                {analytics.landingViews.toLocaleString()} landing ·{' '}
+                {analytics.showcaseViews.toLocaleString()} showcase
+              </span>
+            </div>
 
-            <DonutBreakdownChart
-              segments={regionDonutSegments}
-              centerValue={totalRegionCount > 0 ? `${metrics.phAudienceSharePct}%` : '—'}
-              centerLabel={totalRegionCount > 0 ? 'PH share' : 'no visits'}
-              isDarkMode={isDarkMode}
-              size={104}
-            />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
+              {[
+                {
+                  id: 'unwraps',
+                  label: 'Gift Unwraps',
+                  value: analytics.recipientUnwraps,
+                  sub: `${analytics.bouquetsCreated > 0 ? Math.min(100, Math.round((analytics.recipientUnwraps / analytics.bouquetsCreated) * 100)) : 0}% of sealed`,
+                },
+                {
+                  id: 'notes',
+                  label: 'Notes Opened',
+                  value: analytics.noteOpens ?? 0,
+                  sub: `${analytics.recipientUnwraps > 0 ? Math.min(100, Math.round(((analytics.noteOpens ?? 0) / analytics.recipientUnwraps) * 100)) : 0}% of unwraps`,
+                },
+                {
+                  id: 'photos',
+                  label: 'Photos Opened',
+                  value: analytics.photoOpens ?? 0,
+                  sub: `${analytics.recipientUnwraps > 0 ? Math.min(100, Math.round(((analytics.photoOpens ?? 0) / analytics.recipientUnwraps) * 100)) : 0}% of unwraps`,
+                },
+                {
+                  id: 'voice',
+                  label: 'Voice Plays',
+                  value: analytics.voicePlays,
+                  sub: `${analytics.voiceNotesRecorded} recorded`,
+                },
+                {
+                  id: 'reactions',
+                  label: 'Reactions & Notes',
+                  value: analytics.reactionsSent,
+                  sub: `${analytics.repliesSent} replies`,
+                },
+                {
+                  id: 'viral',
+                  label: 'Craft-Yours Clicks',
+                  value: analytics.recipientToStudioClicks,
+                  sub: `${metrics.viralLoopPct}% viral loop`,
+                },
+              ].map((stat) => (
+                <div
+                  key={stat.id}
+                  data-testid={`engagement-stat-${stat.id}`}
+                  className={`rounded-xl border border-dashed p-3 min-w-0 ${recessedSurface}`}
+                >
+                  <div className={`text-[11px] font-medium truncate ${mutedText}`}>
+                    {stat.label}
+                  </div>
+                  <div
+                    style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                    className="text-2xl font-medium mt-1 leading-none tabular-nums"
+                  >
+                    {stat.value.toLocaleString()}
+                  </div>
+                  <div className={`text-[11px] mt-1 tabular-nums truncate ${mutedText}`}>
+                    {stat.sub}
+                  </div>
+                </div>
+              ))}
+            </div>
 
-            <div className={`pt-3.5 border-t border-dashed ${dashedBorder} space-y-2`}>
-              <div className="flex items-center justify-between text-xs">
-                <span className={mutedText}>Devices</span>
-                <span className="font-mono tabular-nums text-[11px]">
-                  Mobile {analytics.devices.mobile} · Desktop {analytics.devices.desktop} · Tablet{' '}
-                  {analytics.devices.tablet}
+            <div className={`pt-4 border-t border-dashed ${dashedBorder} space-y-2.5`}>
+              <div className="flex items-baseline justify-between gap-2">
+                <h3
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                  className="text-lg font-medium leading-tight"
+                >
+                  Share &amp; Export Channels
+                </h3>
+                <span className={`text-[11px] tabular-nums ${mutedText}`}>
+                  {(
+                    (analytics.shareChannels?.short_link || 0) +
+                    (analytics.shareChannels?.png_download || 0) +
+                    (analytics.shareChannels?.qr_card || 0) +
+                    (analytics.shareChannels?.email_surprise || 0) +
+                    (analytics.shareChannels?.garland_pin || 0)
+                  ).toLocaleString()}{' '}
+                  actions
                 </span>
               </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {(
+                  [
+                    { key: 'short_link', label: 'Short Link' },
+                    { key: 'png_download', label: 'PNG Save' },
+                    { key: 'qr_card', label: 'QR Card' },
+                    { key: 'email_surprise', label: 'Email Gift' },
+                    { key: 'garland_pin', label: 'Garland Pin' },
+                  ] as const
+                ).map((ch) => (
+                  <div
+                    key={ch.key}
+                    data-testid={`share-channel-${ch.key}`}
+                    className={`rounded-lg border border-dashed px-2.5 py-2 flex items-baseline justify-between sm:flex-col sm:items-start gap-1 ${recessedSurface}`}
+                  >
+                    <span className={`text-[11px] truncate ${mutedText}`}>{ch.label}</span>
+                    <span className="font-mono text-xs font-medium tabular-nums">
+                      {(analytics.shareChannels?.[ch.key] || 0).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Right: Tier Mix + Region & Devices + Channels & Triggers */}
+        <div className="xl:col-span-5 space-y-4 min-w-0">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 gap-4">
+            <section className={`rounded-2xl border border-dashed p-4 sm:p-5 min-w-0 ${cardSurface}`}>
+              <h2
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                className="text-xl font-medium mb-4 leading-tight"
+              >
+                Tier Mix
+              </h2>
+              <DonutBreakdownChart
+                segments={tierDonutSegments}
+                centerValue={metrics.totalPaidPasses}
+                centerLabel="paid keys"
+                isDarkMode={isDarkMode}
+              />
+            </section>
+
+            <section
+              className={`rounded-2xl border border-dashed p-4 sm:p-5 space-y-4 min-w-0 ${cardSurface}`}
+            >
+              <h2
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                className="text-xl font-medium leading-tight"
+              >
+                Region &amp; Devices
+              </h2>
+
+              <DonutBreakdownChart
+                segments={regionDonutSegments}
+                centerValue={totalRegionCount > 0 ? `${metrics.phAudienceSharePct}%` : '—'}
+                centerLabel={totalRegionCount > 0 ? 'PH share' : 'no visits'}
+                isDarkMode={isDarkMode}
+                size={104}
+              />
+
+              <div className={`pt-3.5 border-t border-dashed ${dashedBorder} space-y-2`}>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                  <span className={mutedText}>Devices</span>
+                  <span className="font-mono tabular-nums text-[11px]">
+                    Mobile {analytics.devices.mobile} · Desktop {analytics.devices.desktop} ·
+                    Tablet {analytics.devices.tablet}
+                  </span>
+                </div>
               <div
                 className={`h-2 w-full rounded-full overflow-hidden flex ${
                   isDarkMode ? 'bg-[#2B2321]' : 'bg-[#FAF4EE]'
@@ -596,11 +729,12 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
                   </>
                 )}
               </div>
-            </div>
-          </section>
+              </div>
+            </section>
+          </div>
 
           {(channelBreakdown.length > 0 || topTriggers.length > 0 || topReferrers.length > 0) && (
-            <section className={`rounded-2xl border border-dashed p-5 space-y-4 ${cardSurface}`}>
+            <section className={`rounded-2xl border border-dashed p-4 sm:p-5 space-y-4 min-w-0 ${cardSurface}`}>
               {channelBreakdown.length > 0 && (
                 <div className="space-y-2.5">
                   <h3
@@ -713,11 +847,11 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* 1. Ko-fi Starter Limit Control */}
-          <div className={`rounded-xl border border-dashed p-4 space-y-3 ${recessedSurface}`}>
+          <div className={`rounded-xl border border-dashed p-4 space-y-3 min-w-0 ${recessedSurface}`}>
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs font-medium">Ko-fi Starter Single Bouquet ($1.99 → Free)</div>
                 <div className={`text-[11px] tabular-nums mt-0.5 ${mutedText}`}>
                   Claimed{' '}
@@ -925,8 +1059,8 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 items-center">
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 sm:gap-6 pt-5 items-center">
+          <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
             <label className="block space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className={mutedText}>Daily Visitors</span>
@@ -1014,56 +1148,56 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
             </label>
           </div>
 
-          <div className="lg:col-span-5 grid grid-cols-2 gap-3">
-            <div className={`rounded-xl border border-dashed p-3.5 ${recessedSurface}`}>
-              <div className={`text-[11px] font-medium ${mutedText}`}>Proj. Monthly Net</div>
+          <div className="xl:col-span-5 grid grid-cols-2 gap-2.5 sm:gap-3 min-w-0">
+            <div className={`rounded-xl border border-dashed p-3 sm:p-3.5 min-w-0 ${recessedSurface}`}>
+              <div className={`text-[11px] font-medium truncate ${mutedText}`}>Proj. Monthly Net</div>
               <div
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                className="text-2xl font-medium mt-1 leading-none tabular-nums"
+                className="text-xl sm:text-2xl font-medium mt-1 leading-none tabular-nums truncate"
                 data-testid="sim-monthly-net-usd"
               >
                 ${projection.monthlyCombinedNetUsd.toLocaleString()}
               </div>
-              <div className={`text-[11px] mt-1.5 tabular-nums ${mutedText}`}>
+              <div className={`text-[11px] mt-1.5 tabular-nums truncate ${mutedText}`}>
                 ~₱{Math.round(projection.monthlyCombinedNetPhp).toLocaleString()}
               </div>
             </div>
 
-            <div className={`rounded-xl border border-dashed p-3.5 ${recessedSurface}`}>
-              <div className={`text-[11px] font-medium ${mutedText}`}>Annual Run Rate</div>
+            <div className={`rounded-xl border border-dashed p-3 sm:p-3.5 min-w-0 ${recessedSurface}`}>
+              <div className={`text-[11px] font-medium truncate ${mutedText}`}>Annual Run Rate</div>
               <div
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                className="text-2xl font-medium mt-1 leading-none tabular-nums"
+                className="text-xl sm:text-2xl font-medium mt-1 leading-none tabular-nums truncate"
               >
                 ${projection.annualNetUsd.toLocaleString()}
               </div>
-              <div className={`text-[11px] mt-1.5 tabular-nums ${mutedText}`}>
+              <div className={`text-[11px] mt-1.5 tabular-nums truncate ${mutedText}`}>
                 Est. net after fees
               </div>
             </div>
 
-            <div className={`rounded-xl border border-dashed p-3.5 ${recessedSurface}`}>
-              <div className={`text-[11px] font-medium ${mutedText}`}>Monthly Orders</div>
+            <div className={`rounded-xl border border-dashed p-3 sm:p-3.5 min-w-0 ${recessedSurface}`}>
+              <div className={`text-[11px] font-medium truncate ${mutedText}`}>Monthly Orders</div>
               <div
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                className="text-2xl font-medium mt-1 leading-none tabular-nums"
+                className="text-xl sm:text-2xl font-medium mt-1 leading-none tabular-nums truncate"
               >
                 {projection.monthlyPaidOrders.toLocaleString()}
               </div>
-              <div className={`text-[11px] mt-1.5 tabular-nums ${mutedText}`}>
+              <div className={`text-[11px] mt-1.5 tabular-nums truncate ${mutedText}`}>
                 {projection.phOrders} PH · {projection.intlOrders} INTL
               </div>
             </div>
 
-            <div className={`rounded-xl border border-dashed p-3.5 ${recessedSurface}`}>
-              <div className={`text-[11px] font-medium ${mutedText}`}>Blended AOV</div>
+            <div className={`rounded-xl border border-dashed p-3 sm:p-3.5 min-w-0 ${recessedSurface}`}>
+              <div className={`text-[11px] font-medium truncate ${mutedText}`}>Blended AOV</div>
               <div
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-                className="text-2xl font-medium mt-1 leading-none tabular-nums"
+                className="text-xl sm:text-2xl font-medium mt-1 leading-none tabular-nums truncate"
               >
                 ${projection.blendedOrderUsd.toFixed(2)}
               </div>
-              <div className={`text-[11px] mt-1.5 tabular-nums ${mutedText}`}>
+              <div className={`text-[11px] mt-1.5 tabular-nums truncate ${mutedText}`}>
                 30% 1x · 50% 7d · 20% 30d
               </div>
             </div>

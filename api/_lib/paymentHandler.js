@@ -1272,6 +1272,8 @@ export const OWNER_ANALYTICS_STATE = {
   coutureBouquetsCreated: 0,
   freeBouquetsCreated: 0,
   recipientUnwraps: 0,
+  noteOpens: 0,
+  photoOpens: 0,
   voiceNotesRecorded: 0,
   voicePlays: 0,
   reactionsSent: 0,
@@ -1797,6 +1799,8 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
       'coutureBouquetsCreated',
       'freeBouquetsCreated',
       'recipientUnwraps',
+      'noteOpens',
+      'photoOpens',
       'voiceNotesRecorded',
       'voicePlays',
       'reactionsSent',
@@ -4313,6 +4317,26 @@ export function applyServerTelemetryEvent(event) {
         reg
       );
       break;
+    case 'note_open':
+      OWNER_ANALYTICS_STATE.noteOpens = Number(OWNER_ANALYTICS_STATE.noteOpens || 0) + 1;
+      pushAnalyticsEventServer(
+        'recipient',
+        'note_open',
+        event.summary || 'Recipient opened the handwritten note',
+        dev,
+        reg
+      );
+      break;
+    case 'photo_open':
+      OWNER_ANALYTICS_STATE.photoOpens = Number(OWNER_ANALYTICS_STATE.photoOpens || 0) + 1;
+      pushAnalyticsEventServer(
+        'recipient',
+        'photo_open',
+        event.summary || 'Recipient opened a photo keepsake',
+        dev,
+        reg
+      );
+      break;
     case 'voice_play':
       OWNER_ANALYTICS_STATE.voicePlays += 1;
       pushAnalyticsEventServer(
@@ -4368,11 +4392,45 @@ export function applyServerTelemetryEvent(event) {
       break;
     case 'checkout_started':
       OWNER_ANALYTICS_STATE.checkoutsStarted += 1;
+      pushAnalyticsEventServer(
+        'monetization',
+        'checkout_started',
+        event.summary || 'Visitor started Studio Pass checkout',
+        dev,
+        reg
+      );
       break;
     case 'share_channel':
       if (event.shareChannel && event.shareChannel in OWNER_ANALYTICS_STATE.shareChannels) {
         OWNER_ANALYTICS_STATE.shareChannels[event.shareChannel] += 1;
+        pushAnalyticsEventServer(
+          'studio',
+          'share_channel',
+          event.summary || `Gift shared via ${event.shareChannel}`,
+          dev,
+          reg
+        );
       }
+      break;
+    case 'voucher_claimed':
+      bucket.passUnlocks += 1;
+      pushAnalyticsEventServer(
+        'security',
+        'voucher_claimed',
+        event.summary || 'Tester Voucher claimed & locked to 1 device',
+        dev,
+        reg
+      );
+      break;
+    case 'voucher_share_blocked':
+      OWNER_ANALYTICS_STATE.blockedShareAttempts += 1;
+      pushAnalyticsEventServer(
+        'security',
+        'voucher_share_blocked',
+        event.summary || 'Blocked multi-device sharing attempt on a locked key',
+        dev,
+        reg
+      );
       break;
   }
   OWNER_ANALYTICS_STATE.updatedAt = new Date().toISOString();
@@ -6778,22 +6836,43 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         typeof parsed.deviceTokenHash === 'string' ? parsed.deviceTokenHash : '';
 
       // 4A. First-party telemetry event ingestion
-      // Throttled to at most 1 Firestore flush per 60s per warm instance and NEVER writes to Vercel Blob
-      // so viral visitor pageviews never burn Blob put() ops or exhaust Firestore daily quotas!
+      // Noisy pageviews (web_visit, landing_view, studio_session, showcase_view) are throttled to
+      // at most 1 Firestore flush per 60s per warm instance so viral spikes never exhaust quotas.
+      // High-signal recipient/studio/monetization events (note_open, photo_open, voice_play,
+      // recipient_unwrap, bouquet_sealed, paywall_open, checkout_started, share_channel, etc.)
+      // flush promptly (2s coalesce) so serverless spin-down never loses engagement records.
       if (actionType === 'telemetry_event') {
         const nowMs = Date.now();
+        const evType = String(parsed.telemetry?.eventType || '');
+        const isHighSignalEvent =
+          evType === 'bouquet_sealed' ||
+          evType === 'recipient_unwrap' ||
+          evType === 'note_open' ||
+          evType === 'photo_open' ||
+          evType === 'voice_play' ||
+          evType === 'recipient_reaction' ||
+          evType === 'recipient_to_studio' ||
+          evType === 'paywall_open' ||
+          evType === 'checkout_started' ||
+          evType === 'share_channel' ||
+          evType === 'voucher_claimed' ||
+          evType === 'voucher_share_blocked';
+
         const needsColdHydrate =
-          vaultRemoteExists === null && !vaultBlobHydrated && nowMs - lastTelemetryHydrateMs >= 60_000;
+          vaultRemoteExists === null &&
+          !vaultBlobHydrated &&
+          (isHighSignalEvent || nowMs - lastTelemetryHydrateMs >= 60_000);
         if (needsColdHydrate) {
           lastTelemetryHydrateMs = nowMs;
           await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
         }
         applyServerTelemetryEvent(parsed.telemetry);
+        const minFlushGapMs = isHighSignalEvent ? 1_500 : 60_000;
         const shouldFlushFirestore =
-          nowMs - lastTelemetryFlushMs >= 60_000 || needsColdHydrate;
+          nowMs - lastTelemetryFlushMs >= minFlushGapMs || needsColdHydrate;
         if (shouldFlushFirestore) {
           lastTelemetryFlushMs = nowMs;
-          if (vaultRemoteExists === null && nowMs - lastTelemetryHydrateMs >= 60_000) {
+          if (vaultRemoteExists === null && nowMs - lastTelemetryHydrateMs >= 10_000) {
             lastTelemetryHydrateMs = nowMs;
             await hydratePersistentOwnerVaultServer({ allowAutoHealFirestore: false });
           }

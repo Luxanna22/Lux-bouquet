@@ -334,8 +334,8 @@ export const OwnerBouquetsSection: React.FC<OwnerBouquetsSectionProps> = ({
       className="space-y-5 animate-[fadeIn_180ms_ease-out]"
     >
       {/* Header */}
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1
             style={{ fontFamily: "'Cormorant Garamond', serif" }}
             className="text-2xl sm:text-3xl font-normal"
@@ -351,7 +351,7 @@ export const OwnerBouquetsSection: React.FC<OwnerBouquetsSectionProps> = ({
           data-testid="owner-bouquets-refresh-btn"
           onClick={handleRefreshLog}
           disabled={isRefreshingLog}
-          className={`px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 ${hairlineBorder} hover:bg-current/5`}
+          className={`self-start sm:self-auto px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 shrink-0 ${hairlineBorder} hover:bg-current/5`}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingLog ? 'animate-spin' : ''}`} />
           <span>Sync Archive</span>
@@ -360,7 +360,7 @@ export const OwnerBouquetsSection: React.FC<OwnerBouquetsSectionProps> = ({
 
       {/* KPI Strip */}
       <div className={`border ${hairlineBorder} rounded-xl overflow-hidden`}>
-        <div className={`grid grid-cols-2 lg:grid-cols-4 gap-px ${gridHairlineBg}`}>
+        <div className={`grid grid-cols-2 xl:grid-cols-4 gap-px ${gridHairlineBg}`}>
           <div className={`p-4 ${cellBgClass}`}>
             <div
               style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -689,15 +689,15 @@ export const OwnerBouquetsSection: React.FC<OwnerBouquetsSectionProps> = ({
                         <div className="flex items-baseline gap-2 flex-wrap min-w-0">
                           <span
                             style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                            className="text-lg font-medium leading-snug truncate"
+                            className="text-lg font-medium leading-snug break-words"
                           >
                             For {entry.to || 'Someone Special'}
                           </span>
-                          <span className="text-xs opacity-60 truncate">
+                          <span className="text-xs opacity-60 break-words">
                             from {entry.from || 'Yours'}
                           </span>
                           <code
-                            className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
+                            className={`text-[11px] font-mono px-1.5 py-0.5 rounded break-all ${
                               isDarkMode ? 'bg-[#2B2321] text-[#E6B89C]' : 'bg-[#FAF4EE] text-[#6E4434]'
                             }`}
                           >
@@ -705,7 +705,7 @@ export const OwnerBouquetsSection: React.FC<OwnerBouquetsSectionProps> = ({
                           </code>
                         </div>
 
-                        <div className="flex items-center gap-2 text-[11px] opacity-65 shrink-0">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] opacity-65 shrink-0">
                           <span className="inline-flex items-center gap-1.5 font-medium">
                             <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
                             <span>{statusText}</span>

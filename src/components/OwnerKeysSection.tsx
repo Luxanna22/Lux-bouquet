@@ -312,7 +312,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
 
         {/* Mode Switcher */}
         <div
-          className={`inline-flex rounded-lg border p-0.5 text-xs self-start sm:self-auto ${hairlineBorder}`}
+          className={`w-full sm:w-auto grid grid-cols-2 sm:inline-flex rounded-lg border p-0.5 text-xs ${hairlineBorder}`}
           role="tablist"
           aria-label="Key generator type"
         >
@@ -348,13 +348,13 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
       </div>
 
       {keyMode === 'paid' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           {/* Paid Key Mint Form */}
           <form
             onSubmit={handleMintPaidPass}
-            className={`lg:col-span-5 rounded-xl border p-5 space-y-4 ${panelClass}`}
+            className={`xl:col-span-5 rounded-xl border p-4 sm:p-5 space-y-4 min-w-0 ${panelClass}`}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-baseline justify-between gap-1.5">
               <h2
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 className="text-xl font-medium"
@@ -393,7 +393,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs opacity-70 mb-1.5">Pricing Region</label>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -465,13 +465,13 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                 data-testid="newly-minted-paid-card"
                 className={`pt-4 border-t ${hairlineBorder} space-y-2.5`}
               >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">{newlyMintedPaid.label}</span>
-                  <span className="font-mono font-semibold tabular-nums">
+                <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                  <span className="font-medium truncate">{newlyMintedPaid.label}</span>
+                  <span className="font-mono font-semibold tabular-nums break-all">
                     {newlyMintedPaid.passKey}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     data-testid="copy-paid-key-btn"
                     type="button"
@@ -516,7 +516,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
           </form>
 
           {/* Paid Keys Ledger (Clean 1px hairline list — zero nested card boxes or metadata pills) */}
-          <div className={`lg:col-span-7 rounded-xl border p-5 ${panelClass}`}>
+          <div className={`xl:col-span-7 rounded-xl border p-4 sm:p-5 min-w-0 ${panelClass}`}>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div className="flex items-baseline gap-2.5">
                 <h2
@@ -743,7 +743,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                         {!isRevoked && !isExpired && !isConsumed && (
                           <>
                             <button
@@ -798,13 +798,13 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           {/* Tester Key Mint Form (Preserves existing data-testid contracts) */}
           <form
             onSubmit={handleMintTesterVoucher}
-            className={`lg:col-span-5 rounded-xl border p-5 space-y-4 ${panelClass}`}
+            className={`xl:col-span-5 rounded-xl border p-4 sm:p-5 space-y-4 min-w-0 ${panelClass}`}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-baseline justify-between gap-1.5">
               <h2
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
                 className="text-xl font-medium"
@@ -855,7 +855,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs opacity-70 mb-1.5">Daily Limit</label>
                 <div className="grid grid-cols-3 gap-1">
@@ -912,13 +912,13 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                 data-testid="newly-minted-voucher-card"
                 className={`pt-4 border-t ${hairlineBorder} space-y-2.5`}
               >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">{newlyMintedVoucher.label}</span>
-                  <span className="font-mono font-semibold tabular-nums">
+                <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                  <span className="font-medium truncate">{newlyMintedVoucher.label}</span>
+                  <span className="font-mono font-semibold tabular-nums break-all">
                     {newlyMintedVoucher.passKey}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     data-testid="copy-magic-link-btn"
                     type="button"
@@ -963,7 +963,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
           </form>
 
           {/* Issued Tester Vouchers List */}
-          <div className={`lg:col-span-7 rounded-xl border p-5 ${panelClass}`}>
+          <div className={`xl:col-span-7 rounded-xl border p-4 sm:p-5 min-w-0 ${panelClass}`}>
             <div className="flex items-center justify-between mb-3">
               <h2
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
@@ -1118,7 +1118,7 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                         {!isRevoked && !isExpired && (
                           <>
                             <button

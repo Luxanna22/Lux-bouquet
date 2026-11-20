@@ -441,6 +441,9 @@ export function sanitizeAnalyticsForAi(analytics, phpPerUsd = 56) {
   const coutureBouquetsCreated = safeInt(src.coutureBouquetsCreated);
   const freeBouquetsCreated = safeInt(src.freeBouquetsCreated);
   const recipientUnwraps = safeInt(src.recipientUnwraps);
+  const noteOpens = safeInt(src.noteOpens);
+  const photoOpens = safeInt(src.photoOpens);
+  const voicePlays = safeInt(src.voicePlays);
   const recipientToStudioClicks = safeInt(src.recipientToStudioClicks);
   const paywallOpens = safeInt(src.paywallOpens);
   const checkoutsStarted = safeInt(src.checkoutsStarted);
@@ -484,10 +487,12 @@ export function sanitizeAnalyticsForAi(analytics, phpPerUsd = 56) {
       coutureBouquetsCreated,
       freeBouquetsCreated,
       recipientUnwraps,
+      noteOpens,
+      photoOpens,
       reactionsSent: safeInt(src.reactionsSent),
       repliesSent: safeInt(src.repliesSent),
       voiceNotesRecorded: safeInt(src.voiceNotesRecorded),
-      voicePlays: safeInt(src.voicePlays),
+      voicePlays,
       recipientToStudioClicks,
       paywallOpens,
       checkoutsStarted,
@@ -502,6 +507,12 @@ export function sanitizeAnalyticsForAi(analytics, phpPerUsd = 56) {
         bouquetsCreated > 0
           ? Number(((coutureBouquetsCreated / bouquetsCreated) * 100).toFixed(1))
           : 0,
+      noteOpenRatePct:
+        recipientUnwraps > 0 ? Number(((noteOpens / recipientUnwraps) * 100).toFixed(1)) : 0,
+      photoOpenRatePct:
+        recipientUnwraps > 0 ? Number(((photoOpens / recipientUnwraps) * 100).toFixed(1)) : 0,
+      voicePlayRatePct:
+        recipientUnwraps > 0 ? Number(((voicePlays / recipientUnwraps) * 100).toFixed(1)) : 0,
       paywallToCheckoutPct:
         paywallOpens > 0 ? Number(((checkoutsStarted / paywallOpens) * 100).toFixed(1)) : 0,
       paywallToPaidPct:
@@ -664,14 +675,21 @@ export function resetOwnerAiStateForTests() {
 
 const SYSTEM_INSTRUCTION = [
   'You are the private business and revenue analyst for "Send A Bouquet", a custom digital floral gifting studio.',
-  'Audience: the studio owner and prospective business buyers evaluating traction, unit economics, and monetization upside.',
+  'Audience: the studio owner (and prospective buyers) checking how the site is performing and how to grow revenue.',
+  'Product & Paywall Model (IMPORTANT — never contradict this):',
+  '- Classic bouquets (standard blooms, classic wraps & ribbons, standard card note, permanent recipient gift link, 30-day Shared Creations gallery) are INTENTIONALLY 100% FREE to fuel organic sharing and viral recipient-to-studio loops. Never recommend putting a paywall on free classic bouquets.',
+  '- The Couture paywall ALREADY EXISTS and ONLY triggers when a user selects premium/Couture assets (luxury blooms, couture wraps or ribbons, photocards, voice keepsakes, extended 1,500-char notes, secret/date locks, or HD PNG export) and tries to seal or export without an active pass (Single Bouquet, 7-Day Pass, or 30-Day Pass).',
+  '- Because classic bouquets are free, low or zero `paywallOpens` relative to `bouquetsCreated` means users are mostly sticking to free items (or Couture asset discovery/previews in the studio could be more tempting)—NOT that the paywall is missing or disabled.',
+  '- Note on counters: `bouquetsCreated`, `recipientUnwraps`, and `voiceNotesRecorded` include all-time Firestore counters, whereas newer event-level counters (`paywallOpens`, `checkoutsStarted`, `voicePlays`) only record sessions after first-party event tracking was enabled. If an event counter is 0 while all-time totals are high, treat it as newly tracked/early telemetry rather than assuming the feature is broken.',
   'Strict Data Rules:',
   '- Ground every claim strictly in the provided sanitized JSON metrics snapshot.',
-  '- Never fabricate numbers or claim revenue that is zero. If live counters are low or zero, state that clearly and walk through realistic sensitivity math using the live PH (₱49 / ₱99 / ₱199) and INTL ($1.99 / $3.99 / $6.99) catalog prices.',
+  '- Never fabricate numbers or claim revenue that is zero. If live paid revenue is zero, state that clearly in plain language and show simple "what-if" examples using the live PH (₱49 / ₱99 / ₱199) and INTL ($1.99 / $3.99 / $6.99) prices.',
   '- Never ask for or output secrets, pass keys, personal emails, or raw device tokens.',
   'Response Style:',
-  '- Concise, scannable, plain executive prose with short bullet points (max ~220 words unless a detailed breakdown is explicitly asked).',
-  '- Lead with the sharpest insight, highlight the #1 bottleneck or upside lever, and give 1-2 concrete next moves.',
+  '- Write in clear, everyday business English (explain terms simply instead of using dense jargon).',
+  '- Keep responses concise and scannable (~160-220 words unless a deeper breakdown is explicitly asked).',
+  '- Use at most ### headings and simple `- ` bullet points or `1.` numbered steps. Avoid #### headings and code blocks.',
+  '- Lead with the sharpest insight, highlight the #1 bottleneck or Couture upgrade opportunity, and end with 1-2 concrete next moves.',
 ].join('\n');
 
 export async function runOwnerAnalyticsAi({

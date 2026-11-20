@@ -31,6 +31,7 @@ import {
 import {
   saveStudioPassToFirestore,
 } from '../lib/firebase';
+import { trackStudioTelemetry } from '../lib/ownerAnalytics';
 
 /**
  * Bespoke 5-petal botanical wax-seal floweret icon matching Send A Bouquet's
@@ -621,6 +622,15 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setActiveView('redeem');
     } else {
       setActiveView('plans');
+      const triggerFeatures =
+        premiumInspection.reasons.length > 0
+          ? premiumInspection.reasons.slice(0, 5)
+          : [triggerAction === 'png' ? 'HD PNG Export' : 'Couture Upgrade'];
+      trackStudioTelemetry({
+        eventType: 'paywall_open',
+        region,
+        paywallFeatures: triggerFeatures,
+      });
       const storedPending = loadPendingCheckoutStorage();
       if (storedPending && !(storedPending.isKofiLaunchStarter && claimedLocally)) {
         storedPendingIsFreeStarter = Boolean(storedPending.isKofiLaunchStarter);
@@ -808,6 +818,14 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
         isKofiLaunchStarter: Boolean(data.isKofiLaunchStarter),
       };
       setPendingCheckout(nextPending);
+      trackStudioTelemetry({
+        eventType: 'checkout_started',
+        region: claimingFreeLaunchStarter ? 'INTL' : region,
+        paywallFeatures:
+          premiumInspection.reasons.length > 0
+            ? premiumInspection.reasons.slice(0, 5)
+            : [triggerAction === 'png' ? 'HD PNG Export' : selectedTier],
+      });
       savePendingCheckoutStorage({
         checkoutId: nextPending.checkoutId,
         checkoutToken: nextPending.checkoutToken,

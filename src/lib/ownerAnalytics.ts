@@ -179,6 +179,8 @@ export interface OwnerAnalyticsSummary {
   coutureBouquetsCreated: number;
   freeBouquetsCreated: number;
   recipientUnwraps: number;
+  noteOpens: number;
+  photoOpens: number;
   voiceNotesRecorded: number;
   voicePlays: number;
   reactionsSent: number;
@@ -266,6 +268,8 @@ export function createInitialAnalyticsSummary(nowMs: number = Date.now()): Owner
     coutureBouquetsCreated: 0,
     freeBouquetsCreated: 0,
     recipientUnwraps: 0,
+    noteOpens: 0,
+    photoOpens: 0,
     voiceNotesRecorded: 0,
     voicePlays: 0,
     reactionsSent: 0,
@@ -347,6 +351,8 @@ export interface StudioTelemetryPayload {
     | 'showcase_view'
     | 'bouquet_sealed'
     | 'recipient_unwrap'
+    | 'note_open'
+    | 'photo_open'
     | 'voice_play'
     | 'recipient_reaction'
     | 'recipient_to_studio'
@@ -518,6 +524,18 @@ export function applyTelemetryEventToSummary(
       defaultSummary = 'Recipient unwrapped a shared gift bouquet';
       break;
     }
+    case 'note_open': {
+      category = 'recipient';
+      next.noteOpens = (next.noteOpens || 0) + 1;
+      defaultSummary = 'Recipient opened the handwritten note';
+      break;
+    }
+    case 'photo_open': {
+      category = 'recipient';
+      next.photoOpens = (next.photoOpens || 0) + 1;
+      defaultSummary = 'Recipient opened a photo keepsake';
+      break;
+    }
     case 'voice_play': {
       category = 'recipient';
       next.voicePlays += 1;
@@ -608,6 +626,7 @@ export function applyTelemetryEventToSummary(
 
 const VISITOR_SEEN_KEY = 'sab_telemetry_unique_visitor_v1';
 const SESSION_TRACKED_KEY = 'sab_telemetry_session_visit_v1';
+const SESSION_LANDING_TRACKED_KEY = 'sab_telemetry_session_landing_v1';
 
 export function detectClientTelemetryContext(): {
   device: DeviceFormFactor;
@@ -730,6 +749,15 @@ export function trackStudioTelemetry(
 ): void {
   if (typeof window === 'undefined') return;
   try {
+    // Never count the owner's own stealth admin visits as public traffic
+    const isAdminRoute = Boolean(extractStealthGateSlug(window.location.pathname || ''));
+    if (
+      isAdminRoute &&
+      (event.eventType === 'web_visit' || event.eventType === 'landing_view')
+    ) {
+      return;
+    }
+
     const ctx = detectClientTelemetryContext();
     let isUniqueVisitor = false;
     if (event.eventType === 'web_visit') {
@@ -741,6 +769,11 @@ export function trackStudioTelemetry(
         window.localStorage.setItem(VISITOR_SEEN_KEY, '1');
         isUniqueVisitor = true;
       }
+    } else if (event.eventType === 'landing_view') {
+      if (window.sessionStorage.getItem(SESSION_LANDING_TRACKED_KEY) === '1') {
+        return;
+      }
+      window.sessionStorage.setItem(SESSION_LANDING_TRACKED_KEY, '1');
     }
 
     const payload: StudioTelemetryPayload = {
@@ -753,11 +786,13 @@ export function trackStudioTelemetry(
       region: payload.region || 'INTL',
       device: payload.device || 'mobile',
       isCouture: Boolean(payload.isCouture),
+      ...(payload.shareChannel ? { shareChannel: payload.shareChannel } : {}),
     });
 
     fetch('/api/payments/verify-action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
       body: JSON.stringify({
         action: 'telemetry_event',
         deviceTokenHash: getOrCreateDeviceTokenHash(),

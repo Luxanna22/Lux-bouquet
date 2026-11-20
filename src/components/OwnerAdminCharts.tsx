@@ -195,12 +195,12 @@ export const TrajectoryAreaChart: React.FC<TrajectoryAreaChartProps> = ({
     [isDarkMode]
   );
 
-  const svgW = 720;
-  const svgH = 216;
+  const svgW = 640;
+  const svgH = 224;
   const padL = 44;
   const padR = 16;
   const padT = 16;
-  const padB = 30;
+  const padB = 32;
   const plotW = svgW - padL - padR;
   const plotH = svgH - padT - padB;
   const baselineY = padT + plotH;
@@ -377,9 +377,9 @@ export const TrajectoryAreaChart: React.FC<TrajectoryAreaChartProps> = ({
               />
               <text
                 x={padL - 8}
-                y={tick.y + 3.5}
+                y={tick.y + 4}
                 textAnchor="end"
-                fontSize="10"
+                fontSize="11"
                 fill={palette.muted}
                 style={{ fontVariantNumeric: 'tabular-nums' }}
               >
@@ -511,13 +511,13 @@ export const TrajectoryAreaChart: React.FC<TrajectoryAreaChartProps> = ({
             </>
           )}
 
-          {/* X-Axis Date Labels (show every 2nd tick + last day for crisp readability) */}
+          {/* X-Axis Date Labels (show sparse ticks + last day for crisp readability on mobile & desktop) */}
           {data.map((day, idx) => {
             const isSelected = idx === activeIdx;
             const showLabel =
               idx === 0 ||
               idx === data.length - 1 ||
-              idx % 2 === 0 ||
+              (idx % 3 === 0 && idx < data.length - 2) ||
               isSelected;
             if (!showLabel) return null;
             return (
@@ -528,7 +528,7 @@ export const TrajectoryAreaChart: React.FC<TrajectoryAreaChartProps> = ({
                 textAnchor={
                   idx === 0 ? 'start' : idx === data.length - 1 ? 'end' : 'middle'
                 }
-                fontSize="10"
+                fontSize="11"
                 fontWeight={isSelected ? '600' : '400'}
                 fill={isSelected ? palette.ink : palette.muted}
                 style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -612,9 +612,9 @@ export const FunnelBarChart: React.FC<FunnelBarChartProps> = ({ steps, isDarkMod
 
         return (
           <div key={step.id} className="space-y-1.5">
-            <div className="flex items-baseline justify-between gap-2 text-xs">
-              <div className="flex items-baseline gap-2 min-w-0">
-                <span className="font-medium truncate">{step.label}</span>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-xs">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
+                <span className="font-medium">{step.label}</span>
                 <span className="text-[11px] opacity-55 tabular-nums shrink-0">{stepNote}</span>
               </div>
               <div className="font-mono text-xs tabular-nums shrink-0">
@@ -696,7 +696,7 @@ export const DonutBreakdownChart: React.FC<DonutBreakdownChartProps> = ({
   });
 
   return (
-    <div className="flex items-center gap-4 sm:gap-5">
+    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-5 min-w-0">
       {/* SVG Ring */}
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg
@@ -748,7 +748,7 @@ export const DonutBreakdownChart: React.FC<DonutBreakdownChartProps> = ({
       </div>
 
       {/* Tidy Side Legend */}
-      <div className="flex-1 min-w-0 space-y-2">
+      <div className="flex-1 min-w-[160px] space-y-2">
         {arcs.map((arc) => (
           <div key={arc.id} className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 min-w-0">

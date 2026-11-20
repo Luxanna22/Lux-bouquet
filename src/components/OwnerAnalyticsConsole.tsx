@@ -1183,7 +1183,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
     >
       {/* DESKTOP & TABLET SIDEBAR */}
       <aside
-        className={`hidden md:flex md:w-52 lg:w-56 shrink-0 flex-col justify-between p-5 border-r ${
+        className={`hidden md:flex md:w-52 xl:w-56 shrink-0 flex-col justify-between p-4 lg:p-5 border-r ${
           isDarkMode ? 'bg-[#352C29]/90 border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
@@ -1200,7 +1200,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             <div className="min-w-0">
               <div
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
-                className="text-lg font-medium leading-tight truncate"
+                className="text-[17px] font-medium leading-tight whitespace-nowrap"
               >
                 Send A Bouquet
               </div>
@@ -1289,7 +1289,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE TOP BAR */}
       <header
-        className={`md:hidden h-13 px-3.5 border-b border-dashed flex items-center justify-between shrink-0 ${
+        className={`md:hidden h-14 px-3 border-b border-dashed flex items-center justify-between gap-2 shrink-0 ${
           isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
@@ -1361,8 +1361,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         </header>
 
         {/* MAIN CONTENT AREA */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-20 md:pb-8">
-          <div className="max-w-5xl mx-auto space-y-6">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 lg:p-7 pb-24 md:pb-8">
+          <div className="max-w-5xl mx-auto space-y-6 min-w-0">
           {/* TAB 1: REVENUE & FUNNEL OVERVIEW */}
           {activeTab === 'web_funnel' && (
             <OwnerOverviewSection
@@ -1418,7 +1418,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           {/* TAB 4: BOTANICALS & STYLING */}
           {activeTab === 'botanicals' && (
             <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
-              <div className="flex items-baseline justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
                 <h1
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                   className="text-2xl sm:text-3xl font-medium"
@@ -1428,7 +1428,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 <span className="text-xs opacity-60">Selections from sealed bouquets</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
                   { title: 'Most Loved Blooms', items: topFlowers },
                   { title: 'Wrapping Papers', items: topWraps },
@@ -1496,7 +1496,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           {/* TAB 5: SECURITY & PASSPHRASE */}
           {activeTab === 'security_stream' && (
             <div className="space-y-5 animate-[fadeIn_180ms_ease-out]">
-              <div className="flex items-baseline justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
                 <h1
                   style={{ fontFamily: "'Cormorant Garamond', serif" }}
                   className="text-2xl sm:text-3xl font-normal"
@@ -1506,8 +1506,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                 <span className="text-xs opacity-60">Gate protection & live event log</span>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                <div className={`lg:col-span-5 rounded-xl border p-5 space-y-4 ${cardSurface}`}>
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+                <div className={`xl:col-span-5 rounded-xl border p-4 sm:p-5 space-y-4 ${cardSurface}`}>
                   <h2
                     style={{ fontFamily: "'Cormorant Garamond', serif" }}
                     className="text-xl font-medium"
@@ -1542,7 +1542,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                     <label htmlFor="owner-new-pin-input" className="block text-xs opacity-70">
                       Update Passphrase (or set <span className="font-mono">OWNER_ADMIN_PIN</span> in Vercel)
                     </label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                       <input
                         id="owner-new-pin-input"
                         type="password"
@@ -1560,7 +1560,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                       <button
                         type="submit"
                         disabled={isUpdatingPin || newOwnerPin.trim().length < 4}
-                        className={`px-4 py-2 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-45 flex items-center gap-1.5 shrink-0 ${
+                        className={`px-4 py-2 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-45 flex items-center justify-center gap-1.5 shrink-0 ${
                           isDarkMode
                             ? 'bg-[#E6B89C] text-[#231C18]'
                             : 'bg-[#6E4434] text-[#FFFDF9]'
@@ -1573,8 +1573,8 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                   </form>
                 </div>
 
-                <div className={`lg:col-span-7 rounded-xl border p-5 ${cardSurface}`}>
-                  <div className="flex items-center justify-between mb-3">
+                <div className={`xl:col-span-7 rounded-xl border p-4 sm:p-5 ${cardSurface}`}>
+                  <div className="flex items-center justify-between gap-2 mb-3">
                     <h2
                       style={{ fontFamily: "'Cormorant Garamond', serif" }}
                       className="text-xl font-medium"
@@ -1598,9 +1598,11 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
                       {realAnalytics.recentEvents.slice(0, 20).map((ev) => (
                         <div
                           key={ev.id}
-                          className="py-2.5 flex items-center justify-between gap-3 text-xs"
+                          className="py-2.5 flex items-start sm:items-center justify-between gap-3 text-xs"
                         >
-                          <span className="truncate opacity-85">{ev.summary}</span>
+                          <span className="min-w-0 flex-1 break-words opacity-85 leading-snug">
+                            {ev.summary}
+                          </span>
                           <span className="text-[11px] font-mono tabular-nums opacity-55 shrink-0">
                             {new Date(ev.ts).toLocaleTimeString([], {
                               hour: '2-digit',
@@ -1631,7 +1633,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE BOTTOM NAVIGATION DOCK */}
       <nav
-        className={`md:hidden fixed bottom-0 inset-x-0 h-14 border-t border-dashed grid grid-cols-5 z-20 ${
+        className={`md:hidden fixed bottom-0 inset-x-0 min-h-14 pb-[env(safe-area-inset-bottom)] border-t border-dashed grid grid-cols-5 z-20 ${
           isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >

@@ -8,6 +8,7 @@ import {
   QrModuleStyle,
   QrThemeId,
 } from '../lib/qrKeepsake';
+import { trackStudioTelemetry } from '../lib/ownerAnalytics';
 
 interface BotanicalQrCardProps {
   url: string;
@@ -51,6 +52,7 @@ export const BotanicalQrCard: React.FC<BotanicalQrCardProps> = ({
         `bouquet-qr-${safeRecipient || 'gift'}.png`,
         1024
       );
+      trackStudioTelemetry({ eventType: 'share_channel', shareChannel: 'qr_card' });
       setJustDownloaded(true);
       onToast('QR image saved!');
       setTimeout(() => setJustDownloaded(false), 2000);
