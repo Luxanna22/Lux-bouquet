@@ -1,4 +1,5 @@
 import {
+  getStudioCatalogConfigServer,
   hydratePersistentOwnerVaultServer,
   isValidPassKeyFormat,
   normalizePassKey,
@@ -105,6 +106,15 @@ const SHARE_WRAP_STYLES = [
   'hatbox',
   'cloche',
   'koreanmesh',
+  'waxPaper',
+  'crepeFan',
+  'burlapSack',
+  'abacaMesh',
+  'snowNet',
+  'pearlTulle',
+  'ginghamLace',
+  'corsetSilk',
+  'chinoiserieUrn',
 ];
 
 const SHARE_RIBBON_STYLES = [
@@ -137,6 +147,11 @@ const SHARE_ENVIRONMENTS = [
   'nordicSnow',
   'crystalPalace',
   'midnightNoel',
+  'champagneSilk',
+  'terracottaWall',
+  'lavenderSilk',
+  'parisBalcony',
+  'sakuraBreeze',
 ];
 
 const PREMIUM_FLOWERS = new Set([
@@ -182,7 +197,18 @@ const PREMIUM_FLOWERS = new Set([
   'ringInABox',
 ]);
 
-const PREMIUM_WRAPS = new Set(['vase', 'hatbox', 'cloche', 'koreanmesh']);
+const PREMIUM_WRAPS = new Set([
+  'vase',
+  'hatbox',
+  'cloche',
+  'koreanmesh',
+  'abacaMesh',
+  'snowNet',
+  'pearlTulle',
+  'ginghamLace',
+  'corsetSilk',
+  'chinoiserieUrn',
+]);
 const PREMIUM_RIBBONS = new Set([
   'pearlStrand',
   'celestialSilk',
@@ -200,9 +226,68 @@ const PREMIUM_ENVIRONMENTS = new Set([
   'starlit',
   'crystalPalace',
   'midnightNoel',
+  'lavenderSilk',
+  'parisBalcony',
+  'sakuraBreeze',
 ]);
 
+const SHARE_VOICE_STYLES = [
+  'mixtape',
+  'vinyl',
+  'plushie',
+  'musicbox',
+  'locket',
+  'shell',
+  'birdcage',
+  'bottle',
+  'harp',
+  'globe',
+];
+
+const SHARE_PHOTO_STYLES = [
+  'polaroid',
+  'stamp',
+  'cameo',
+  'film',
+  'pressed',
+  'arch',
+  'raw',
+];
+
+const PREMIUM_VOICE_STYLES = new Set(SHARE_VOICE_STYLES);
+const PREMIUM_PHOTO_STYLES = new Set(SHARE_PHOTO_STYLES);
+
 const FREE_CARD_NOTE_MAX_CHARS = 560;
+
+function overlayPremiumOverrides(baseSet, overrideMaps) {
+  const next = new Set(baseSet);
+  for (const map of overrideMaps) {
+    if (!map || typeof map !== 'object') continue;
+    for (const [id, isPrem] of Object.entries(map)) {
+      if (typeof isPrem !== 'boolean') continue;
+      if (isPrem) next.add(id);
+      else next.delete(id);
+    }
+  }
+  return next;
+}
+
+function resolveEffectiveCoutureSets(catalogConfig) {
+  const prem = catalogConfig?.premiumOverrides || {};
+  return {
+    flowers: overlayPremiumOverrides(PREMIUM_FLOWERS, [
+      prem.flowers,
+      prem.fillers,
+      prem.others,
+      prem.seasonal,
+    ]),
+    wraps: overlayPremiumOverrides(PREMIUM_WRAPS, [prem.wrappers]),
+    ribbons: overlayPremiumOverrides(PREMIUM_RIBBONS, [prem.ribbons]),
+    environments: overlayPremiumOverrides(PREMIUM_ENVIRONMENTS, [prem.environments]),
+    voices: overlayPremiumOverrides(PREMIUM_VOICE_STYLES, [prem.voices]),
+    photos: overlayPremiumOverrides(PREMIUM_PHOTO_STYLES, [prem.photos]),
+  };
+}
 
 function decodeBase64UrlUtf8(b64url) {
   try {
@@ -226,9 +311,11 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
   let visibleStemCount = 0;
   let noteCharCount = 0;
 
-  if (extra?.voiceAudioDataUrl && String(extra.voiceAudioDataUrl).trim().length > 0) {
-    reasons.push('Voice Keepsake');
-  }
+  const effective = resolveEffectiveCoutureSets(
+    extra?.studioCatalogConfig || getStudioCatalogConfigServer()
+  );
+
+  let detectedVoiceStyle = 'mixtape';
 
   if (raw.startsWith('#g=') || raw.startsWith('#b=')) {
     const fullAfterPrefix = raw.slice(3);
@@ -239,12 +326,12 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
 
     const [wIdxStr = '0', , , rStyleStr = ''] = headerPart.split('~');
     const wrapStyle = SHARE_WRAP_STYLES[parseInt(wIdxStr, 36)] || 'chalice';
-    if (PREMIUM_WRAPS.has(wrapStyle)) {
+    if (effective.wraps.has(wrapStyle)) {
       reasons.push(`Couture wrap (${wrapStyle})`);
     }
 
     const ribbonStyle = rStyleStr ? SHARE_RIBBON_STYLES[parseInt(rStyleStr, 36)] || 'satin' : 'satin';
-    if (wrapStyle !== 'plain' && PREMIUM_RIBBONS.has(ribbonStyle)) {
+    if (wrapStyle !== 'plain' && effective.ribbons.has(ribbonStyle)) {
       reasons.push(`Couture ribbon (${ribbonStyle})`);
     }
 
@@ -273,13 +360,17 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
         visibleStemCount += 1;
 
         if (pStyleStr !== '') {
-          reasons.push('Photo Keepsake');
+          const pIdx = parseInt(pStyleStr, 36);
+          const photoStyle = SHARE_PHOTO_STYLES[pIdx] || 'polaroid';
+          if (effective.photos.has(photoStyle)) {
+            reasons.push('Photo Keepsake');
+          }
           continue;
         }
         const typeLen = Math.max(1, base.length - 7);
         const rawCode = parseInt(base.slice(0, typeLen), 36) || 0;
         const flowerType = SHARE_FLOWER_TYPES[rawCode] || 'rose';
-        if (PREMIUM_FLOWERS.has(flowerType)) {
+        if (effective.flowers.has(flowerType)) {
           reasons.push(`Couture bloom (${flowerType})`);
         }
       }
@@ -288,9 +379,11 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
     const vSegment = querySegments.find((seg) => seg.startsWith('v='));
     if (vSegment) {
       const vParts = vSegment.slice(2).split('~');
+      const vIdx = parseInt(vParts[0] || '0', 36);
+      detectedVoiceStyle = SHARE_VOICE_STYLES[vIdx] || 'mixtape';
       const vVisStr = vParts[1] || '0';
       const vAudioB64 = vParts[6] || '';
-      if (vVisStr === '1' || vAudioB64.trim().length > 0) {
+      if ((vVisStr === '1' || vAudioB64.trim().length > 0) && effective.voices.has(detectedVoiceStyle)) {
         reasons.push('Voice Keepsake');
       }
     }
@@ -307,10 +400,18 @@ export function inspectCompactPayloadCoutureUsage(payload = '', extra = {}) {
     if (eSegment) {
       const eIdx = parseInt(eSegment.slice(2), 36);
       const env = SHARE_ENVIRONMENTS[eIdx] || 'studio';
-      if (PREMIUM_ENVIRONMENTS.has(env)) {
+      if (effective.environments.has(env)) {
         reasons.push(`Couture background (${env})`);
       }
     }
+  }
+
+  if (
+    extra?.voiceAudioDataUrl &&
+    String(extra.voiceAudioDataUrl).trim().length > 0 &&
+    effective.voices.has(detectedVoiceStyle)
+  ) {
+    reasons.push('Voice Keepsake');
   }
 
   return {
@@ -329,6 +430,8 @@ export async function verifyShortenCouturePermission(bodyObj = {}) {
     typeof bodyObj.retentionDays === 'number' && Number.isFinite(bodyObj.retentionDays)
       ? bodyObj.retentionDays
       : 30;
+
+  await hydratePersistentOwnerVaultServer();
 
   const inspection = inspectCompactPayloadCoutureUsage(payload, {
     voiceAudioDataUrl: bodyObj.voiceAudioDataUrl || null,

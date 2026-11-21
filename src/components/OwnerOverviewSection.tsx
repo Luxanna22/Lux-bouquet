@@ -12,6 +12,7 @@ import {
   MiniSparkline,
   TrajectoryAreaChart,
 } from './OwnerAdminCharts';
+import { getActivePlanPricingConfig, getPricingCatalog } from '../lib/monetization';
 
 interface OwnerOverviewSectionProps {
   analytics: OwnerAnalyticsSummary;
@@ -1034,8 +1035,16 @@ export const OwnerOverviewSection: React.FC<OwnerOverviewSectionProps> = ({
               Scale & Revenue Simulator
             </h2>
             <p className={`text-xs mt-1 ${mutedText}`}>
-              What-if projection using live PH (₱49 / ₱99 / ₱199) & INTL ($1.99 / $3.99 / $6.99)
-              pricing — separate from recorded actuals.
+              {(() => {
+                const liveCfg = getActivePlanPricingConfig();
+                const phPrices = getPricingCatalog('PH', liveCfg)
+                  .map((p) => p.displayPrice)
+                  .join(' / ');
+                const intlPrices = getPricingCatalog('INTL', liveCfg)
+                  .map((p) => p.displayPrice)
+                  .join(' / ');
+                return `What-if projection using live PH (${phPrices}) & INTL (${intlPrices}) pricing — separate from recorded actuals.`;
+              })()}
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">

@@ -28,6 +28,8 @@ import {
   applyPointerRustleImpulse,
   stepRustlePhysics,
   formatPivotMotionTransform,
+  computeHandTiedStemGeometry,
+  computeClocheStemGeometry,
   LIVING_BREEZE_FRAME_INTERVAL_MS,
   RUSTLE_POINTER_THROTTLE_MS,
   type StemRustleState,
@@ -63,9 +65,18 @@ const WRAPPER_RIBBON_GEOMETRY: Record<
   celestial:  { waistY: 486, halfW: 108, tailBottomY: 608, bowScale: 1.0 },
   vase:       { waistY: 422, halfW: 93,  tailBottomY: 530, bowScale: 0.96 },
   plain:      { waistY: 504, halfW: 34,  tailBottomY: 598, bowScale: 0.8 },
-  hatbox:     { waistY: 428, halfW: 121, tailBottomY: 480, bowScale: 0.88 },
-  cloche:     { waistY: 484, halfW: 32,  tailBottomY: 544, bowScale: 0.78 },
-  koreanmesh: { waistY: 488, halfW: 94,  tailBottomY: 610, bowScale: 1.0 },
+  hatbox:         { waistY: 428, halfW: 121, tailBottomY: 480, bowScale: 0.88 },
+  cloche:         { waistY: 484, halfW: 32,  tailBottomY: 544, bowScale: 0.78 },
+  koreanmesh:     { waistY: 488, halfW: 94,  tailBottomY: 610, bowScale: 1.0 },
+  waxPaper:       { waistY: 500, halfW: 68,  tailBottomY: 614, bowScale: 0.96 },
+  crepeFan:       { waistY: 486, halfW: 70,  tailBottomY: 604, bowScale: 0.96 },
+  burlapSack:     { waistY: 502, halfW: 86,  tailBottomY: 612, bowScale: 0.98 },
+  abacaMesh:      { waistY: 488, halfW: 84,  tailBottomY: 614, bowScale: 1.02 },
+  snowNet:        { waistY: 492, halfW: 82,  tailBottomY: 614, bowScale: 1.0 },
+  pearlTulle:     { waistY: 486, halfW: 84,  tailBottomY: 610, bowScale: 1.0 },
+  ginghamLace:    { waistY: 496, halfW: 82,  tailBottomY: 612, bowScale: 0.98 },
+  corsetSilk:     { waistY: 498, halfW: 72,  tailBottomY: 610, bowScale: 0.94 },
+  chinoiserieUrn: { waistY: 438, halfW: 86,  tailBottomY: 540, bowScale: 0.92 },
 };
 
 /**
@@ -2750,6 +2761,336 @@ export const BouquetEnvironmentSVG: React.FC<{
           </g>
         </g>
       )}
+
+      {/* 15. CHAMPAGNE SILK DRAPERY ('champagneSilk' — Free) */}
+      {environment === 'champagneSilk' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envChampagneSilkBg`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#332A1F' : '#FFFBF1'} />
+              <stop offset="50%" stopColor={isDarkMode ? '#272017' : '#F6E8CF'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1D1710' : '#EED9B7'} />
+            </linearGradient>
+            <linearGradient id={`${idPrefix}envChampagneSheen`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor={isDarkMode ? '#6B5536' : '#FFFFFF'} stopOpacity="0.1" />
+              <stop offset="50%" stopColor={isDarkMode ? '#A68756' : '#FFFDF7'} stopOpacity={isDarkMode ? '0.26' : '0.62'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#524129' : '#F3DFC1'} stopOpacity="0.12" />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envChampagneSilkBg)`} />
+          {/* Luminous Draped Champagne Charmeuse Silk Folds */}
+          <path
+            d="M10,140 C175,70 305,245 590,115 L590,305 C330,415 185,220 10,335 Z"
+            fill={`url(#${idPrefix}envChampagneSheen)`}
+          />
+          <path
+            d="M10,415 C205,320 365,505 590,375 L590,585 C375,650 195,495 10,595 Z"
+            fill={isDarkMode ? '#4A3B27' : '#EBD3AE'}
+            opacity={isDarkMode ? '0.28' : '0.34'}
+          />
+          <path
+            d="M10,275 C190,210 345,355 590,250"
+            fill="none"
+            stroke={isDarkMode ? '#D6B785' : '#FFFFFF'}
+            strokeWidth="2.4"
+            opacity={isDarkMode ? '0.18' : '0.58'}
+          />
+          <rect
+            x="30"
+            y="30"
+            width="540"
+            height="620"
+            rx="28"
+            fill="none"
+            stroke={isDarkMode ? '#C9A46B' : '#D6B480'}
+            strokeWidth="1.2"
+            strokeDasharray="6 4"
+            opacity="0.65"
+          />
+        </g>
+      )}
+
+      {/* 16. SUNLIT MEDITERRANEAN PLASTER WALL ('terracottaWall' — Free) */}
+      {environment === 'terracottaWall' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envTerracottaBg`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#38251E' : '#F8EAE0'} />
+              <stop offset="52%" stopColor={isDarkMode ? '#2B1B15' : '#EDD0BD'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1F130E' : '#DFB49B'} />
+            </linearGradient>
+            <linearGradient id={`${idPrefix}envPlasterSun`} x1="0%" y1="0%" x2="85%" y2="90%">
+              <stop offset="0%" stopColor={isDarkMode ? '#FDBA74' : '#FFF7ED'} stopOpacity={isDarkMode ? '0.14' : '0.54'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#FDBA74' : '#FFF7ED'} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envTerracottaBg)`} />
+          {/* Warm Sun-Washed Venetian Plaster Trowel Clouds */}
+          <ellipse cx="145" cy="185" rx="190" ry="135" fill={isDarkMode ? '#4A2F24' : '#F4DFD1'} opacity="0.42" />
+          <ellipse cx="470" cy="495" rx="200" ry="140" fill={isDarkMode ? '#3D241B' : '#D9A68A'} opacity="0.28" />
+          {/* Diagonal Sunlit Mediterranean Window Beam */}
+          <polygon points="18,16 335,16 584,365 584,565 18,225" fill={`url(#${idPrefix}envPlasterSun)`} />
+          {/* Dappled Olive-Branch Botanical Shadow Across Top-Right Corner */}
+          <g fill={isDarkMode ? '#120A07' : '#8C533B'} opacity={isDarkMode ? '0.28' : '0.11'}>
+            <path
+              d="M582,36 C515,72 456,118 398,176"
+              fill="none"
+              stroke={isDarkMode ? '#120A07' : '#8C533B'}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+            />
+            <ellipse cx="526" cy="56" rx="24" ry="8" transform="rotate(-24 526 56)" />
+            <ellipse cx="492" cy="96" rx="26" ry="8.5" transform="rotate(22 492 96)" />
+            <ellipse cx="454" cy="108" rx="23" ry="7.5" transform="rotate(-32 454 108)" />
+            <ellipse cx="430" cy="150" rx="25" ry="8" transform="rotate(18 430 150)" />
+            <ellipse cx="394" cy="166" rx="20" ry="7" transform="rotate(-22 394 166)" />
+            <ellipse cx="554" cy="102" rx="22" ry="7.5" transform="rotate(32 554 102)" />
+          </g>
+          {/* Minimal Architectural Limewash Inset Line */}
+          <rect
+            x="28"
+            y="28"
+            width="544"
+            height="624"
+            rx="28"
+            fill="none"
+            stroke={isDarkMode ? '#B4795E' : '#BA7B5E'}
+            strokeWidth="1.1"
+            opacity="0.45"
+          />
+        </g>
+      )}
+
+      {/* 17. LILAC SILK & FRESHWATER PEARLS ('lavenderSilk' — Couture) */}
+      {environment === 'lavenderSilk' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envLilacSilkBg`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#2D2140' : '#FAF5FF'} />
+              <stop offset="50%" stopColor={isDarkMode ? '#221833' : '#EFE2FE'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#181126' : '#E2CCF9'} />
+            </linearGradient>
+            <radialGradient id={`${idPrefix}envLilacPearlHalo`} cx="50%" cy="38%" r="48%">
+              <stop offset="0%" stopColor={isDarkMode ? '#A78BFA' : '#FFFFFF'} stopOpacity={isDarkMode ? '0.18' : '0.72'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#221833' : '#EFE2FE'} stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envLilacSilkBg)`} />
+          <circle cx="300" cy="275" r="240" fill={`url(#${idPrefix}envLilacPearlHalo)`} />
+          {/* Iridescent Flowing Wisteria Charmeuse Silk Waves */}
+          <path
+            d="M10,148 C185,72 308,255 590,118 L590,315 C345,425 190,230 10,342 Z"
+            fill={isDarkMode ? '#412F5E' : '#FFFFFF'}
+            opacity={isDarkMode ? '0.32' : '0.56'}
+          />
+          <path
+            d="M10,418 C215,325 368,512 590,382 L590,582 C382,645 196,490 10,592 Z"
+            fill={isDarkMode ? '#4C3670' : '#DDD6FE'}
+            opacity={isDarkMode ? '0.26' : '0.44'}
+          />
+          {/* Fine Silver-Gilded Bridal Arch Molding */}
+          <path
+            d="M40,642 L40,256 A260,224 0 0,1 560,256 L560,642 Z"
+            fill="none"
+            stroke={isDarkMode ? '#C4B5FD' : '#A78BFA'}
+            strokeWidth="1.3"
+            opacity="0.6"
+          />
+          <path
+            d="M50,634 L50,260 A250,214 0 0,1 550,260 L550,634 Z"
+            fill="none"
+            stroke={isDarkMode ? '#EDE9FE' : '#C4B5FD'}
+            strokeWidth="0.9"
+            strokeDasharray="4 4"
+            opacity="0.58"
+          />
+          {/* Scattered Iridescent Freshwater Pearl Motes & Diamond Glints */}
+          <g>
+            {[
+              { x: 96, y: 122, r: 5.5 },
+              { x: 504, y: 128, r: 5.2 },
+              { x: 74, y: 242, r: 4 },
+              { x: 526, y: 254, r: 4.2 },
+              { x: 118, y: 468, r: 3.8 },
+              { x: 486, y: 482, r: 4.4 },
+              { x: 300, y: 58, r: 6 },
+            ].map((p, idx) => (
+              <g key={`lilac-pearl-${idx}`}>
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={p.r}
+                  fill="#FFFDF9"
+                  stroke={isDarkMode ? '#C4B5FD' : '#D8B4FE'}
+                  strokeWidth="1"
+                  opacity="0.92"
+                />
+                <circle cx={p.x - p.r * 0.28} cy={p.y - p.r * 0.28} r={p.r * 0.3} fill="#FFFFFF" />
+              </g>
+            ))}
+            <g fill={isDarkMode ? '#EDE9FE' : '#8B5CF6'} opacity="0.65">
+              <path d="M158,86 L160,92 L166,94 L160,96 L158,102 L156,96 L150,94 L156,92 Z" />
+              <path d="M442,90 L444,96 L450,98 L444,100 L442,106 L440,100 L434,98 L440,96 Z" />
+            </g>
+          </g>
+        </g>
+      )}
+
+      {/* 18. PARISIAN TWILIGHT BALCONY ('parisBalcony' — Couture) */}
+      {environment === 'parisBalcony' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envParisSky`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#2B1F36' : '#FCE2EB'} />
+              <stop offset="48%" stopColor={isDarkMode ? '#231D38' : '#EBD8F0'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#16162B' : '#CFD9F4'} />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envParisSky)`} />
+          {/* Soft Parisian Twilight Sky Horizon Glow */}
+          <ellipse
+            cx="300"
+            cy="435"
+            rx="270"
+            ry="120"
+            fill={isDarkMode ? '#F472B6' : '#FFF1F2'}
+            opacity={isDarkMode ? '0.12' : '0.46'}
+          />
+          {/* Distant Haussmann Rooflines & Mansard Chimneys Silhouette */}
+          <path
+            d="M6,535 L58,535 L70,488 L138,488 L150,524 L218,524 L232,494 L274,494 L286,472 L314,472 L326,494 L372,494 L388,524 L452,524 L464,486 L532,486 L546,535 L594,535 L594,674 L6,674 Z"
+            fill={isDarkMode ? '#141224' : '#B7AECB'}
+            opacity={isDarkMode ? '0.78' : '0.36'}
+          />
+          {/* Haussmann French Window Arch Framing */}
+          <path
+            d="M36,646 L36,246 A264,218 0 0,1 564,246 L564,646 Z"
+            fill="none"
+            stroke={isDarkMode ? '#C4B5D8' : '#8E7FA3'}
+            strokeWidth="1.6"
+            opacity="0.58"
+          />
+          {/* Ornate Scrolling Parisian Wrought-Iron Balcony Balustrade */}
+          <g
+            stroke={isDarkMode ? '#433859' : '#574E6B'}
+            fill="none"
+            opacity={isDarkMode ? '0.75' : '0.42'}
+          >
+            <line x1="22" y1="538" x2="578" y2="538" strokeWidth="3.2" />
+            <line x1="22" y1="548" x2="578" y2="548" strokeWidth="1.4" />
+            <line x1="22" y1="636" x2="578" y2="636" strokeWidth="2.8" />
+            {[64, 138, 212, 388, 462, 536].map((x) => (
+              <g key={`paris-rail-${x}`}>
+                <line x1={x} y1="548" x2={x} y2="636" strokeWidth="1.6" />
+                <path
+                  d={`M${x - 24},592 C${x - 24},566 ${x},566 ${x},592 C${x},618 ${x + 24},618 ${x + 24},592`}
+                  strokeWidth="1.4"
+                />
+                <circle cx={x} cy="566" r="4.5" strokeWidth="1.2" />
+              </g>
+            ))}
+          </g>
+          {/* Warm Parisian Café Lantern Bokeh Orbs & Twilight Stars */}
+          <g>
+            <circle cx="98" cy="148" r="14" fill="#FDE68A" opacity={isDarkMode ? '0.2' : '0.35'} />
+            <circle cx="506" cy="176" r="18" fill="#FDE68A" opacity={isDarkMode ? '0.18' : '0.32'} />
+            <circle cx="136" cy="442" r="9" fill="#FCD34D" opacity={isDarkMode ? '0.34' : '0.42'} />
+            <circle cx="468" cy="450" r="11" fill="#FCD34D" opacity={isDarkMode ? '0.3' : '0.38'} />
+            <path
+              d="M300,46 L302.5,54 L310,56.5 L302.5,59 L300,67 L297.5,59 L290,56.5 L297.5,54 Z"
+              fill={isDarkMode ? '#FDE68A' : '#FFFFFF'}
+              opacity="0.88"
+            />
+          </g>
+        </g>
+      )}
+
+      {/* 19. SAKURA SPRING SUNBEAM ('sakuraBreeze' — Couture) */}
+      {environment === 'sakuraBreeze' && (
+        <g>
+          <defs>
+            <linearGradient id={`${idPrefix}envSakuraBg`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={isDarkMode ? '#352029' : '#FFF8FA'} />
+              <stop offset="50%" stopColor={isDarkMode ? '#271720' : '#FFE7F0'} />
+              <stop offset="100%" stopColor={isDarkMode ? '#1C1017' : '#FCD8E5'} />
+            </linearGradient>
+            <linearGradient id={`${idPrefix}envSakuraRay`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#FFF7ED" stopOpacity={isDarkMode ? '0.14' : '0.58'} />
+              <stop offset="100%" stopColor="#FFF7ED" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <rect x="6" y="6" width="588" height="668" fill={`url(#${idPrefix}envSakuraBg)`} />
+          {/* Diagonal Morning Spring Sunbeams */}
+          <polygon points="10,10 195,10 510,540 355,670 10,210" fill={`url(#${idPrefix}envSakuraRay)`} />
+          <polygon points="245,10 345,10 590,340 590,460" fill={`url(#${idPrefix}envSakuraRay)`} opacity="0.7" />
+          {/* Delicate Corner Cherry Blossom Boughs (Leaving Center Clear for Bouquet) */}
+          <g opacity={isDarkMode ? '0.72' : '0.88'}>
+            <path
+              d="M12,92 C66,86 118,68 172,34 M68,80 C94,104 118,122 146,136"
+              fill="none"
+              stroke={isDarkMode ? '#9D7A84' : '#8C6268'}
+              strokeWidth="3.2"
+              strokeLinecap="round"
+            />
+            <path
+              d="M588,124 C534,116 486,92 436,48 M524,108 C498,132 478,150 452,162"
+              fill="none"
+              stroke={isDarkMode ? '#9D7A84' : '#8C6268'}
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            {/* Watercolor Sakura Blossoms on Corner Branches */}
+            {[
+              { x: 52, y: 84, s: 1.0 },
+              { x: 112, y: 66, s: 0.9 },
+              { x: 158, y: 44, s: 0.78 },
+              { x: 136, y: 128, s: 0.82 },
+              { x: 544, y: 116, s: 0.95 },
+              { x: 486, y: 88, s: 0.85 },
+              { x: 444, y: 54, s: 0.76 },
+              { x: 462, y: 156, s: 0.8 },
+            ].map((b, idx) => (
+              <g key={`sakura-bloom-${idx}`} transform={`translate(${b.x}, ${b.y}) scale(${b.s})`}>
+                {[0, 72, 144, 216, 288].map((deg) => (
+                  <ellipse
+                    key={deg}
+                    cx="0"
+                    cy="-8"
+                    rx="4.6"
+                    ry="7.5"
+                    transform={`rotate(${deg})`}
+                    fill={isDarkMode ? '#F9A8D4' : '#FBCFE8'}
+                    stroke="#FFFFFF"
+                    strokeWidth="0.6"
+                  />
+                ))}
+                <circle cx="0" cy="0" r="2.8" fill="#FDE68A" />
+              </g>
+            ))}
+          </g>
+          {/* Floating Translucent Drifting Sakura Petals */}
+          <g fill={isDarkMode ? '#F472B6' : '#F9A8D4'} opacity={isDarkMode ? '0.45' : '0.68'}>
+            <path d="M94,218 C104,210 112,222 100,232 C92,228 88,222 94,218 Z" />
+            <path d="M510,248 C520,240 526,252 514,262 C506,258 504,252 510,248 Z" />
+            <path d="M78,392 C88,384 96,396 84,406 C76,402 72,396 78,392 Z" />
+            <path d="M524,422 C534,414 540,426 528,436 C520,432 518,426 524,422 Z" />
+            <path d="M138,548 C146,542 154,552 142,560 C136,556 134,552 138,548 Z" />
+            <path d="M466,556 C474,550 482,560 470,568 C464,564 462,560 466,556 Z" />
+          </g>
+          {/* Delicate Rose-Gold Hairline Border */}
+          <rect
+            x="28"
+            y="28"
+            width="544"
+            height="624"
+            rx="28"
+            fill="none"
+            stroke={isDarkMode ? '#F472B6' : '#F9A8D4'}
+            strokeWidth="1.1"
+            opacity="0.52"
+          />
+        </g>
+      )}
       </g>
     </g>
   );
@@ -3850,7 +4191,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const wrapperBottomClipY =
     wrapStyle === 'basket'
       ? 596
-      : wrapStyle === 'vase'
+      : wrapStyle === 'vase' || wrapStyle === 'chinoiserieUrn'
       ? 610
       : wrapStyle === 'cloche'
       ? 560
@@ -4383,20 +4724,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               rx={isCardThumbnail ? '0' : '34'}
             />
           </clipPath>
-
-          {/* Per-Flower Adjustable Stem Length ClipPaths */}
-          {items.map((item) => {
-            const stemRatio = item.stemLength ?? 1;
-            const localBottomY =
-              wrapStyle === 'cloche' && getEffectiveItemPlane(item) !== 'front'
-                ? 38
-                : Math.round(18 + 145 * stemRatio);
-            return (
-              <clipPath key={`stem-clip-${item.id}`} id={`${idPrefix}stem-clip-${item.id}`}>
-                <rect x="-170" y="-170" width="340" height={170 + localBottomY} />
-              </clipPath>
-            );
-          })}
         </defs>
 
         {/* 1. Arch Backdrop (Upsized within 648x680 ratio; fills 100% edge-to-edge on card thumbnails) */}
@@ -4549,7 +4876,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   }}
                 >
                   <g
-                    clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
                     className={!useLivingChoreography && bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
                   >
                     <circle cx="0" cy="-6" r="54" fill="transparent" />
@@ -4560,7 +4886,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                         type={item.type}
                         petalColor={item.petalColor}
                         centerColor={item.centerColor}
-                        hideStem={Boolean(meta?.isOther)}
+                        hideStem={
+                          Boolean(meta?.isOther) ||
+                          wrapStyle === 'plain' ||
+                          wrapStyle === 'cloche'
+                        }
+                        stemLength={item.stemLength ?? 1}
                       />
                     )}
                     <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
@@ -4927,47 +5258,583 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 />
               </g>
             )}
+
+            {/* STYLE 13 BACK: DELI WAX ('waxPaper' — Free Parisian market waxed-paper diagonal cone) */}
+            {wrapStyle === 'waxPaper' && (
+              <g>
+                <defs>
+                  <pattern
+                    id={`${idPrefix}waxStripePat`}
+                    width="14"
+                    height="14"
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(-14)"
+                  >
+                    <line
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="14"
+                      stroke={shadeWrapHex(wrapColor, -34)}
+                      strokeWidth="1.25"
+                      strokeOpacity="0.24"
+                    />
+                  </pattern>
+                </defs>
+                {/* Crisp Sculptural Parisian Waxed-Paper Diamond Sheet tapering cleanly into the ribbon waist */}
+                <path
+                  d="M232,500 L122,238 L294,148 L478,224 L368,500 Z"
+                  fill={shadeWrapHex(wrapColor, 10)}
+                  stroke={shadeWrapHex(wrapColor, -26)}
+                  strokeWidth="1.4"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M232,500 L122,238 L294,148 L478,224 L368,500 Z"
+                  fill={`url(#${idPrefix}waxStripePat)`}
+                />
+                {/* Crisp Inner Folded Translucent Parchment Liner */}
+                <path
+                  d="M238,500 L156,252 L298,176 L444,240 L362,500 Z"
+                  fill={shadeWrapHex(wrapColor, 22)}
+                  fillOpacity="0.76"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.25"
+                  strokeOpacity="0.88"
+                  strokeLinejoin="round"
+                />
+                {/* Subtle Paper Fold Crease Lines Converging to the Cinched Waist */}
+                <path
+                  d="M294,148 L298,498 M156,252 L252,498 M444,240 L348,498"
+                  stroke={shadeWrapHex(wrapColor, -28)}
+                  strokeWidth="0.9"
+                  strokeOpacity="0.24"
+                  fill="none"
+                />
+              </g>
+            )}
+
+            {/* STYLE 14 BACK: CREPE FAN ('crepeFan' — Free ruffled accordion florist crepe halo) */}
+            {wrapStyle === 'crepeFan' && (
+              <g>
+                {/* Wide Scalloped Accordion Crepe Fan Arch */}
+                <path
+                  d="M236,492 L82,272 Q96,232 132,226 Q152,188 194,194 Q224,162 266,178 Q300,154 334,178 Q376,162 406,194 Q448,188 468,226 Q504,232 518,272 L364,492 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -24)}
+                  strokeWidth="1.5"
+                />
+                {/* Inner Lighter Scalloped Crepe Layer */}
+                <path
+                  d="M248,492 L118,284 Q148,242 192,238 Q232,202 276,214 Q300,196 324,214 Q368,202 408,238 Q452,242 482,284 L352,492 Z"
+                  fill={shadeWrapHex(wrapColor, 18)}
+                  fillOpacity="0.86"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.4"
+                  strokeOpacity="0.78"
+                />
+                {/* Radial Accordion Pleat Lines */}
+                <g stroke={shadeWrapHex(wrapColor, -26)} strokeWidth="1.15" opacity="0.42" fill="none">
+                  <line x1="274" y1="484" x2="132" y2="232" />
+                  <line x1="284" y1="484" x2="196" y2="198" />
+                  <line x1="294" y1="484" x2="266" y2="180" />
+                  <line x1="306" y1="484" x2="334" y2="180" />
+                  <line x1="316" y1="484" x2="404" y2="198" />
+                  <line x1="326" y1="484" x2="468" y2="232" />
+                </g>
+                {/* Flared Ruffled Crepe Tail Below Waist */}
+                <path
+                  d="M236,488 L174,602 Q208,618 242,606 Q272,622 300,608 Q328,622 358,606 Q392,618 426,602 L364,488 Z"
+                  fill={shadeWrapHex(wrapColor, -10)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.2"
+                  strokeOpacity="0.6"
+                />
+              </g>
+            )}
+
+            {/* STYLE 15 BACK: JUTE POCKET ('burlapSack' — Free rustic woven market burlap pouch) */}
+            {wrapStyle === 'burlapSack' && (
+              <g>
+                <defs>
+                  <pattern id={`${idPrefix}burlapWeavePat`} width="10" height="10" patternUnits="userSpaceOnUse">
+                    <path
+                      d="M0,3 L10,3 M0,8 L10,8 M3,0 L3,10 M8,0 L8,10"
+                      stroke={shadeWrapHex(wrapColor, -42)}
+                      strokeWidth="1"
+                      strokeOpacity="0.34"
+                    />
+                  </pattern>
+                </defs>
+                {/* Rustic Woven Linen-Burlap Back Collar (tapers cleanly behind the front pocket waist) */}
+                <path
+                  d="M134,252 Q216,228 300,238 Q384,228 466,252 L434,376 L380,498 L220,498 L166,376 Z"
+                  fill={shadeWrapHex(wrapColor, -8)}
+                  stroke={shadeWrapHex(wrapColor, -44)}
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M134,252 Q216,228 300,238 Q384,228 466,252 L434,376 L380,498 L220,498 L166,376 Z"
+                  fill={`url(#${idPrefix}burlapWeavePat)`}
+                />
+                {/* Soft Cream Canvas Inner Lining */}
+                <path
+                  d="M156,266 Q300,250 444,266 L418,376 L370,494 L230,494 L182,376 Z"
+                  fill="#FBF6EE"
+                  fillOpacity="0.58"
+                />
+                {/* Raw Frayed Top Edge Fringe Ticks */}
+                <path
+                  d="M142,248 Q220,224 300,234 Q380,224 458,248"
+                  fill="none"
+                  stroke={shadeWrapHex(wrapColor, -34)}
+                  strokeWidth="2.8"
+                  strokeDasharray="2 5"
+                  opacity="0.7"
+                />
+              </g>
+            )}
+
+            {/* STYLE 16 BACK: ABACA MESH ('abacaMesh' — Couture: Matte sheets + boutique tag + golden open-weave abaca net wings) */}
+            {wrapStyle === 'abacaMesh' && (
+              <g>
+                <defs>
+                  <pattern
+                    id={`${idPrefix}abacaNetPat`}
+                    width="12"
+                    height="12"
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(24)"
+                  >
+                    <path
+                      d="M0,3 L12,3 M0,9 L12,9 M3,0 L3,12 M9,0 L9,12"
+                      stroke="#A67C44"
+                      strokeWidth="1.15"
+                      strokeOpacity="0.62"
+                    />
+                    <path
+                      d="M0,6 L12,6 M6,0 L6,12"
+                      stroke="#F3DFBA"
+                      strokeWidth="0.7"
+                      strokeOpacity="0.75"
+                    />
+                  </pattern>
+                </defs>
+                {/* Wide Open-Weave Golden Abaca Net Side Wings */}
+                <path
+                  d="M276,478 L66,262 L134,192 L292,380 Z"
+                  fill="#E4C896"
+                  fillOpacity="0.46"
+                  stroke="#B88E52"
+                  strokeWidth="1.4"
+                />
+                <path d="M276,478 L66,262 L134,192 L292,380 Z" fill={`url(#${idPrefix}abacaNetPat)`} />
+                <path
+                  d="M324,478 L534,262 L466,192 L308,380 Z"
+                  fill="#E4C896"
+                  fillOpacity="0.46"
+                  stroke="#B88E52"
+                  strokeWidth="1.4"
+                />
+                <path d="M324,478 L534,262 L466,192 L308,380 Z" fill={`url(#${idPrefix}abacaNetPat)`} />
+                {/* Tall Matte Folded Couture Outer Paper Sheets (Recolorable) */}
+                <path
+                  d="M286,488 L156,144 L244,126 L296,466 Z"
+                  fill={shadeWrapHex(wrapColor, 6)}
+                  stroke={shadeWrapHex(wrapColor, -28)}
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M244,160 L368,158 L338,488 L262,488 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -24)}
+                  strokeWidth="1.1"
+                />
+                <path
+                  d="M314,488 L354,124 L452,146 L354,488 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  stroke={shadeWrapHex(wrapColor, -30)}
+                  strokeWidth="1.2"
+                />
+                {/* Crisp Vertical Sheet Fold Shadow Lines */}
+                <line x1="242" y1="138" x2="278" y2="460" stroke={shadeWrapHex(wrapColor, -36)} strokeWidth="1.4" opacity="0.4" />
+                <line x1="358" y1="136" x2="328" y2="460" stroke={shadeWrapHex(wrapColor, -36)} strokeWidth="1.4" opacity="0.4" />
+                {/* Signature Small Dark Boutique Foil Tag on Upper-Right Sheet Edge */}
+                <g transform="translate(394, 146) rotate(11)">
+                  <rect x="0" y="0" width="28" height="11" rx="1.8" fill="#292524" stroke="#57534E" strokeWidth="0.7" />
+                  <circle cx="8" cy="5.5" r="1.6" fill="#FDE68A" opacity="0.9" />
+                  <line x1="13" y1="5.5" x2="23" y2="5.5" stroke="#E7E5E4" strokeWidth="1" strokeLinecap="round" opacity="0.75" />
+                </g>
+                {/* Side Matte Folded Paper Rolls Framing Lower Wings */}
+                <path
+                  d="M262,486 L82,340 L114,296 L286,464 Z"
+                  fill={shadeWrapHex(wrapColor, -10)}
+                  stroke={shadeWrapHex(wrapColor, -32)}
+                  strokeWidth="1.1"
+                />
+                <path
+                  d="M338,486 L518,340 L486,296 L314,464 Z"
+                  fill={shadeWrapHex(wrapColor, -12)}
+                  stroke={shadeWrapHex(wrapColor, -32)}
+                  strokeWidth="1.1"
+                />
+              </g>
+            )}
+
+            {/* STYLE 17 BACK: SNOW WEB NET ('snowNet' — Couture: Frosted double-bordered Korean sheets + lacy snow-web tulle) */}
+            {wrapStyle === 'snowNet' && (
+              <g>
+                <defs>
+                  <pattern id={`${idPrefix}snowWebPat`} width="28" height="28" patternUnits="userSpaceOnUse">
+                    <path
+                      d="M0,8 L11,4 L22,12 L28,7 M4,22 L15,17 L26,24 M11,4 L15,17 L9,28 M22,12 L26,24 M2,0 L11,4 M0,16 L15,17"
+                      fill="none"
+                      stroke="#FFFFFF"
+                      strokeWidth="1.5"
+                      strokeOpacity="0.96"
+                    />
+                    <path
+                      d="M6,10 L18,9 L24,18 M12,24 L21,20"
+                      fill="none"
+                      stroke="#FFFFFF"
+                      strokeWidth="0.9"
+                      strokeOpacity="0.78"
+                    />
+                  </pattern>
+                </defs>
+                {/* 5 Fanned Translucent Frosted Korean Sheets with Crisp Double White Border Lines */}
+                {/* Far-Left Panel */}
+                <path
+                  d="M276,488 L72,278 L114,234 L296,466 Z"
+                  fill={shadeWrapHex(wrapColor, 14)}
+                  fillOpacity="0.86"
+                  stroke={shadeWrapHex(wrapColor, -22)}
+                  strokeWidth="1.1"
+                />
+                <path d="M78,274 L116,236" stroke="#FFFFFF" strokeWidth="2.2" opacity="0.95" />
+                <path d="M84,280 L122,242" stroke="#FFFFFF" strokeWidth="1.3" opacity="0.9" />
+                {/* Mid-Left Panel */}
+                <path
+                  d="M282,488 L120,214 L184,174 L302,464 Z"
+                  fill={shadeWrapHex(wrapColor, 6)}
+                  fillOpacity="0.88"
+                  stroke={shadeWrapHex(wrapColor, -20)}
+                  strokeWidth="1.1"
+                />
+                <path d="M126,212 L185,176" stroke="#FFFFFF" strokeWidth="2.2" opacity="0.95" />
+                <path d="M132,219 L190,183" stroke="#FFFFFF" strokeWidth="1.3" opacity="0.9" />
+                {/* Center Tall Crown Sheet */}
+                <path
+                  d="M242,488 L208,136 L392,136 L358,488 Z"
+                  fill={wrapColor}
+                  fillOpacity="0.9"
+                  stroke={shadeWrapHex(wrapColor, -22)}
+                  strokeWidth="1.1"
+                />
+                <line x1="212" y1="142" x2="388" y2="142" stroke="#FFFFFF" strokeWidth="2.4" opacity="0.95" />
+                <line x1="213" y1="150" x2="387" y2="150" stroke="#FFFFFF" strokeWidth="1.3" opacity="0.9" />
+                {/* Mid-Right Panel */}
+                <path
+                  d="M318,488 L416,174 L480,214 L298,464 Z"
+                  fill={shadeWrapHex(wrapColor, 6)}
+                  fillOpacity="0.88"
+                  stroke={shadeWrapHex(wrapColor, -20)}
+                  strokeWidth="1.1"
+                />
+                <path d="M415,176 L474,212" stroke="#FFFFFF" strokeWidth="2.2" opacity="0.95" />
+                <path d="M410,183 L468,219" stroke="#FFFFFF" strokeWidth="1.3" opacity="0.9" />
+                {/* Far-Right Panel */}
+                <path
+                  d="M324,488 L486,234 L528,278 L304,466 Z"
+                  fill={shadeWrapHex(wrapColor, 14)}
+                  fillOpacity="0.86"
+                  stroke={shadeWrapHex(wrapColor, -22)}
+                  strokeWidth="1.1"
+                />
+                <path d="M484,236 L522,274" stroke="#FFFFFF" strokeWidth="2.2" opacity="0.95" />
+                <path d="M478,242 L516,280" stroke="#FFFFFF" strokeWidth="1.3" opacity="0.9" />
+                {/* Ethereal Organic Snow-Web Lacy Tulle Cloud Billowing Behind Blooms */}
+                <path
+                  d="M232,472 C178,412 132,332 146,246 C158,186 212,162 252,182 C278,144 334,148 358,184 C402,168 456,196 458,256 C460,336 420,412 368,472 Z"
+                  fill="#FFFFFF"
+                  fillOpacity="0.22"
+                />
+                <path
+                  d="M232,472 C178,412 132,332 146,246 C158,186 212,162 252,182 C278,144 334,148 358,184 C402,168 456,196 458,256 C460,336 420,412 368,472 Z"
+                  fill={`url(#${idPrefix}snowWebPat)`}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.4"
+                  strokeDasharray="6 4"
+                  strokeOpacity="0.8"
+                />
+              </g>
+            )}
+
+            {/* STYLE 18 BACK: PEARL TULLE ('pearlTulle' — Couture bridal sheer tulle net halo with freshwater pearls) */}
+            {wrapStyle === 'pearlTulle' && (
+              <g>
+                <defs>
+                  <pattern
+                    id={`${idPrefix}pearlDiamondPat`}
+                    width="14"
+                    height="14"
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(45)"
+                  >
+                    <path
+                      d="M0,0 L14,0 M0,0 L0,14"
+                      stroke="#FFFFFF"
+                      strokeWidth="0.9"
+                      strokeOpacity="0.62"
+                    />
+                  </pattern>
+                </defs>
+                {/* Outer Billowing Sheer Bridal Tulle Halo */}
+                <path
+                  d="M236,488 C142,438 82,346 92,248 C100,188 158,166 210,192 C248,150 352,150 390,192 C442,166 500,188 508,248 C518,346 458,438 364,488 Z"
+                  fill={wrapColor}
+                  fillOpacity="0.62"
+                  stroke="#FFFFFF"
+                  strokeWidth="2.2"
+                  strokeOpacity="0.92"
+                />
+                <path
+                  d="M236,488 C142,438 82,346 92,248 C100,188 158,166 210,192 C248,150 352,150 390,192 C442,166 500,188 508,248 C518,346 458,438 364,488 Z"
+                  fill={`url(#${idPrefix}pearlDiamondPat)`}
+                />
+                {/* Inner Satin-Lined Organza Backing */}
+                <path
+                  d="M244,488 C178,434 134,354 144,268 C154,218 220,198 300,214 C380,198 446,218 456,268 C466,354 422,434 356,488 Z"
+                  fill={shadeWrapHex(wrapColor, 18)}
+                  fillOpacity="0.72"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.2"
+                />
+                {/* Scattered Freshwater Pearls Pinned Across the Veil Halo */}
+                {[
+                  { x: 132, y: 244, r: 4.5 },
+                  { x: 174, y: 204, r: 4 },
+                  { x: 244, y: 174, r: 4.5 },
+                  { x: 356, y: 174, r: 4.5 },
+                  { x: 426, y: 204, r: 4 },
+                  { x: 468, y: 244, r: 4.5 },
+                  { x: 118, y: 318, r: 3.8 },
+                  { x: 482, y: 318, r: 3.8 },
+                ].map((p, idx) => (
+                  <g key={`tulle-back-pearl-${idx}`}>
+                    <circle cx={p.x} cy={p.y} r={p.r} fill="#FFFDF9" stroke="#E2D4C8" strokeWidth="0.9" />
+                    <circle cx={p.x - 1.3} cy={p.y - 1.3} r={p.r * 0.32} fill="#FFFFFF" />
+                  </g>
+                ))}
+              </g>
+            )}
+
+            {/* STYLE 19 BACK: GINGHAM BRODERIE ('ginghamLace' — Couture woven French gingham plaid + eyelet lace) */}
+            {wrapStyle === 'ginghamLace' && (
+              <g>
+                <defs>
+                  <pattern id={`${idPrefix}ginghamCheckPat`} width="24" height="24" patternUnits="userSpaceOnUse">
+                    <rect width="24" height="24" fill="#FFFDFB" />
+                    <rect x="0" y="0" width="12" height="24" fill={wrapColor} fillOpacity="0.56" />
+                    <rect x="0" y="0" width="24" height="12" fill={wrapColor} fillOpacity="0.56" />
+                    <rect x="0" y="0" width="12" height="12" fill={shadeWrapHex(wrapColor, -22)} fillOpacity="0.62" />
+                  </pattern>
+                </defs>
+                {/* Tailored Gingham Folded Sheets Behind Flowers */}
+                <path
+                  d="M270,498 L104,244 L224,180 L300,226 L376,180 L496,244 L330,498 Z"
+                  fill={`url(#${idPrefix}ginghamCheckPat)`}
+                  stroke={shadeWrapHex(wrapColor, -34)}
+                  strokeWidth="1.5"
+                />
+                {/* Scalloped Ivory Eyelet Trim Along Upper Back Edge */}
+                <path
+                  d="M114,244 Q168,208 224,186 Q262,212 300,228 Q338,212 376,186 Q432,208 486,244"
+                  fill="none"
+                  stroke="#FFFDF9"
+                  strokeWidth="5"
+                  strokeDasharray="2 7"
+                  strokeLinecap="round"
+                />
+              </g>
+            )}
+
+            {/* STYLE 20 BACK: CORSET SILK ('corsetSilk' — Couture sculptural sweetheart silk wings + sheer peplum) */}
+            {wrapStyle === 'corsetSilk' && (
+              <g>
+                <defs>
+                  <linearGradient id={`${idPrefix}corsetSilkGrad`} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor={shadeWrapHex(wrapColor, 24)} />
+                    <stop offset="50%" stopColor={wrapColor} />
+                    <stop offset="100%" stopColor={shadeWrapHex(wrapColor, -28)} />
+                  </linearGradient>
+                </defs>
+                {/* Sculptural Cathedral Silk Wings Behind Blooms */}
+                <path
+                  d="M242,492 C164,424 102,326 112,230 C118,178 178,164 236,204 C264,224 282,256 300,292 C318,256 336,224 364,204 C422,164 482,178 488,230 C498,326 436,424 358,492 Z"
+                  fill={`url(#${idPrefix}corsetSilkGrad)`}
+                  stroke="#FDE68A"
+                  strokeWidth="1.6"
+                  strokeOpacity="0.82"
+                />
+                {/* Subtle Satin Highlight Folds */}
+                <path
+                  d="M144,234 C178,284 222,368 268,468 M456,234 C422,284 378,368 332,468"
+                  fill="none"
+                  stroke="#FFFBEB"
+                  strokeWidth="1.3"
+                  opacity="0.34"
+                />
+                {/* Sheer Pleated Organza Peplum Flare Below Waist */}
+                <path
+                  d="M226,496 L168,608 Q234,626 300,612 Q366,626 432,608 L374,496 Z"
+                  fill={shadeWrapHex(wrapColor, 26)}
+                  fillOpacity="0.58"
+                  stroke="#FDE68A"
+                  strokeWidth="1.3"
+                  strokeOpacity="0.7"
+                />
+              </g>
+            )}
+
+            {/* STYLE 21 BACK: WILLOW PORCELAIN URN ('chinoiserieUrn' — Couture cobalt-and-gold porcelain vessel mouth) */}
+            {wrapStyle === 'chinoiserieUrn' && (
+              <g>
+                {/* Porcelain Urn Mouth Rim & Interior Depth */}
+                <ellipse
+                  cx="300"
+                  cy="406"
+                  rx="116"
+                  ry="20"
+                  fill={shadeWrapHex(wrapColor, -12)}
+                  stroke="#D97706"
+                  strokeWidth="2.4"
+                />
+                <ellipse cx="300" cy="408" rx="104" ry="14" fill="#1E3A5F" fillOpacity="0.28" />
+              </g>
+            )}
           </g>
           </g>
         )}
 
-        {/* Gather Stems at the Bouquet Tie Point (Organic curved botanical stems for Glass Cloche; lower bundle for open sleeves) */}
+        {/* Gather Stems at the Bouquet Tie Point (Organic curved botanical stems for Glass Cloche & Hand-Tied; lower bundle for open sleeves) */}
         {wrapStyle === 'cloche' ? (
-          <g clipPath={`url(#${idPrefix}bouquetClocheBoundsClip)`} opacity="0.94">
-            {visibleRenderItems.map((item, idx) => {
-              if (item.hidden || item.photoStyle) return null;
-              const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
-              if (meta?.isOther || getEffectiveItemPlane(item) === 'front') return null;
-              const disp = getStageItemDisplayTransform(item, wrapStyle);
-              const startY = disp.y + 16;
-              const bottomSpreadX = Math.round(300 + (disp.x - 300) * 0.25);
-              const midCtrlX = Math.round(300 + (disp.x - 300) * 0.36);
-              const midCtrlY = Math.round(startY + (484 - startY) * 0.56);
-              return (
-                <g key={`cloche-stem-${item.id}`} ref={registerClocheStemRef(item.id)} data-bloom-motion="true">
-                  <path
-                    d={`M${disp.x},${startY} Q${midCtrlX},${midCtrlY} 300,484 Q${Math.round((300 + bottomSpreadX) / 2)},518 ${bottomSpreadX},550`}
-                    stroke={idx % 2 === 0 ? '#15803d' : '#166534'}
-                    strokeWidth="4.8"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M${disp.x},${startY} Q${midCtrlX},${midCtrlY} 300,484`}
-                    stroke="#4ade80"
-                    strokeWidth="1.2"
-                    strokeOpacity="0.45"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
-                </g>
-              );
-            })}
+          <g clipPath={`url(#${idPrefix}bouquetClocheBoundsClip)`} opacity="0.95">
+            {computeClocheStemGeometry(visibleRenderItems).map((stem) => (
+              <g
+                key={`cloche-stem-${stem.itemId}`}
+                ref={registerClocheStemRef(stem.itemId)}
+                data-bloom-motion="true"
+              >
+                {/* Soft Grounding Depth Shadow */}
+                <path
+                  d={stem.pathD}
+                  stroke="#1F2E22"
+                  strokeWidth={stem.strokeWidth + 1.2}
+                  strokeOpacity="0.16"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                {/* Harmonized Proportional Botanical Stem */}
+                <path
+                  d={stem.pathD}
+                  stroke={stem.strokeColor}
+                  strokeWidth={stem.strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                {/* Directional Sunlit Stem Highlight */}
+                <path
+                  d={stem.highlightD}
+                  stroke={stem.highlightColor}
+                  strokeWidth={Math.max(1, stem.strokeWidth * 0.28)}
+                  strokeOpacity="0.5"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                {/* Fresh-Trimmed Florist Cut End */}
+                <ellipse
+                  cx={stem.tipCx}
+                  cy={stem.tipCy}
+                  rx={Math.max(1.3, stem.strokeWidth * 0.42)}
+                  ry={Math.max(0.85, stem.strokeWidth * 0.22)}
+                  transform={`rotate(${stem.tipAngleDeg} ${stem.tipCx} ${stem.tipCy})`}
+                  fill={stem.pithColor}
+                  opacity="0.88"
+                />
+              </g>
+            ))}
+          </g>
+        ) : wrapStyle === 'plain' ? (
+          <g ref={wrapperStemBundleMotionRef} data-bloom-motion="true">
+            <g clipPath={`url(#${idPrefix}bouquetWrapperBoundsClip)`}>
+              {(() => {
+                const handTiedStems = computeHandTiedStemGeometry(visibleRenderItems);
+                if (handTiedStems.length === 0) {
+                  return !isPreviewMode ? (
+                    <g opacity="0.26" stroke="#5D7A67" strokeWidth="3.2" strokeLinecap="round" fill="none">
+                      <path d="M292,456 Q296,482 296,504 Q295,546 286,590" />
+                      <path d="M300,448 L300,594" />
+                      <path d="M308,456 Q304,482 304,504 Q305,546 314,590" />
+                    </g>
+                  ) : null;
+                }
+                return handTiedStems.map((stem) => (
+                  <g
+                    key={`plain-stem-${stem.itemId}`}
+                    ref={registerClocheStemRef(stem.itemId)}
+                    data-bloom-motion="true"
+                  >
+                    {/* Soft Grounding Depth Shadow */}
+                    <path
+                      d={stem.pathD}
+                      stroke="#1F2E22"
+                      strokeWidth={stem.strokeWidth + 1.4}
+                      strokeOpacity="0.16"
+                      fill="none"
+                      strokeLinecap="round"
+                    />
+                    {/* Harmonized Natural Botanical Stem */}
+                    <path
+                      d={stem.pathD}
+                      stroke={stem.strokeColor}
+                      strokeWidth={stem.strokeWidth}
+                      fill="none"
+                      strokeLinecap="round"
+                    />
+                    {/* Delicate Directional Sunlit Stem Highlight */}
+                    <path
+                      d={stem.highlightD}
+                      stroke={stem.highlightColor}
+                      strokeWidth={Math.max(1, stem.strokeWidth * 0.28)}
+                      strokeOpacity="0.52"
+                      fill="none"
+                      strokeLinecap="round"
+                    />
+                    {/* Angled Fresh-Trimmed Florist Cut End */}
+                    <ellipse
+                      cx={stem.tipCx}
+                      cy={stem.tipCy}
+                      rx={Math.max(1.4, stem.strokeWidth * 0.44)}
+                      ry={Math.max(0.9, stem.strokeWidth * 0.24)}
+                      transform={`rotate(${stem.tipAngleDeg} ${stem.tipCx} ${stem.tipCy})`}
+                      fill={stem.pithColor}
+                      opacity="0.9"
+                    />
+                  </g>
+                ));
+              })()}
+            </g>
           </g>
         ) : (
           wrapStyle !== 'basket' &&
           wrapStyle !== 'vase' &&
-          wrapStyle !== 'hatbox' && (
+          wrapStyle !== 'hatbox' &&
+          wrapStyle !== 'chinoiserieUrn' &&
+          wrapStyle !== 'abacaMesh' &&
+          wrapStyle !== 'snowNet' &&
+          wrapStyle !== 'pearlTulle' &&
+          wrapStyle !== 'corsetSilk' && (
             <g ref={wrapperStemBundleMotionRef} data-bloom-motion="true">
               <g opacity="0.85" clipPath={`url(#${idPrefix}bouquetWrapperBoundsClip)`}>
                 <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
@@ -5050,7 +5917,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   }}
                 >
                   <g
-                    clipPath={`url(#${idPrefix}stem-clip-${item.id})`}
                     className={!useLivingChoreography && bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
                   >
                     {/* Invisible generous hit target for easy touch tapping */}
@@ -5062,7 +5928,12 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                         type={item.type}
                         petalColor={item.petalColor}
                         centerColor={item.centerColor}
-                        hideStem={Boolean(meta?.isOther)}
+                        hideStem={
+                          Boolean(meta?.isOther) ||
+                          wrapStyle === 'plain' ||
+                          wrapStyle === 'cloche'
+                        }
+                        stemLength={item.stemLength ?? 1}
                       />
                     )}
                     <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />
@@ -5505,6 +6376,488 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 </g>
               </g>
             )}
+
+            {/* STYLE 13 FRONT: DELI WAX ('waxPaper' — Free Parisian market waxed paper fold & stamp) */}
+            {wrapStyle === 'waxPaper' && (
+              <g>
+                {/* Clean Tapered Market Wax-Paper Lower Skirt */}
+                <path
+                  d="M232,500 L368,500 L356,612 Q300,620 244,612 Z"
+                  fill={shadeWrapHex(wrapColor, -10)}
+                  stroke={shadeWrapHex(wrapColor, -28)}
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M268,504 L264,613 M300,504 L300,616 M332,504 L336,613"
+                  stroke={shadeWrapHex(wrapColor, -34)}
+                  strokeWidth="0.9"
+                  strokeOpacity="0.28"
+                  fill="none"
+                />
+                {/* Left Diagonal Wax Wrap Fold — meets waist cleanly at (232, 500) */}
+                <path
+                  d="M150,342 L336,500 L232,500 L186,422 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  stroke={shadeWrapHex(wrapColor, -26)}
+                  strokeWidth="1.3"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M150,342 L314,484 L302,496 L158,364 Z"
+                  fill="#FFFDF9"
+                  fillOpacity="0.52"
+                />
+                {/* Right Overlapping Fold with Crisp White Parchment Cuff — meets waist cleanly at (256..368, 500) */}
+                <path
+                  d="M448,328 L256,500 L368,500 L422,418 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -26)}
+                  strokeWidth="1.3"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M448,328 L272,486 L284,498 L442,354 Z"
+                  fill="#FFFDF9"
+                  fillOpacity="0.88"
+                />
+                {/* Subtle Crossover Shadow Along Right Flap */}
+                <path
+                  d="M448,328 L256,500"
+                  stroke={shadeWrapHex(wrapColor, -42)}
+                  strokeWidth="1.15"
+                  strokeOpacity="0.34"
+                  fill="none"
+                />
+                {/* Minimal Market Botanical Stamp */}
+                <g transform="translate(342, 456) rotate(-18)" opacity="0.62">
+                  <rect
+                    x="-36"
+                    y="-11"
+                    width="72"
+                    height="21"
+                    rx="3"
+                    fill="none"
+                    stroke={shadeWrapHex(wrapColor, -78)}
+                    strokeWidth="1"
+                    strokeDasharray="3 2"
+                  />
+                  <text
+                    x="0"
+                    y="2.5"
+                    textAnchor="middle"
+                    fill={shadeWrapHex(wrapColor, -84)}
+                    fontSize="7.2"
+                    fontWeight="700"
+                    style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '0.12em' }}
+                  >
+                    MARCHÉ FLORAL
+                  </text>
+                </g>
+              </g>
+            )}
+
+            {/* STYLE 14 FRONT: CREPE FAN ('crepeFan' — Free airy ruffled crepe throat & scalloped collar) */}
+            {wrapStyle === 'crepeFan' && (
+              <g>
+                {/* Left Ruffled Crepe Collar Fold */}
+                <path
+                  d="M140,356 Q174,344 198,374 Q232,374 256,410 Q282,424 306,486 L228,488 Q174,432 140,356 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.9"
+                />
+                {/* Right Ruffled Crepe Collar Fold */}
+                <path
+                  d="M460,356 Q426,344 402,374 Q368,374 344,410 Q318,424 294,486 L372,488 Q426,432 460,356 Z"
+                  fill={wrapColor}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.9"
+                />
+                {/* Center Soft Wavy Scalloped Crepe Ruffle Collar */}
+                <path
+                  d="M196,422 Q226,396 254,424 Q278,400 300,426 Q322,400 346,424 Q374,396 404,422 L370,488 L230,488 Z"
+                  fill={shadeWrapHex(wrapColor, 18)}
+                  fillOpacity="0.92"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                />
+                {/* Pinched Gather Pleats Above Waist */}
+                <g stroke={shadeWrapHex(wrapColor, -28)} strokeWidth="1.1" opacity="0.48" fill="none">
+                  <line x1="254" y1="426" x2="274" y2="486" />
+                  <line x1="300" y1="428" x2="300" y2="486" />
+                  <line x1="346" y1="426" x2="326" y2="486" />
+                </g>
+              </g>
+            )}
+
+            {/* STYLE 15 FRONT: JUTE POCKET ('burlapSack' — Free rustic folded burlap cuff & twine craft tag) */}
+            {wrapStyle === 'burlapSack' && (
+              <g>
+                {/* Main Tapered Jute Market Pocket */}
+                <path
+                  d="M158,366 Q300,404 442,366 L388,504 L362,612 Q300,624 238,612 L212,504 Z"
+                  fill={wrapColor}
+                  stroke={shadeWrapHex(wrapColor, -42)}
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M158,366 Q300,404 442,366 L388,504 L362,612 Q300,624 238,612 L212,504 Z"
+                  fill={`url(#${idPrefix}burlapWeavePat)`}
+                />
+                {/* Folded-Down Rustic Linen Cuff */}
+                <path
+                  d="M152,362 Q300,398 448,362 L432,414 Q300,446 168,414 Z"
+                  fill={shadeWrapHex(wrapColor, 14)}
+                  stroke={shadeWrapHex(wrapColor, -36)}
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M168,404 Q300,434 432,404"
+                  fill="none"
+                  stroke="#FFFBF5"
+                  strokeWidth="1.5"
+                  strokeDasharray="6 4"
+                  opacity="0.82"
+                />
+                {/* Tiny Herbarium Kraft Tag Tucked on Right Cuff */}
+                <g transform="translate(362, 412) rotate(12)">
+                  <rect x="0" y="0" width="38" height="22" rx="3" fill="#FAF2E4" stroke="#A68B6B" strokeWidth="1" />
+                  <circle cx="7" cy="11" r="2" fill="#8C624C" />
+                  <line x1="13" y1="8.5" x2="32" y2="8.5" stroke="#8C624C" strokeWidth="1.1" opacity="0.7" />
+                  <line x1="13" y1="13.5" x2="28" y2="13.5" stroke="#8C624C" strokeWidth="1.1" opacity="0.55" />
+                </g>
+              </g>
+            )}
+
+            {/* STYLE 16 FRONT: ABACA MESH ('abacaMesh' — Couture: Billowing ivory tissue ruffles + golden abaca net collar & skirt) */}
+            {wrapStyle === 'abacaMesh' && (
+              <g>
+                {/* Sculptural Gathered Open-Weave Abaca Net Skirt Below Waist */}
+                <path
+                  d="M226,488 C202,534 216,584 248,622 C282,630 318,630 352,622 C384,584 398,534 374,488 Z"
+                  fill="#DEC08C"
+                  fillOpacity="0.62"
+                  stroke="#A87E45"
+                  strokeWidth="1.3"
+                />
+                <path
+                  d="M226,488 C202,534 216,584 248,622 C282,630 318,630 352,622 C384,584 398,534 374,488 Z"
+                  fill={`url(#${idPrefix}abacaNetPat)`}
+                />
+                {/* Inner Matte Paper Skirt Core Showing Softly Through Abaca Net */}
+                <path
+                  d="M258,492 L342,492 L328,608 Q300,616 272,608 Z"
+                  fill={shadeWrapHex(wrapColor, -14)}
+                  fillOpacity="0.46"
+                />
+                {/* Billowing Asymmetric Layered Ivory Tissue Ruffles Tucked at Center Collar (Ref #1) */}
+                <path
+                  d="M214,462 C202,424 218,392 242,406 C258,416 266,442 282,474 C272,434 282,390 308,394 C332,398 338,434 328,476 C344,442 362,418 378,432 C390,444 378,472 356,484 L236,484 Z"
+                  fill="#F7EEDB"
+                  stroke="#DFCFAF"
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M236,472 C228,436 244,416 260,432 C272,444 278,468 292,482 C298,444 316,418 334,432 C348,444 342,468 326,484 Z"
+                  fill="#E8D8BA"
+                  fillOpacity="0.82"
+                  stroke="#FFFDF9"
+                  strokeWidth="1.1"
+                />
+                <path
+                  d="M276,476 C284,446 300,436 312,452 C320,464 314,478 302,486 Z"
+                  fill="#FBF5E8"
+                  stroke="#D9C7A6"
+                  strokeWidth="1"
+                />
+                {/* Sweeping Left & Right Golden Open-Weave Abaca Net Collar Wings */}
+                <path
+                  d="M84,412 C126,392 184,418 232,456 L296,488 L214,492 C152,482 104,456 84,412 Z"
+                  fill="#E5CA98"
+                  fillOpacity="0.62"
+                  stroke="#B3894E"
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M84,412 C126,392 184,418 232,456 L296,488 L214,492 C152,482 104,456 84,412 Z"
+                  fill={`url(#${idPrefix}abacaNetPat)`}
+                />
+                <path
+                  d="M516,412 C474,392 416,418 368,456 L304,488 L386,492 C448,482 496,456 516,412 Z"
+                  fill="#E5CA98"
+                  fillOpacity="0.62"
+                  stroke="#B3894E"
+                  strokeWidth="1.4"
+                />
+                <path
+                  d="M516,412 C474,392 416,418 368,456 L304,488 L386,492 C448,482 496,456 516,412 Z"
+                  fill={`url(#${idPrefix}abacaNetPat)`}
+                />
+              </g>
+            )}
+
+            {/* STYLE 17 FRONT: SNOW WEB NET ('snowNet' — Couture: Pleated double-white-bordered skirt + gathered snow-web waist veil) */}
+            {wrapStyle === 'snowNet' && (
+              <g>
+                {/* 3 Overlapping Pleated Translucent Korean Paper Skirt Panels with Double White Edge Stripes */}
+                {/* Left Skirt Panel */}
+                <path
+                  d="M244,492 L292,492 L252,622 L176,592 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  fillOpacity="0.92"
+                  stroke={shadeWrapHex(wrapColor, -24)}
+                  strokeWidth="1.1"
+                />
+                <path d="M188,576 L256,604" stroke="#FFFFFF" strokeWidth="2.1" opacity="0.92" />
+                <path d="M194,568 L260,596" stroke="#FFFFFF" strokeWidth="1.2" opacity="0.88" />
+                {/* Right Skirt Panel */}
+                <path
+                  d="M356,492 L308,492 L348,622 L424,592 Z"
+                  fill={shadeWrapHex(wrapColor, -6)}
+                  fillOpacity="0.92"
+                  stroke={shadeWrapHex(wrapColor, -24)}
+                  strokeWidth="1.1"
+                />
+                <path d="M344,604 L412,576" stroke="#FFFFFF" strokeWidth="2.1" opacity="0.92" />
+                <path d="M340,596 L406,568" stroke="#FFFFFF" strokeWidth="1.2" opacity="0.88" />
+                {/* Center Skirt Panel */}
+                <path
+                  d="M268,492 L332,492 L344,626 Q300,632 256,626 Z"
+                  fill={wrapColor}
+                  fillOpacity="0.96"
+                  stroke={shadeWrapHex(wrapColor, -22)}
+                  strokeWidth="1.1"
+                />
+                <line x1="260" y1="610" x2="340" y2="610" stroke="#FFFFFF" strokeWidth="2.2" opacity="0.95" />
+                <line x1="261" y1="602" x2="339" y2="602" stroke="#FFFFFF" strokeWidth="1.2" opacity="0.9" />
+                {/* Upper Crossover Frosted Collar */}
+                <path
+                  d="M174,404 Q300,456 426,404 L380,492 L220,492 Z"
+                  fill={shadeWrapHex(wrapColor, 14)}
+                  fillOpacity="0.72"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                />
+                {/* Billowing Gathered Snow-Web Lacy Net Collar & Waist Veil */}
+                <path
+                  d="M148,464 C186,436 244,462 300,478 C356,462 414,436 452,464 C446,506 408,540 364,552 C338,538 320,520 300,506 C280,520 262,538 236,552 C192,540 154,506 148,464 Z"
+                  fill="#FFFFFF"
+                  fillOpacity="0.22"
+                />
+                <path
+                  d="M148,464 C186,436 244,462 300,478 C356,462 414,436 452,464 C446,506 408,540 364,552 C338,538 320,520 300,506 C280,520 262,538 236,552 C192,540 154,506 148,464 Z"
+                  fill={`url(#${idPrefix}snowWebPat)`}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.4"
+                  strokeDasharray="5 3"
+                  strokeOpacity="0.88"
+                />
+              </g>
+            )}
+
+            {/* STYLE 18 FRONT: PEARL TULLE ('pearlTulle' — Couture sheer ruffled tulle + draped pearl swag) */}
+            {wrapStyle === 'pearlTulle' && (
+              <g>
+                {/* Sheer Pleated Bridal Tulle Skirt */}
+                <path
+                  d="M216,486 L384,486 L402,616 Q350,628 300,618 Q250,628 198,616 Z"
+                  fill={wrapColor}
+                  fillOpacity="0.72"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M216,486 L384,486 L402,616 Q350,628 300,618 Q250,628 198,616 Z"
+                  fill={`url(#${idPrefix}pearlDiamondPat)`}
+                />
+                {/* Scalloped Ruffled Tulle Front Crossover */}
+                <path
+                  d="M150,382 Q188,366 218,396 Q258,396 294,434 Q300,440 306,434 Q342,396 382,396 Q412,366 450,382 L384,488 L216,488 Z"
+                  fill={shadeWrapHex(wrapColor, 12)}
+                  fillOpacity="0.82"
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M150,382 Q188,366 218,396 Q258,396 294,434 Q300,440 306,434 Q342,396 382,396 Q412,366 450,382 L384,488 L216,488 Z"
+                  fill={`url(#${idPrefix}pearlDiamondPat)`}
+                />
+                {/* Draped Freshwater Pearl Swag Beneath Ribbon Waist */}
+                <path
+                  d="M226,506 Q300,564 374,506"
+                  fill="none"
+                  stroke="#F3E8E2"
+                  strokeWidth="1.4"
+                />
+                {[
+                  { x: 236, y: 514 },
+                  { x: 252, y: 525 },
+                  { x: 268, y: 533 },
+                  { x: 284, y: 538 },
+                  { x: 300, y: 540 },
+                  { x: 316, y: 538 },
+                  { x: 332, y: 533 },
+                  { x: 348, y: 525 },
+                  { x: 364, y: 514 },
+                ].map((p, idx) => (
+                  <g key={`pearl-swag-${idx}`}>
+                    <circle cx={p.x} cy={p.y} r={idx === 4 ? 5.2 : 4.2} fill="#FFFDF9" stroke="#DECBB9" strokeWidth="0.9" />
+                    <circle cx={p.x - 1.3} cy={p.y - 1.3} r="1.4" fill="#FFFFFF" />
+                  </g>
+                ))}
+              </g>
+            )}
+
+            {/* STYLE 19 FRONT: GINGHAM BRODERIE ('ginghamLace' — Couture plaid cone + ivory broderie eyelet collar + wax seal) */}
+            {wrapStyle === 'ginghamLace' && (
+              <g>
+                {/* Woven Gingham Front Cone & Skirt */}
+                <path
+                  d="M162,374 Q300,418 438,374 L382,496 L364,616 Q300,626 236,616 L218,496 Z"
+                  fill={`url(#${idPrefix}ginghamCheckPat)`}
+                  stroke={shadeWrapHex(wrapColor, -34)}
+                  strokeWidth="1.5"
+                />
+                {/* Scalloped Ivory Broderie-Anglaise Eyelet Lace Collar */}
+                <path
+                  d="M154,376 Q180,352 206,378 Q232,356 258,384 Q280,362 300,386 Q320,362 342,384 Q368,356 394,378 Q420,352 446,376 L432,424 Q300,464 168,424 Z"
+                  fill="#FFFDF9"
+                  fillOpacity="0.95"
+                  stroke="#E5D5C5"
+                  strokeWidth="1.4"
+                />
+                {/* Broderie Eyelet Cutout Dots & Scallop Stitch */}
+                <g fill={shadeWrapHex(wrapColor, -14)} opacity="0.55">
+                  {[192, 228, 264, 300, 336, 372, 408].map((cx, idx) => (
+                    <circle key={`eyelet-${idx}`} cx={cx} cy={idx === 3 ? 408 : 398 + Math.abs(idx - 3) * 1.5} r="3.4" />
+                  ))}
+                </g>
+                <path
+                  d="M174,418 Q300,454 426,418"
+                  fill="none"
+                  stroke="#D6C2AF"
+                  strokeWidth="1.2"
+                  strokeDasharray="4 3"
+                />
+                {/* Gilded Floral Wax-Seal Medallion */}
+                <g transform="translate(360, 444)">
+                  <circle cx="0" cy="0" r="14" fill="#D97706" opacity="0.22" />
+                  <circle cx="0" cy="0" r="11.5" fill="#C98A3A" stroke="#FDE68A" strokeWidth="1.3" />
+                  <circle cx="0" cy="0" r="7.5" fill="none" stroke="#FEF3C7" strokeWidth="0.9" strokeDasharray="2 1.5" />
+                  <circle cx="0" cy="0" r="2.2" fill="#FFFBEB" />
+                </g>
+              </g>
+            )}
+
+            {/* STYLE 20 FRONT: CORSET SILK ('corsetSilk' — Couture structured silk bodice with gold eyelets & criss-cross lacing) */}
+            {wrapStyle === 'corsetSilk' && (
+              <g>
+                {/* Sculptural Sweetheart Silk Bodice Wrap */}
+                <path
+                  d="M172,384 Q224,358 274,394 Q300,412 326,394 Q376,358 428,384 L374,498 L352,588 Q300,602 248,588 L226,498 Z"
+                  fill={`url(#${idPrefix}corsetSilkGrad)`}
+                  stroke="#FDE68A"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.88"
+                />
+                {/* Tailored Vertical Corset Boning Seams */}
+                <g stroke={shadeWrapHex(wrapColor, -34)} strokeWidth="1.3" opacity="0.55" fill="none">
+                  <path d="M220,384 Q242,452 256,580" />
+                  <path d="M262,398 Q272,460 278,584" />
+                  <path d="M338,398 Q328,460 322,584" />
+                  <path d="M380,384 Q358,452 344,580" />
+                </g>
+                {/* Criss-Cross Satin Lacing & Metallic Gold Eyelets Down Center Front */}
+                <g stroke="#FEF3C7" strokeWidth="1.9" strokeLinecap="round" opacity="0.94">
+                  <line x1="283" y1="426" x2="317" y2="448" />
+                  <line x1="317" y1="426" x2="283" y2="448" />
+                  <line x1="284" y1="448" x2="316" y2="470" />
+                  <line x1="316" y1="448" x2="284" y2="470" />
+                  <line x1="286" y1="522" x2="314" y2="544" />
+                  <line x1="314" y1="522" x2="286" y2="544" />
+                  <line x1="288" y1="544" x2="312" y2="566" />
+                  <line x1="312" y1="544" x2="288" y2="566" />
+                </g>
+                {[426, 448, 470, 522, 544, 566].map((ey, idx) => {
+                  const spread = idx < 3 ? 17 : 14 - (idx - 3) * 1;
+                  return (
+                    <g key={`corset-eyelet-${ey}`}>
+                      <circle cx={300 - spread} cy={ey} r="3" fill="#F59E0B" stroke="#FFFBEB" strokeWidth="0.9" />
+                      <circle cx={300 + spread} cy={ey} r="3" fill="#F59E0B" stroke="#FFFBEB" strokeWidth="0.9" />
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* STYLE 21 FRONT: WILLOW PORCELAIN URN ('chinoiserieUrn' — Couture cobalt-blue & 24k gold porcelain baluster vessel) */}
+            {wrapStyle === 'chinoiserieUrn' && (
+              <g>
+                <defs>
+                  <linearGradient id={`${idPrefix}porcelainGlazeGrad`} x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor={shadeWrapHex(wrapColor, -22)} />
+                    <stop offset="28%" stopColor="#FFFFFF" />
+                    <stop offset="68%" stopColor={wrapColor} />
+                    <stop offset="100%" stopColor={shadeWrapHex(wrapColor, -30)} />
+                  </linearGradient>
+                </defs>
+                {/* Flared Gilded Pedestal Foot */}
+                <path
+                  d="M222,598 L378,598 L390,620 Q300,630 210,620 Z"
+                  fill={`url(#${idPrefix}porcelainGlazeGrad)`}
+                  stroke="#1E40AF"
+                  strokeWidth="1.5"
+                />
+                <path d="M214,616 Q300,626 386,616" fill="none" stroke="#D97706" strokeWidth="2.8" />
+                {/* Curvaceous Baluster Porcelain Urn Body */}
+                <path
+                  d="M188,406 C198,424 214,432 216,442 C176,472 174,536 226,598 L374,598 C426,536 424,472 384,442 C386,432 402,424 412,406 Q300,424 188,406 Z"
+                  fill={`url(#${idPrefix}porcelainGlazeGrad)`}
+                  stroke="#1E40AF"
+                  strokeWidth="1.6"
+                />
+                {/* 24k Gold Lip Rim & Neck Banding */}
+                <path d="M188,406 Q300,424 412,406" fill="none" stroke="#D97706" strokeWidth="3.4" />
+                <path d="M214,442 Q300,456 386,442" fill="none" stroke="#2563EB" strokeWidth="2" strokeDasharray="6 3" />
+                {/* Cobalt Blue Shoulder Fretwork & Botanical Willow Scrollwork */}
+                <g fill="none" stroke="#1D4ED8" strokeLinecap="round" opacity="0.86">
+                  {/* Upper Scalloped Ruyi Collar */}
+                  <path
+                    d="M212,456 Q234,476 256,458 Q278,480 300,460 Q322,480 344,458 Q366,476 388,456"
+                    strokeWidth="1.7"
+                  />
+                  {/* Central Hand-Painted Botanical Peony & Willow Vines */}
+                  <path d="M234,534 C256,506 280,506 300,536 C320,506 344,506 366,534" strokeWidth="1.8" />
+                  <path d="M242,562 C266,544 284,552 300,572 C316,552 334,544 358,562" strokeWidth="1.5" />
+                  <circle cx="300" cy="536" r="13.5" strokeWidth="1.6" fill="#DBEAFE" fillOpacity="0.45" />
+                  <circle cx="300" cy="536" r="5.5" strokeWidth="1.4" />
+                  <circle cx="244" cy="536" r="8" strokeWidth="1.4" />
+                  <circle cx="356" cy="536" r="8" strokeWidth="1.4" />
+                  <ellipse cx="236" cy="498" rx="9" ry="4" transform="rotate(-24 236 498)" fill="#DBEAFE" fillOpacity="0.4" strokeWidth="1.2" />
+                  <ellipse cx="364" cy="498" rx="9" ry="4" transform="rotate(24 364 498)" fill="#DBEAFE" fillOpacity="0.4" strokeWidth="1.2" />
+                  {/* Lower Lotus Petal Band */}
+                  <path
+                    d="M226,584 Q244,568 262,586 Q281,568 300,588 Q319,568 338,586 Q356,568 374,584"
+                    strokeWidth="1.5"
+                  />
+                </g>
+                {/* Twin Cobalt Porcelain Shoulder Ring Handles */}
+                <circle cx="196" cy="482" r="9.5" fill="none" stroke="#1E40AF" strokeWidth="2.4" />
+                <circle cx="404" cy="482" r="9.5" fill="none" stroke="#1E40AF" strokeWidth="2.4" />
+                {/* Glossy Ceramic Specular Reflection */}
+                <path
+                  d="M224,468 C208,498 212,538 236,576"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="5.5"
+                  strokeLinecap="round"
+                  opacity="0.58"
+                />
+              </g>
+            )}
           </g>
 
           {/* UNIVERSAL RIBBON / LACE DESIGN (Fits every wrapper — rendered inside the glass dome for cloche!) */}
@@ -5737,11 +7090,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   }}
                 >
                   <g
-                    clipPath={
-                      !item.photoStyle && !meta?.isOther
-                        ? `url(#${idPrefix}stem-clip-${item.id})`
-                        : undefined
-                    }
                     className={!useLivingChoreography && bloomedCount !== undefined ? 'stem-bloom-pop' : ''}
                   >
                     <circle cx="0" cy="-6" r="56" fill="transparent" />
@@ -5753,6 +7101,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                         petalColor={item.petalColor}
                         centerColor={item.centerColor}
                         hideStem={Boolean(meta?.isOther)}
+                        stemLength={item.stemLength ?? 1}
                       />
                     )}
                     <rect x="-62" y="-64" width="124" height="124" rx="24" fill="transparent" />

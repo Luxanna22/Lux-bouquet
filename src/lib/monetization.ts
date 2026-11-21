@@ -2,12 +2,20 @@ import {
   BouquetLockMode,
   BouquetSnapshot,
   CanvasEnvironment,
+  ENVIRONMENT_CATALOG,
+  FLOWER_CATALOG,
   FlowerType,
   PhotoFrameStyle,
+  RIBBON_STYLE_CATALOG,
   RibbonStyle,
   typeWrapStyle,
   VoiceKeepsakeStyle,
+  WRAPPER_CATALOG,
 } from '../types/bouquet';
+import {
+  buildEffectivePremiumAssetConfig,
+  getLiveStudioCatalogOverrides,
+} from './studioCatalogConfig';
 
 // ============================================================================
 // 1. OWNER-EDITABLE PREMIUM ASSET CONFIGURATION
@@ -78,8 +86,19 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
     'chocolates',
     'ringInABox',
   ],
-  // Couture Vessels & Architectural Wraps (4 items: Ceramic Vase, Velvet Hatbox, Glass Cloche, Korean Mesh)
-  wraps: ['vase', 'hatbox', 'cloche', 'koreanmesh'],
+  // Couture Vessels, Mesh & Architectural Wraps (10 items)
+  wraps: [
+    'vase',
+    'hatbox',
+    'cloche',
+    'koreanmesh',
+    'abacaMesh',
+    'snowNet',
+    'pearlTulle',
+    'ginghamLace',
+    'corsetSilk',
+    'chinoiserieUrn',
+  ],
   // Specialty & Luxury Couture Ribbons (8 items)
   ribbons: [
     'pearlStrand',
@@ -91,8 +110,18 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
     'goldchain',
     'raffia',
   ],
-  // Couture Atmospheric & Shimmering Backgrounds (6 items)
-  environments: ['aurora', 'velvetSalon', 'opalMist', 'starlit', 'crystalPalace', 'midnightNoel'],
+  // Couture Atmospheric & Shimmering Backgrounds (9 items)
+  environments: [
+    'aurora',
+    'velvetSalon',
+    'opalMist',
+    'starlit',
+    'crystalPalace',
+    'midnightNoel',
+    'lavenderSilk',
+    'parisBalcony',
+    'sakuraBreeze',
+  ],
   // All Photo Uploads & Botanical Photocards are Couture Keepsakes
   photoStyles: ['raw', 'polaroid', 'stamp', 'cameo', 'film', 'pressed', 'arch'],
   // All 10 Voice Keepsake styles & Voice Recording are Couture Keepsakes
@@ -117,7 +146,10 @@ export const PREMIUM_ASSET_CONFIG: PremiumAssetConfig = {
 };
 
 export function getActivePremiumAssetConfig(): PremiumAssetConfig {
-  return PREMIUM_ASSET_CONFIG;
+  return buildEffectivePremiumAssetConfig(
+    PREMIUM_ASSET_CONFIG,
+    getLiveStudioCatalogOverrides()
+  );
 }
 
 export function isFlowerPremium(
@@ -251,6 +283,7 @@ const FLOWER_LABELS: Record<string, string> = {
 };
 
 const WRAP_LABELS: Record<string, string> = {
+  ...Object.fromEntries(WRAPPER_CATALOG.map((w) => [w.id, w.label])),
   vase: 'Ceramic Vase',
   hatbox: 'Velvet Hatbox',
   cloche: 'Glass Cloche',
@@ -258,6 +291,7 @@ const WRAP_LABELS: Record<string, string> = {
 };
 
 const RIBBON_LABELS: Record<string, string> = {
+  ...Object.fromEntries(RIBBON_STYLE_CATALOG.map((r) => [r.id, r.label])),
   pearlStrand: 'Akoya Pearl',
   celestialSilk: 'Starlight Silk',
   waxCord: 'Twine & Seal',
@@ -269,6 +303,7 @@ const RIBBON_LABELS: Record<string, string> = {
 };
 
 const ENVIRONMENT_LABELS: Record<string, string> = {
+  ...Object.fromEntries(ENVIRONMENT_CATALOG.map((e) => [e.id, e.label])),
   aurora: 'Gilded Aurora',
   velvetSalon: 'Royal Filigree',
   opalMist: 'Opaline Sunbeam',
@@ -303,10 +338,11 @@ export function inspectBouquetPremiumUsage(
   }
   const premiumFlowerTypes = Array.from(premiumFlowerSet);
   for (const flowerType of premiumFlowerTypes) {
+    const meta = FLOWER_CATALOG.find((m) => m.type === flowerType);
     features.push({
       id: `flower:${flowerType}`,
       category: 'flower',
-      label: FLOWER_LABELS[flowerType] || `${flowerType} bloom`,
+      label: FLOWER_LABELS[flowerType] || meta?.shortName || meta?.name || `${flowerType} bloom`,
     });
   }
 
@@ -457,11 +493,229 @@ export interface PricingTierPlan {
   symbol: '₱' | '$';
   displayPrice: string;
   amountMinor: number; // centavos for PHP, cents for USD
+  originalAmountMinor?: number;
+  originalDisplayPrice?: string;
+  isDiscounted?: boolean;
+  discountPercent?: number;
+  savingsDisplay?: string;
+  promoBadge?: string;
+  discountKofiCode?: string;
   durationDays: number | null; // null for single-bouquet unlock
   retentionDays: number;
   isEternalKeepsake: boolean;
   perks: string[];
   popular?: boolean;
+}
+
+export interface PlanTierPricingOverride {
+  originalAmountMinor: number;
+  discountEnabled: boolean;
+  discountedAmountMinor: number;
+  promoBadge?: string;
+  discountKofiCode?: string;
+}
+
+export interface PlanPricingConfig {
+  PH: Record<StudioPassTier, PlanTierPricingOverride>;
+  INTL: Record<StudioPassTier, PlanTierPricingOverride>;
+}
+
+const PLAN_PRICING_BOUNDS: Record<PricingRegion, { min: number; max: number }> = {
+  PH: { min: 100, max: 5_000_000 }, // ₱1.00 .. ₱50,000.00
+  INTL: { min: 50, max: 50_000 }, // $0.50 .. $500.00
+};
+
+export const DEFAULT_PLAN_PRICING_CONFIG: PlanPricingConfig = {
+  PH: {
+    single: {
+      originalAmountMinor: 4900,
+      discountEnabled: false,
+      discountedAmountMinor: 3900,
+      promoBadge: '',
+    },
+    pass_7d: {
+      originalAmountMinor: 9900,
+      discountEnabled: false,
+      discountedAmountMinor: 7900,
+      promoBadge: '',
+    },
+    pass_30d: {
+      originalAmountMinor: 24900,
+      discountEnabled: true,
+      discountedAmountMinor: 19900,
+      promoBadge: '',
+    },
+  },
+  INTL: {
+    single: {
+      originalAmountMinor: 199,
+      discountEnabled: false,
+      discountedAmountMinor: 149,
+      promoBadge: '',
+      discountKofiCode: '',
+    },
+    pass_7d: {
+      originalAmountMinor: 399,
+      discountEnabled: false,
+      discountedAmountMinor: 299,
+      promoBadge: '',
+      discountKofiCode: '',
+    },
+    pass_30d: {
+      originalAmountMinor: 699,
+      discountEnabled: false,
+      discountedAmountMinor: 499,
+      promoBadge: '',
+      discountKofiCode: '',
+    },
+  },
+};
+
+export function formatCurrencyMinor(
+  amountMinor: number,
+  currency: 'PHP' | 'USD'
+): string {
+  const safeMinor = Math.max(0, Math.round(Number(amountMinor) || 0));
+  if (currency === 'PHP') {
+    const major = safeMinor / 100;
+    return safeMinor % 100 === 0
+      ? `₱${Math.round(major).toLocaleString('en-US')}`
+      : `₱${major.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `$${(safeMinor / 100).toFixed(2)}`;
+}
+
+function sanitizeKofiCodeShort(raw: unknown): string {
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) return '';
+  const urlMatch = cleaned.match(/ko-fi\.com\/s\/([a-zA-Z0-9]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    return urlMatch[1].toLowerCase();
+  }
+  if (/^[a-zA-Z0-9]{6,16}$/.test(cleaned)) {
+    return cleaned.toLowerCase();
+  }
+  return '';
+}
+
+export function sanitizePlanPricingConfig(raw: unknown): PlanPricingConfig {
+  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const regions: PricingRegion[] = ['PH', 'INTL'];
+  const tiers: StudioPassTier[] = ['single', 'pass_7d', 'pass_30d'];
+
+  const out = {
+    PH: {} as Record<StudioPassTier, PlanTierPricingOverride>,
+    INTL: {} as Record<StudioPassTier, PlanTierPricingOverride>,
+  };
+
+  for (const region of regions) {
+    const bounds = PLAN_PRICING_BOUNDS[region];
+    const regionRaw =
+      Object.prototype.hasOwnProperty.call(src, region) &&
+      src[region] &&
+      typeof src[region] === 'object'
+        ? (src[region] as Record<string, unknown>)
+        : {};
+
+    for (const tier of tiers) {
+      const def = DEFAULT_PLAN_PRICING_CONFIG[region][tier];
+      const tierRaw =
+        Object.prototype.hasOwnProperty.call(regionRaw, tier) &&
+        regionRaw[tier] &&
+        typeof regionRaw[tier] === 'object'
+          ? (regionRaw[tier] as Record<string, unknown>)
+          : {};
+
+      const origCandidate = Math.round(Number(tierRaw.originalAmountMinor));
+      const originalAmountMinor =
+        Number.isFinite(origCandidate) &&
+        origCandidate >= bounds.min &&
+        origCandidate <= bounds.max
+          ? origCandidate
+          : def.originalAmountMinor;
+
+      const hasExplicitDisc = Object.prototype.hasOwnProperty.call(
+        tierRaw,
+        'discountedAmountMinor'
+      );
+      const discCandidate = Math.round(Number(tierRaw.discountedAmountMinor));
+      const explicitDiscountInvalid =
+        hasExplicitDisc &&
+        (!Number.isFinite(discCandidate) ||
+          discCandidate < bounds.min ||
+          discCandidate > bounds.max ||
+          discCandidate >= originalAmountMinor);
+      let discountedAmountMinor =
+        Number.isFinite(discCandidate) &&
+        discCandidate >= bounds.min &&
+        discCandidate <= bounds.max
+          ? discCandidate
+          : Math.min(def.discountedAmountMinor, Math.max(bounds.min, originalAmountMinor - 100));
+
+      if (discountedAmountMinor >= originalAmountMinor) {
+        discountedAmountMinor = Math.max(
+          bounds.min,
+          Math.min(originalAmountMinor - (region === 'PH' ? 100 : 10), originalAmountMinor)
+        );
+      }
+
+      const rawEnabled =
+        typeof tierRaw.discountEnabled === 'boolean'
+          ? tierRaw.discountEnabled
+          : def.discountEnabled;
+      const discountEnabled = Boolean(
+        rawEnabled && !explicitDiscountInvalid && discountedAmountMinor < originalAmountMinor
+      );
+
+      const promoBadge =
+        typeof tierRaw.promoBadge === 'string'
+          ? tierRaw.promoBadge.replace(/[<>]/g, '').trim().slice(0, 24)
+          : def.promoBadge || '';
+
+      const entry: PlanTierPricingOverride = {
+        originalAmountMinor,
+        discountEnabled,
+        discountedAmountMinor,
+        promoBadge,
+      };
+      if (region === 'INTL') {
+        entry.discountKofiCode = sanitizeKofiCodeShort(tierRaw.discountKofiCode);
+      }
+      out[region][tier] = entry;
+    }
+  }
+
+  return out;
+}
+
+let activePlanPricingConfig: PlanPricingConfig = sanitizePlanPricingConfig(
+  DEFAULT_PLAN_PRICING_CONFIG
+);
+const planPricingListeners = new Set<(cfg: PlanPricingConfig) => void>();
+
+export function getActivePlanPricingConfig(): PlanPricingConfig {
+  return activePlanPricingConfig;
+}
+
+export function setActivePlanPricingConfig(next: unknown): PlanPricingConfig {
+  activePlanPricingConfig = sanitizePlanPricingConfig(next);
+  for (const listener of planPricingListeners) {
+    try {
+      listener(activePlanPricingConfig);
+    } catch {
+      // Ignore subscriber errors
+    }
+  }
+  return activePlanPricingConfig;
+}
+
+export function subscribePlanPricingConfig(
+  listener: (cfg: PlanPricingConfig) => void
+): () => void {
+  planPricingListeners.add(listener);
+  return () => {
+    planPricingListeners.delete(listener);
+  };
 }
 
 export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, PricingTierPlan>> = {
@@ -475,6 +729,9 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       symbol: '₱',
       displayPrice: '₱49',
       amountMinor: 4900,
+      originalAmountMinor: 4900,
+      originalDisplayPrice: '₱49',
+      isDiscounted: false,
       durationDays: null,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
@@ -489,6 +746,9 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       symbol: '₱',
       displayPrice: '₱99',
       amountMinor: 9900,
+      originalAmountMinor: 9900,
+      originalDisplayPrice: '₱99',
+      isDiscounted: false,
       durationDays: 7,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
@@ -503,6 +763,11 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       symbol: '₱',
       displayPrice: '₱199',
       amountMinor: 19900,
+      originalAmountMinor: 24900,
+      originalDisplayPrice: '₱249',
+      isDiscounted: true,
+      discountPercent: 20,
+      savingsDisplay: '₱50',
       durationDays: 30,
       retentionDays: ETERNAL_RETENTION_DAYS,
       isEternalKeepsake: true,
@@ -520,6 +785,9 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       symbol: '$',
       displayPrice: '$1.99',
       amountMinor: 199,
+      originalAmountMinor: 199,
+      originalDisplayPrice: '$1.99',
+      isDiscounted: false,
       durationDays: null,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
@@ -534,6 +802,9 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       symbol: '$',
       displayPrice: '$3.99',
       amountMinor: 399,
+      originalAmountMinor: 399,
+      originalDisplayPrice: '$3.99',
+      isDiscounted: false,
       durationDays: 7,
       retentionDays: PAID_EXTENDED_RETENTION_DAYS,
       isEternalKeepsake: false,
@@ -548,6 +819,9 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
       symbol: '$',
       displayPrice: '$6.99',
       amountMinor: 699,
+      originalAmountMinor: 699,
+      originalDisplayPrice: '$6.99',
+      isDiscounted: false,
       durationDays: 30,
       retentionDays: ETERNAL_RETENTION_DAYS,
       isEternalKeepsake: true,
@@ -556,6 +830,47 @@ export const PRICING_CATALOG: Record<PricingRegion, Record<StudioPassTier, Prici
     },
   },
 };
+
+export function resolveEffectivePricingPlan(
+  region: PricingRegion,
+  tier: StudioPassTier,
+  configOverride?: PlanPricingConfig | null
+): PricingTierPlan {
+  const safeRegion: PricingRegion = region === 'PH' ? 'PH' : 'INTL';
+  const base = PRICING_CATALOG[safeRegion][tier] || PRICING_CATALOG.INTL.pass_7d;
+  const cfg = configOverride
+    ? sanitizePlanPricingConfig(configOverride)
+    : activePlanPricingConfig;
+  const tierCfg = cfg[safeRegion]?.[tier];
+  if (!tierCfg) return base;
+
+  const isDiscounted = Boolean(
+    tierCfg.discountEnabled && tierCfg.discountedAmountMinor < tierCfg.originalAmountMinor
+  );
+  const amountMinor = isDiscounted
+    ? tierCfg.discountedAmountMinor
+    : tierCfg.originalAmountMinor;
+  const savingsMinor = isDiscounted
+    ? Math.max(0, tierCfg.originalAmountMinor - tierCfg.discountedAmountMinor)
+    : 0;
+  const discountPercent =
+    isDiscounted && tierCfg.originalAmountMinor > 0
+      ? Math.max(1, Math.round((savingsMinor / tierCfg.originalAmountMinor) * 100))
+      : 0;
+
+  return {
+    ...base,
+    amountMinor,
+    displayPrice: formatCurrencyMinor(amountMinor, base.currency),
+    originalAmountMinor: tierCfg.originalAmountMinor,
+    originalDisplayPrice: formatCurrencyMinor(tierCfg.originalAmountMinor, base.currency),
+    isDiscounted,
+    discountPercent: isDiscounted ? discountPercent : undefined,
+    savingsDisplay: isDiscounted ? formatCurrencyMinor(savingsMinor, base.currency) : undefined,
+    promoBadge: isDiscounted ? tierCfg.promoBadge || `${discountPercent}% OFF` : undefined,
+    discountKofiCode: safeRegion === 'INTL' ? tierCfg.discountKofiCode || '' : undefined,
+  };
+}
 
 /**
  * Automatically detects whether the user is in the Philippines ('PH') or International ('INTL')
@@ -585,9 +900,16 @@ export function detectPricingRegion(
   return 'INTL';
 }
 
-export function getPricingCatalog(region: PricingRegion): PricingTierPlan[] {
-  const r = PRICING_CATALOG[region] || PRICING_CATALOG.INTL;
-  return [r.single, r.pass_7d, r.pass_30d];
+export function getPricingCatalog(
+  region: PricingRegion,
+  configOverride?: PlanPricingConfig | null
+): PricingTierPlan[] {
+  const safeRegion: PricingRegion = region === 'PH' ? 'PH' : 'INTL';
+  return [
+    resolveEffectivePricingPlan(safeRegion, 'single', configOverride),
+    resolveEffectivePricingPlan(safeRegion, 'pass_7d', configOverride),
+    resolveEffectivePricingPlan(safeRegion, 'pass_30d', configOverride),
+  ];
 }
 
 // ============================================================================

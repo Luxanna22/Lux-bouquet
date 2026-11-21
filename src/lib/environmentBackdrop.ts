@@ -147,6 +147,51 @@ const LIGHT_BACKDROPS: Record<CanvasEnvironment, EnvironmentPageBackdrop> = {
     canvasShadow: DARK_SHADOW,
     isDarkEnvironment: true,
   },
+  champagneSilk: {
+    pageBackground:
+      'radial-gradient(circle at 50% 42%, #FBF5E9 0%, #F1E4CD 58%, #E4D0B0 100%)',
+    pageBaseColor: '#F1E4CD',
+    canvasBorderColor: 'rgba(186, 146, 92, 0.38)',
+    canvasInnerHighlight: 'rgba(255, 253, 246, 0.78)',
+    canvasShadow: LIGHT_SHADOW,
+    isDarkEnvironment: false,
+  },
+  terracottaWall: {
+    pageBackground:
+      'radial-gradient(circle at 46% 38%, #F2DFD1 0%, #E3C3AE 58%, #D1A68C 100%)',
+    pageBaseColor: '#E3C3AE',
+    canvasBorderColor: 'rgba(166, 96, 68, 0.36)',
+    canvasInnerHighlight: 'rgba(255, 248, 242, 0.68)',
+    canvasShadow: LIGHT_SHADOW,
+    isDarkEnvironment: false,
+  },
+  lavenderSilk: {
+    pageBackground:
+      'radial-gradient(circle at 50% 40%, #F3EBFC 0%, #E3D3F7 58%, #D0B8EE 100%)',
+    pageBaseColor: '#E3D3F7',
+    canvasBorderColor: 'rgba(139, 92, 246, 0.36)',
+    canvasInnerHighlight: 'rgba(255, 252, 255, 0.78)',
+    canvasShadow: LIGHT_SHADOW,
+    isDarkEnvironment: false,
+  },
+  parisBalcony: {
+    pageBackground:
+      'linear-gradient(155deg, #F5DCE4 0%, #ECD5E8 48%, #D4DBF0 100%)',
+    pageBaseColor: '#ECD5E8',
+    canvasBorderColor: 'rgba(134, 114, 156, 0.38)',
+    canvasInnerHighlight: 'rgba(255, 250, 252, 0.72)',
+    canvasShadow: LIGHT_SHADOW,
+    isDarkEnvironment: false,
+  },
+  sakuraBreeze: {
+    pageBackground:
+      'radial-gradient(circle at 44% 34%, #FFF3F6 0%, #FCE1EA 58%, #F5CAD9 100%)',
+    pageBaseColor: '#FCE1EA',
+    canvasBorderColor: 'rgba(219, 112, 147, 0.36)',
+    canvasInnerHighlight: 'rgba(255, 255, 255, 0.80)',
+    canvasShadow: LIGHT_SHADOW,
+    isDarkEnvironment: false,
+  },
 };
 
 const DARK_BACKDROPS: Record<CanvasEnvironment, EnvironmentPageBackdrop> = {
@@ -252,6 +297,51 @@ const DARK_BACKDROPS: Record<CanvasEnvironment, EnvironmentPageBackdrop> = {
     isDarkEnvironment: true,
   },
   midnightNoel: LIGHT_BACKDROPS.midnightNoel,
+  champagneSilk: {
+    pageBackground:
+      'radial-gradient(circle at 50% 42%, #2E261C 0%, #221C14 58%, #17120D 100%)',
+    pageBaseColor: '#221C14',
+    canvasBorderColor: 'rgba(224, 192, 138, 0.28)',
+    canvasInnerHighlight: 'rgba(254, 243, 199, 0.14)',
+    canvasShadow: DARK_SHADOW,
+    isDarkEnvironment: true,
+  },
+  terracottaWall: {
+    pageBackground:
+      'radial-gradient(circle at 48% 40%, #302019 0%, #231611 58%, #180E0B 100%)',
+    pageBaseColor: '#231611',
+    canvasBorderColor: 'rgba(214, 148, 116, 0.28)',
+    canvasInnerHighlight: 'rgba(255, 236, 224, 0.12)',
+    canvasShadow: DARK_SHADOW,
+    isDarkEnvironment: true,
+  },
+  lavenderSilk: {
+    pageBackground:
+      'radial-gradient(circle at 50% 40%, #261D35 0%, #1B1427 58%, #120D1B 100%)',
+    pageBaseColor: '#1B1427',
+    canvasBorderColor: 'rgba(196, 181, 253, 0.30)',
+    canvasInnerHighlight: 'rgba(237, 233, 254, 0.15)',
+    canvasShadow: DARK_SHADOW,
+    isDarkEnvironment: true,
+  },
+  parisBalcony: {
+    pageBackground:
+      'linear-gradient(155deg, #271E2E 0%, #1E1829 52%, #151424 100%)',
+    pageBaseColor: '#1E1829',
+    canvasBorderColor: 'rgba(216, 180, 212, 0.28)',
+    canvasInnerHighlight: 'rgba(253, 230, 138, 0.14)',
+    canvasShadow: DARK_SHADOW,
+    isDarkEnvironment: true,
+  },
+  sakuraBreeze: {
+    pageBackground:
+      'radial-gradient(circle at 46% 36%, #311D25 0%, #23141B 58%, #170C11 100%)',
+    pageBaseColor: '#23141B',
+    canvasBorderColor: 'rgba(249, 168, 212, 0.30)',
+    canvasInnerHighlight: 'rgba(255, 241, 246, 0.14)',
+    canvasShadow: DARK_SHADOW,
+    isDarkEnvironment: true,
+  },
 };
 
 export function getEnvironmentPageBackdrop(

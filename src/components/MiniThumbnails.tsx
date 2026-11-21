@@ -17,7 +17,7 @@ export const MiniWrapConeSVG: React.FC<{
   styleType: typeWrapStyle;
   color: string;
   ribbon: string;
-}> = ({ styleType, ribbon }) => (
+}> = ({ styleType, color, ribbon }) => (
   <svg viewBox="0 0 64 64" className="w-12 h-12">
     {/* 1. ORIGAMI KRAFT (Ref #1: Layered taupe sleeve + mid cuff + pleated lower base + white twine) */}
     {styleType === 'kraft' && (
@@ -250,6 +250,145 @@ export const MiniWrapConeSVG: React.FC<{
         <path d="M50,22 L32,43 L40,55 L46,41 Z" fill="#E9D5FF" opacity="0.85" />
         <path d="M22,38 L42,38 L39,55 L25,55 Z" fill="#FAF5FF" stroke="#D8B4FE" strokeWidth="1" />
         <path d="M22,42 Q32,45 42,42" fill="none" stroke={ribbon} strokeWidth="2.5" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 13. DELI WAX ('waxPaper' — Free) */}
+    {styleType === 'waxPaper' && (
+      <g>
+        <path d="M25,44 L14,22 L31,12 L49,20 L39,44 Z" fill={color} stroke="#B89F82" strokeWidth="1" strokeLinejoin="round" />
+        <path d="M26,44 L18,24 L32,16 L45,22 L38,44 Z" fill="#FFFDF9" fillOpacity="0.72" />
+        <path d="M25,44 L39,44 L37,55 Q32,57 27,55 Z" fill={color} stroke="#B89F82" strokeWidth="0.9" strokeLinejoin="round" />
+        <path d="M17,31 L34,44 L25,44 L21,37 Z" fill={color} stroke="#B89F82" strokeWidth="0.9" strokeLinejoin="round" />
+        <path d="M46,29 L28,44 L39,44 L43,36 Z" fill={color} stroke="#B89F82" strokeWidth="0.9" strokeLinejoin="round" />
+        <path d="M46,29 L30,43 L32,44 L45,32 Z" fill="#FFFFFF" opacity="0.88" />
+        <path d="M25,44 Q32,46.5 39,44" fill="none" stroke={ribbon} strokeWidth="2.6" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 14. CREPE FAN ('crepeFan' — Free) */}
+    {styleType === 'crepeFan' && (
+      <g>
+        <path
+          d="M25,44 L10,24 Q14,18 20,18 Q24,13 32,16 Q40,13 44,18 Q50,18 54,24 L39,44 Z"
+          fill={color}
+          stroke="#D99B87"
+          strokeWidth="1"
+        />
+        <path d="M20,35 Q26,31 32,35 Q38,31 44,35 L39,45 L25,45 Z" fill="#FFF7F4" fillOpacity="0.82" />
+        <path d="M25,45 L19,55 Q32,58 45,55 L39,45 Z" fill={color} opacity="0.9" />
+        <path d="M24,44 Q32,47 40,44" fill="none" stroke={ribbon} strokeWidth="2.5" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 15. JUTE POCKET ('burlapSack' — Free) */}
+    {styleType === 'burlapSack' && (
+      <g>
+        <path d="M14,22 Q32,18 50,22 L43,46 L39,55 Q32,57 25,55 L21,46 Z" fill={color} stroke="#8C624C" strokeWidth="1.1" />
+        <path d="M16,32 Q32,37 48,32 L46,38 Q32,42 18,38 Z" fill="#EBD8BE" stroke="#9C7A5B" strokeWidth="0.9" />
+        <path d="M19,36 Q32,40 45,36" fill="none" stroke="#FFFBF5" strokeWidth="0.9" strokeDasharray="2 1.5" />
+        <path d="M22,45 Q32,48 42,45" fill="none" stroke={ribbon} strokeWidth="2.6" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 16. ABACA MESH ('abacaMesh' — Couture) */}
+    {styleType === 'abacaMesh' && (
+      <g>
+        {/* Golden Abaca Open-Weave Side Wings */}
+        <path d="M28,44 L9,25 L16,17 L30,36 Z" fill="#E4C896" stroke="#A67C44" strokeWidth="0.9" strokeDasharray="2 1" />
+        <path d="M36,44 L55,25 L48,17 L34,36 Z" fill="#E4C896" stroke="#A67C44" strokeWidth="0.9" strokeDasharray="2 1" />
+        {/* Matte Folded Couture Sheets + Boutique Tag */}
+        <path d="M20,13 L44,13 L39,44 L25,44 Z" fill={color} stroke="#9D5A53" strokeWidth="0.9" />
+        <rect x="37" y="15" width="6" height="2.6" rx="0.6" fill="#292524" />
+        {/* Ivory Tissue Collar Ruffles */}
+        <path d="M24,39 Q28,31 32,39 Q36,31 40,39 Z" fill="#F7EEDB" stroke="#D6C2A0" strokeWidth="0.8" />
+        {/* Abaca Net Lower Skirt */}
+        <path d="M24,44 L21,55 Q32,58 43,55 L40,44 Z" fill="#DEC08C" stroke="#A67C44" strokeWidth="0.9" strokeDasharray="2 1" />
+        <path d="M22,44 Q32,47 42,44" fill="none" stroke={ribbon} strokeWidth="2.6" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 17. SNOW WEB NET ('snowNet' — Couture) */}
+    {styleType === 'snowNet' && (
+      <g>
+        {/* Fanned Frosted Korean Sheets with Double White Edges */}
+        <path d="M28,45 L10,22 L17,16 L31,42 Z" fill={color} stroke="#FFFFFF" strokeWidth="1" />
+        <path d="M36,45 L54,22 L47,16 L33,42 Z" fill={color} stroke="#FFFFFF" strokeWidth="1" />
+        <path d="M22,12 L42,12 L38,44 L26,44 Z" fill={color} stroke="#FFFFFF" strokeWidth="1.2" />
+        <line x1="23" y1="15" x2="41" y2="15" stroke="#FFFFFF" strokeWidth="1" />
+        {/* Organic Lacy Snow-Web Cloud */}
+        <path
+          d="M17,34 C15,22 24,18 32,20 C40,18 49,22 47,34 C44,41 38,44 32,44 C26,44 20,41 17,34 Z"
+          fill="#FFFFFF"
+          fillOpacity="0.48"
+          stroke="#FFFFFF"
+          strokeWidth="1.1"
+          strokeDasharray="2 1.5"
+        />
+        {/* Pleated Skirt with Double White Rim */}
+        <path d="M25,45 L39,45 L44,56 L20,56 Z" fill={color} stroke="#FFFFFF" strokeWidth="1" />
+        <line x1="22" y1="53" x2="42" y2="53" stroke="#FFFFFF" strokeWidth="1" />
+        <path d="M23,44 Q32,47 41,44" fill="none" stroke={ribbon} strokeWidth="2.6" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 18. PEARL TULLE ('pearlTulle' — Couture) */}
+    {styleType === 'pearlTulle' && (
+      <g>
+        <path
+          d="M24,44 C12,38 9,24 16,18 C22,13 42,13 48,18 C55,24 52,38 40,44 Z"
+          fill={color}
+          fillOpacity="0.72"
+          stroke="#FFFFFF"
+          strokeWidth="1.3"
+        />
+        <path d="M23,44 L41,44 L43,55 Q32,57 21,55 Z" fill={color} fillOpacity="0.82" stroke="#FFFFFF" strokeWidth="1" />
+        {/* Pearl Swag */}
+        <circle cx="25" cy="48" r="1.6" fill="#FFFDF9" stroke="#D6B8C4" strokeWidth="0.5" />
+        <circle cx="32" cy="50.5" r="1.8" fill="#FFFDF9" stroke="#D6B8C4" strokeWidth="0.5" />
+        <circle cx="39" cy="48" r="1.6" fill="#FFFDF9" stroke="#D6B8C4" strokeWidth="0.5" />
+        <circle cx="17" cy="24" r="1.5" fill="#FFFDF9" />
+        <circle cx="47" cy="24" r="1.5" fill="#FFFDF9" />
+        <path d="M22,43 Q32,46 42,43" fill="none" stroke={ribbon} strokeWidth="2.4" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 19. GINGHAM BRODERIE ('ginghamLace' — Couture) */}
+    {styleType === 'ginghamLace' && (
+      <g>
+        <path d="M14,24 L32,16 L50,24 L40,55 L24,55 Z" fill="#FFFDFB" stroke="#C08497" strokeWidth="1" />
+        <rect x="20" y="21" width="6" height="33" fill={color} opacity="0.6" />
+        <rect x="32" y="18" width="6" height="36" fill={color} opacity="0.6" />
+        <rect x="18" y="25" width="28" height="6" fill={color} opacity="0.55" />
+        <rect x="21" y="37" width="22" height="6" fill={color} opacity="0.55" />
+        {/* Scalloped Broderie Collar */}
+        <path d="M18,34 Q25,30 32,35 Q39,30 46,34 L43,40 Q32,44 21,40 Z" fill="#FFFDF9" stroke="#DECBB9" strokeWidth="0.9" />
+        <path d="M22,44 Q32,47 42,44" fill="none" stroke={ribbon} strokeWidth="2.5" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 20. CORSET SILK ('corsetSilk' — Couture) */}
+    {styleType === 'corsetSilk' && (
+      <g>
+        <path d="M25,44 C15,36 11,24 16,18 C22,14 28,20 32,26 C36,20 42,14 48,18 C53,24 49,36 39,44 Z" fill={color} stroke="#FDE68A" strokeWidth="1" />
+        <path d="M24,44 L40,44 L43,55 Q32,57 21,55 Z" fill={color} fillOpacity="0.65" stroke="#FDE68A" strokeWidth="0.9" />
+        <path d="M20,34 Q26,30 32,35 Q38,30 44,34 L39,52 L25,52 Z" fill={color} stroke="#FDE68A" strokeWidth="1" />
+        {/* Criss-Cross Gold Lacing */}
+        <path d="M29,37 L35,41 M35,37 L29,41 M29,46 L35,50 M35,46 L29,50" stroke="#FEF3C7" strokeWidth="1.1" />
+        <path d="M23,43 Q32,46 41,43" fill="none" stroke={ribbon} strokeWidth="2.3" strokeLinecap="round" />
+      </g>
+    )}
+
+    {/* 21. WILLOW PORCELAIN ('chinoiserieUrn' — Couture) */}
+    {styleType === 'chinoiserieUrn' && (
+      <g>
+        <path d="M21,26 C23,30 25,32 25,34 C19,39 19,47 25,53 L39,53 C45,47 45,39 39,34 C39,32 41,30 43,26 Z" fill={color} stroke="#1D4ED8" strokeWidth="1.2" />
+        <path d="M21,26 Q32,29 43,26" fill="none" stroke="#D97706" strokeWidth="1.8" />
+        <path d="M24,53 L40,53 L42,57 Q32,59 22,57 Z" fill={color} stroke="#D97706" strokeWidth="1.1" />
+        {/* Cobalt Porcelain Motif */}
+        <circle cx="32" cy="42" r="4" fill="#DBEAFE" stroke="#1D4ED8" strokeWidth="1" />
+        <path d="M24,42 Q28,37 32,42 Q36,37 40,42" fill="none" stroke="#2563EB" strokeWidth="1" />
+        <path d="M24,31 Q32,34 40,31" fill="none" stroke={ribbon} strokeWidth="2.2" strokeLinecap="round" />
       </g>
     )}
   </svg>
@@ -1266,6 +1405,67 @@ export const MiniEnvironmentSVG: React.FC<{
         <circle cx="41" cy="33" r="3.2" fill="#E11D48" stroke="#FDE68A" strokeWidth="0.8" />
         {/* Bottom Snowdrift */}
         <path d="M14,49 Q24,45 32,48 Q40,51 50,47" fill="none" stroke="#F8FAFC" strokeWidth="2" strokeLinecap="round" opacity="0.65" />
+      </svg>
+    );
+  }
+
+  if (env === 'champagneSilk') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#F9EFE0" stroke="#D6B480" strokeWidth="1.3" />
+        <path d="M12,24 C24,18 36,30 52,20 L52,32 C38,40 24,28 12,36 Z" fill="#FFFFFF" opacity="0.72" />
+        <path d="M12,40 C26,34 38,46 52,38 L52,48 C38,52 24,44 12,49 Z" fill="#EBD3AE" opacity="0.55" />
+      </svg>
+    );
+  }
+
+  if (env === 'terracottaWall') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#ECCCB8" stroke="#C58B6D" strokeWidth="1.3" />
+        <polygon points="14,12 36,12 50,36 50,48 14,24" fill="#FFF7ED" opacity="0.45" />
+        <path d="M50,14 C44,18 39,23 35,28" stroke="#8C533B" strokeWidth="1.4" strokeLinecap="round" opacity="0.38" />
+        <ellipse cx="44" cy="18" rx="4" ry="1.5" transform="rotate(-20 44 18)" fill="#8C533B" opacity="0.32" />
+        <ellipse cx="39" cy="24" rx="4" ry="1.5" transform="rotate(20 39 24)" fill="#8C533B" opacity="0.32" />
+      </svg>
+    );
+  }
+
+  if (env === 'lavenderSilk') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#EFE2FE" stroke="#A78BFA" strokeWidth="1.3" />
+        <path d="M12,24 C24,17 36,30 52,20 L52,32 C38,40 24,28 12,36 Z" fill="#FFFFFF" opacity="0.65" />
+        <circle cx="22" cy="19" r="2.2" fill="#FFFDF9" stroke="#C4B5FD" strokeWidth="0.7" />
+        <circle cx="43" cy="24" r="2" fill="#FFFDF9" stroke="#C4B5FD" strokeWidth="0.7" />
+        <circle cx="32" cy="43" r="2.2" fill="#FFFDF9" stroke="#C4B5FD" strokeWidth="0.7" />
+      </svg>
+    );
+  }
+
+  if (env === 'parisBalcony') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#F2DCEB" stroke="#9B89B3" strokeWidth="1.3" />
+        <path d="M14,42 L24,42 L26,36 L38,36 L40,42 L50,42 L50,52 L14,52 Z" fill="#B7AECB" opacity="0.55" />
+        <line x1="14" y1="43" x2="50" y2="43" stroke="#574E6B" strokeWidth="1.5" opacity="0.65" />
+        <path d="M18,48 Q24,43 30,48 Q36,43 42,48 Q46,44 49,48" fill="none" stroke="#574E6B" strokeWidth="1.1" opacity="0.6" />
+        <circle cx="22" cy="20" r="2.5" fill="#FDE68A" opacity="0.85" />
+        <circle cx="43" cy="23" r="2" fill="#FDE68A" opacity="0.75" />
+      </svg>
+    );
+  }
+
+  if (env === 'sakuraBreeze') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-11 h-11">
+        <rect x="12" y="10" width="40" height="44" rx="10" fill="#FFE7F0" stroke="#F472B6" strokeWidth="1.3" />
+        <polygon points="14,12 28,12 46,48 34,52" fill="#FFFBEB" opacity="0.55" />
+        <path d="M14,20 Q22,19 29,14" fill="none" stroke="#8C6268" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="20" cy="18" r="3" fill="#FBCFE8" stroke="#FFFFFF" strokeWidth="0.6" />
+        <circle cx="27" cy="15" r="2.4" fill="#FBCFE8" stroke="#FFFFFF" strokeWidth="0.6" />
+        <ellipse cx="42" cy="30" rx="2.5" ry="1.4" transform="rotate(-25 42 30)" fill="#F9A8D4" />
+        <ellipse cx="26" cy="40" rx="2.4" ry="1.3" transform="rotate(20 26 40)" fill="#F9A8D4" />
       </svg>
     );
   }

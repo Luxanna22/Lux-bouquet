@@ -6,9 +6,11 @@ import {
   clearPendingCheckoutStorage,
   detectPricingRegion,
   evaluateKofiStarterAvailability,
-   formatPassRemainingTime,
+  formatCurrencyMinor,
+  formatPassRemainingTime,
   FOUNDING_KOFI_STARTER_DEFAULT_LIMIT,
   FoundingLaunchPromoStatus,
+  getActivePlanPricingConfig,
   getOrCreateDeviceTokenHash,
   getPricingCatalog,
   getStoredKofiShopConfig,
@@ -20,12 +22,16 @@ import {
   markDeviceClaimedKofiStarter,
   normalizePassKey,
   parseTesterVoucherMeta,
+  PlanPricingConfig,
   PremiumAssetConfig,
   PricingRegion,
   PricingTierPlan,
+  sanitizePlanPricingConfig,
   savePendingCheckoutStorage,
+  setActivePlanPricingConfig,
   StudioPassRecord,
   StudioPassTier,
+  subscribePlanPricingConfig,
   syncLocalKofiStarterClaimWithServer,
 } from '../lib/monetization';
 import {
@@ -388,6 +394,7 @@ export interface CheckoutCapabilityState {
   phGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
   initialGateway: 'sikatpay' | 'bayadgate' | 'paymongo' | 'kofi';
   launchPromo?: FoundingLaunchPromoStatus | null;
+  planPricingConfig?: PlanPricingConfig;
 }
 
 let cachedCheckoutCapability: CheckoutCapabilityState | null = null;
@@ -404,7 +411,14 @@ function resolveInitialGatewayFromConfig(cfg: {
   defaultRegion?: PricingRegion;
   phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
   launchPromo?: FoundingLaunchPromoStatus | null;
+  planPricingConfig?: PlanPricingConfig;
 }): CheckoutCapabilityState {
+  const cleanPricing = cfg.planPricingConfig
+    ? sanitizePlanPricingConfig(cfg.planPricingConfig)
+    : getActivePlanPricingConfig();
+  if (cfg.planPricingConfig) {
+    setActivePlanPricingConfig(cleanPricing);
+  }
   if (cfg.phDisabled) {
     return {
       isPhEligible: false,
@@ -413,6 +427,7 @@ function resolveInitialGatewayFromConfig(cfg: {
       phGateway: null,
       initialGateway: 'kofi',
       launchPromo: cfg.launchPromo || null,
+      planPricingConfig: cleanPricing,
     };
   }
   const eligible = Boolean(cfg.isPhEligible && cfg.phGateway);
@@ -435,6 +450,7 @@ function resolveInitialGatewayFromConfig(cfg: {
     phGateway: phGw,
     initialGateway,
     launchPromo: cfg.launchPromo || null,
+    planPricingConfig: cleanPricing,
   };
 }
 
@@ -462,6 +478,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
         defaultRegion?: PricingRegion;
         phGateway?: 'sikatpay' | 'bayadgate' | 'paymongo' | null;
         launchPromo?: FoundingLaunchPromoStatus | null;
+        planPricingConfig?: PlanPricingConfig;
       } | null;
     })
     .then((cfg) => {
@@ -475,6 +492,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
               phGateway: null,
               initialGateway: 'kofi' as const,
               launchPromo: null,
+              planPricingConfig: getActivePlanPricingConfig(),
             };
       cachedCheckoutCapability = resolved;
       return resolved;
@@ -486,6 +504,7 @@ export function fetchCheckoutCapability(): Promise<CheckoutCapabilityState> {
       phGateway: null,
       initialGateway: 'kofi' as const,
       launchPromo: null,
+      planPricingConfig: getActivePlanPricingConfig(),
     }))
     .finally(() => {
       inFlightCapabilityPromise = null;
@@ -519,9 +538,18 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
   const [launchPromo, setLaunchPromo] = useState<FoundingLaunchPromoStatus | null>(
     () => cachedCheckoutCapability?.launchPromo ?? null
   );
+  const [planPricingConfig, setPlanPricingConfig] = useState<PlanPricingConfig>(
+    () => cachedCheckoutCapability?.planPricingConfig ?? getActivePlanPricingConfig()
+  );
   const [localDeviceClaimedKofi, setLocalDeviceClaimedKofi] = useState<boolean>(() =>
     hasDeviceClaimedKofiStarter()
   );
+
+  useEffect(() => {
+    return subscribePlanPricingConfig((next) => {
+      setPlanPricingConfig(next);
+    });
+  }, []);
   const [bayadgateMethod, setBayadgateMethod] = useState<BayadgatePaymentMethod>('GCASH');
   const [activeView, setActiveView] = useState<'plans' | 'redeem' | 'pass_card'>(
     () => (activePass ? 'pass_card' : initialView === 'redeem' ? 'redeem' : 'plans')
@@ -663,17 +691,23 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setIsPhEligible(cachedCheckoutCapability.isPhEligible);
       setPaymentGateway(cachedCheckoutCapability.initialGateway);
       setLaunchPromo(cachedCheckoutCapability.launchPromo ?? null);
+      if (cachedCheckoutCapability.planPricingConfig) {
+        setPlanPricingConfig(cachedCheckoutCapability.planPricingConfig);
+      }
       setLocalDeviceClaimedKofi(
         syncLocalKofiStarterClaimWithServer(cachedCheckoutCapability.launchPromo ?? null)
       );
       setIsResolvingRegion(false);
-      // Background-refresh capability on modal open so Founding Launch eligibility & slot count stay server-fresh
+      // Background-refresh capability on modal open so Founding Launch eligibility & live pricing stay server-fresh
       invalidateCheckoutCapabilityCache();
       fetchCheckoutCapability().then((fresh) => {
         if (cancelled) return;
         setIsPhEligible(fresh.isPhEligible);
         setPaymentGateway(fresh.initialGateway);
         setLaunchPromo(fresh.launchPromo ?? null);
+        if (fresh.planPricingConfig) {
+          setPlanPricingConfig(fresh.planPricingConfig);
+        }
         setLocalDeviceClaimedKofi(
           syncLocalKofiStarterClaimWithServer(fresh.launchPromo ?? null)
         );
@@ -698,6 +732,9 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       setIsPhEligible(resolved.isPhEligible);
       setPaymentGateway(resolved.initialGateway);
       setLaunchPromo(resolved.launchPromo ?? null);
+      if (resolved.planPricingConfig) {
+        setPlanPricingConfig(resolved.planPricingConfig);
+      }
       setLocalDeviceClaimedKofi(
         syncLocalKofiStarterClaimWithServer(resolved.launchPromo ?? null)
       );
@@ -756,7 +793,7 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
 
   const region: PricingRegion =
     isPhEligible && paymentGateway !== 'kofi' ? 'PH' : 'INTL';
-  const plans = getPricingCatalog(region);
+  const plans = getPricingCatalog(region, planPricingConfig);
   const currentPlan = plans.find((p) => p.tier === selectedTier) || plans[2];
 
   const kofiStarterEval = evaluateKofiStarterAvailability({
@@ -1005,6 +1042,31 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
     setTimeout(() => setCopiedPassKey(false), 2000);
   };
 
+  const planSingle = plans.find((p) => p.tier === 'single') || plans[0];
+  const plan7d = plans.find((p) => p.tier === 'pass_7d') || plans[1];
+  const plan30d = plans.find((p) => p.tier === 'pass_30d') || plans[2];
+
+  const formatPerDay = (amountMinor: number, days: number, reg: PricingRegion): string => {
+    const perDayMinor = amountMinor / days;
+    if (reg === 'PH') {
+      const pesos = Math.max(1, Math.round(perDayMinor / 100));
+      return `₱${pesos}/day`;
+    }
+    if (perDayMinor < 100) {
+      return `${Math.max(1, Math.round(perDayMinor))}¢/day`;
+    }
+    return `$${(perDayMinor / 100).toFixed(2)}/day`;
+  };
+
+  const daily7dLabel = `~${formatPerDay(plan7d.amountMinor, 7, region)}`;
+  const daily30dLabel = formatPerDay(plan30d.amountMinor, 30, region);
+  const savePctVs7d = Math.max(
+    0,
+    Math.round((1 - plan30d.amountMinor / 30 / Math.max(1, plan7d.amountMinor / 7)) * 100)
+  );
+  const upgradeDiffMinor = Math.max(0, plan30d.amountMinor - plan7d.amountMinor);
+  const upgradeDiffDisplay = formatCurrencyMinor(upgradeDiffMinor, plan30d.currency);
+
   const planMeta: Record<
     StudioPassTier,
     {
@@ -1020,23 +1082,45 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
       compactName: 'Single Bouquet',
       allowance: '1 premium bouquet',
       galleryNote: '90-day gallery',
-      badge: isSingleFreeLaunchActive ? 'Launch Gift' : 'One Gift',
-      marketingLabel: isSingleFreeLaunchActive ? 'Free starter' : 'Try once',
+      badge: isSingleFreeLaunchActive
+        ? 'Launch Gift'
+        : planSingle.isDiscounted
+        ? planSingle.promoBadge || `${planSingle.discountPercent}% OFF`
+        : 'One Gift',
+      highlightBadge: !isSingleFreeLaunchActive && planSingle.isDiscounted,
+      marketingLabel: isSingleFreeLaunchActive
+        ? 'Free starter'
+        : planSingle.isDiscounted && planSingle.savingsDisplay
+        ? `Save ${planSingle.savingsDisplay}`
+        : 'Try once',
     },
     pass_7d: {
       compactName: '7-Day Pass',
       allowance: 'Unlimited · 7 days',
       galleryNote: '90-day gallery',
-      badge: 'Most Popular',
-      marketingLabel: region === 'PH' ? '~₱14 / day' : '~57¢ / day',
+      badge: plan7d.isDiscounted
+        ? plan7d.promoBadge || `${plan7d.discountPercent}% OFF`
+        : 'Most Popular',
+      highlightBadge: plan7d.isDiscounted,
+      marketingLabel:
+        plan7d.isDiscounted && plan7d.savingsDisplay
+          ? `Save ${plan7d.savingsDisplay} · ${daily7dLabel}`
+          : daily7dLabel,
     },
     pass_30d: {
       compactName: '30-Day Eternal',
       allowance: 'Unlimited · 30 days',
       galleryNote: 'Eternal showcase',
-      badge: 'Best Value',
+      badge: plan30d.isDiscounted
+        ? plan30d.promoBadge || `${plan30d.discountPercent}% OFF`
+        : 'Best Value',
       highlightBadge: true,
-      marketingLabel: region === 'PH' ? '₱7/day · Save 53%' : '23¢/day · Save 59%',
+      marketingLabel:
+        plan30d.isDiscounted && plan30d.savingsDisplay
+          ? `Save ${plan30d.savingsDisplay} · ${daily30dLabel}`
+          : savePctVs7d >= 10
+          ? `${daily30dLabel} · Save ${savePctVs7d}%`
+          : `${daily30dLabel} · Eternal`,
     },
   };
 
@@ -1277,6 +1361,22 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                               FREE
                             </span>
                           </span>
+                        ) : plan.isDiscounted ? (
+                          <span
+                            data-testid={`plan-discount-price-${plan.tier}`}
+                            className="inline-flex items-baseline justify-center gap-1 flex-wrap"
+                          >
+                            <span className="text-xs sm:text-sm line-through opacity-50 font-normal">
+                              {plan.originalDisplayPrice}
+                            </span>
+                            <span
+                              className={
+                                isDarkMode ? 'text-[#E8B4A6]' : 'text-[#9E5B4B]'
+                              }
+                            >
+                              {plan.displayPrice}
+                            </span>
+                          </span>
                         ) : (
                           plan.displayPrice
                         )}
@@ -1318,13 +1418,19 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                 <span className="flex-1 min-w-[200px]">
                   {selectedTier === 'pass_30d' ? (
                     <>
-                      <strong className="font-semibold">Eternal Best Value:</strong>{' '}
-                      4× more days than 7-Day Pass for under 2× the price, plus a permanent gallery showcase.
+                      <strong className="font-semibold">
+                        {plan30d.isDiscounted && plan30d.savingsDisplay
+                          ? `Eternal Offer (Save ${plan30d.savingsDisplay}):`
+                          : 'Eternal Best Value:'}
+                      </strong>{' '}
+                      4× more days than 7-Day Pass, plus a permanent gallery showcase.
                     </>
                   ) : selectedTier === 'pass_7d' ? (
                     <>
                       <strong className="font-semibold">Smart Upgrade:</strong>{' '}
-                      Add just {region === 'PH' ? '₱100' : '$3.00'} for 30 days unlimited &amp; Eternal showcase.
+                      {upgradeDiffMinor > 0
+                        ? `Add just ${upgradeDiffDisplay} for 30 days unlimited & Eternal showcase.`
+                        : 'Upgrade to 30-Day Eternal for 30 days unlimited & permanent showcase.'}
                     </>
                   ) : isSingleFreeLaunchActive ? (
                     <>
@@ -1550,10 +1656,19 @@ export const StudioCheckoutModal: React.FC<StudioCheckoutModalProps> = ({
                     {pendingCheckout.isKofiLaunchStarter ? (
                       <>
                         <span className="line-through opacity-55 text-base mr-1">
-                          $1.99
+                          {planSingle.originalDisplayPrice || '$1.99'}
                         </span>
                         <span className="font-semibold text-[#9E5B4B] dark:text-[#E8B4A6]">
                           FREE
+                        </span>
+                      </>
+                    ) : pendingCheckout.plan.isDiscounted ? (
+                      <>
+                        <span className="line-through opacity-55 text-base mr-1">
+                          {pendingCheckout.plan.originalDisplayPrice}
+                        </span>
+                        <span className="font-semibold text-[#9E5B4B] dark:text-[#E8B4A6]">
+                          {pendingCheckout.plan.displayPrice}
                         </span>
                       </>
                     ) : (

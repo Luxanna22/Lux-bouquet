@@ -132,7 +132,16 @@ const SHARE_WRAP_STYLES: typeWrapStyle[] = [
   'plain',
   'hatbox',
   'cloche',
-  'koreanmesh'
+  'koreanmesh',
+  'waxPaper',
+  'crepeFan',
+  'burlapSack',
+  'abacaMesh',
+  'snowNet',
+  'pearlTulle',
+  'ginghamLace',
+  'corsetSilk',
+  'chinoiserieUrn'
 ];
 
 const SHARE_RIBBON_STYLES: RibbonStyle[] = [
@@ -198,7 +207,12 @@ const SHARE_ENVIRONMENTS: CanvasEnvironment[] = [
   'botanicalArch',
   'nordicSnow',
   'crystalPalace',
-  'midnightNoel'
+  'midnightNoel',
+  'champagneSilk',
+  'terracottaWall',
+  'lavenderSilk',
+  'parisBalcony',
+  'sakuraBreeze'
 ];
 
 const DEFAULT_SHARE_CARD_TO = 'My Dearest';

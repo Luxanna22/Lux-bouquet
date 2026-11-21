@@ -17,10 +17,14 @@ import {
   getPaidPassDeviceBindingCount,
 } from '../lib/ownerAnalytics';
 import {
+  DEFAULT_PLAN_PRICING_CONFIG,
+  PlanPricingConfig,
   PricingRegion,
   StudioPassTier,
   formatPassRemainingTime,
+  resolveEffectivePricingPlan,
 } from '../lib/monetization';
+import { OwnerPlanPricingSection } from './OwnerPlanPricingSection';
 
 interface OwnerKeysSectionProps {
   adminSessionToken: string;
@@ -28,6 +32,7 @@ interface OwnerKeysSectionProps {
   isDarkMode: boolean;
   paidPasses: PaidPassLedgerItem[];
   testerVouchers: TesterVoucherLedgerItem[];
+  planPricingConfig?: PlanPricingConfig;
   copiedId: string | null;
   onCopyText: (text: string, id: string, toastLabel: string) => void;
   onSyncResponse: (data: {
@@ -35,6 +40,7 @@ interface OwnerKeysSectionProps {
     testerVouchers?: TesterVoucherLedgerItem[];
     paidPasses?: PaidPassLedgerItem[];
   }) => void;
+  onPlanPricingUpdated?: (nextConfig: PlanPricingConfig, nextAnalytics?: unknown) => void;
   onToast: (msg: string) => void;
   incomePausedForTesting?: boolean;
   isClearingKeys?: boolean;
@@ -97,15 +103,17 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
   isDarkMode,
   paidPasses,
   testerVouchers,
+  planPricingConfig = DEFAULT_PLAN_PRICING_CONFIG,
   copiedId,
   onCopyText,
   onSyncResponse,
+  onPlanPricingUpdated,
   onToast,
   incomePausedForTesting = false,
   isClearingKeys = false,
   onClearTestAndRevoked,
 }) => {
-  const [keyMode, setKeyMode] = useState<'paid' | 'tester'>('paid');
+  const [keyMode, setKeyMode] = useState<'paid' | 'tester' | 'pricing'>('paid');
 
   // Paid Key Generator form state
   const [paidTier, setPaidTier] = useState<StudioPassTier>('pass_7d');
@@ -312,9 +320,9 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
 
         {/* Mode Switcher */}
         <div
-          className={`w-full sm:w-auto grid grid-cols-2 sm:inline-flex rounded-lg border p-0.5 text-xs ${hairlineBorder}`}
+          className={`w-full sm:w-auto grid grid-cols-3 sm:inline-flex rounded-lg border p-0.5 text-xs ${hairlineBorder}`}
           role="tablist"
-          aria-label="Key generator type"
+          aria-label="Keys and pricing section"
         >
           <button
             data-testid="keys-subtab-paid"
@@ -322,13 +330,13 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
             role="tab"
             aria-selected={keyMode === 'paid'}
             onClick={() => setKeyMode('paid')}
-            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer tabular-nums ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors cursor-pointer tabular-nums truncate ${
               keyMode === 'paid'
                 ? `${primaryBtnClass} font-medium`
                 : 'opacity-70 hover:opacity-100'
             }`}
           >
-            Paid Keys ({paidPasses.length})
+            Paid ({paidPasses.length})
           </button>
           <button
             data-testid="keys-subtab-tester"
@@ -336,18 +344,44 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
             role="tab"
             aria-selected={keyMode === 'tester'}
             onClick={() => setKeyMode('tester')}
-            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer tabular-nums ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors cursor-pointer tabular-nums truncate ${
               keyMode === 'tester'
                 ? `${primaryBtnClass} font-medium`
                 : 'opacity-70 hover:opacity-100'
             }`}
           >
-            Tester Keys ({testerVouchers.length})
+            Testers ({testerVouchers.length})
+          </button>
+          <button
+            data-testid="keys-subtab-pricing"
+            type="button"
+            role="tab"
+            aria-selected={keyMode === 'pricing'}
+            onClick={() => setKeyMode('pricing')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-colors cursor-pointer truncate ${
+              keyMode === 'pricing'
+                ? `${primaryBtnClass} font-medium`
+                : 'opacity-70 hover:opacity-100'
+            }`}
+          >
+            <span className="sm:hidden">Pricing</span>
+            <span className="hidden sm:inline">Pricing &amp; Discounts</span>
           </button>
         </div>
       </div>
 
-      {keyMode === 'paid' ? (
+      {keyMode === 'pricing' ? (
+        <OwnerPlanPricingSection
+          adminSessionToken={adminSessionToken}
+          deviceTokenHash={deviceTokenHash}
+          isDarkMode={isDarkMode}
+          planPricingConfig={planPricingConfig}
+          onPlanPricingUpdated={(nextConfig, nextAnalytics) => {
+            onPlanPricingUpdated?.(nextConfig, nextAnalytics);
+          }}
+          onToast={onToast}
+        />
+      ) : keyMode === 'paid' ? (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           {/* Paid Key Mint Form */}
           <form
@@ -371,7 +405,11 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
               <div className={`divide-y ${hairlineDivide} border ${hairlineBorder} rounded-lg overflow-hidden`}>
                 {PAID_TIER_OPTIONS.map((opt) => {
                   const selected = paidTier === opt.tier;
-                  const priceStr = paidRegion === 'PH' ? opt.phPrice : opt.intlPrice;
+                  const livePlan = resolveEffectivePricingPlan(
+                    paidRegion,
+                    opt.tier,
+                    planPricingConfig
+                  );
                   return (
                     <button
                       key={opt.tier}
@@ -386,7 +424,14 @@ export const OwnerKeysSection: React.FC<OwnerKeysSectionProps> = ({
                         <div className="font-medium">{opt.label}</div>
                         <div className="text-[11px] opacity-75">{opt.detail}</div>
                       </div>
-                      <span className="font-mono font-medium tabular-nums">{priceStr}</span>
+                      <span className="font-mono font-medium tabular-nums inline-flex items-baseline gap-1.5">
+                        {livePlan.isDiscounted && (
+                          <span className="line-through opacity-55 text-[11px]">
+                            {livePlan.originalDisplayPrice}
+                          </span>
+                        )}
+                        <span>{livePlan.displayPrice}</span>
+                      </span>
                     </button>
                   );
                 })}

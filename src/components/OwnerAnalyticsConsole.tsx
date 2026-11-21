@@ -10,6 +10,7 @@ import {
   Moon,
   Sun,
   Archive,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   OwnerAnalyticsSummary,
@@ -33,11 +34,22 @@ import {
   OwnerAiAdvisorPanel,
 } from './OwnerAiAdvisorPanel';
 import { OwnerBouquetsSection } from './OwnerBouquetsSection';
+import { OwnerStudioOrganizerSection } from './OwnerStudioOrganizerSection';
 import { invalidateCheckoutCapabilityCache } from './StudioCheckoutModal';
 import {
+  DEFAULT_PLAN_PRICING_CONFIG,
+  PlanPricingConfig,
   clearDeviceClaimedKofiStarter,
   clearDeviceClaimedRecipientGift,
+  sanitizePlanPricingConfig,
+  setActivePlanPricingConfig,
 } from '../lib/monetization';
+import {
+  EMPTY_STUDIO_CATALOG_OVERRIDES,
+  StudioCatalogOverrides,
+  sanitizeStudioCatalogOverrides,
+  setLiveStudioCatalogOverrides,
+} from '../lib/studioCatalogConfig';
 
 interface StealthGateAndOwnerConsoleProps {
   gateSlug: string;
@@ -48,7 +60,13 @@ interface StealthGateAndOwnerConsoleProps {
   onToast: (msg: string) => void;
 }
 
-type ConsoleTab = 'web_funnel' | 'bouquets' | 'vouchers' | 'botanicals' | 'security_stream';
+type ConsoleTab =
+  | 'web_funnel'
+  | 'bouquets'
+  | 'studio_organizer'
+  | 'vouchers'
+  | 'botanicals'
+  | 'security_stream';
 
 const PRETTY_LABELS: Record<string, string> = {
   rose: 'Red Rose',
@@ -72,7 +90,44 @@ const PRETTY_LABELS: Record<string, string> = {
   luminaPeony: 'Starlight Peony',
   callalily: 'Calla Lily',
   kraft: 'Kraft Paper',
+  chalice: 'Tulip Organza',
+  tissue: 'Petal Wrap',
+  waxPaper: 'Deli Wax',
+  crepeFan: 'Crepe Fan',
+  burlapSack: 'Jute Pocket',
+  vintage: 'Parisian News',
+  basket: 'Wicker Basket',
+  vase: 'Glass Vase',
+  plain: 'Hand-Tied',
+  abacaMesh: 'Abaca Mesh',
+  snowNet: 'Snow Web Net',
+  pearlTulle: 'Pearl Tulle',
+  ginghamLace: 'Gingham Broderie',
+  corsetSilk: 'Corset Silk',
+  chinoiserieUrn: 'Willow Porcelain',
+  koreanmesh: 'Korean Mesh',
+  hatbox: 'Atelier Hatbox',
+  cloche: 'Glass Cloche',
+  celestial: 'Celestial Veil',
+  studio: 'Atelier Cream',
+  paper: 'Cotton Paper',
   linen: 'Raw Linen',
+  meadow: 'Garden Mist',
+  sunlit: 'Warm Sunbeam',
+  blushSilk: 'Rose Silk',
+  champagneSilk: 'Champagne Silk',
+  terracottaWall: 'Sunlit Plaster',
+  botanicalArch: 'Conservatory',
+  nordicSnow: 'Nordic Snow',
+  lavenderSilk: 'Lilac Silk',
+  parisBalcony: 'Parisian Balcony',
+  sakuraBreeze: 'Sakura Sunbeam',
+  starlit: 'Evening Glow',
+  aurora: 'Aurora Silk',
+  velvetSalon: 'Velvet Salon',
+  opalMist: 'Opaline Glow',
+  crystalPalace: 'Versailles Gold',
+  midnightNoel: 'Noel Garland',
   velvet: 'Plush Velvet',
   silk_organza: 'Silk Organza',
   celadon: 'Celadon Tissue',
@@ -169,6 +224,12 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const [testerVouchers, setTesterVouchers] = useState<TesterVoucherLedgerItem[]>([]);
   const [paidPasses, setPaidPasses] = useState<PaidPassLedgerItem[]>([]);
   const [bouquetLog, setBouquetLog] = useState<AdminBouquetLogEntry[]>([]);
+  const [studioCatalogConfig, setStudioCatalogConfig] = useState<StudioCatalogOverrides>(
+    EMPTY_STUDIO_CATALOG_OVERRIDES
+  );
+  const [planPricingConfig, setPlanPricingConfig] = useState<PlanPricingConfig>(
+    DEFAULT_PLAN_PRICING_CONFIG
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -350,6 +411,16 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           if (Array.isArray(data.testerVouchers)) setTesterVouchers(data.testerVouchers);
           if (Array.isArray(data.paidPasses)) setPaidPasses(data.paidPasses);
           if (Array.isArray(data.bouquetLog)) setBouquetLog(data.bouquetLog);
+          if (data.studioCatalogConfig) {
+            const cleanCatalog = sanitizeStudioCatalogOverrides(data.studioCatalogConfig);
+            setStudioCatalogConfig(cleanCatalog);
+            setLiveStudioCatalogOverrides(cleanCatalog);
+          }
+          if (data.planPricingConfig) {
+            const cleanPricing = sanitizePlanPricingConfig(data.planPricingConfig);
+            setPlanPricingConfig(cleanPricing);
+            setActivePlanPricingConfig(cleanPricing);
+          }
           setIsServerVerified(true);
         } else if (res.status === 401 || data.unauthorized || !data.ok) {
           setIsServerVerified(false);
@@ -381,7 +452,9 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
     nextAnalytics?: OwnerAnalyticsSummary,
     nextVouchers?: TesterVoucherLedgerItem[],
     nextPaidPasses?: PaidPassLedgerItem[],
-    nextBouquetLog?: AdminBouquetLogEntry[]
+    nextBouquetLog?: AdminBouquetLogEntry[],
+    nextStudioCatalogConfig?: StudioCatalogOverrides,
+    nextPlanPricingConfig?: PlanPricingConfig
   ) => {
     const start = performance.now();
     const duration = 380;
@@ -398,6 +471,16 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
           if (Array.isArray(nextVouchers)) setTesterVouchers(nextVouchers);
           if (Array.isArray(nextPaidPasses)) setPaidPasses(nextPaidPasses);
           if (Array.isArray(nextBouquetLog)) setBouquetLog(nextBouquetLog);
+          if (nextStudioCatalogConfig) {
+            const cleanCatalog = sanitizeStudioCatalogOverrides(nextStudioCatalogConfig);
+            setStudioCatalogConfig(cleanCatalog);
+            setLiveStudioCatalogOverrides(cleanCatalog);
+          }
+          if (nextPlanPricingConfig) {
+            const cleanPricing = sanitizePlanPricingConfig(nextPlanPricingConfig);
+            setPlanPricingConfig(cleanPricing);
+            setActivePlanPricingConfig(cleanPricing);
+          }
           setIsServerVerified(true);
           setAdminSessionToken(token);
           try {
@@ -448,7 +531,9 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
         data.analytics,
         data.testerVouchers,
         data.paidPasses,
-        data.bouquetLog
+        data.bouquetLog,
+        data.studioCatalogConfig,
+        data.planPricingConfig
       );
     } catch {
       setGateError('Could not verify passphrase.');
@@ -472,6 +557,25 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
   const handleSyncBouquetLog = useCallback(
     (nextLog: AdminBouquetLogEntry[], nextAnalytics?: unknown) => {
       setBouquetLog(nextLog);
+      if (nextAnalytics) setAnalytics(nextAnalytics as OwnerAnalyticsSummary);
+    },
+    []
+  );
+
+  const handleSyncStudioCatalogConfig = useCallback(
+    (nextConfig: StudioCatalogOverrides, nextAnalytics?: unknown) => {
+      setStudioCatalogConfig(sanitizeStudioCatalogOverrides(nextConfig));
+      if (nextAnalytics) setAnalytics(nextAnalytics as OwnerAnalyticsSummary);
+    },
+    []
+  );
+
+  const handleSyncPlanPricingConfig = useCallback(
+    (nextConfig: PlanPricingConfig, nextAnalytics?: unknown) => {
+      const cleanPricing = sanitizePlanPricingConfig(nextConfig);
+      setPlanPricingConfig(cleanPricing);
+      setActivePlanPricingConfig(cleanPricing);
+      invalidateCheckoutCapabilityCache();
       if (nextAnalytics) setAnalytics(nextAnalytics as OwnerAnalyticsSummary);
     },
     []
@@ -1139,6 +1243,13 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
       count: bouquetLog.length || undefined,
     },
     {
+      id: 'studio_organizer',
+      testId: 'owner-tab-studio_organizer',
+      label: 'Studio Organizer',
+      mobileLabel: 'Studio',
+      icon: SlidersHorizontal,
+    },
+    {
       id: 'vouchers',
       testId: 'owner-tab-vouchers',
       label: 'Keys & Passes',
@@ -1397,7 +1508,19 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
             />
           )}
 
-          {/* TAB 2: PAID KEYS & TESTER VOUCHERS */}
+          {/* TAB 1C: STUDIO ORGANIZER (ORDER, COUTURE TIER & STUDIO-ONLY VISIBILITY) */}
+          {activeTab === 'studio_organizer' && (
+            <OwnerStudioOrganizerSection
+              adminSessionToken={adminSessionToken}
+              deviceTokenHash={deviceTokenHash}
+              isDarkMode={isDarkMode}
+              studioCatalogConfig={studioCatalogConfig}
+              onSyncStudioCatalogConfig={handleSyncStudioCatalogConfig}
+              onToast={onToast}
+            />
+          )}
+
+          {/* TAB 2: PAID KEYS, TESTER VOUCHERS & PLAN PRICING */}
           {activeTab === 'vouchers' && (
             <OwnerKeysSection
               adminSessionToken={adminSessionToken}
@@ -1405,9 +1528,11 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               isDarkMode={isDarkMode}
               paidPasses={paidPasses}
               testerVouchers={testerVouchers}
+              planPricingConfig={planPricingConfig}
               copiedId={copiedId}
               onCopyText={copyText}
               onSyncResponse={handleSyncKeysResponse}
+              onPlanPricingUpdated={handleSyncPlanPricingConfig}
               onToast={onToast}
               incomePausedForTesting={Boolean(realAnalytics.incomePausedForTesting)}
               isClearingKeys={isClearingKeys}
@@ -1633,7 +1758,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
 
       {/* MOBILE BOTTOM NAVIGATION DOCK */}
       <nav
-        className={`md:hidden fixed bottom-0 inset-x-0 min-h-14 pb-[env(safe-area-inset-bottom)] border-t border-dashed grid grid-cols-5 z-20 ${
+        className={`md:hidden fixed bottom-0 inset-x-0 min-h-14 pb-[env(safe-area-inset-bottom)] border-t border-dashed grid grid-cols-6 z-20 ${
           isDarkMode ? 'bg-[#352C29] border-[#5E4E49]/80' : 'bg-[#FFFDF9] border-[#DECBB9]'
         }`}
       >
@@ -1645,7 +1770,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               key={item.id}
               type="button"
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
+              className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors cursor-pointer px-0.5 ${
                 active
                   ? isDarkMode
                     ? 'text-[#E6B89C]'
@@ -1654,7 +1779,7 @@ export const StealthGateAndOwnerConsole: React.FC<StealthGateAndOwnerConsoleProp
               }`}
             >
               <Icon className="w-4 h-4" />
-              <span>{item.mobileLabel}</span>
+              <span className="truncate max-w-full">{item.mobileLabel}</span>
             </button>
           );
         })}

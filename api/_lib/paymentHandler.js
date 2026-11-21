@@ -109,6 +109,11 @@ export const PRICING_CATALOG = {
       symbol: '₱',
       displayPrice: '₱199',
       amountMinor: 19900,
+      originalAmountMinor: 24900,
+      originalDisplayPrice: '₱249',
+      isDiscounted: true,
+      discountPercent: 20,
+      savingsDisplay: '₱50',
       durationDays: 30,
       retentionDays: 36500,
       isEternalKeepsake: true,
@@ -162,6 +167,212 @@ export const PRICING_CATALOG = {
     },
   },
 };
+
+const PLAN_PRICING_BOUNDS_SERVER = {
+  PH: { min: 100, max: 5_000_000 },
+  INTL: { min: 50, max: 50_000 },
+};
+
+export const DEFAULT_PLAN_PRICING_CONFIG_SERVER = {
+  PH: {
+    single: {
+      originalAmountMinor: 4900,
+      discountEnabled: false,
+      discountedAmountMinor: 3900,
+      promoBadge: '',
+    },
+    pass_7d: {
+      originalAmountMinor: 9900,
+      discountEnabled: false,
+      discountedAmountMinor: 7900,
+      promoBadge: '',
+    },
+    pass_30d: {
+      originalAmountMinor: 24900,
+      discountEnabled: true,
+      discountedAmountMinor: 19900,
+      promoBadge: '',
+    },
+  },
+  INTL: {
+    single: {
+      originalAmountMinor: 199,
+      discountEnabled: false,
+      discountedAmountMinor: 149,
+      promoBadge: '',
+      discountKofiCode: '',
+    },
+    pass_7d: {
+      originalAmountMinor: 399,
+      discountEnabled: false,
+      discountedAmountMinor: 299,
+      promoBadge: '',
+      discountKofiCode: '',
+    },
+    pass_30d: {
+      originalAmountMinor: 699,
+      discountEnabled: false,
+      discountedAmountMinor: 499,
+      promoBadge: '',
+      discountKofiCode: '',
+    },
+  },
+};
+
+function formatCurrencyMinorServer(amountMinor, currency) {
+  const safeMinor = Math.max(0, Math.round(Number(amountMinor) || 0));
+  if (currency === 'PHP') {
+    const major = safeMinor / 100;
+    return safeMinor % 100 === 0
+      ? `₱${Math.round(major).toLocaleString('en-US')}`
+      : `₱${major.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `$${(safeMinor / 100).toFixed(2)}`;
+}
+
+export function sanitizePlanPricingConfigServer(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const regions = ['PH', 'INTL'];
+  const tiers = ['single', 'pass_7d', 'pass_30d'];
+  const out = { PH: {}, INTL: {} };
+
+  for (const region of regions) {
+    const bounds = PLAN_PRICING_BOUNDS_SERVER[region];
+    const regionRaw =
+      Object.prototype.hasOwnProperty.call(src, region) &&
+      src[region] &&
+      typeof src[region] === 'object'
+        ? src[region]
+        : {};
+    for (const tier of tiers) {
+      const def = DEFAULT_PLAN_PRICING_CONFIG_SERVER[region][tier];
+      const tierRaw =
+        Object.prototype.hasOwnProperty.call(regionRaw, tier) &&
+        regionRaw[tier] &&
+        typeof regionRaw[tier] === 'object'
+          ? regionRaw[tier]
+          : {};
+      const origCand = Math.round(Number(tierRaw.originalAmountMinor));
+      const originalAmountMinor =
+        Number.isFinite(origCand) && origCand >= bounds.min && origCand <= bounds.max
+          ? origCand
+          : def.originalAmountMinor;
+      const hasExplicitDisc = Object.prototype.hasOwnProperty.call(
+        tierRaw,
+        'discountedAmountMinor'
+      );
+      const discCand = Math.round(Number(tierRaw.discountedAmountMinor));
+      const explicitDiscountInvalid =
+        hasExplicitDisc &&
+        (!Number.isFinite(discCand) ||
+          discCand < bounds.min ||
+          discCand > bounds.max ||
+          discCand >= originalAmountMinor);
+      let discountedAmountMinor =
+        Number.isFinite(discCand) && discCand >= bounds.min && discCand <= bounds.max
+          ? discCand
+          : Math.min(def.discountedAmountMinor, Math.max(bounds.min, originalAmountMinor - 100));
+      if (discountedAmountMinor >= originalAmountMinor) {
+        discountedAmountMinor = Math.max(
+          bounds.min,
+          Math.min(originalAmountMinor - (region === 'PH' ? 100 : 10), originalAmountMinor)
+        );
+      }
+      const rawEnabled =
+        typeof tierRaw.discountEnabled === 'boolean'
+          ? tierRaw.discountEnabled
+          : def.discountEnabled;
+      const discountEnabled = Boolean(
+        rawEnabled && !explicitDiscountInvalid && discountedAmountMinor < originalAmountMinor
+      );
+      const promoBadge =
+        typeof tierRaw.promoBadge === 'string'
+          ? tierRaw.promoBadge.replace(/[<>]/g, '').trim().slice(0, 24)
+          : def.promoBadge || '';
+
+      const entry = {
+        originalAmountMinor,
+        discountEnabled,
+        discountedAmountMinor,
+        promoBadge,
+      };
+      if (region === 'INTL') {
+        entry.discountKofiCode = extractKofiShopCode(tierRaw.discountKofiCode);
+      }
+      out[region][tier] = entry;
+    }
+  }
+  return out;
+}
+
+let planPricingConfig = sanitizePlanPricingConfigServer(DEFAULT_PLAN_PRICING_CONFIG_SERVER);
+let planPricingConfigUpdatedAtMs = 0;
+
+export function getPlanPricingConfigServer() {
+  return sanitizePlanPricingConfigServer(planPricingConfig);
+}
+
+export function resolveEffectivePricingPlanServer(region, tier, configOverride = null) {
+  const safeRegion = region === 'PH' ? 'PH' : 'INTL';
+  const safeTier =
+    tier === 'single' || tier === 'pass_7d' || tier === 'pass_30d' ? tier : 'pass_7d';
+  const base = PRICING_CATALOG[safeRegion][safeTier];
+  const cfg = configOverride
+    ? sanitizePlanPricingConfigServer(configOverride)
+    : planPricingConfig;
+  const tierCfg = cfg[safeRegion]?.[safeTier];
+  if (!tierCfg) return { ...base };
+
+  const isDiscounted = Boolean(
+    tierCfg.discountEnabled && tierCfg.discountedAmountMinor < tierCfg.originalAmountMinor
+  );
+  const amountMinor = isDiscounted
+    ? tierCfg.discountedAmountMinor
+    : tierCfg.originalAmountMinor;
+  const savingsMinor = isDiscounted
+    ? Math.max(0, tierCfg.originalAmountMinor - tierCfg.discountedAmountMinor)
+    : 0;
+  const discountPercent =
+    isDiscounted && tierCfg.originalAmountMinor > 0
+      ? Math.max(1, Math.round((savingsMinor / tierCfg.originalAmountMinor) * 100))
+      : 0;
+
+  return {
+    ...base,
+    amountMinor,
+    displayPrice: formatCurrencyMinorServer(amountMinor, base.currency),
+    originalAmountMinor: tierCfg.originalAmountMinor,
+    originalDisplayPrice: formatCurrencyMinorServer(tierCfg.originalAmountMinor, base.currency),
+    isDiscounted,
+    discountPercent: isDiscounted ? discountPercent : undefined,
+    savingsDisplay: isDiscounted ? formatCurrencyMinorServer(savingsMinor, base.currency) : undefined,
+    promoBadge: isDiscounted ? tierCfg.promoBadge || `${discountPercent}% OFF` : undefined,
+    discountKofiCode: safeRegion === 'INTL' ? tierCfg.discountKofiCode || '' : undefined,
+  };
+}
+
+function packOrderSlotMeta(passKey, bouquetCode, lockedAmountMinor) {
+  const base = `${passKey || ''}|${bouquetCode || ''}`;
+  const amt = Math.round(Number(lockedAmountMinor));
+  return Number.isFinite(amt) && amt > 0 ? `${base}|amt:${amt}` : base;
+}
+
+function unpackOrderSlotMeta(packedMeta) {
+  const str = String(packedMeta || '');
+  const parts = str.split('|');
+  const passKey = parts[0] || '';
+  const bouquetCode = parts[1] || '';
+  let lockedAmountMinor = null;
+  for (let i = 2; i < parts.length; i += 1) {
+    if (parts[i].startsWith('amt:')) {
+      const parsedAmt = Math.round(Number(parts[i].slice(4)));
+      if (Number.isFinite(parsedAmt) && parsedAmt > 0) {
+        lockedAmountMinor = parsedAmt;
+      }
+    }
+  }
+  return { passKey, bouquetCode, lockedAmountMinor };
+}
 
 export function getServerSigningSalt() {
   return (process.env.PASS_SIGNING_SECRET || 'sab-pass-integrity-2026-v1').trim();
@@ -276,11 +487,15 @@ export function getActiveKofiShopCodes(clientOverride) {
     overrideTest30d ||
     '';
 
+  const discountSingle = extractKofiShopCode(planPricingConfig?.INTL?.single?.discountKofiCode);
+  const discount7d = extractKofiShopCode(planPricingConfig?.INTL?.pass_7d?.discountKofiCode);
+  const discount30d = extractKofiShopCode(planPricingConfig?.INTL?.pass_30d?.discountKofiCode);
+
   const allowedSingle = Array.from(
-    new Set([prodSingle, testSingle, launchFreeSingle].filter(Boolean))
+    new Set([prodSingle, testSingle, launchFreeSingle, discountSingle].filter(Boolean))
   );
-  const allowed7d = Array.from(new Set([prod7d, test7d].filter(Boolean)));
-  const allowed30d = Array.from(new Set([prod30d, test30d].filter(Boolean)));
+  const allowed7d = Array.from(new Set([prod7d, test7d, discount7d].filter(Boolean)));
+  const allowed30d = Array.from(new Set([prod30d, test30d, discount30d].filter(Boolean)));
 
   return {
     single: prodSingle || testSingle || '',
@@ -403,8 +618,11 @@ export function verifyBayadgateSignature(params, secretKey) {
   return timingSafeMatch(expected, incomingSign);
 }
 
-export function formatBayadgateAmountForTier(tier) {
-  const minor = PRICING_CATALOG.PH?.[tier]?.amountMinor;
+export function formatBayadgateAmountForTier(tier, overrideAmountMinor = null) {
+  const minor =
+    Number.isFinite(Number(overrideAmountMinor)) && Number(overrideAmountMinor) > 0
+      ? Math.round(Number(overrideAmountMinor))
+      : resolveEffectivePricingPlanServer('PH', tier)?.amountMinor;
   if (!Number.isFinite(minor)) return '99.00';
   return (minor / 100).toFixed(2);
 }
@@ -1352,6 +1570,108 @@ let launchPromoConfigUpdatedAtMs = 0;
 let customOwnerPinUpdatedAtMs = 0;
 let kofiLaunchResetAtMs = 0;
 let recipientGiftResetAtMs = 0;
+let studioCatalogConfigUpdatedAtMs = 0;
+const STUDIO_CATALOG_CATEGORIES_SERVER = [
+  'flowers',
+  'fillers',
+  'others',
+  'seasonal',
+  'wrappers',
+  'ribbons',
+  'environments',
+  'voices',
+  'photos',
+];
+const FORBIDDEN_CATALOG_KEYS_SERVER = new Set(['__proto__', 'constructor', 'prototype']);
+const VALID_CATALOG_ID_REGEX_SERVER = /^[a-zA-Z0-9_-]{1,48}$/;
+
+export function sanitizeStudioCatalogConfigServer(raw) {
+  const result = {
+    order: {},
+    hidden: {},
+    premiumOverrides: {},
+  };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return result;
+  }
+  const rawOrder =
+    raw.order && typeof raw.order === 'object' && !Array.isArray(raw.order) ? raw.order : {};
+  const rawHidden =
+    raw.hidden && typeof raw.hidden === 'object' && !Array.isArray(raw.hidden) ? raw.hidden : {};
+  const rawPrem =
+    raw.premiumOverrides &&
+    typeof raw.premiumOverrides === 'object' &&
+    !Array.isArray(raw.premiumOverrides)
+      ? raw.premiumOverrides
+      : {};
+
+  for (const cat of STUDIO_CATALOG_CATEGORIES_SERVER) {
+    if (Array.isArray(rawOrder[cat])) {
+      const seen = new Set();
+      const cleaned = [];
+      for (const id of rawOrder[cat].slice(0, 120)) {
+        if (
+          typeof id !== 'string' ||
+          FORBIDDEN_CATALOG_KEYS_SERVER.has(id) ||
+          !VALID_CATALOG_ID_REGEX_SERVER.test(id) ||
+          seen.has(id)
+        ) {
+          continue;
+        }
+        seen.add(id);
+        cleaned.push(id);
+      }
+      if (cleaned.length > 0) result.order[cat] = cleaned;
+    }
+
+    if (Array.isArray(rawHidden[cat])) {
+      const seen = new Set();
+      const cleaned = [];
+      for (const id of rawHidden[cat].slice(0, 120)) {
+        if (
+          typeof id !== 'string' ||
+          FORBIDDEN_CATALOG_KEYS_SERVER.has(id) ||
+          !VALID_CATALOG_ID_REGEX_SERVER.test(id) ||
+          seen.has(id)
+        ) {
+          continue;
+        }
+        seen.add(id);
+        cleaned.push(id);
+      }
+      if (cleaned.length > 0) result.hidden[cat] = cleaned;
+    }
+
+    if (rawPrem[cat] && typeof rawPrem[cat] === 'object' && !Array.isArray(rawPrem[cat])) {
+      const cleanedMap = {};
+      let count = 0;
+      for (const [id, val] of Object.entries(rawPrem[cat]).slice(0, 120)) {
+        if (
+          FORBIDDEN_CATALOG_KEYS_SERVER.has(id) ||
+          !VALID_CATALOG_ID_REGEX_SERVER.test(id) ||
+          typeof val !== 'boolean'
+        ) {
+          continue;
+        }
+        cleanedMap[id] = val;
+        count += 1;
+      }
+      if (count > 0) result.premiumOverrides[cat] = cleanedMap;
+    }
+  }
+
+  if (typeof raw.updatedAt === 'string' && raw.updatedAt.trim().length > 0) {
+    result.updatedAt = raw.updatedAt.trim().slice(0, 64);
+  }
+  return result;
+}
+
+let studioCatalogConfig = { order: {}, hidden: {}, premiumOverrides: {} };
+
+export function getStudioCatalogConfigServer() {
+  return sanitizeStudioCatalogConfigServer(studioCatalogConfig);
+}
+
 let lastCheckoutFlagHydrateMs = 0;
 let lastTelemetryHydrateMs = 0;
 let lastTelemetryFlushMs = 0;
@@ -1380,6 +1700,10 @@ export function resetOwnerVaultInMemoryForColdStartTests() {
   customOwnerPinUpdatedAtMs = 0;
   kofiLaunchResetAtMs = 0;
   recipientGiftResetAtMs = 0;
+  studioCatalogConfigUpdatedAtMs = 0;
+  studioCatalogConfig = { order: {}, hidden: {}, premiumOverrides: {} };
+  planPricingConfigUpdatedAtMs = 0;
+  planPricingConfig = sanitizePlanPricingConfigServer(DEFAULT_PLAN_PRICING_CONFIG_SERVER);
   cachedCustomOwnerPin = '';
   OWNER_ANALYTICS_STATE.incomePausedForTesting = false;
   OWNER_ANALYTICS_STATE.phPaymentsDisabled = false;
@@ -1470,6 +1794,34 @@ export function mergeRemoteOwnerVaultIntoMemory(remote) {
     }
   } else if (phDisabledUpdatedAtMs === 0 && remotePhDisabledVal !== undefined) {
     OWNER_ANALYTICS_STATE.phPaymentsDisabled = remotePhDisabledVal;
+  }
+
+  const remoteStudioCatalogTs = Number(remote.studioCatalogConfigUpdatedAtMs || 0);
+  if (remoteStudioCatalogTs > studioCatalogConfigUpdatedAtMs) {
+    studioCatalogConfigUpdatedAtMs = remoteStudioCatalogTs;
+    if (remote.studioCatalogConfig && typeof remote.studioCatalogConfig === 'object') {
+      studioCatalogConfig = sanitizeStudioCatalogConfigServer(remote.studioCatalogConfig);
+    }
+  } else if (
+    studioCatalogConfigUpdatedAtMs === 0 &&
+    remote.studioCatalogConfig &&
+    typeof remote.studioCatalogConfig === 'object'
+  ) {
+    studioCatalogConfig = sanitizeStudioCatalogConfigServer(remote.studioCatalogConfig);
+  }
+
+  const remotePlanPricingTs = Number(remote.planPricingConfigUpdatedAtMs || 0);
+  if (remotePlanPricingTs > planPricingConfigUpdatedAtMs) {
+    planPricingConfigUpdatedAtMs = remotePlanPricingTs;
+    if (remote.planPricingConfig && typeof remote.planPricingConfig === 'object') {
+      planPricingConfig = sanitizePlanPricingConfigServer(remote.planPricingConfig);
+    }
+  } else if (
+    planPricingConfigUpdatedAtMs === 0 &&
+    remote.planPricingConfig &&
+    typeof remote.planPricingConfig === 'object'
+  ) {
+    planPricingConfig = sanitizePlanPricingConfigServer(remote.planPricingConfig);
   }
 
   const remoteKofiResetTs = Number(remote.kofiLaunchResetAtMs || 0);
@@ -1963,6 +2315,10 @@ function buildOwnerVaultPayloadObject(nowMs = Date.now()) {
     recipientGiftSlots: Array.from(RECIPIENT_GIFT_SLOTS.entries()).slice(-600),
     customOwnerPin: cachedCustomOwnerPin || '',
     customOwnerPinUpdatedAtMs,
+    studioCatalogConfig: getStudioCatalogConfigServer(),
+    studioCatalogConfigUpdatedAtMs,
+    planPricingConfig: getPlanPricingConfigServer(),
+    planPricingConfigUpdatedAtMs,
     revokedVoucherKeys: Array.from(REVOKED_VOUCHER_KEYS).slice(0, 500),
     issuedPassKeys: Array.from(ISSUED_PASS_KEYS).slice(-1000),
     pinAttemptTracker: pinEntries.slice(0, 200),
@@ -3283,7 +3639,7 @@ export async function verifyBouquetPersistenceServer(rawCode) {
 function resolvePaidPassCatalogMeta(tier, region) {
   const cleanRegion = region === 'PH' ? 'PH' : 'INTL';
   const cleanTier = isValidTier(tier) ? tier : 'pass_7d';
-  const entry = PRICING_CATALOG[cleanRegion]?.[cleanTier];
+  const entry = resolveEffectivePricingPlanServer(cleanRegion, cleanTier);
   if (entry) {
     return {
       region: cleanRegion,
@@ -3565,7 +3921,12 @@ export function recordPaidPassIssuanceServer(pass, options = {}) {
       OWNER_ANALYTICS_STATE.incomePausedForTesting ||
       refStr.startsWith('sptest_')
   );
-  const finalAmountMinor = isFreePromo ? 0 : amountMinor;
+  const explicitPaidMinor = Math.round(Number(options.paidAmountMinor));
+  const resolvedMinor =
+    Number.isFinite(explicitPaidMinor) && explicitPaidMinor > 0
+      ? explicitPaidMinor
+      : amountMinor;
+  const finalAmountMinor = isFreePromo ? 0 : resolvedMinor;
 
   if (!PAID_PASS_LEDGER.has(normKey)) {
     const channel =
@@ -5353,6 +5714,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             : [],
         availableProviders,
         launchPromo,
+        planPricingConfig: getPlanPricingConfigServer(),
       });
       return true;
     }
@@ -5429,7 +5791,15 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
       const boundBouquetCode = null;
 
-      const plan = PRICING_CATALOG[region][tier];
+      const plan = resolveEffectivePricingPlanServer(region, tier);
+      const effectiveKofiDirectLinkCode =
+        provider === 'kofi' && !isKofiLaunchStarter && region === 'INTL' && plan.isDiscounted && plan.discountKofiCode
+          ? plan.discountKofiCode
+          : tierDirectLinkCode;
+      const effectiveKofiShopItemUrl = buildKofiShopItemUrl(
+        effectiveKofiDirectLinkCode,
+        process.env.KOFI_PAGE_URL
+      );
       const checkoutId = `chk_${crypto.randomBytes(8).toString('hex')}`;
       const passKey = generatePassKeyCode();
 
@@ -5450,7 +5820,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             : 'https://www.sendabouquet.online';
 
         const spPayload = {
-          amount: PRICING_CATALOG.PH[tier].amountMinor,
+          amount: plan.amountMinor,
           order_id: sikatpayOrderId,
           description: `Send A Bouquet - ${plan.name}`.slice(0, 120),
         };
@@ -5496,7 +5866,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             region: 'PH',
             deviceTokenHash,
             secondaryDeviceHash: 'PENDING_PAYMENT',
-            boundBouquetCode: `${passKey}|${boundBouquetCode || ''}`,
+            boundBouquetCode: packOrderSlotMeta(passKey, boundBouquetCode, plan.amountMinor),
             paymentProvider: 'sikatpay',
             paymentReference: `sppend_${sikatpayOrderId}`,
           });
@@ -5516,7 +5886,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         liveGatewayConfigured = true;
         bayadgatePaymentMethod = normalizeBayadgatePaymentMethod(parsed.paymentMethod);
         bayadgateOrderId = `BG${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
-        const amountStr = formatBayadgateAmountForTier(tier);
+        const amountStr = formatBayadgateAmountForTier(tier, plan.amountMinor);
         const origin =
           typeof parsed.origin === 'string' && parsed.origin.startsWith('http')
             ? parsed.origin.replace(/\/+$/, '')
@@ -5568,7 +5938,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             region: 'PH',
             deviceTokenHash,
             secondaryDeviceHash: 'PENDING_PAYMENT',
-            boundBouquetCode: `${passKey}|${boundBouquetCode || ''}`,
+            boundBouquetCode: packOrderSlotMeta(passKey, boundBouquetCode, plan.amountMinor),
             paymentProvider: 'bayadgate',
             paymentReference: `bgpend_${bayadgateOrderId}`,
           });
@@ -5612,7 +5982,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
                   line_items: [
                     {
                       currency: 'PHP',
-                      amount: PRICING_CATALOG.PH[tier].amountMinor,
+                      amount: plan.amountMinor,
                       name: `Send A Bouquet · ${plan.name}`,
                       quantity: 1,
                     },
@@ -5640,7 +6010,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         }
       } else if (provider === 'kofi') {
         liveGatewayConfigured = Boolean(isProductionEnv);
-        checkoutUrl = kofiShopItemUrl;
+        checkoutUrl = effectiveKofiShopItemUrl;
       }
 
       const checkoutToken = createSignedCheckoutToken({
@@ -5651,7 +6021,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         p: provider,
         d: deviceTokenHash,
         b: boundBouquetCode,
-        dlc: tierDirectLinkCode || null,
+        dlc: effectiveKofiDirectLinkCode || null,
+        amt: plan.amountMinor,
         pmId: paymongoSessionId || null,
         spId: sikatpayPaymentId || null,
         spOid: sikatpayOrderId || null,
@@ -5669,9 +6040,10 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         tier,
         region,
         plan,
+        expectedAmountMinor: plan.amountMinor,
         deviceTokenHash,
         boundBouquetCode,
-        directLinkCode: tierDirectLinkCode || null,
+        directLinkCode: effectiveKofiDirectLinkCode || null,
         provider,
         paymongoSessionId,
         sikatpayPaymentId,
@@ -5696,7 +6068,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         sikatpayPaymentId,
         paymentMethod: bayadgatePaymentMethod,
         checkoutUrl,
-        directLinkCode: tierDirectLinkCode || null,
+        directLinkCode: effectiveKofiDirectLinkCode || null,
         liveGatewayConfigured,
         isKofiLaunchStarter,
         launchPromo,
@@ -5720,13 +6092,22 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
       if (!pending && decodedToken && decodedToken.cid === checkoutId) {
         const resolvedRegion = isValidRegion(decodedToken.r) ? decodedToken.r : 'INTL';
         const resolvedTier = isValidTier(decodedToken.t) ? decodedToken.t : 'single';
+        const tokenPlan = resolveEffectivePricingPlanServer(resolvedRegion, resolvedTier);
+        const lockedAmt = Math.round(Number(decodedToken.amt));
+        const effectiveExpectedMinor =
+          Number.isFinite(lockedAmt) && lockedAmt > 0 ? lockedAmt : tokenPlan.amountMinor;
         pending = {
           checkoutId: decodedToken.cid,
           checkoutToken,
           passKey: decodedToken.pk,
           tier: resolvedTier,
           region: resolvedRegion,
-          plan: PRICING_CATALOG[resolvedRegion][resolvedTier],
+          plan: {
+            ...tokenPlan,
+            amountMinor: effectiveExpectedMinor,
+            displayPrice: formatCurrencyMinorServer(effectiveExpectedMinor, tokenPlan.currency),
+          },
+          expectedAmountMinor: effectiveExpectedMinor,
           provider: decodedToken.p,
           deviceTokenHash: decodedToken.d,
           boundBouquetCode: decodedToken.b || null,
@@ -5867,7 +6248,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             clearTimeout(timer);
             if (spCheckRes.ok) {
               const pJson = await spCheckRes.json().catch(() => null);
-              const expectedMinor = PRICING_CATALOG.PH[pending.tier]?.amountMinor;
+              const unpackedSlot = unpackOrderSlotMeta(orderSlot?.boundBouquetCode);
+              const expectedMinor =
+                unpackedSlot.lockedAmountMinor ||
+                pending.expectedAmountMinor ||
+                pending.plan?.amountMinor ||
+                resolveEffectivePricingPlanServer('PH', pending.tier)?.amountMinor;
               const livemodeOk = sikatpay.isTestKey || pJson?.livemode === true;
               const orderMatch = !orderId || !pJson?.order_id || pJson.order_id === orderId;
               if (
@@ -5930,9 +6316,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             await saveStudioPassWithCasRest(paidSlot);
           }
 
+          const spSlotMeta = unpackOrderSlotMeta(orderSlot?.boundBouquetCode);
+          const spPaidMinor =
+            spSlotMeta.lockedAmountMinor ||
+            pending.expectedAmountMinor ||
+            pending.plan?.amountMinor ||
+            resolveEffectivePricingPlanServer('PH', pending.tier)?.amountMinor;
           await mutateAndSaveOwnerVaultServer(() => {
             recordPaidPassIssuanceServer(mintedPass, {
               isTest: isSikatpayTest,
+              paidAmountMinor: spPaidMinor,
               label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
             });
           });
@@ -6050,7 +6443,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               )
                 .trim()
                 .toUpperCase();
-              const expectedMinor = PRICING_CATALOG.PH[pending.tier]?.amountMinor;
+              const bgUnpacked = unpackOrderSlotMeta(orderSlot?.boundBouquetCode);
+              const expectedMinor =
+                bgUnpacked.lockedAmountMinor ||
+                pending.expectedAmountMinor ||
+                pending.plan?.amountMinor ||
+                resolveEffectivePricingPlanServer('PH', pending.tier)?.amountMinor;
               const qAmountRaw = qJson?.amount ?? qJson?.data?.amount;
               const qAmountMinor =
                 qAmountRaw !== undefined && qAmountRaw !== null && String(qAmountRaw).trim() !== ''
@@ -6099,9 +6497,16 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             await saveStudioPassWithCasRest(paidSlot);
           }
 
+          const bgIssuedAmountMinor =
+            unpackOrderSlotMeta(orderSlot?.boundBouquetCode).lockedAmountMinor ||
+            pending.expectedAmountMinor ||
+            pending.plan?.amountMinor ||
+            resolveEffectivePricingPlanServer('PH', pending.tier)?.amountMinor;
           await hydratePersistentOwnerVaultServer();
           await mutateAndSaveOwnerVaultServer(() => {
-            recordPaidPassIssuanceServer(mintedPass);
+            recordPaidPassIssuanceServer(mintedPass, {
+              paidAmountMinor: bgIssuedAmountMinor,
+            });
           });
 
           sendJson(res, 200, { ok: true, pass: mintedPass });
@@ -6304,6 +6709,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
             recordPaidPassIssuanceServer(boundPass, {
               isFreePromo: isReceiptFreeLaunch,
               label: isReceiptFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+              paidAmountMinor: isReceiptFreeLaunch
+                ? 0
+                : pending.expectedAmountMinor || pending.plan?.amountMinor,
             });
             if (isReceiptFreeLaunch) {
               reconcileFoundingLaunchFromLedgerServer();
@@ -6377,6 +6785,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         recordPaidPassIssuanceServer(passRecord, {
           isFreePromo: isSandboxFreeLaunch,
           label: isSandboxFreeLaunch ? 'Ko-fi Launch Free' : undefined,
+          paidAmountMinor: isSandboxFreeLaunch
+            ? 0
+            : pending.expectedAmountMinor || pending.plan?.amountMinor,
         });
         if (isSandboxFreeLaunch) {
           reconcileFoundingLaunchFromLedgerServer();
@@ -6458,10 +6869,11 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        const packedMeta = String(orderSlot.boundBouquetCode || '');
-        const pipeIdx = packedMeta.indexOf('|');
-        const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
-        const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+        const {
+          passKey: decodedPassKey,
+          bouquetCode: decodedBouquetCode,
+          lockedAmountMinor: slotLockedMinor,
+        } = unpackOrderSlotMeta(orderSlot.boundBouquetCode);
         const targetPassKey = isValidPassKeyFormat(decodedPassKey)
           ? decodedPassKey
           : generatePassKeyCode();
@@ -6554,7 +6966,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
               if (spCheckRes.ok) {
                 const pJson = await spCheckRes.json().catch(() => null);
                 const tier = isValidTier(orderSlot.tier) ? orderSlot.tier : 'pass_7d';
-                const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+                const expectedMinor =
+                  slotLockedMinor || resolveEffectivePricingPlanServer('PH', tier)?.amountMinor;
                 const livemodeOk = sikatpay.isTestKey || pJson?.livemode === true;
                 const orderMatch =
                   !pJson?.order_id || pJson.order_id === trimmedOrderCandidate;
@@ -6619,6 +7032,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         recordPaidPassIssuanceServer(mintedPass, {
           isTest: isSikatpayTest,
           label: isSikatpayTest ? 'SikatPay Test' : undefined,
+          paidAmountMinor:
+            slotLockedMinor || resolveEffectivePricingPlanServer('PH', resolvedTier)?.amountMinor,
         });
         await savePersistentOwnerVaultServer();
 
@@ -6959,6 +7374,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),
           bouquetLog: serializeOwnerBouquetLogList(),
+          studioCatalogConfig: getStudioCatalogConfigServer(),
+          planPricingConfig: getPlanPricingConfigServer(),
         });
         return true;
       }
@@ -6986,6 +7403,117 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           testerVouchers: serializeTesterVoucherList(),
           paidPasses: serializePaidPassList(),
           bouquetLog: serializeOwnerBouquetLogList(),
+          studioCatalogConfig: getStudioCatalogConfigServer(),
+          planPricingConfig: getPlanPricingConfigServer(),
+        });
+        return true;
+      }
+
+      // 4D-0a. Public Read-Only Studio Catalog Organization & Premium Override Hydration
+      if (actionType === 'get_studio_catalog_config') {
+        if (!vaultBlobHydrated || Date.now() - lastCheckoutFlagHydrateMs > 15000) {
+          await hydratePersistentOwnerVaultServer();
+          lastCheckoutFlagHydrateMs = Date.now();
+        }
+        sendJson(res, 200, {
+          ok: true,
+          studioCatalogConfig: getStudioCatalogConfigServer(),
+          planPricingConfig: getPlanPricingConfigServer(),
+        });
+        return true;
+      }
+
+      // 4D-0b. Admin-Authenticated Update to Studio Catalog Order, Premium/Free Overrides & Studio Visibility
+      if (actionType === 'update_studio_catalog_config') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        const sanitizedConfig = sanitizeStudioCatalogConfigServer(
+          parsed.studioCatalogConfig ?? parsed.config
+        );
+        const nowMs = Date.now();
+        sanitizedConfig.updatedAt = new Date(nowMs).toISOString();
+
+        const mutRes = await mutateAndSaveOwnerVaultServer(() => {
+          studioCatalogConfig = sanitizedConfig;
+          studioCatalogConfigUpdatedAtMs = Math.max(nowMs, studioCatalogConfigUpdatedAtMs + 1);
+          pushAnalyticsEventServer(
+            'security',
+            'owner_studio_catalog_updated',
+            'Owner updated Studio Organizer order, visibility & Couture tier settings',
+            'desktop',
+            'INTL'
+          );
+          return getStudioCatalogConfigServer();
+        });
+
+        if (mutRes?.result?.abort) {
+          sendJson(res, 503, {
+            ok: false,
+            message: 'Could not reach the persistent vault to save Studio Organizer settings. Please try again.',
+          });
+          return true;
+        }
+
+        sendJson(res, 200, {
+          ok: true,
+          studioCatalogConfig: getStudioCatalogConfigServer(),
+          analytics: OWNER_ANALYTICS_STATE,
+        });
+        return true;
+      }
+
+      // 4D-0c. Admin-Authenticated Update to Plan Pricing & Discounts (PHP & USD independently)
+      if (actionType === 'update_plan_pricing_config') {
+        const adminSessionToken =
+          typeof parsed.adminSessionToken === 'string' ? parsed.adminSessionToken : '';
+        if (!verifySignedAdminSessionToken(adminSessionToken, deviceTokenHash || 'anon')) {
+          sendJson(res, 401, {
+            ok: false,
+            unauthorized: true,
+            message: 'Owner session expired. Please re-enter PIN.',
+          });
+          return true;
+        }
+
+        const sanitizedPricing = sanitizePlanPricingConfigServer(
+          parsed.planPricingConfig ?? parsed.config
+        );
+        const nowMs = Date.now();
+
+        const mutRes = await mutateAndSaveOwnerVaultServer(() => {
+          planPricingConfig = sanitizedPricing;
+          planPricingConfigUpdatedAtMs = Math.max(nowMs, planPricingConfigUpdatedAtMs + 1);
+          pushAnalyticsEventServer(
+            'security',
+            'owner_plan_pricing_updated',
+            'Owner updated Studio Pass pricing & discount configuration',
+            'desktop',
+            'INTL'
+          );
+          return getPlanPricingConfigServer();
+        });
+
+        if (mutRes?.result?.abort) {
+          sendJson(res, 503, {
+            ok: false,
+            message: 'Could not reach the persistent vault to save pricing settings. Please try again.',
+          });
+          return true;
+        }
+
+        sendJson(res, 200, {
+          ok: true,
+          planPricingConfig: getPlanPricingConfigServer(),
+          analytics: OWNER_ANALYTICS_STATE,
         });
         return true;
       }
@@ -8276,7 +8804,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
           ? orderSlot?.tier || pendingEntry?.tier
           : 'pass_7d';
-        const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+        const bgSlotMeta = unpackOrderSlotMeta(orderSlot?.boundBouquetCode);
+        const expectedMinor =
+          bgSlotMeta.lockedAmountMinor ||
+          pendingEntry?.expectedAmountMinor ||
+          pendingEntry?.plan?.amountMinor ||
+          resolveEffectivePricingPlanServer('PH', tier)?.amountMinor;
         const incomingMinor = parseBayadgateAmountToMinor(parsed.amount);
         if (!Number.isFinite(incomingMinor) || incomingMinor !== expectedMinor) {
           res.statusCode = 400;
@@ -8293,10 +8826,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        const packedMeta = String(orderSlot?.boundBouquetCode || '');
-        const pipeIdx = packedMeta.indexOf('|');
-        const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
-        const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+        const decodedPassKey = bgSlotMeta.passKey;
+        const decodedBouquetCode = bgSlotMeta.bouquetCode;
         const targetPassKey = isValidPassKeyFormat(decodedPassKey)
           ? decodedPassKey
           : pendingEntry?.passKey || generatePassKeyCode();
@@ -8330,7 +8861,9 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
 
         await hydratePersistentOwnerVaultServer();
         await mutateAndSaveOwnerVaultServer(() => {
-          recordPaidPassIssuanceServer(mintedPass);
+          recordPaidPassIssuanceServer(mintedPass, {
+            paidAmountMinor: expectedMinor,
+          });
         });
 
         res.statusCode = 200;
@@ -8426,7 +8959,12 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         const tier = isValidTier(orderSlot?.tier || pendingEntry?.tier)
           ? orderSlot?.tier || pendingEntry?.tier
           : 'pass_7d';
-        const expectedMinor = PRICING_CATALOG.PH[tier]?.amountMinor;
+        const spSlotMeta = unpackOrderSlotMeta(orderSlot?.boundBouquetCode);
+        const expectedMinor =
+          spSlotMeta.lockedAmountMinor ||
+          pendingEntry?.expectedAmountMinor ||
+          pendingEntry?.plan?.amountMinor ||
+          resolveEffectivePricingPlanServer('PH', tier)?.amountMinor;
         const incomingAmount = Number(data.amount);
         const incomingCurrency = String(data.currency || '').toUpperCase();
 
@@ -8445,10 +8983,8 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
           return true;
         }
 
-        const packedMeta = String(orderSlot?.boundBouquetCode || '');
-        const pipeIdx = packedMeta.indexOf('|');
-        const decodedPassKey = pipeIdx !== -1 ? packedMeta.slice(0, pipeIdx) : '';
-        const decodedBouquetCode = pipeIdx !== -1 ? packedMeta.slice(pipeIdx + 1) : '';
+        const decodedPassKey = spSlotMeta.passKey;
+        const decodedBouquetCode = spSlotMeta.bouquetCode;
         const targetPassKey = isValidPassKeyFormat(decodedPassKey)
           ? decodedPassKey
           : pendingEntry?.passKey || generatePassKeyCode();
@@ -8489,6 +9025,7 @@ export async function handlePaymentEndpoint(req, res, forcedPathname) {
         await mutateAndSaveOwnerVaultServer(() => {
           recordPaidPassIssuanceServer(mintedPass, {
             isTest: isSikatpayTest,
+            paidAmountMinor: expectedMinor,
             label: isSikatpayTest ? 'SikatPay Test' : 'SikatPay Buyer',
           });
         });

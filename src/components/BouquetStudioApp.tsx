@@ -130,6 +130,13 @@ import { useBouquetStore } from '../store/useBouquetStore';
 import { BouquetStage } from './BouquetStage';
 import { PhotoCardZoomModal } from './PhotoCardZoomModal';
 import { getEnvironmentPageBackdrop } from '../lib/environmentBackdrop';
+import {
+  applyStudioCatalogOrganization,
+  fetchStudioCatalogOverridesFromServer,
+  getLiveStudioCatalogOverrides,
+  subscribeStudioCatalogOverrides,
+  type StudioCatalogOverrides,
+} from '../lib/studioCatalogConfig';
 import { BrandLogoMark } from './BrandLogoMark';
 import {
   MiniWrapConeSVG,
@@ -494,9 +501,21 @@ export default function App() {
   const [activeStudioPass, setActiveStudioPass] = useState<StudioPassRecord | null>(() =>
     getStoredStudioPass()
   );
+  const [studioCatalogOverrides, setStudioCatalogOverrides] = useState<StudioCatalogOverrides>(() =>
+    getLiveStudioCatalogOverrides()
+  );
   const [premiumAssetConfig, setPremiumAssetConfig] = useState<PremiumAssetConfig>(() =>
     getActivePremiumAssetConfig()
   );
+
+  useEffect(() => {
+    const unsubscribe = subscribeStudioCatalogOverrides((next) => {
+      setStudioCatalogOverrides(next);
+      setPremiumAssetConfig(getActivePremiumAssetConfig());
+    });
+    fetchStudioCatalogOverridesFromServer().catch(() => {});
+    return unsubscribe;
+  }, []);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [checkoutTriggerAction, setCheckoutTriggerAction] = useState<
     'share' | 'png' | 'pass_menu'
@@ -2773,34 +2792,141 @@ export default function App() {
     setMobilePopover(mode);
   };
 
-  const focalFlowers = useMemo(
-    () =>
-      FLOWER_CATALOG.filter((f) => !f.isFoliage && !f.isFiller && !f.isOther && !f.isSeasonal).sort(
-        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
-      ),
-    [premiumAssetConfig]
-  );
-  const fillerFlowers = useMemo(
-    () =>
-      FLOWER_CATALOG.filter((f) => Boolean(f.isFoliage || f.isFiller) && !f.isOther && !f.isSeasonal).sort(
-        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
-      ),
-    [premiumAssetConfig]
-  );
-  const otherFlowers = useMemo(
-    () =>
-      FLOWER_CATALOG.filter((f) => Boolean(f.isOther)).sort(
-        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
-      ),
-    [premiumAssetConfig]
-  );
+  const focalFlowers = useMemo(() => {
+    const base = FLOWER_CATALOG.filter(
+      (f) => !f.isFoliage && !f.isFiller && !f.isOther && !f.isSeasonal
+    );
+    const orderedBase = studioCatalogOverrides.order?.flowers?.length
+      ? base
+      : [...base].sort(
+          (a, b) =>
+            Number(isFlowerPremium(a.type, premiumAssetConfig)) -
+            Number(isFlowerPremium(b.type, premiumAssetConfig))
+        );
+    return applyStudioCatalogOrganization(
+      orderedBase,
+      (f) => f.type,
+      'flowers',
+      studioCatalogOverrides,
+      { includeHidden: false }
+    );
+  }, [premiumAssetConfig, studioCatalogOverrides]);
+
+  const fillerFlowers = useMemo(() => {
+    const base = FLOWER_CATALOG.filter(
+      (f) => Boolean(f.isFoliage || f.isFiller) && !f.isOther && !f.isSeasonal
+    );
+    const orderedBase = studioCatalogOverrides.order?.fillers?.length
+      ? base
+      : [...base].sort(
+          (a, b) =>
+            Number(isFlowerPremium(a.type, premiumAssetConfig)) -
+            Number(isFlowerPremium(b.type, premiumAssetConfig))
+        );
+    return applyStudioCatalogOrganization(
+      orderedBase,
+      (f) => f.type,
+      'fillers',
+      studioCatalogOverrides,
+      { includeHidden: false }
+    );
+  }, [premiumAssetConfig, studioCatalogOverrides]);
+
+  const otherFlowers = useMemo(() => {
+    const base = FLOWER_CATALOG.filter((f) => Boolean(f.isOther));
+    const orderedBase = studioCatalogOverrides.order?.others?.length
+      ? base
+      : [...base].sort(
+          (a, b) =>
+            Number(isFlowerPremium(a.type, premiumAssetConfig)) -
+            Number(isFlowerPremium(b.type, premiumAssetConfig))
+        );
+    return applyStudioCatalogOrganization(
+      orderedBase,
+      (f) => f.type,
+      'others',
+      studioCatalogOverrides,
+      { includeHidden: false }
+    );
+  }, [premiumAssetConfig, studioCatalogOverrides]);
+
   const activeSeasonalEvent = useMemo(() => getActiveSeasonalEvent(), []);
-  const seasonalFlowers = useMemo(
+  const seasonalFlowers = useMemo(() => {
+    const base = getAvailableSeasonalCatalog();
+    const orderedBase = studioCatalogOverrides.order?.seasonal?.length
+      ? base
+      : [...base].sort(
+          (a, b) =>
+            Number(isFlowerPremium(a.type, premiumAssetConfig)) -
+            Number(isFlowerPremium(b.type, premiumAssetConfig))
+        );
+    return applyStudioCatalogOrganization(
+      orderedBase,
+      (f) => f.type,
+      'seasonal',
+      studioCatalogOverrides,
+      { includeHidden: false }
+    );
+  }, [premiumAssetConfig, studioCatalogOverrides]);
+
+  const studioWrappers = useMemo(
     () =>
-      [...getAvailableSeasonalCatalog()].sort(
-        (a, b) => Number(isFlowerPremium(a.type, premiumAssetConfig)) - Number(isFlowerPremium(b.type, premiumAssetConfig))
+      applyStudioCatalogOrganization(
+        WRAPPER_CATALOG,
+        (w) => w.id,
+        'wrappers',
+        studioCatalogOverrides,
+        { includeHidden: false }
       ),
-    [premiumAssetConfig]
+    [studioCatalogOverrides]
+  );
+
+  const studioRibbons = useMemo(
+    () =>
+      applyStudioCatalogOrganization(
+        RIBBON_STYLE_CATALOG,
+        (r) => r.id,
+        'ribbons',
+        studioCatalogOverrides,
+        { includeHidden: false }
+      ),
+    [studioCatalogOverrides]
+  );
+
+  const studioEnvironments = useMemo(
+    () =>
+      applyStudioCatalogOrganization(
+        ENVIRONMENT_CATALOG,
+        (e) => e.id,
+        'environments',
+        studioCatalogOverrides,
+        { includeHidden: false }
+      ),
+    [studioCatalogOverrides]
+  );
+
+  const studioPhotoFrames = useMemo(
+    () =>
+      applyStudioCatalogOrganization(
+        PHOTO_FRAME_CATALOG,
+        (p) => p.id,
+        'photos',
+        studioCatalogOverrides,
+        { includeHidden: false }
+      ),
+    [studioCatalogOverrides]
+  );
+
+  const studioVoiceKeepsakes = useMemo(
+    () =>
+      applyStudioCatalogOrganization(
+        VOICE_KEEPSAKE_CATALOG,
+        (v) => v.id,
+        'voices',
+        studioCatalogOverrides,
+        { includeHidden: false }
+      ),
+    [studioCatalogOverrides]
   );
 
   const isGiftOrPreviewBackdrop = (isGiftView || isPreviewMode) && !stealthGateSlug;
@@ -5361,7 +5487,7 @@ export default function App() {
                     {/* CATEGORY 1: WRAPPERS (Architectural Wrapper Designs with Couture Badge) */}
                     {mobileCategory === 'wrapping' && (
                       <>
-                        {WRAPPER_CATALOG.map((ws) => {
+                        {studioWrappers.map((ws) => {
                           const isSelected = wrapStyle === ws.id;
                           const isPremWrap = isWrapPremium(ws.id, premiumAssetConfig);
                           return (
@@ -5625,7 +5751,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {PHOTO_FRAME_CATALOG.map((pf) => {
+                        {studioPhotoFrames.map((pf) => {
                           const isSelected = selectedItem?.photoStyle === pf.id;
                           const isPremPhoto = isPhotoStylePremium(pf.id, premiumAssetConfig);
                           return (
@@ -5682,7 +5808,7 @@ export default function App() {
                     {/* CATEGORY 5: RIBBON & LACE DESIGNS (Colors are unified in the Color drawer tab) */}
                     {mobileCategory === 'ribbon' && (
                       <>
-                        {RIBBON_STYLE_CATALOG.map((rs) => {
+                        {studioRibbons.map((rs) => {
                           const isSelected = ribbonStyle === rs.id;
                           const isPremRibbon = isRibbonPremium(rs.id, premiumAssetConfig);
                           return (
@@ -5725,7 +5851,7 @@ export default function App() {
                     {/* CATEGORY 5B: ENVIRONMENT / BACKGROUND VIBE */}
                     {mobileCategory === 'environment' && (
                       <>
-                        {ENVIRONMENT_CATALOG.map((env) => {
+                        {studioEnvironments.map((env) => {
                           const isSelected = environment === env.id;
                           const isPremEnv = isEnvironmentPremium(env.id as CanvasEnvironment, premiumAssetConfig);
                           return (
@@ -5895,7 +6021,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {VOICE_KEEPSAKE_CATALOG.map((vk) => {
+                        {studioVoiceKeepsakes.map((vk) => {
                           const isSelected = voice.style === vk.id && voice.visibleOnStage;
                           const isPremVoice = isVoiceStylePremium(vk.id, premiumAssetConfig);
                           return (
@@ -6191,7 +6317,7 @@ export default function App() {
                           Wrapping
                         </h2>
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-                          {WRAPPER_CATALOG.map((st) => (
+                          {studioWrappers.map((st) => (
                             <button
                               key={st.id}
                               type="button"
@@ -6249,7 +6375,7 @@ export default function App() {
                           Ribbon &amp; Lace Design
                         </h3>
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2 mb-3">
-                          {RIBBON_STYLE_CATALOG.map((rs) => (
+                          {studioRibbons.map((rs) => (
                             <button
                               key={rs.id}
                               type="button"

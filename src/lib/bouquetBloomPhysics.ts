@@ -90,8 +90,17 @@ const WRAPPER_EMERGENCE_MAP: Record<typeWrapStyle, WrapperEmergenceOrigin> = {
   basket:     { throatX: 300, throatY: 420, spreadFactor: 0.64, liftScale: 0.9 },
   vase:       { throatX: 300, throatY: 408, spreadFactor: 0.68, liftScale: 0.92 },
   hatbox:     { throatX: 300, throatY: 414, spreadFactor: 0.64, liftScale: 0.9 },
-  cloche:     { throatX: 300, throatY: 468, spreadFactor: 0.62, liftScale: 0.92 },
-  plain:      { throatX: 300, throatY: 474, spreadFactor: 0.56, liftScale: 0.85 },
+  cloche:         { throatX: 300, throatY: 468, spreadFactor: 0.62, liftScale: 0.92 },
+  plain:          { throatX: 300, throatY: 474, spreadFactor: 0.56, liftScale: 0.85 },
+  waxPaper:       { throatX: 300, throatY: 468, spreadFactor: 0.72, liftScale: 0.98 },
+  crepeFan:       { throatX: 300, throatY: 458, spreadFactor: 0.74, liftScale: 0.97 },
+  burlapSack:     { throatX: 300, throatY: 464, spreadFactor: 0.70, liftScale: 0.96 },
+  abacaMesh:      { throatX: 300, throatY: 464, spreadFactor: 0.75, liftScale: 1.0 },
+  snowNet:        { throatX: 300, throatY: 462, spreadFactor: 0.74, liftScale: 0.99 },
+  pearlTulle:     { throatX: 300, throatY: 458, spreadFactor: 0.74, liftScale: 0.98 },
+  ginghamLace:    { throatX: 300, throatY: 466, spreadFactor: 0.72, liftScale: 0.98 },
+  corsetSilk:     { throatX: 300, throatY: 456, spreadFactor: 0.70, liftScale: 0.96 },
+  chinoiserieUrn: { throatX: 300, throatY: 406, spreadFactor: 0.66, liftScale: 0.92 },
 };
 
 export function getWrapperEmergenceOrigin(wrapStyle: typeWrapStyle): WrapperEmergenceOrigin {
@@ -691,3 +700,282 @@ export function formatPivotMotionTransform(
   }
   return `translate(${t.translateX} ${t.translateY}) translate(${pivotX} ${pivotY}) rotate(${t.rotateDeg}) scale(${t.scale}) translate(${-pivotX} ${-pivotY})`;
 }
+
+// ============================================================================
+// HAND-TIED ('plain') DYNAMIC SPIRAL STEM GEOMETRY
+// ============================================================================
+
+export interface HandTiedStemCurve {
+  itemId: string;
+  pathD: string;
+  highlightD: string;
+  tipCx: number;
+  tipCy: number;
+  tipAngleDeg: number;
+  strokeColor: string;
+  highlightColor: string;
+  pithColor: string;
+  strokeWidth: number;
+}
+
+const DRIED_STEM_TYPES = new Set([
+  'pampas',
+  'frostedPinecone',
+  'cinnamonStarAnise',
+  'lunariaHonesty',
+  'gildedFern',
+]);
+
+const SILVERY_STEM_TYPES = new Set([
+  'eucalyptus',
+  'lavender',
+  'oliveBranch',
+  'babysBreath',
+  'starlightGypsophila',
+  'queenanneslace',
+  'mistletoeBough',
+  'hellebore',
+]);
+
+const SLENDER_STEM_TYPES = new Set([
+  'babysBreath',
+  'starlightGypsophila',
+  'lavender',
+  'freesia',
+  'lilyOfTheValley',
+  'daisy',
+  'sweetpea',
+  'forgetMeNot',
+  'cosmos',
+  'waxflower',
+  'billyButtons',
+  'cherryBlossom',
+  'queenanneslace',
+  'astilbe',
+]);
+
+const SPRAY_OR_TALL_STEM_TYPES = new Set([
+  'orchid',
+  'lavender',
+  'babysBreath',
+  'eucalyptus',
+  'fern',
+  'cherryBlossom',
+  'waxflower',
+  'billyButtons',
+  'oliveBranch',
+  'sweetpea',
+  'freesia',
+  'pampas',
+  'queenanneslace',
+  'astilbe',
+  'gildedFern',
+  'starlightGypsophila',
+  'forgetMeNot',
+  'lilyOfTheValley',
+  'delphinium',
+  'lunariaHonesty',
+  'mistletoeBough',
+  'hollyBerries',
+]);
+
+function resolveBotanicalStemPalette(
+  type: BouquetItem['type'],
+  idx: number
+): { strokeColor: string; highlightColor: string; pithColor: string } {
+  if (DRIED_STEM_TYPES.has(type)) {
+    return {
+      strokeColor: idx % 2 === 0 ? '#8C765C' : '#7A654D',
+      highlightColor: '#BFA98B',
+      pithColor: '#DECDB3',
+    };
+  }
+  if (SILVERY_STEM_TYPES.has(type)) {
+    return {
+      strokeColor: idx % 2 === 0 ? '#5D7A67' : '#4E6A58',
+      highlightColor: '#9AB8A4',
+      pithColor: '#CBE0D1',
+    };
+  }
+  const greens = ['#466B47', '#3C5E3E', '#51764F'];
+  return {
+    strokeColor: greens[idx % greens.length],
+    highlightColor: '#89AE82',
+    pithColor: '#C7D9B9',
+  };
+}
+
+function resolveProportionalStemWidth(type: BouquetItem['type'], scale: number): number {
+  const baseWidth = SLENDER_STEM_TYPES.has(type) ? 3.4 : 4.6;
+  return round2(clamp(baseWidth * scale, 2.2, 11.5));
+}
+
+function resolveBehindBloomAttachOffset(type: BouquetItem['type'], scale: number): number {
+  // Dynamic stems render BEHIND the flower head layer (hideStem=true on flowers),
+  // so starting slightly behind the center/calyx guarantees zero floating gap at any scale.
+  const baseOffset = SPRAY_OR_TALL_STEM_TYPES.has(type) ? 16 : 6;
+  return clamp(baseOffset * scale, 3, 30);
+}
+
+/**
+ * Computes natural Dutch-spiral florist stems for the Hand-Tied ('plain') wrap style.
+ * Each stem originates snugly behind its placed flower's center/calyx, scales its stem
+ * diameter proportionally to the flower's size, curves smoothly through the cinched ribbon
+ * waist (y=504) with C1 tangent continuity, and ends in an angled florist-trimmed tip.
+ */
+export function computeHandTiedStemGeometry(items: BouquetItem[]): HandTiedStemCurve[] {
+  const waistY = 504;
+  const eligible = items.filter((item) => {
+    if (item.hidden || item.photoStyle) return false;
+    const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+    if (meta?.isOther) return false;
+    if (getEffectiveItemPlane(item) === 'front') return false;
+    return true;
+  });
+
+  if (eligible.length === 0) return [];
+
+  // Sort outer stems first so inner stems cross cleanly in front at the waist knot
+  const sorted = [...eligible].sort((a, b) => {
+    const da = getStageItemDisplayTransform(a, 'plain');
+    const db = getStageItemDisplayTransform(b, 'plain');
+    return Math.abs(db.x - 300) - Math.abs(da.x - 300);
+  });
+
+  return sorted.map((item, idx) => {
+    const disp = getStageItemDisplayTransform(item, 'plain');
+    const h1 = hashStringUnit(item.id);
+    const h2 = hashStringUnit(`${item.id}:handtied`);
+    const rad = (disp.rotation * Math.PI) / 180;
+
+    const attachOffset = resolveBehindBloomAttachOffset(item.type, disp.scale);
+    const startX = round1(disp.x - Math.sin(rad) * attachOffset);
+    const rawStartY = disp.y + Math.cos(rad) * attachOffset;
+    const startY = round1(Math.min(rawStartY, waistY - 10));
+
+    const dxFromCenter = startX - 300;
+    // Gather stems tightly within the ribbon cinch (halfW = 34, core bundle +/-14px)
+    const waistJitter = (h1 - 0.5) * 9;
+    const waistX = round1(clamp(300 + dxFromCenter * 0.075 + waistJitter, 286, 314));
+
+    // Cubic Bezier upper segment: cp1 follows the flower's natural downward stem tangent
+    // (-sin(rad), cos(rad)) and cp2 eases cleanly into the cinched ribbon waist.
+    const upperDy = Math.max(16, waistY - startY);
+    const tangentLead = clamp(upperDy * 0.34, 14, 62);
+    const cp1X = round1(startX - Math.sin(rad) * tangentLead);
+    const cp1Y = round1(startY + Math.cos(rad) * tangentLead);
+    const cp2X = round1(waistX + (startX - waistX) * 0.16);
+    const cp2Y = round1(waistY - upperDy * 0.36);
+
+    // Incoming tangent vector at the ribbon waist for C1 smooth Dutch-spiral continuation
+    const tx = waistX - cp2X;
+    const ty = Math.max(24, waistY - cp2Y);
+    const tMag = Math.hypot(tx, ty) || 1;
+    const ux = tx / tMag;
+    const uy = ty / tMag;
+
+    // Stem Length slider adjusts ONLY the exposed lower stem tail below the ribbon knot
+    const stemRatio = clamp(item.stemLength ?? 1, 0.15, 1.3);
+    const lowerLen = clamp(24 + stemRatio * 74 + (h2 - 0.5) * 10, 22, 114);
+    const bottomY = round1(clamp(waistY + lowerLen, 526, 616));
+    const lowerDy = bottomY - waistY;
+
+    // Natural Dutch spiral flare below the waist (clamped to a refined conical bundle)
+    const lowerCtrlDist = lowerDy * 0.46;
+    const lowerCtrlX = round1(clamp(waistX + ux * lowerCtrlDist, 274, 326));
+    const lowerCtrlY = round1(waistY + Math.max(10, uy * lowerCtrlDist));
+
+    const rawBottomX = waistX + ux * lowerDy * 0.72 + (h1 - 0.5) * 10;
+    const bottomX = round1(clamp(rawBottomX, 266, 334));
+
+    const { strokeColor, highlightColor, pithColor } = resolveBotanicalStemPalette(item.type, idx);
+    const strokeWidth = resolveProportionalStemWidth(item.type, disp.scale);
+
+    const tipDx = bottomX - lowerCtrlX;
+    const tipDy = Math.max(6, bottomY - lowerCtrlY);
+    const tipAngleDeg = round1((Math.atan2(tipDy, tipDx) * 180) / Math.PI - 90);
+
+    return {
+      itemId: item.id,
+      pathD: `M${startX},${startY} C${cp1X},${cp1Y} ${cp2X},${cp2Y} ${waistX},${waistY} Q${lowerCtrlX},${lowerCtrlY} ${bottomX},${bottomY}`,
+      highlightD: `M${startX},${startY} C${cp1X},${cp1Y} ${cp2X},${cp2Y} ${waistX},${waistY}`,
+      tipCx: bottomX,
+      tipCy: bottomY,
+      tipAngleDeg,
+      strokeColor,
+      highlightColor,
+      pithColor,
+      strokeWidth,
+    };
+  });
+}
+
+/**
+ * Computes proportional botanical stems inside the Glass Cloche ('cloche') dome.
+ * Scales strokeWidth smoothly with each flower's size and tucks seamlessly behind each bloom head.
+ */
+export function computeClocheStemGeometry(items: BouquetItem[]): HandTiedStemCurve[] {
+  const waistY = 484;
+  const eligible = items.filter((item) => {
+    if (item.hidden || item.photoStyle) return false;
+    const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+    if (meta?.isOther) return false;
+    if (getEffectiveItemPlane(item) === 'front') return false;
+    return true;
+  });
+
+  if (eligible.length === 0) return [];
+
+  const sorted = [...eligible].sort((a, b) => {
+    const da = getStageItemDisplayTransform(a, 'cloche');
+    const db = getStageItemDisplayTransform(b, 'cloche');
+    return Math.abs(db.x - 300) - Math.abs(da.x - 300);
+  });
+
+  return sorted.map((item, idx) => {
+    const disp = getStageItemDisplayTransform(item, 'cloche');
+    const h1 = hashStringUnit(item.id);
+    const rad = (disp.rotation * Math.PI) / 180;
+
+    const attachOffset = resolveBehindBloomAttachOffset(item.type, disp.scale);
+    const startX = round1(disp.x - Math.sin(rad) * attachOffset);
+    const rawStartY = disp.y + Math.cos(rad) * attachOffset;
+    const startY = round1(Math.min(rawStartY, waistY - 12));
+
+    const waistX = round1(clamp(300 + (startX - 300) * 0.06 + (h1 - 0.5) * 6, 290, 310));
+    const upperDy = Math.max(16, waistY - startY);
+    const tangentLead = clamp(upperDy * 0.32, 12, 54);
+    const cp1X = round1(startX - Math.sin(rad) * tangentLead);
+    const cp1Y = round1(startY + Math.cos(rad) * tangentLead);
+    const cp2X = round1(waistX + (startX - waistX) * 0.18);
+    const cp2Y = round1(waistY - upperDy * 0.34);
+
+    const stemRatio = clamp(item.stemLength ?? 1, 0.15, 1.3);
+    const bottomY = round1(clamp(waistY + 26 + stemRatio * 42, 514, 558));
+    const bottomSpreadX = round1(clamp(300 + (startX - 300) * 0.22 + (h1 - 0.5) * 6, 270, 330));
+    const lowerCtrlX = round1((waistX + bottomSpreadX) / 2);
+    const lowerCtrlY = round1(waistY + (bottomY - waistY) * 0.52);
+
+    const { strokeColor, highlightColor, pithColor } = resolveBotanicalStemPalette(item.type, idx);
+    const strokeWidth = resolveProportionalStemWidth(item.type, disp.scale);
+
+    const tipDx = bottomSpreadX - lowerCtrlX;
+    const tipDy = Math.max(6, bottomY - lowerCtrlY);
+    const tipAngleDeg = round1((Math.atan2(tipDy, tipDx) * 180) / Math.PI - 90);
+
+    return {
+      itemId: item.id,
+      pathD: `M${startX},${startY} C${cp1X},${cp1Y} ${cp2X},${cp2Y} ${waistX},${waistY} Q${lowerCtrlX},${lowerCtrlY} ${bottomSpreadX},${bottomY}`,
+      highlightD: `M${startX},${startY} C${cp1X},${cp1Y} ${cp2X},${cp2Y} ${waistX},${waistY}`,
+      tipCx: bottomSpreadX,
+      tipCy: bottomY,
+      tipAngleDeg,
+      strokeColor,
+      highlightColor,
+      pithColor,
+      strokeWidth,
+    };
+  });
+}
+
+

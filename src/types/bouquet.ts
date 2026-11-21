@@ -354,7 +354,16 @@ export type typeWrapStyle =
   | 'plain'
   | 'hatbox'
   | 'cloche'
-  | 'koreanmesh';
+  | 'koreanmesh'
+  | 'waxPaper'
+  | 'crepeFan'
+  | 'burlapSack'
+  | 'abacaMesh'
+  | 'snowNet'
+  | 'pearlTulle'
+  | 'ginghamLace'
+  | 'corsetSilk'
+  | 'chinoiserieUrn';
 export type WrapStyle = typeWrapStyle;
 
 export const WRAPPER_CATALOG: {
@@ -372,11 +381,20 @@ export const WRAPPER_CATALOG: {
   { id: 'lace', label: 'Eyelet Lace', defaultHex: '#FFF5F7', defaultRibbon: '#F472B6' },
   { id: 'celestial', label: 'Starlit Noir', defaultHex: '#1E293B', defaultRibbon: '#F59E0B' },
   { id: 'plain', label: 'Hand-Tied', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' },
+  { id: 'waxPaper', label: 'Deli Wax', defaultHex: '#F3E7D3', defaultRibbon: '#C26D53' },
+  { id: 'crepeFan', label: 'Crepe Fan', defaultHex: '#FAD6C8', defaultRibbon: '#D97757' },
+  { id: 'burlapSack', label: 'Jute Pocket', defaultHex: '#D6B892', defaultRibbon: '#8C624C' },
   // Couture Wrappers After
   { id: 'vase', label: 'Ceramic Vase', defaultHex: '#E7DCD1', defaultRibbon: '#B4846C' },
   { id: 'hatbox', label: 'Velvet Hatbox', defaultHex: '#9F1239', defaultRibbon: '#F59E0B' },
   { id: 'cloche', label: 'Glass Cloche', defaultHex: '#D6B38E', defaultRibbon: '#E11D48' },
-  { id: 'koreanmesh', label: 'Korean Mesh', defaultHex: '#F3E8FF', defaultRibbon: '#EC4899' }
+  { id: 'koreanmesh', label: 'Korean Mesh', defaultHex: '#F3E8FF', defaultRibbon: '#EC4899' },
+  { id: 'abacaMesh', label: 'Abaca Mesh', defaultHex: '#C97B74', defaultRibbon: '#E6A096' },
+  { id: 'snowNet', label: 'Snow Web Net', defaultHex: '#C8BCE8', defaultRibbon: '#DB2777' },
+  { id: 'pearlTulle', label: 'Pearl Tulle', defaultHex: '#FCE7F3', defaultRibbon: '#F472B6' },
+  { id: 'ginghamLace', label: 'Gingham Broderie', defaultHex: '#E9C5CE', defaultRibbon: '#B94A68' },
+  { id: 'corsetSilk', label: 'Corset Silk', defaultHex: '#7F1D3A', defaultRibbon: '#F59E0B' },
+  { id: 'chinoiserieUrn', label: 'Willow Porcelain', defaultHex: '#F3F7FC', defaultRibbon: '#2563EB' }
 ];
 
 export type PhotoFrameStyle =
@@ -464,12 +482,17 @@ export type CanvasEnvironment =
   | 'blushSilk'
   | 'botanicalArch'
   | 'nordicSnow'
+  | 'champagneSilk'
+  | 'terracottaWall'
   | 'starlit'
   | 'aurora'
   | 'velvetSalon'
   | 'opalMist'
   | 'crystalPalace'
-  | 'midnightNoel';
+  | 'midnightNoel'
+  | 'lavenderSilk'
+  | 'parisBalcony'
+  | 'sakuraBreeze';
 
 export interface CanvasEnvironmentMeta {
   id: CanvasEnvironment;
@@ -528,6 +551,18 @@ export const ENVIRONMENT_CATALOG: CanvasEnvironmentMeta[] = [
     subtitle: 'Soft frost halo & drifting snow motes'
   },
   {
+    id: 'champagneSilk',
+    label: 'Champagne Silk',
+    shortLabel: 'Champagne',
+    subtitle: 'Warm ivory charmeuse folds & satin sheen'
+  },
+  {
+    id: 'terracottaWall',
+    label: 'Sunlit Plaster',
+    shortLabel: 'Plaster',
+    subtitle: 'Mediterranean clay wall & dappled leaf shadow'
+  },
+  {
     id: 'aurora',
     label: 'Gilded Aurora',
     shortLabel: 'Aurora',
@@ -562,6 +597,24 @@ export const ENVIRONMENT_CATALOG: CanvasEnvironmentMeta[] = [
     label: 'Midnight Noel',
     shortLabel: 'Noel Pine',
     subtitle: 'Festive pine garland, baubles & snow'
+  },
+  {
+    id: 'lavenderSilk',
+    label: 'Lilac Silk & Pearls',
+    shortLabel: 'Lilac Silk',
+    subtitle: 'Wisteria satin waves & floating pearl bokeh'
+  },
+  {
+    id: 'parisBalcony',
+    label: 'Parisian Balcony',
+    shortLabel: 'Balcony',
+    subtitle: 'Wrought-iron terrace at rosy twilight'
+  },
+  {
+    id: 'sakuraBreeze',
+    label: 'Sakura Sunbeam',
+    shortLabel: 'Sakura',
+    subtitle: 'Misty dawn rays & drifting cherry petals'
   }
 ];
 

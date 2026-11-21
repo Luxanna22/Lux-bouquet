@@ -41,20 +41,29 @@ import {
   isEnvironmentPremium,
   isVoiceStylePremium,
 } from './monetization';
+import {
+  computeHandTiedStemGeometry,
+  computeClocheStemGeometry,
+} from './bouquetBloomPhysics';
 // @ts-expect-error Shared ESM API security guard module
 import { checkRateLimit, resetRateLimitStoreForTests, sanitizeJsonValue, isSuspiciousBotRequest, readSafeJsonBody } from '../../api/_lib/securityGuard.js';
+// @ts-expect-error Shared ESM API couture guard module
+import { inspectCompactPayloadCoutureUsage } from '../../api/_lib/coutureGuard.js';
 
-test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (14), VOICE_KEEPSAKE_CATALOG (10), and FLOWER_CATALOG (83) provide unique designs with Free-first ordering and 20 Others attachments', () => {
+test('PHOTO_FRAME_CATALOG (6), WRAPPER_CATALOG (21), ENVIRONMENT_CATALOG (19), VOICE_KEEPSAKE_CATALOG (10), and FLOWER_CATALOG (83) provide unique designs with Free-first ordering and 20 Others attachments', () => {
   assert.equal(PHOTO_FRAME_CATALOG.length, 6);
-  assert.equal(ENVIRONMENT_CATALOG.length, 14);
+  assert.equal(WRAPPER_CATALOG.length, 21);
+  assert.equal(ENVIRONMENT_CATALOG.length, 19);
   assert.equal(VOICE_KEEPSAKE_CATALOG.length, 10);
   assert.equal(FLOWER_CATALOG.length, 83);
   const photoIds = new Set(PHOTO_FRAME_CATALOG.map((p) => p.id));
+  const wrapIds = new Set(WRAPPER_CATALOG.map((w) => w.id));
   const envIds = new Set(ENVIRONMENT_CATALOG.map((e) => e.id));
   const voiceIds = new Set(VOICE_KEEPSAKE_CATALOG.map((v) => v.id));
   const flowerIds = new Set(FLOWER_CATALOG.map((f) => f.type));
   assert.equal(photoIds.size, 6);
-  assert.equal(envIds.size, 14);
+  assert.equal(wrapIds.size, 21);
+  assert.equal(envIds.size, 19);
   assert.equal(voiceIds.size, 10);
   assert.equal(flowerIds.size, 83);
 
@@ -146,6 +155,27 @@ test('PHOTO_FRAME_CATALOG (6), ENVIRONMENT_CATALOG (14), VOICE_KEEPSAKE_CATALOG 
   assert.equal(isEnvironmentPremium('blushSilk'), false);
   assert.equal(isEnvironmentPremium('botanicalArch'), false);
   assert.equal(isEnvironmentPremium('nordicSnow'), false);
+
+  // Verify 3 new Free wraps + 6 new Couture wraps + 2 new Free environments + 3 new Couture environments
+  for (const freeWrap of ['waxPaper', 'crepeFan', 'burlapSack'] as const) {
+    assert.equal(isWrapPremium(freeWrap), false, `Expected '${freeWrap}' to be Free`);
+  }
+  for (const coutureWrap of [
+    'abacaMesh',
+    'snowNet',
+    'pearlTulle',
+    'ginghamLace',
+    'corsetSilk',
+    'chinoiserieUrn',
+  ] as const) {
+    assert.equal(isWrapPremium(coutureWrap), true, `Expected '${coutureWrap}' to be Couture`);
+  }
+  for (const freeEnv of ['champagneSilk', 'terracottaWall'] as const) {
+    assert.equal(isEnvironmentPremium(freeEnv), false, `Expected '${freeEnv}' to be Free`);
+  }
+  for (const coutureEnv of ['lavenderSilk', 'parisBalcony', 'sakuraBreeze'] as const) {
+    assert.equal(isEnvironmentPremium(coutureEnv), true, `Expected '${coutureEnv}' to be Couture`);
+  }
 });
 
 test('seasonalCalendar only exposes the Seasonal category during active or upcoming event windows', () => {
@@ -533,11 +563,11 @@ test('getLiveStudioCatalogCounts, buildLiveSchemaJsonLd sitelinks, and static SE
   assert.equal(counts.otherAccentCount, 20);
   assert.equal(counts.seasonalCount, 12);
   assert.equal(counts.totalCatalogCount, 83);
-  assert.equal(counts.wrapperCount, 12);
+  assert.equal(counts.wrapperCount, 21);
   assert.equal(counts.ribbonCount, 12);
   assert.equal(counts.voiceKeepsakeCount, 10);
   assert.equal(counts.photoFrameCount, 6);
-  assert.equal(counts.environmentCount, 14);
+  assert.equal(counts.environmentCount, 19);
 
   // Verify Sitelinks routes & short-code reservation
   assert.equal(detectInitialSeoRoute('/studio'), 'studio');
@@ -897,6 +927,253 @@ test('share payload preserves blank optional sender instead of injecting legacy 
   assert.equal(decoded.card.from, '');
 });
 
+test('all 9 new wrappers and 5 new backgrounds round-trip through share codec and match server coutureGuard parity', () => {
+  const newWraps = [
+    'waxPaper',
+    'crepeFan',
+    'burlapSack',
+    'abacaMesh',
+    'snowNet',
+    'pearlTulle',
+    'ginghamLace',
+    'corsetSilk',
+    'chinoiserieUrn',
+  ] as const;
 
+  const newEnvs = [
+    'champagneSilk',
+    'terracottaWall',
+    'lavenderSilk',
+    'parisBalcony',
+    'sakuraBreeze',
+  ] as const;
 
+  const baseCard = {
+    to: 'Claire',
+    from: 'Jules',
+    message: 'For you',
+    visibleOnStage: true,
+    theme: 'sealed' as const,
+    x: 410,
+    y: 525,
+    scale: 0.72,
+    rotation: 0,
+  };
+  const baseRose = [
+    {
+      id: 'r1',
+      type: 'rose' as FlowerType,
+      x: 300,
+      y: 260,
+      scale: 1,
+      rotation: 0,
+      flipX: false,
+      petalColor: '#f43f5e',
+      centerColor: '#be123c',
+    },
+  ];
 
+  for (const w of newWraps) {
+    const payload = encodeBouquetToCompactPayload(
+      {
+        items: baseRose,
+        wrapStyle: w,
+        wrapColor: '#C97B74',
+        ribbonColor: '#E6A096',
+        ribbonStyle: 'satin',
+        environment: 'studio',
+        card: baseCard,
+      },
+      true
+    );
+    const decoded = decodeBouquetFromHash(payload);
+    assert.ok(decoded, `Failed to decode wrap '${w}'`);
+    assert.equal(decoded.wrapStyle, w);
+
+    const serverCheck = inspectCompactPayloadCoutureUsage(payload);
+    assert.equal(
+      serverCheck.isCouture,
+      isWrapPremium(w),
+      `Server/client Couture parity mismatch for wrap '${w}'`
+    );
+  }
+
+  for (const env of newEnvs) {
+    const payload = encodeBouquetToCompactPayload(
+      {
+        items: baseRose,
+        wrapStyle: 'chalice',
+        wrapColor: '#EDE0F5',
+        ribbonColor: '#C084FC',
+        ribbonStyle: 'satin',
+        environment: env,
+        card: baseCard,
+      },
+      true
+    );
+    const decoded = decodeBouquetFromHash(payload);
+    assert.ok(decoded, `Failed to decode environment '${env}'`);
+    assert.equal(decoded.environment, env);
+
+    const serverCheck = inspectCompactPayloadCoutureUsage(payload);
+    assert.equal(
+      serverCheck.isCouture,
+      isEnvironmentPremium(env),
+      `Server/client Couture parity mismatch for environment '${env}'`
+    );
+  }
+});
+
+test('computeHandTiedStemGeometry builds dynamic species-harmonized Dutch-spiral stems and skips front accents/photos', () => {
+  assert.deepEqual(computeHandTiedStemGeometry([]), []);
+
+  const curves = computeHandTiedStemGeometry([
+    {
+      id: 'rose-1',
+      type: 'rose',
+      x: 240,
+      y: 250,
+      scale: 1.05,
+      rotation: -14,
+      flipX: false,
+      petalColor: '#e11d48',
+      centerColor: '#9f1239',
+      layerPlane: 'inside',
+    },
+    {
+      id: 'lav-1',
+      type: 'lavender',
+      x: 356,
+      y: 238,
+      scale: 0.95,
+      rotation: 12,
+      flipX: false,
+      petalColor: '#a78bfa',
+      centerColor: '#7c3aed',
+      layerPlane: 'inside',
+    },
+    {
+      id: 'pampas-1',
+      type: 'pampas',
+      x: 300,
+      y: 220,
+      scale: 1.0,
+      rotation: 2,
+      flipX: false,
+      petalColor: '#e7d5bc',
+      centerColor: '#c4ab89',
+      layerPlane: 'back',
+    },
+    {
+      id: 'butterfly-skip',
+      type: 'monarchButterfly',
+      x: 320,
+      y: 240,
+      scale: 0.9,
+      rotation: 0,
+      flipX: false,
+      petalColor: '#f97316',
+      centerColor: '#1c1917',
+      layerPlane: 'front',
+    },
+    {
+      id: 'photo-skip',
+      type: 'rose',
+      photoStyle: 'polaroid',
+      photoDataUrl: 'data:image/png;base64,abc',
+      x: 310,
+      y: 310,
+      scale: 1,
+      rotation: 0,
+      flipX: false,
+      petalColor: '#fff',
+      centerColor: '#000',
+      layerPlane: 'inside',
+    },
+  ]);
+
+  assert.equal(curves.length, 3);
+  const roseStem = curves.find((c) => c.itemId === 'rose-1')!;
+  const lavStem = curves.find((c) => c.itemId === 'lav-1')!;
+  const pampasStem = curves.find((c) => c.itemId === 'pampas-1')!;
+
+  assert.ok(roseStem && lavStem && pampasStem);
+  // Lavender is slender & silvery-sage; rose is sturdier garden green; pampas is warm dried straw
+  assert.ok(lavStem.strokeWidth < roseStem.strokeWidth);
+  assert.notEqual(lavStem.strokeColor, roseStem.strokeColor);
+  assert.notEqual(pampasStem.strokeColor, roseStem.strokeColor);
+
+  for (const c of curves) {
+    assert.ok(c.pathD.includes(',504 '), 'Every stem must cinch cleanly through ribbon waist y=504');
+    assert.ok(c.tipCx >= 266 && c.tipCx <= 334, `Tip X (${c.tipCx}) must stay in natural stem cone`);
+    assert.ok(c.tipCy >= 580 && c.tipCy <= 612, `Tip Y (${c.tipCy}) must stay neatly trimmed`);
+  }
+});
+
+test('computeHandTiedStemGeometry and computeClocheStemGeometry scale stem thickness proportionally with flower scale and adjust lower tail via stemLength', () => {
+  const sampleItems = [
+    {
+      id: 'tulip-small',
+      type: 'tulip' as FlowerType,
+      x: 240,
+      y: 260,
+      scale: 0.65,
+      rotation: -10,
+      flipX: false,
+      petalColor: '#fb7185',
+      centerColor: '#f43f5e',
+      layerPlane: 'inside' as const,
+      stemLength: 0.25,
+    },
+    {
+      id: 'tulip-med',
+      type: 'tulip' as FlowerType,
+      x: 300,
+      y: 250,
+      scale: 1.0,
+      rotation: 0,
+      flipX: false,
+      petalColor: '#fb7185',
+      centerColor: '#f43f5e',
+      layerPlane: 'inside' as const,
+      stemLength: 1.0,
+    },
+    {
+      id: 'tulip-giant',
+      type: 'tulip' as FlowerType,
+      x: 360,
+      y: 245,
+      scale: 1.9,
+      rotation: 14,
+      flipX: false,
+      petalColor: '#fb7185',
+      centerColor: '#f43f5e',
+      layerPlane: 'inside' as const,
+      stemLength: 1.25,
+    },
+  ];
+
+  const plainCurves = computeHandTiedStemGeometry(sampleItems);
+  assert.equal(plainCurves.length, 3);
+  const pSmall = plainCurves.find((c) => c.itemId === 'tulip-small')!;
+  const pMed = plainCurves.find((c) => c.itemId === 'tulip-med')!;
+  const pGiant = plainCurves.find((c) => c.itemId === 'tulip-giant')!;
+
+  // Stem width scales proportionally with flower scale (larger blooms get sturdier stems)
+  assert.ok(pSmall.strokeWidth < pMed.strokeWidth, 'Small bloom should have thinner stem than medium bloom');
+  assert.ok(pMed.strokeWidth < pGiant.strokeWidth, 'Giant bloom should have sturdier stem than medium bloom');
+
+  // Lower stem tail responds to stemLength without touching bloom head
+  assert.ok(pSmall.tipCy < pMed.tipCy, 'Short stemLength should produce shorter exposed stem tail');
+  assert.ok(pMed.tipCy < pGiant.tipCy, 'Extended stemLength should produce longer exposed stem tail');
+
+  // Glass Cloche uses matching proportional dynamic stem geometry
+  const clocheCurves = computeClocheStemGeometry(sampleItems);
+  assert.equal(clocheCurves.length, 3);
+  const cSmall = clocheCurves.find((c) => c.itemId === 'tulip-small')!;
+  const cMed = clocheCurves.find((c) => c.itemId === 'tulip-med')!;
+  const cGiant = clocheCurves.find((c) => c.itemId === 'tulip-giant')!;
+  assert.ok(cSmall.strokeWidth < cMed.strokeWidth);
+  assert.ok(cMed.strokeWidth < cGiant.strokeWidth);
+  assert.ok(cSmall.tipCy < cGiant.tipCy);
+});
