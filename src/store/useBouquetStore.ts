@@ -27,6 +27,7 @@ import {
   INITIAL_ITEMS,
 } from '../types/bouquet';
 import { decodeBouquetFromHash, isGiftShareHash } from '../lib/shareAndExport';
+import { clampBouquetLocalPointToStage } from '../lib/stageCanvasBounds';
 
 // ============================================================================
 // MODULE 4: store/useBouquetStore.ts — ZUSTAND STATE & UNDO/REDO ENGINE
@@ -303,17 +304,22 @@ export const useBouquetStore = create<BouquetStoreState>((set, get) => ({
   },
 
   duplicateSelected: () => {
-    const { selectedId, items } = get();
+    const { selectedId, items, bouquetPose } = get();
     if (!selectedId) return;
     const target = items.find((i) => i.id === selectedId);
     if (!target) return;
     const snap = takeSnapshot(get());
     const copyId = `flw-${Date.now()}`;
+    const nextPos = clampBouquetLocalPointToStage(
+      target.x + 24,
+      target.y - 14,
+      bouquetPose || DEFAULT_BOUQUET_POSE
+    );
     const clone: BouquetItem = {
       ...target,
       id: copyId,
-      x: Math.min(480, target.x + 24),
-      y: Math.max(150, target.y - 14),
+      x: nextPos.x,
+      y: nextPos.y,
       rotation: target.rotation + 8,
       locked: false,
       hidden: false

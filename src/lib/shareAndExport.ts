@@ -451,20 +451,34 @@ export function encodeBouquetToCompactPayload(snapshot: BouquetSnapshot, asGift 
         const stemLen = item.stemLength ?? 1;
         const isDefStemLen = Math.abs(stemLen - 1) < 0.02;
         const stemLenStr = isDefStemLen ? '' : Math.round(clampNum(stemLen, 0.15, 1.35) * 20).toString(36);
+        const roundedX = Math.round(item.x);
+        const roundedY = Math.round(item.y);
+        const needsExtXY = roundedX < 0 || roundedX > 600 || roundedY < 0 || roundedY > 680;
+        const extXYStr = needsExtXY
+          ? `${Math.round(clampNum(roundedX, -1500, 2100) + 2000).toString(36)}_${Math.round(
+              clampNum(roundedY, -1500, 2100) + 2000
+            ).toString(36)}`
+          : '';
 
         const base = `${typeChar}${xStr}${yStr}${sStr}${rStr}`;
-        if (!item.photoStyle && isDefPetal && isDefCenter && extraFlags === 0 && isDefStemLen) {
+        if (!item.photoStyle && isDefPetal && isDefCenter && extraFlags === 0 && isDefStemLen && !needsExtXY) {
           return base;
         }
         const pHex = isDefPetal ? '' : item.petalColor.replace('#', '').toLowerCase();
         const cHex = isDefCenter ? '' : item.centerColor.replace('#', '').toLowerCase();
         if (!item.photoStyle) {
-          return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}`.replace(/~+$/, '');
+          if (!needsExtXY) {
+            return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}`.replace(/~+$/, '');
+          }
+          return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}~~~~${extXYStr}`;
         }
         const pStyleIdx = Math.max(0, SHARE_PHOTO_STYLES.indexOf(item.photoStyle)).toString(36);
         const pCapB64 = item.photoCaption ? toBase64Url(item.photoCaption) : '';
         const pImgB64 = item.photoDataUrl ? toBase64Url(item.photoDataUrl) : '';
-        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}~${pStyleIdx}~${pCapB64}~${pImgB64}`.replace(/~+$/, '');
+        return `${base}~${extraFlags.toString(36)}~${pHex}~${cHex}~${stemLenStr}~${pStyleIdx}~${pCapB64}~${pImgB64}~${extXYStr}`.replace(
+          /~+$/,
+          ''
+        );
       })
       .join('.');
   }
@@ -767,14 +781,22 @@ export function decodeBouquetFromHash(hashOverride?: string): BouquetSnapshot | 
               stemLenStr = '',
               pStyleStr = '',
               pCapB64 = '',
-              pImgB64 = ''
+              pImgB64 = '',
+              extXYStr = ''
             ] = sp.split('~');
             const typeLen = Math.max(1, base.length - 7);
             const rawCode = parseInt(base.slice(0, typeLen), 36) || 0;
             const type = SHARE_FLOWER_TYPES[rawCode] || 'rose';
             const meta = FLOWER_CATALOG.find((m) => m.type === type) || FLOWER_CATALOG[0];
-            const x = parseInt(base.slice(typeLen, typeLen + 2), 36);
-            const y = parseInt(base.slice(typeLen + 2, typeLen + 4), 36);
+            let x = parseInt(base.slice(typeLen, typeLen + 2), 36);
+            let y = parseInt(base.slice(typeLen + 2, typeLen + 4), 36);
+            if (extXYStr && extXYStr.includes('_')) {
+              const [exStr, eyStr] = extXYStr.split('_');
+              const parsedEx = parseInt(exStr, 36) - 2000;
+              const parsedEy = parseInt(eyStr, 36) - 2000;
+              if (Number.isFinite(parsedEx)) x = parsedEx;
+              if (Number.isFinite(parsedEy)) y = parsedEy;
+            }
             const sInt = parseInt(base.slice(typeLen + 4, typeLen + 5), 36);
             const scale = Number((0.3 + sInt / 14).toFixed(2));
             const rInt = parseInt(base.slice(typeLen + 5, typeLen + 7), 36);

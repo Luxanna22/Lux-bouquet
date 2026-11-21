@@ -35,6 +35,15 @@ import {
   type StemRustleState,
 } from '../lib/bouquetBloomPhysics';
 import { getEnvironmentPageBackdrop } from '../lib/environmentBackdrop';
+import {
+  STAGE_DRAG_MIN_X,
+  STAGE_DRAG_MAX_X,
+  STAGE_DRAG_MIN_Y,
+  STAGE_DRAG_MAX_Y,
+  svgToBouquetLocalCoords as mapSvgToBouquetLocal,
+  clampBouquetLocalPointToStage,
+  computeWrapperTuckedStemLength,
+} from '../lib/stageCanvasBounds';
 
 // ============================================================================
 // MODULE 5: components/BouquetStage.tsx — INTERACTIVE POINTER-EVENTS SVG STAGE
@@ -3700,18 +3709,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
   // Convert SVG viewBox coordinates into local bouquet space (accounting for bouquetPose x, y, scale, rotation around 300,380)
   const svgToBouquetLocalCoords = useCallback(
-    (svgX: number, svgY: number) => {
-      const dx = (svgX - pose.x) / (pose.scale || 1);
-      const dy = (svgY - pose.y) / (pose.scale || 1);
-      const rad = ((-pose.rotation || 0) * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      return {
-        x: 300 + dx * cos - dy * sin,
-        y: 380 + dx * sin + dy * cos,
-      };
-    },
-    [pose.x, pose.y, pose.scale, pose.rotation]
+    (svgX: number, svgY: number) => mapSvgToBouquetLocal(svgX, svgY, pose),
+    [pose]
   );
 
   const captureSvgPointer = (e: React.PointerEvent) => {
@@ -3926,12 +3925,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             hasCommittedDragHistoryRef.current = true;
           }
           const movingItem = items.find((it) => it.id === interaction.itemId);
-          const meta = movingItem ? FLOWER_CATALOG.find((m) => m.type === movingItem.type) : undefined;
-          const isFrontOrOther = Boolean(
-            (movingItem && getEffectiveItemPlane(movingItem) === 'front') ||
-              meta?.isOther ||
-              movingItem?.photoStyle
-          );
           const isClocheGathered =
             wrapStyle === 'cloche' &&
             movingItem &&
@@ -3939,14 +3932,18 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             !(movingItem.photoStyle && !movingItem.clippedToBouquet);
           const dx = isClocheGathered ? rawDx / 0.64 : rawDx;
           const dy = isClocheGathered ? rawDy / 0.7 : rawDy;
-          const nx = Math.max(
-            isFrontOrOther ? -4 : 12,
-            Math.min(isFrontOrOther ? 604 : 588, Math.round(interaction.startItemX + dx))
-          );
-          const ny = Math.max(
-            isFrontOrOther ? 20 : 38,
-            Math.min(isFrontOrOther ? 660 : 624, Math.round(interaction.startItemY + dy))
-          );
+          const rawTargetX = interaction.startItemX + dx;
+          const rawTargetY = interaction.startItemY + dy;
+          let nx: number;
+          let ny: number;
+          if (isClocheGathered) {
+            nx = Math.max(-40, Math.min(640, Math.round(rawTargetX)));
+            ny = Math.max(38, Math.min(624, Math.round(rawTargetY)));
+          } else {
+            const clamped = clampBouquetLocalPointToStage(rawTargetX, rawTargetY, pose);
+            nx = clamped.x;
+            ny = clamped.y;
+          }
           updateItem(interaction.itemId, { x: nx, y: ny }, false);
         }
       } else if (interaction.mode === 'move-bouquet') {
@@ -4010,8 +4007,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(0, Math.min(600, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(20, Math.min(660, Math.round(interaction.startItemY + dy)));
+          const nx = Math.max(
+            STAGE_DRAG_MIN_X,
+            Math.min(STAGE_DRAG_MAX_X, Math.round(interaction.startItemX + dx))
+          );
+          const ny = Math.max(
+            STAGE_DRAG_MIN_Y,
+            Math.min(STAGE_DRAG_MAX_Y, Math.round(interaction.startItemY + dy))
+          );
           updateCard({ x: nx, y: ny });
         }
       } else if (interaction.mode === 'move-voice') {
@@ -4025,8 +4028,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             commitHistorySnapshot();
             hasCommittedDragHistoryRef.current = true;
           }
-          const nx = Math.max(0, Math.min(600, Math.round(interaction.startItemX + dx)));
-          const ny = Math.max(20, Math.min(660, Math.round(interaction.startItemY + dy)));
+          const nx = Math.max(
+            STAGE_DRAG_MIN_X,
+            Math.min(STAGE_DRAG_MAX_X, Math.round(interaction.startItemX + dx))
+          );
+          const ny = Math.max(
+            STAGE_DRAG_MIN_Y,
+            Math.min(STAGE_DRAG_MAX_Y, Math.round(interaction.startItemY + dy))
+          );
           updateVoice({ x: nx, y: ny });
         }
       } else if (interaction.mode === 'resize-card') {
@@ -4706,9 +4715,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             </filter>
           )}
 
-          {/* Wrapper Boundary Clips (Separate permanent IDs prevent Chromium SVG dirty-rect glitches on wrapper switch) */}
+          {/* Wrapper Bottom Stem Clip (Wide horizontal/top extent so stems are never cropped sideways; only trims below wrapper base) */}
           <clipPath id={`${idPrefix}bouquetWrapperBoundsClip`}>
-            <rect x="-40" y="0" width="680" height={wrapperBottomClipY} />
+            <rect x="-2400" y="-2400" width="5400" height={2400 + wrapperBottomClipY} />
           </clipPath>
           <clipPath id={`${idPrefix}bouquetClocheBoundsClip`}>
             <path d="M132,560 L132,276 A168,168 0 0,1 468,276 L468,560 Z" />
@@ -5847,8 +5856,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           )
         )}
 
-        {/* 3. BOUQUET FLOWERS, FOLIAGE & INSIDE-PLANE ITEMS LAYER (Clipped to wrapper/dome bounds & per-stem adjustable stemLength) */}
-        <g clipPath={wrapStyle === 'cloche' ? `url(#${idPrefix}bouquetClocheBoundsClip)` : `url(#${idPrefix}bouquetWrapperBoundsClip)`}>
+        {/* 3. BOUQUET FLOWERS, FOLIAGE & INSIDE-PLANE ITEMS LAYER (Unclipped across the entire main canvas; lower stems tucked cleanly inside wrapper base) */}
+        <g>
           {visibleRenderItems.map((item) => {
             if (item.hidden || getEffectiveItemPlane(item) !== 'inside') return null;
             const isSelected = !isPreviewMode && item.id === selectedId;
@@ -5856,6 +5865,15 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               isPreviewMode && !isCardThumbnail && Boolean(item.photoStyle) && Boolean(onPhotoCardClick);
             const disp = getStageItemDisplayTransform(item, wrapStyle);
             const meta = FLOWER_CATALOG.find((m) => m.type === item.type);
+            const effectiveStemLength = computeWrapperTuckedStemLength({
+              itemX: disp.x,
+              itemY: disp.y,
+              itemScale: disp.scale,
+              itemRotation: disp.rotation,
+              requestedStemLength: item.stemLength ?? 1,
+              wrapStyle,
+              wrapperBottomClipY,
+            });
             return (
               <g
                 key={item.id}
@@ -5933,7 +5951,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                           wrapStyle === 'plain' ||
                           wrapStyle === 'cloche'
                         }
-                        stemLength={item.stemLength ?? 1}
+                        stemLength={effectiveStemLength}
                       />
                     )}
                     <rect x="-60" y="-62" width="120" height="120" rx="22" fill="transparent" />

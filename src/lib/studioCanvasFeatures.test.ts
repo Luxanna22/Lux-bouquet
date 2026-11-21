@@ -45,6 +45,16 @@ import {
   computeHandTiedStemGeometry,
   computeClocheStemGeometry,
 } from './bouquetBloomPhysics';
+import {
+  STAGE_DRAG_MIN_X,
+  STAGE_DRAG_MAX_X,
+  STAGE_DRAG_MIN_Y,
+  STAGE_DRAG_MAX_Y,
+  bouquetLocalToSvgCoords,
+  svgToBouquetLocalCoords,
+  clampBouquetLocalPointToStage,
+  computeWrapperTuckedStemLength,
+} from './stageCanvasBounds';
 // @ts-expect-error Shared ESM API security guard module
 import { checkRateLimit, resetRateLimitStoreForTests, sanitizeJsonValue, isSuspiciousBotRequest, readSafeJsonBody } from '../../api/_lib/securityGuard.js';
 // @ts-expect-error Shared ESM API couture guard module
@@ -1177,3 +1187,113 @@ test('computeHandTiedStemGeometry and computeClocheStemGeometry scale stem thick
   assert.ok(cMed.strokeWidth < cGiant.strokeWidth);
   assert.ok(cSmall.tipCy < cGiant.tipCy);
 });
+
+test('clampBouquetLocalPointToStage aligns draggable area with full main canvas even when bouquetPose is scaled down, shifted, or rotated', () => {
+  // Default pose has scale 0.86 — dragging to the bottom-left and top-right canvas corners must reach the full stage bounds
+  const scaledPose = { x: 300, y: 380, scale: 0.65, rotation: 0 };
+  const targetBottomLeftLocal = svgToBouquetLocalCoords(STAGE_DRAG_MIN_X, STAGE_DRAG_MAX_Y, scaledPose);
+  const clampedBottomLeft = clampBouquetLocalPointToStage(
+    targetBottomLeftLocal.x - 100,
+    targetBottomLeftLocal.y + 100,
+    scaledPose
+  );
+  const svgBottomLeft = bouquetLocalToSvgCoords(clampedBottomLeft.x, clampedBottomLeft.y, scaledPose);
+  assert.ok(Math.abs(svgBottomLeft.x - STAGE_DRAG_MIN_X) <= 1, `Expected svgX near ${STAGE_DRAG_MIN_X}, got ${svgBottomLeft.x}`);
+  assert.ok(Math.abs(svgBottomLeft.y - STAGE_DRAG_MAX_Y) <= 1, `Expected svgY near ${STAGE_DRAG_MAX_Y}, got ${svgBottomLeft.y}`);
+  // Notice bouquet-local X is negative and Y > 680 because bouquet is scaled to 0.65x
+  assert.ok(clampedBottomLeft.x < 0, 'Local X should extend below 0 to reach the main canvas left edge');
+  assert.ok(clampedBottomLeft.y > 680, 'Local Y should extend beyond 680 to reach the main canvas bottom edge');
+
+  // Shifted + tilted pose still maps exact canvas corners
+  const tiltedPose = { x: 360, y: 330, scale: 0.72, rotation: -18 };
+  const targetTopRightLocal = svgToBouquetLocalCoords(STAGE_DRAG_MAX_X, STAGE_DRAG_MIN_Y, tiltedPose);
+  const clampedTopRight = clampBouquetLocalPointToStage(
+    targetTopRightLocal.x + 150,
+    targetTopRightLocal.y - 150,
+    tiltedPose
+  );
+  const svgTopRight = bouquetLocalToSvgCoords(clampedTopRight.x, clampedTopRight.y, tiltedPose);
+  assert.ok(svgTopRight.x >= STAGE_DRAG_MIN_X - 1 && svgTopRight.x <= STAGE_DRAG_MAX_X + 1);
+  assert.ok(svgTopRight.y >= STAGE_DRAG_MIN_Y - 1 && svgTopRight.y <= STAGE_DRAG_MAX_Y + 1);
+});
+
+test('computeWrapperTuckedStemLength tucks stems inside wrapper bases without affecting blooms placed outside the wrapper', () => {
+  // Normal flower high in bouquet is unaffected
+  assert.equal(
+    computeWrapperTuckedStemLength({
+      itemX: 300,
+      itemY: 290,
+      itemScale: 1,
+      itemRotation: 0,
+      requestedStemLength: 1,
+      wrapStyle: 'abacaMesh',
+      wrapperBottomClipY: 618,
+    }),
+    1
+  );
+
+  // Flower tucked low inside basket has ONLY its stem shortened so it never pokes beneath the base
+  const tucked = computeWrapperTuckedStemLength({
+    itemX: 300,
+    itemY: 490,
+    itemScale: 1,
+    itemRotation: 0,
+    requestedStemLength: 1,
+    wrapStyle: 'basket',
+    wrapperBottomClipY: 596,
+  });
+  assert.ok(tucked > 0.3 && tucked < 0.7, `Expected tucked stem ratio ~0.54, got ${tucked}`);
+
+  // Lily placed at bottom-left of canvas (outside wrapper X footprint) is never trimmed
+  assert.equal(
+    computeWrapperTuckedStemLength({
+      itemX: 40,
+      itemY: 580,
+      itemScale: 1.5,
+      itemRotation: 0,
+      requestedStemLength: 1,
+      wrapStyle: 'abacaMesh',
+      wrapperBottomClipY: 618,
+    }),
+    1
+  );
+});
+
+test('shareAndExport losslessly preserves full-canvas corner coordinates outside 0..600 x 0..680 without breaking coutureGuard', () => {
+  const store = useBouquetStore.getState();
+  store.clearBouquet();
+  store.setWrapStyle('kraft');
+  store.updateBouquetPose({ x: 300, y: 380, scale: 0.65, rotation: 0 }, false);
+  store.addFlower('lily');
+  const lily = useBouquetStore.getState().items[0];
+  store.updateItem(lily.id, { x: -165, y: 745, scale: 1.5, rotation: -12 }, false);
+
+  const state = useBouquetStore.getState();
+  const payload = encodeBouquetToCompactPayload(
+    {
+      items: state.items,
+      wrapStyle: state.wrapStyle,
+      wrapColor: state.wrapColor,
+      ribbonColor: state.ribbonColor,
+      ribbonStyle: state.ribbonStyle,
+      environment: state.environment,
+      bouquetPose: state.bouquetPose,
+      card: state.card,
+      voice: state.voice,
+      lock: state.lock,
+    },
+    true
+  );
+
+  const decoded = decodeBouquetFromHash(payload);
+  assert.ok(decoded, 'Decoded bouquet should not be null');
+  assert.equal(decoded.items.length, 1);
+  assert.equal(decoded.items[0].type, 'lily');
+  assert.equal(decoded.items[0].x, -165);
+  assert.equal(decoded.items[0].y, 745);
+
+  // Ensure coutureGuard does NOT misclassify the free lily with extended coordinates as a photo keepsake
+  const guardReport = inspectCompactPayloadCoutureUsage(payload);
+  assert.equal(guardReport.reasons.length, 0, `Unexpected couture reasons: ${guardReport.reasons.join(', ')}`);
+});
+
