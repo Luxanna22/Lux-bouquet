@@ -4198,15 +4198,22 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
   const selectedItem = items.find((i) => i.id === selectedId) || null;
   const selectedDisplay = selectedItem ? getStageItemDisplayTransform(selectedItem, wrapStyle) : null;
   const wrapperBottomClipY =
-    wrapStyle === 'basket'
+    wrapStyle === 'corsetSilk'
+      ? 588
+      : wrapStyle === 'basket'
       ? 596
-      : wrapStyle === 'vase' || wrapStyle === 'chinoiserieUrn'
+      : wrapStyle === 'crepeFan'
+      ? 602
+      : wrapStyle === 'vase' ||
+        wrapStyle === 'chinoiserieUrn' ||
+        wrapStyle === 'waxPaper' ||
+        wrapStyle === 'burlapSack'
       ? 610
       : wrapStyle === 'cloche'
       ? 560
       : wrapStyle === 'plain'
       ? 650
-      : 618;
+      : 616;
 
   // ============================================================================
   // STAGED BOTANICAL UNWRAP CHOREOGRAPHY + LIVING BREEZE & INTERACTIVE RUSTLE
@@ -5351,14 +5358,6 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   <line x1="316" y1="484" x2="404" y2="198" />
                   <line x1="326" y1="484" x2="468" y2="232" />
                 </g>
-                {/* Flared Ruffled Crepe Tail Below Waist */}
-                <path
-                  d="M236,488 L174,602 Q208,618 242,606 Q272,622 300,608 Q328,622 358,606 Q392,618 426,602 L364,488 Z"
-                  fill={shadeWrapHex(wrapColor, -10)}
-                  stroke="#FFFFFF"
-                  strokeWidth="1.2"
-                  strokeOpacity="0.6"
-                />
               </g>
             )}
 
@@ -5835,26 +5834,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               })()}
             </g>
           </g>
-        ) : (
-          wrapStyle !== 'basket' &&
-          wrapStyle !== 'vase' &&
-          wrapStyle !== 'hatbox' &&
-          wrapStyle !== 'chinoiserieUrn' &&
-          wrapStyle !== 'abacaMesh' &&
-          wrapStyle !== 'snowNet' &&
-          wrapStyle !== 'pearlTulle' &&
-          wrapStyle !== 'corsetSilk' && (
-            <g ref={wrapperStemBundleMotionRef} data-bloom-motion="true">
-              <g opacity="0.85" clipPath={`url(#${idPrefix}bouquetWrapperBoundsClip)`}>
-                <path d="M288,490 L264,612" stroke="#15803d" strokeWidth="6" strokeLinecap="round" />
-                <path d="M296,490 L285,616" stroke="#16a34a" strokeWidth="6.5" strokeLinecap="round" />
-                <path d="M304,490 L315,616" stroke="#15803d" strokeWidth="6.5" strokeLinecap="round" />
-                <path d="M312,490 L336,612" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" />
-                <path d="M300,490 L300,618" stroke="#166534" strokeWidth="7" strokeLinecap="round" />
-              </g>
-            </g>
-          )
-        )}
+        ) : null}
 
         {/* 3. BOUQUET FLOWERS, FOLIAGE & INSIDE-PLANE ITEMS LAYER (Unclipped across the entire main canvas; lower stems tucked cleanly inside wrapper base) */}
         <g>
@@ -6475,9 +6455,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               </g>
             )}
 
-            {/* STYLE 14 FRONT: CREPE FAN ('crepeFan' — Free airy ruffled crepe throat & scalloped collar) */}
+            {/* STYLE 14 FRONT: CREPE FAN ('crepeFan' — Free airy ruffled crepe throat, flared skirt & scalloped collar) */}
             {wrapStyle === 'crepeFan' && (
               <g>
+                {/* Flared Ruffled Crepe Skirt Below Waist (Rendered on front layer so stems stay neatly inside sleeve) */}
+                <path
+                  d="M236,488 L174,602 Q208,618 242,606 Q272,622 300,608 Q328,622 358,606 Q392,618 426,602 L364,488 Z"
+                  fill={shadeWrapHex(wrapColor, -10)}
+                  stroke="#FFFFFF"
+                  strokeWidth="1.4"
+                  strokeOpacity="0.72"
+                />
+                {/* Soft Accordion Pleat Shading on Flared Skirt */}
+                <g stroke={shadeWrapHex(wrapColor, -28)} strokeWidth="1.05" opacity="0.34" fill="none">
+                  <line x1="258" y1="490" x2="218" y2="608" />
+                  <line x1="280" y1="490" x2="266" y2="612" />
+                  <line x1="300" y1="490" x2="300" y2="608" />
+                  <line x1="320" y1="490" x2="334" y2="612" />
+                  <line x1="342" y1="490" x2="382" y2="608" />
+                </g>
                 {/* Left Ruffled Crepe Collar Fold */}
                 <path
                   d="M140,356 Q174,344 198,374 Q232,374 256,410 Q282,424 306,486 L228,488 Q174,432 140,356 Z"

@@ -1297,3 +1297,27 @@ test('shareAndExport losslessly preserves full-canvas corner coordinates outside
   assert.equal(guardReport.reasons.length, 0, `Unexpected couture reasons: ${guardReport.reasons.join(', ')}`);
 });
 
+test('Crepe Fan and other closed/wrapped styles never render the legacy exposed green stem bundle over the lower skirt', () => {
+  const stageSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/BouquetStage.tsx'),
+    'utf8'
+  );
+  // The legacy 5-line static lower green stem bundle must not exist to bleed over Crepe Fan / sheer wrappers
+  assert.equal(
+    stageSource.includes('d="M288,490 L264,612"'),
+    false,
+    'Legacy lower green stem bundle should not be rendered on wrapped sleeves'
+  );
+  // Crepe Fan flared lower skirt must be rendered in the FRONT layer (after STYLE 14 FRONT) so real flower stems stay behind it
+  const frontMarkerIdx = stageSource.indexOf('STYLE 14 FRONT: CREPE FAN');
+  const skirtPathIdx = stageSource.indexOf(
+    'd="M236,488 L174,602 Q208,618 242,606 Q272,622 300,608 Q328,622 358,606 Q392,618 426,602 L364,488 Z"'
+  );
+  assert.ok(frontMarkerIdx > 0, 'Expected STYLE 14 FRONT: CREPE FAN marker');
+  assert.ok(
+    skirtPathIdx > frontMarkerIdx,
+    'Crepe Fan flared lower skirt must reside in the front wrapper layer, not the back layer'
+  );
+});
+
+
