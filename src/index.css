@@ -229,12 +229,29 @@
   will-change: auto !important;
 }
 
+@keyframes sab-pwa-toast-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.sab-pwa-toast-enter {
+  animation: sab-pwa-toast-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sab-holo-shine-beam,
-  .sab-holo-glint {
+  .sab-holo-glint,
+  .sab-pwa-toast-enter {
     animation: none !important;
     will-change: auto !important;
   }
 }
+
 
 

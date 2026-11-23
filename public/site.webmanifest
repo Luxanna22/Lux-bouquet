@@ -1,21 +1,33 @@
 {
+  "id": "/",
   "name": "Send A Bouquet — Custom Digital Flower Bouquet Studio",
-  "short_name": "Send A Bouquet",
+  "short_name": "SendBouquet",
   "description": "Craft and send a custom digital flower bouquet online with 51 botanical stems, couture wraps, ribbons, photo frames, a handwritten greeting card, and a recorded voice keepsake.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#FFFDF9",
-  "theme_color": "#6E4434",
+  "theme_color": "#FFFDF9",
   "categories": ["lifestyle", "personalization", "entertainment"],
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
-

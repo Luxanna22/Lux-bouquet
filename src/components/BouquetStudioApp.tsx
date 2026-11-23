@@ -222,6 +222,7 @@ import {
   saveCanvasRecoverySnapshot,
   setCanvasRecoveryInStudioFlag,
 } from '../lib/canvasRecovery';
+import { MobilePWAInstallToast } from './MobilePWAInstallToast';
 
 // ============================================================================
 // MODULE 7: components/MainApp.tsx — BOUQUET STUDIO WORKSPACE & GIFT PREVIEW
@@ -8131,6 +8132,15 @@ export default function App() {
           />
         </div>
       )}
+
+      {/* ONE-TIME NON-INVASIVE MOBILE PWA INSTALL TOAST */}
+      <MobilePWAInstallToast
+        isDarkMode={isDarkMode}
+        isSuppressed={Boolean(isGiftView || isPreviewMode || stealthGateSlug)}
+        placement={showLandingPage ? 'bottom' : 'top'}
+        hasActiveStatusToast={Boolean(toast)}
+        onToast={triggerToast}
+      />
 
       {/* TOAST NOTIFICATION PILL */}
       {toast && (
