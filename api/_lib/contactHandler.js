@@ -367,8 +367,7 @@ export function resolveBouquetFromAddress(env = process.env) {
 /**
  * Builds the Surprise Bouquet Delivery Email for a loved one.
  * Keeps the sender UNNAMED and omits keepsake details so everything remains a surprise inside the web app.
- * Uses an ultra-clean, imageless, left-aligned plain-text feel with strictly greeting + one short sentence + inline URL
- * for highest Primary inbox placement in Gmail.
+ * Uses a minimal Parisian letterpress stationery card with the botanical leaves logo crest and concise copy.
  */
 export function buildBouquetSurpriseEmail({
   recipientName = '',
@@ -380,15 +379,38 @@ export function buildBouquetSurpriseEmail({
     ? `For ${cleanRecipient} — someone sent you a bouquet`
     : 'Someone sent you a bouquet';
 
-  const introSentence =
-    'Someone arranged a digital bouquet and tucked a personal note inside for you to open whenever you are ready.';
+  const shortLine = 'Someone sent you a bouquet.';
+  const assetOrigin = resolveEmailAssetOrigin(giftUrl);
+  const crestHtml = buildEmailBotanicalCrestHtml('', assetOrigin);
 
-  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222222;max-width:560px;margin:0;padding:0;text-align:left;"><p style="margin:0 0 14px 0;">For ${escapeHtml(displayRecipient)},</p><p style="margin:0 0 14px 0;">${introSentence}</p><p style="margin:0;"><a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="color:#6E4434;text-decoration:underline;word-break:break-all;">${escapeHtml(giftUrl)}</a></p></div>`;
+  const html = `
+    <div style="font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif;background-color:#FAF6F0;padding:36px 16px;color:#2A201D;">
+      <div style="max-width:440px;margin:0 auto;background-color:#FFFDF9;border:1px solid #E6D7C8;border-radius:22px;padding:10px;">
+        <div style="background-color:#FFFDF9;border:1px dashed #DECBB9;border-radius:16px;padding:32px 26px 30px 26px;text-align:center;">
+          ${crestHtml}
+
+          <div style="font-size:28px;font-weight:600;font-style:italic;color:#2A201D;line-height:1.25;margin:22px 0 8px 0;">
+            For ${escapeHtml(displayRecipient)},
+          </div>
+
+          <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#6E5D54;margin:0 0 24px 0;">
+            ${shortLine}
+          </p>
+
+          <div style="margin:0;">
+            <a href="${escapeHtml(giftUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background-color:#6E4434;color:#FFFDF9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13.5px;font-weight:500;letter-spacing:0.02em;text-decoration:none;padding:12px 28px;border-radius:999px;">
+              Open Bouquet
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  `.trim();
 
   const text = [
     `For ${displayRecipient},`,
     '',
-    introSentence,
+    shortLine,
     '',
     giftUrl,
   ].join('\n');

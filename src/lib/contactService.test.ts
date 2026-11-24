@@ -104,7 +104,7 @@ test('backend email builders include sender details, reply-to, ruled paper lines
   assert.match(visitorEmail.html, /border-bottom:1px dashed #DFCEC0/);
 });
 
-test('Surprise Bouquet Email delivery uses imageless minimal personal format without keepsake spoilers', () => {
+test('Surprise Bouquet Email delivery uses minimal stationery format with botanical crest logo and no keepsake spoilers', () => {
   const invalidCheck = validateBouquetEmailDelivery({
     recipientEmail: 'invalid-email',
     giftUrl: 'https://www.sendabouquet.online/abc1234',
@@ -129,14 +129,15 @@ test('Surprise Bouquet Email delivery uses imageless minimal personal format wit
     isLocked: true,
   });
   assert.equal(surpriseMail.subject, 'For Sophia — someone sent you a bouquet');
-  assert.match(surpriseMail.html, /<p[^>]*>For Sophia,<\/p>/);
+  assert.match(surpriseMail.html, /hero-bloom-crest\.png/);
+  assert.match(surpriseMail.html, /For Sophia,/);
+  assert.match(surpriseMail.html, /Someone sent you a bouquet\./);
   assert.match(surpriseMail.html, /https:\/\/www\.sendabouquet\.online\/abc1234/);
-  assert.match(surpriseMail.text, /^For Sophia,\n\n[^\n]+\n\nhttps:\/\/www\.sendabouquet\.online\/abc1234$/);
+  assert.match(surpriseMail.html, /Open Bouquet/);
+  assert.match(surpriseMail.text, /^For Sophia,\n\nSomeone sent you a bouquet\.\n\nhttps:\/\/www\.sendabouquet\.online\/abc1234$/);
 
-  // Zero promotional/spoiler patterns
-  assert.doesNotMatch(surpriseMail.html, /<img\b/i);
+  // Zero keepsake or sender spoilers
   assert.doesNotMatch(surpriseMail.html, /display\s*:\s*none/i);
-  assert.doesNotMatch(surpriseMail.html, /Open Your Bouquet/i);
   assert.doesNotMatch(surpriseMail.html, /Voice keepsake|Photo keepsake|Secret lock reveal|Floral arrangement/i);
   assert.doesNotMatch(surpriseMail.text, /Voice keepsake|Photo keepsake|Secret lock reveal|Floral arrangement/i);
   assert.doesNotMatch(surpriseMail.html, /Julian/);
