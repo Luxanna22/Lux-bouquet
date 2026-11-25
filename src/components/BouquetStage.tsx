@@ -3645,6 +3645,16 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
     startPanX: number;
     startPanY: number;
   } | null>(null);
+  const activeTouchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchGestureRef = useRef<{
+    itemId: string;
+    startDist: number;
+    startAngle: number;
+    startScale: number;
+    startRotation: number;
+    committed: boolean;
+  } | null>(null);
+  const [isPinchingItem, setIsPinchingItem] = useState(false);
 
   const prevVoiceStyleRef = useRef(voice?.style);
   const prevVoiceVisibleRef = useRef(voice?.visibleOnStage);
@@ -3727,6 +3737,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
   const handleItemPointerDown = (e: React.PointerEvent, item: BouquetItem) => {
     if (isPreviewMode || item.hidden) return;
+    if (pinchGestureRef.current || activeTouchPointersRef.current.size >= 2) {
+      e.stopPropagation();
+      return;
+    }
     e.stopPropagation();
     setActiveSpecialObject(null);
     selectItem(item.id);
@@ -3890,6 +3904,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
   const handleGizmoPointerDown = (e: React.PointerEvent, item: BouquetItem) => {
     if (isPreviewMode || item.locked || item.hidden) return;
+    if (pinchGestureRef.current || activeTouchPointersRef.current.size >= 2) {
+      e.stopPropagation();
+      return;
+    }
     e.stopPropagation();
     onItemSelect?.(item.id);
     captureSvgPointer(e);
@@ -4108,6 +4126,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         updateVoice({ scale: newScale, rotation: nextRotation });
       } else if (interaction.mode === 'transform') {
         const localPt = svgToBouquetLocalCoords(pt.x, pt.y);
+        const dragDelta = Math.hypot(
+          localPt.x - interaction.startPointerX,
+          localPt.y - interaction.startPointerY
+        );
+        if (!hasCommittedDragHistoryRef.current && dragDelta < 4) {
+          return;
+        }
         const startAngle = Math.atan2(
           interaction.startPointerY - interaction.startItemY,
           interaction.startPointerX - interaction.startItemX
@@ -4194,6 +4219,25 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
       window.removeEventListener('pointercancel', onWinUp);
     };
   }, [interaction, applyPointerMoveAtClientCoords]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onTouchEnd = (ev: PointerEvent) => {
+      if (ev.pointerType !== 'touch') return;
+      if (activeTouchPointersRef.current.delete(ev.pointerId)) {
+        if (activeTouchPointersRef.current.size < 2 && pinchGestureRef.current) {
+          pinchGestureRef.current = null;
+          setIsPinchingItem(false);
+        }
+      }
+    };
+    window.addEventListener('pointerup', onTouchEnd);
+    window.addEventListener('pointercancel', onTouchEnd);
+    return () => {
+      window.removeEventListener('pointerup', onTouchEnd);
+      window.removeEventListener('pointercancel', onTouchEnd);
+    };
+  }, []);
 
   const selectedItem = items.find((i) => i.id === selectedId) || null;
   const selectedDisplay = selectedItem ? getStageItemDisplayTransform(selectedItem, wrapStyle) : null;
@@ -4623,7 +4667,58 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         }
         role="img"
         aria-label="Interactive Flower Bouquet Canvas"
+        onPointerDownCapture={(e) => {
+          if (isPreviewMode || isCardThumbnail || e.pointerType !== 'touch') return;
+          activeTouchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (
+            activeTouchPointersRef.current.size === 2 &&
+            selectedItem &&
+            !selectedItem.locked &&
+            !selectedItem.hidden
+          ) {
+            const pts = Array.from(activeTouchPointersRef.current.values());
+            const startDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+            const startAngle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+            pinchGestureRef.current = {
+              itemId: selectedItem.id,
+              startDist: Math.max(10, startDist),
+              startAngle,
+              startScale: selectedItem.scale,
+              startRotation: selectedItem.rotation,
+              committed: false,
+            };
+            setInteraction(null);
+            setIsPinchingItem(true);
+          }
+        }}
         onPointerMove={(e) => {
+          if (e.pointerType === 'touch' && activeTouchPointersRef.current.has(e.pointerId)) {
+            activeTouchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            const pinch = pinchGestureRef.current;
+            if (pinch && activeTouchPointersRef.current.size >= 2) {
+              const pts = Array.from(activeTouchPointersRef.current.values());
+              const currentDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+              const currentAngle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+              let deltaDeg = ((currentAngle - pinch.startAngle) * 180) / Math.PI;
+              while (deltaDeg > 180) deltaDeg -= 360;
+              while (deltaDeg < -180) deltaDeg += 360;
+
+              if (pinch.committed || Math.abs(currentDist - pinch.startDist) > 3 || Math.abs(deltaDeg) > 2) {
+                if (!pinch.committed) {
+                  commitHistorySnapshot();
+                  pinch.committed = true;
+                }
+                const ratio = pinch.startDist > 0 ? currentDist / pinch.startDist : 1;
+                const newScale = Math.max(0.3, Math.min(2.8, Number((pinch.startScale * ratio).toFixed(2))));
+                const nextRotation = Math.max(
+                  -180,
+                  Math.min(180, Math.round(pinch.startRotation + deltaDeg))
+                );
+                updateItem(pinch.itemId, { scale: newScale, rotation: nextRotation }, false);
+              }
+              return;
+            }
+          }
           if (panDragRef.current && panDragRef.current.pointerId === e.pointerId && onCanvasPanChange) {
             const dx = e.clientX - panDragRef.current.startClientX;
             const dy = e.clientY - panDragRef.current.startClientY;
@@ -4639,6 +4734,13 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           }
         }}
         onPointerUp={(e) => {
+          if (e.pointerType === 'touch') {
+            activeTouchPointersRef.current.delete(e.pointerId);
+            if (activeTouchPointersRef.current.size < 2 && pinchGestureRef.current) {
+              pinchGestureRef.current = null;
+              setIsPinchingItem(false);
+            }
+          }
           if (panDragRef.current && panDragRef.current.pointerId === e.pointerId) {
             panDragRef.current = null;
             setIsPanningCanvas(false);
@@ -4648,7 +4750,14 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
         onPointerLeave={() => {
           lastRustlePointerRef.current = null;
         }}
-        onPointerCancel={() => {
+        onPointerCancel={(e) => {
+          if (e.pointerType === 'touch') {
+            activeTouchPointersRef.current.delete(e.pointerId);
+            if (activeTouchPointersRef.current.size < 2 && pinchGestureRef.current) {
+              pinchGestureRef.current = null;
+              setIsPinchingItem(false);
+            }
+          }
           if (panDragRef.current) {
             panDragRef.current = null;
             setIsPanningCanvas(false);
@@ -4657,6 +4766,9 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
           lastRustlePointerRef.current = null;
         }}
         onPointerDown={(e) => {
+          if (pinchGestureRef.current || activeTouchPointersRef.current.size >= 2) {
+            return;
+          }
           if (!isPreviewMode && !isCardThumbnail) {
             selectItem(null);
             setActiveSpecialObject(null);
@@ -7969,17 +8081,24 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
         {/* 6. INTERACTIVE SELECTION RING, WORKING DELETE (X) BUTTON & RESIZE+ROTATE HANDLE (Inside Bouquet Transform Space) */}
         {!isPreviewMode && selectedItem && selectedDisplay && !selectedItem.hidden && (() => {
-          const handleRingRadius = Math.max(66, 60 * selectedDisplay.scale);
+          const handleRingRadius = Math.max(76, 64 * selectedDisplay.scale);
+          // Place corner handle centers outside the selection ring so their touch targets
+          // NEVER overlap the flower's inner drag-to-move area on mobile screens.
+          const handleAnchorRadius = handleRingRadius + 12;
+          const isMovingSelected = interaction?.mode === 'move' && interaction.itemId === selectedItem.id;
+          const isResizingSelected =
+            (interaction?.mode === 'transform' && interaction.itemId === selectedItem.id) || isPinchingItem;
+          const hideCornerHandles = isMovingSelected || isPinchingItem;
           return (
           <g data-export-ignore="true" data-drawer-trigger="true" transform={bouquetTransform}>
           <g
             transform={`translate(${selectedDisplay.x}, ${selectedDisplay.y})`}
           >
-            {/* Direct Drag-Capture Surface Inside Selection Ring (Allows dragging selected item even when overlapped by front wrapper/ribbon/card) */}
+            {/* Generous Direct Drag-Capture Surface Inside Selection Ring (Zero overlap with outer handles) */}
             <circle
               cx="0"
               cy="0"
-              r={Math.max(44, 50 * selectedDisplay.scale)}
+              r={Math.max(52, 54 * selectedDisplay.scale)}
               fill="transparent"
               onPointerDown={(e) => handleItemPointerDown(e, selectedItem)}
               className={
@@ -7998,13 +8117,46 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
               stroke={selectedItem.locked ? '#d97706' : '#B4846C'}
               strokeWidth="2"
               strokeDasharray={selectedItem.locked ? '5 5' : '7 5'}
+              opacity={isMovingSelected ? 0.45 : 1}
               className="pointer-events-none"
             />
 
+            {/* Live Pinch Scale & Rotation Readout Pill */}
+            {isPinchingItem && (
+              <g transform={`translate(0, ${handleRingRadius + 28})`} className="pointer-events-none">
+                <rect
+                  x="-64"
+                  y="-15"
+                  width="128"
+                  height="30"
+                  rx="15"
+                  fill="#1C1917"
+                  fillOpacity="0.92"
+                  stroke="#ffffff"
+                  strokeWidth="1.4"
+                  strokeOpacity="0.85"
+                  style={{ filter: 'drop-shadow(0px 3px 6px rgba(28,25,23,0.26))' }}
+                />
+                <text
+                  x="0"
+                  y="4.5"
+                  textAnchor="middle"
+                  fill="#ffffff"
+                  fontSize="13"
+                  fontWeight="600"
+                  style={{
+                    fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+                  }}
+                >
+                  {`${Math.round(selectedItem.scale * 100)}% · ${selectedItem.rotation}°`}
+                </text>
+              </g>
+            )}
+
             {/* On-Canvas Upload Photo Badge for Selected Photocard */}
-            {selectedItem.photoStyle && !selectedItem.locked && onPhotoCardUploadClick && (
+            {selectedItem.photoStyle && !selectedItem.locked && !hideCornerHandles && onPhotoCardUploadClick && (
               <g
-                transform={`translate(0, ${-handleRingRadius - 24})`}
+                transform={`translate(0, ${-handleAnchorRadius - 18})`}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -8045,7 +8197,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
             {selectedItem.locked ? (
               /* Locked Indicator Badge on Ring Top — Tap to Unlock */
               <g
-                transform={`translate(0, ${-handleRingRadius - 24})`}
+                transform={`translate(0, ${-handleAnchorRadius - 18})`}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   toggleItemLock(selectedItem.id);
@@ -8081,11 +8233,17 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                 </text>
               </g>
             ) : (
-              <>
+              <g
+                style={{
+                  opacity: hideCornerHandles ? 0 : 1,
+                  pointerEvents: hideCornerHandles ? 'none' : 'auto',
+                  transition: 'opacity 140ms ease-out',
+                }}
+              >
                 {/* TOP-LEFT HANDLE (-135°): Quick Flip Button */}
                 <g
-                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * handleRingRadius}, ${
-                    Math.sin((-3 * Math.PI) / 4) * handleRingRadius
+                  transform={`translate(${Math.cos((-3 * Math.PI) / 4) * handleAnchorRadius}, ${
+                    Math.sin((-3 * Math.PI) / 4) * handleAnchorRadius
                   })`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -8096,11 +8254,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Flip flower horizontally"
                 >
                   <title>Flip horizontally</title>
-                  <circle cx="0" cy="0" r="32" fill="transparent" />
+                  <circle cx="0" cy="0" r="24" fill="transparent" />
                   <circle
                     cx="0"
                     cy="0"
-                    r="18.5"
+                    r="18"
                     fill="#ffffff"
                     stroke="#B4846C"
                     strokeWidth="2.4"
@@ -8118,8 +8276,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
                 {/* TOP-RIGHT HANDLE (-45°): Working Delete (X) Button */}
                 <g
-                  transform={`translate(${Math.cos(-Math.PI / 4) * handleRingRadius}, ${
-                    Math.sin(-Math.PI / 4) * handleRingRadius
+                  transform={`translate(${Math.cos(-Math.PI / 4) * handleAnchorRadius}, ${
+                    Math.sin(-Math.PI / 4) * handleAnchorRadius
                   })`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
@@ -8130,11 +8288,11 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   aria-label="Delete selected flower"
                 >
                   <title>Remove item</title>
-                  <circle cx="0" cy="0" r="34" fill="transparent" />
+                  <circle cx="0" cy="0" r="24" fill="transparent" />
                   <circle
                     cx="0"
                     cy="0"
-                    r="19.5"
+                    r="18.5"
                     fill="#e11d48"
                     stroke="#ffffff"
                     strokeWidth="2.5"
@@ -8150,8 +8308,8 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
 
                 {/* BOTTOM-RIGHT HANDLE (+45°): Drag to Resize & Rotate */}
                 <g
-                  transform={`translate(${Math.cos(Math.PI / 4) * handleRingRadius}, ${
-                    Math.sin(Math.PI / 4) * handleRingRadius
+                  transform={`translate(${Math.cos(Math.PI / 4) * handleAnchorRadius}, ${
+                    Math.sin(Math.PI / 4) * handleAnchorRadius
                   })`}
                   onPointerDown={(e) => handleGizmoPointerDown(e, selectedItem)}
                   className="cursor-nwse-resize"
@@ -8162,10 +8320,10 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   <title>Drag corner to resize and rotate</title>
                   {/* Radial Pull-In / Pull-Out Guide Line showing resize axis */}
                   <line
-                    x1="-28"
-                    y1="-28"
-                    x2="28"
-                    y2="28"
+                    x1="-22"
+                    y1="-22"
+                    x2="24"
+                    y2="24"
                     stroke="#B4846C"
                     strokeWidth="2"
                     strokeDasharray="3 3"
@@ -8175,19 +8333,19 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   <circle
                     cx="0"
                     cy="0"
-                    r={interaction?.mode === 'transform' ? 30 : 25}
+                    r={isResizingSelected ? 28 : 23}
                     fill="#B4846C"
-                    opacity={interaction?.mode === 'transform' ? 0.3 : 0.16}
+                    opacity={isResizingSelected ? 0.3 : 0.16}
                     className="pointer-events-none"
                   />
-                  {/* Generous invisible touch target for effortless mobile manipulation */}
-                  <circle cx="0" cy="0" r="36" fill="transparent" />
+                  {/* Dedicated non-overlapping touch target outside flower drag zone */}
+                  <circle cx="0" cy="0" r="26" fill="transparent" />
                   {/* Main Resize Handle Badge */}
                   <circle
                     cx="0"
                     cy="0"
-                    r="21"
-                    fill={interaction?.mode === 'transform' ? '#B4846C' : '#1C1917'}
+                    r="20"
+                    fill={isResizingSelected ? '#B4846C' : '#1C1917'}
                     stroke="#ffffff"
                     strokeWidth="2.5"
                     style={{ filter: 'drop-shadow(0px 3px 8px rgba(28,25,23,0.28))' }}
@@ -8203,7 +8361,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                   />
 
                   {/* Crisp High-Contrast Indicator Badge: Shows "Drag to resize" or live scale % · angle */}
-                  <g transform="translate(0, 38)" className="pointer-events-none">
+                  <g transform="translate(0, 36)" className="pointer-events-none">
                     <rect
                       x="-72"
                       y="-15"
@@ -8234,7 +8392,7 @@ export const BouquetStage: React.FC<BouquetStageProps> = ({
                     </text>
                   </g>
                 </g>
-              </>
+              </g>
             )}
           </g>
           </g>
