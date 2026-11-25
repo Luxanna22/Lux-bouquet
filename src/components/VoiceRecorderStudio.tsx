@@ -143,15 +143,40 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Request clean mono 48kHz voice capture without echoCancellation so mobile/desktop
+      // browsers do not switch into muffled telephony/call-mode DSP (playback is already stopped).
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 },
+            echoCancellation: false,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (constraintErr) {
+        if (
+          constraintErr instanceof DOMException &&
+          (constraintErr.name === 'OverconstrainedError' ||
+            constraintErr.name === 'ConstraintNotSatisfiedError')
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } else {
+          throw constraintErr;
+        }
+      }
       mediaStreamRef.current = stream;
       audioChunksRef.current = [];
 
-      // Choose compact supported mimeType so shared links stay fast and lightweight
+      // Choose compact supported mimeType with balanced voice bitrate:
+      // 48 kbps mono Opus (~180 KB raw / ~240 KB base64 for 30s) or 64 kbps mono AAC (~240 KB raw)
+      // keeps voice clear and warm while staying well within bouquet storage limits.
       const candidateTypes = [
         'audio/webm;codecs=opus',
-        'audio/webm',
         'audio/mp4',
+        'audio/webm',
         'audio/ogg;codecs=opus',
       ];
       let chosenMime = '';
@@ -164,9 +189,10 @@ export const VoiceRecorderStudio: React.FC<VoiceRecorderStudioProps> = ({
         }
       }
 
+      const targetAudioBps = chosenMime.includes('opus') ? 48000 : 64000;
       const recorderOptions: MediaRecorderOptions = chosenMime
-        ? { mimeType: chosenMime, audioBitsPerSecond: 20000 }
-        : { audioBitsPerSecond: 20000 };
+        ? { mimeType: chosenMime, audioBitsPerSecond: targetAudioBps }
+        : { audioBitsPerSecond: targetAudioBps };
 
       const recorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = recorder;
