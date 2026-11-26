@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { applySecurityHeaders } from './_lib/securityGuard.js';
 
 const CANONICAL_ORIGIN = 'https://www.sendabouquet.online';
 export const GIFT_OG_TITLE = 'Someone sent you a bouquet';
@@ -42,10 +41,7 @@ export function injectGiftOpenGraphMeta(baseHtml, { giftUrl, imageUrl }) {
 
   let html = String(baseHtml || '');
 
-  // Replace <title>
   html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`);
-
-  // Replace canonical & robots so social scrapers do NOT canonicalize back to `/`
   html = html.replace(
     /<link\s+[^>]*rel=["']canonical["'][^>]*>/i,
     `<link rel="canonical" href="${safeGiftUrl}" id="canonical-link" />`
@@ -63,7 +59,6 @@ export function injectGiftOpenGraphMeta(baseHtml, { giftUrl, imageUrl }) {
     `<meta name="description" content="${safeDesc}" />`
   );
 
-  // Replace Open Graph block cleanly
   const ogBlock = [
     `<meta property="og:type" content="website" />`,
     `<meta property="og:site_name" content="Send A Bouquet" />`,
@@ -84,7 +79,6 @@ export function injectGiftOpenGraphMeta(baseHtml, { giftUrl, imageUrl }) {
     ogBlock
   );
 
-  // Replace Twitter / X Card block cleanly
   const twitterBlock = [
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:url" content="${safeGiftUrl}" />`,
@@ -145,7 +139,6 @@ async function loadBaseSpaHtml(origin) {
     return cachedProductionIndexHtml;
   }
 
-  // 1. Check local dist/index.html if bundled alongside serverless function
   try {
     const distPath = path.join(process.cwd(), 'dist', 'index.html');
     if (fs.existsSync(distPath)) {
@@ -159,7 +152,6 @@ async function loadBaseSpaHtml(origin) {
     // Fall through to CDN fetch
   }
 
-  // 2. Fetch static /index.html from same deployment CDN (fast ~5ms edge hit, cached in memory)
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
@@ -180,7 +172,6 @@ async function loadBaseSpaHtml(origin) {
     // Fall through to local index.html
   }
 
-  // 3. Dev / test fallback to source index.html
   try {
     const srcIndexPath = path.join(process.cwd(), 'index.html');
     if (fs.existsSync(srcIndexPath)) {
@@ -193,16 +184,8 @@ async function loadBaseSpaHtml(origin) {
   return null;
 }
 
-export default async function handler(req, res) {
-  applySecurityHeaders(res);
-
-  const urlObj = new URL(req.url || '/', 'https://www.sendabouquet.online');
-  const rawCode =
-    urlObj.searchParams.get('code') ||
-    urlObj.pathname.replace(/^\/+|\/+$/g, '').split('/')[0] ||
-    '';
-  const safeCode = String(rawCode).replace(/[^0-9A-Za-z_-]/g, '').slice(0, 24);
-
+export async function serveGiftOpenGraphHtml(req, res, rawCode = '') {
+  const safeCode = String(rawCode || '').replace(/[^0-9A-Za-z_-]/g, '').slice(0, 24);
   const origin = resolveRequestOrigin(req);
   const giftUrl = safeCode ? `${origin}/${safeCode}` : `${origin}/`;
   const imageUrl = `${origin}${GIFT_OG_IMAGE_PATH}`;

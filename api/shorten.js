@@ -34,6 +34,7 @@ import {
   saveGarlandFeedToBlob,
   upsertGarlandFeedInBlob,
 } from './_lib/blobStorage.js';
+import { serveGiftOpenGraphHtml } from './_lib/giftOgHelper.js';
 
 const shortCodeMemory = new Map();
 let garlandFeedMemoryCache = { entries: null, fetchedAt: 0 };
@@ -559,6 +560,14 @@ async function reconcileGarlandFeedToFirestoreRest(mergedEntries, remoteMeta) {
 
 export default async function handler(req, res) {
   applySecurityHeaders(res);
+
+  const initialUrlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (req.method === 'GET' && initialUrlObj.searchParams.get('og') === '1') {
+    const ogCode = initialUrlObj.searchParams.get('code') || '';
+    await serveGiftOpenGraphHtml(req, res, ogCode);
+    return;
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

@@ -85,7 +85,7 @@
     { "source": "/api/(.*)", "destination": "/api/$1" },
     {
       "source": "/((?!garland$|creations$|showcase$|contact$|sitemap$|manifest$|admin$)[0-9A-Za-z]{7,20})",
-      "destination": "/api/gift-og?code=$1"
+      "destination": "/api/shorten?og=1&code=$1"
     },
     {
       "source": "/((?!api/|robots\\.txt|sitemap\\.xml|site\\.webmanifest|manifest\\.webmanifest|sw\\.js|registerSW\\.js|workbox-.*\\.js|llms\\.txt|favicon\\.svg|apple-touch-icon\\.png|pwa-.*\\.png|og-preview\\.svg|og-preview\\.png|og-gift-bloom\\.png|assets/).*)",
