@@ -330,6 +330,8 @@ export function syncDocumentSeoMeta(options: {
   let description = `Craft and send a custom digital flower bouquet online for free. Arrange ${counts.botanicalStemCount} botanical stems, couture wraps, ribbons, photo frames, a handwritten greeting card, and a recorded voice keepsake—sealed into a shareable gift link or QR code.`;
   let canonicalUrl = `${CANONICAL_ORIGIN}/`;
   let robots = 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
+  let ogImageUrl = `${CANONICAL_ORIGIN}/og-preview.png`;
+  let ogImageHeight = '1260';
 
   switch (options.mode) {
     case 'studio':
@@ -344,14 +346,14 @@ export function syncDocumentSeoMeta(options: {
       canonicalUrl = `${CANONICAL_ORIGIN}/garland`;
       break;
     case 'gift': {
-      const cleanRecipient = (options.recipientName || '').trim();
-      title =
-        cleanRecipient && cleanRecipient.toLowerCase() !== 'my dearest'
-          ? `A Floral Keepsake For ${cleanRecipient} | Send A Bouquet`
-          : 'A Sealed Floral Keepsake For You | Send A Bouquet';
-      description =
-        'Someone arranged a custom digital flower bouquet for you. Slide to unwrap your blooms, read your handwritten letter, and listen to your keepsake.';
-      canonicalUrl = `${CANONICAL_ORIGIN}/`;
+      title = 'Someone sent you a bouquet';
+      description = 'Tap to unwrap.';
+      canonicalUrl =
+        typeof window !== 'undefined' && window.location.pathname && window.location.pathname !== '/'
+          ? `${CANONICAL_ORIGIN}${window.location.pathname}`
+          : `${CANONICAL_ORIGIN}/`;
+      ogImageUrl = `${CANONICAL_ORIGIN}/og-gift-bloom.png`;
+      ogImageHeight = '630';
       // Personal shared bouquet links remain unindexed to protect recipient privacy and prevent duplicate thin pages
       robots = 'noindex, nofollow';
       break;
@@ -379,9 +381,13 @@ export function syncDocumentSeoMeta(options: {
   setMetaAttr('meta[property="og:title"]', 'content', title);
   setMetaAttr('meta[property="og:description"]', 'content', description);
   setMetaAttr('meta[property="og:url"]', 'content', canonicalUrl);
+  setMetaAttr('meta[property="og:image"]', 'content', ogImageUrl);
+  setMetaAttr('meta[property="og:image:secure_url"]', 'content', ogImageUrl);
+  setMetaAttr('meta[property="og:image:height"]', 'content', ogImageHeight);
   setMetaAttr('meta[name="twitter:title"]', 'content', title);
   setMetaAttr('meta[name="twitter:description"]', 'content', description);
   setMetaAttr('meta[name="twitter:url"]', 'content', canonicalUrl);
+  setMetaAttr('meta[name="twitter:image"]', 'content', ogImageUrl);
 
   // Dynamically synchronize the Schema.org JSON-LD script in <head> with live catalog counts
   const schemaScript =
