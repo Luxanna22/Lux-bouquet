@@ -60,7 +60,7 @@ interface LandingPageViewProps {
 const FAQ_ITEMS = [
   {
     q: 'Is it free to craft and share bouquets?',
-    a: 'Yes! You can arrange and share unlimited classic bouquets with signature flowers, wraps, ribbons, and a handwritten card note completely for free. Every recipient gift link stays active permanently, while free bouquets appear in the Shared Creations gallery for 30 days.',
+    a: 'Yes! You can arrange and share unlimited classic digital and virtual bouquets with signature flowers, wraps, ribbons, and a handwritten card note completely for free. Every recipient gift link stays active permanently, while free bouquets appear in the Shared Creations gallery for 30 days.',
   },
   {
     q: 'What comes with a Couture Pass or Single Bouquet unlock?',

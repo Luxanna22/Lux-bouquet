@@ -1059,11 +1059,27 @@ export async function exportSvgElementToPng(
     fo.parentNode?.replaceChild(textNode, fo);
   });
 
+  // Match export dimensions to the SVG viewBox aspect ratio (2x exact scale)
+  // so the saved PNG has zero transparent letterboxing gaps at the top/bottom.
+  const viewBoxParts = (clone.getAttribute('viewBox') || '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const hasValidViewBox =
+    viewBoxParts.length === 4 &&
+    Number.isFinite(viewBoxParts[2]) &&
+    Number.isFinite(viewBoxParts[3]) &&
+    viewBoxParts[2] > 0 &&
+    viewBoxParts[3] > 0;
+  const exportWidth = hasValidViewBox ? Math.round(viewBoxParts[2] * 2) : 1296;
+  const exportHeight = hasValidViewBox ? Math.round(viewBoxParts[3] * 2) : 1360;
+
   // Ensure standard SVG attributes and dimensions
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-  clone.setAttribute('width', '1200');
-  clone.setAttribute('height', '1360');
+  clone.setAttribute('width', String(exportWidth));
+  clone.setAttribute('height', String(exportHeight));
+  clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
   const serializer = new XMLSerializer();
   let svgString = serializer.serializeToString(clone);
@@ -1097,8 +1113,8 @@ export async function exportSvgElementToPng(
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas');
-        canvas.width = 1200;
-        canvas.height = 1360;
+        canvas.width = exportWidth;
+        canvas.height = exportHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           throw new Error('Canvas 2D context unavailable');

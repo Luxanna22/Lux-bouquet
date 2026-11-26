@@ -48,6 +48,13 @@
       ]
     },
     {
+      "source": "/og-preview.png",
+      "headers": [
+        { "key": "Content-Type", "value": "image/png" },
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
+    },
+    {
       "source": "/api/(.*)",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
@@ -70,7 +77,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     {
-      "source": "/((?!api/|robots\\.txt|sitemap\\.xml|site\\.webmanifest|manifest\\.webmanifest|sw\\.js|registerSW\\.js|workbox-.*\\.js|llms\\.txt|favicon\\.svg|apple-touch-icon\\.png|pwa-.*\\.png|og-preview\\.svg|assets/).*)",
+      "source": "/((?!api/|robots\\.txt|sitemap\\.xml|site\\.webmanifest|manifest\\.webmanifest|sw\\.js|registerSW\\.js|workbox-.*\\.js|llms\\.txt|favicon\\.svg|apple-touch-icon\\.png|pwa-.*\\.png|og-preview\\.svg|og-preview\\.png|assets/).*)",
       "destination": "/index.html"
     }
   ]

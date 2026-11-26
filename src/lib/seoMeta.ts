@@ -183,7 +183,7 @@ export function buildLiveSchemaJsonLd(counts = getLiveStudioCatalogCounts()) {
         operatingSystem: 'All',
         browserRequirements: 'Requires HTML5 and JavaScript',
         isAccessibleForFree: true,
-        image: `${CANONICAL_ORIGIN}/og-preview.svg`,
+        image: `${CANONICAL_ORIGIN}/og-preview.png`,
         description:
           'Interactive digital flower studio where anyone can arrange custom botanical bouquets, wrap them in kraft parchment or velvet hatboxes, attach Polaroid photo frames, write a handwritten card note, and record a voice keepsake to share via gift link or QR code.',
         featureList: [
@@ -253,7 +253,7 @@ export function buildLiveSchemaJsonLd(counts = getLiveStudioCatalogCounts()) {
             name: 'Is it free to craft and share bouquets?',
             acceptedAnswer: {
               '@type': 'Answer',
-              text: 'Yes! You can arrange and share unlimited custom digital bouquets with signature flowers, wraps, ribbons, and a handwritten card note completely for free. Every recipient gift link stays active permanently, while free bouquets appear in the Shared Creations gallery for 30 days.',
+              text: 'Yes! You can arrange and share unlimited classic digital and virtual bouquets with signature flowers, wraps, ribbons, and a handwritten card note completely for free. Every recipient gift link stays active permanently, while free bouquets appear in the Shared Creations gallery for 30 days.',
             },
           },
           {
